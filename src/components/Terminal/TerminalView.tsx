@@ -13,17 +13,19 @@ interface TerminalViewProps {
   sessionId: string | null;
   connectionType: "ssh" | "serial";
   isConnected: boolean;
+  isActive: boolean;
   onOpenConnection: () => void;
   onTerminalData?: (data: string) => void;
 }
 
 export default function TerminalView({
-  sessionId, connectionType, isConnected, onOpenConnection, onTerminalData,
+  sessionId, connectionType, isConnected, isActive, onOpenConnection, onTerminalData,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
 
+  // Create the terminal once when session is connected — never tear it down on tab switch
   useEffect(() => {
     if (!containerRef.current || !sessionId || !isConnected) return;
 
@@ -78,9 +80,6 @@ export default function TerminalView({
       invoke(writeCmd, { sessionId, data }).catch(console.error);
     });
 
-    // Capture output for AI context
-    term.onData(() => {});
-
     // Backend data -> terminal
     const eventPrefix = connectionType === "ssh" ? "ssh://data" : "serial://data";
     const unlistenData = listen<string>(`${eventPrefix}/${sessionId}`, (event) => {
@@ -106,12 +105,26 @@ export default function TerminalView({
       unlistenData.then((fn) => fn());
       resizeObserver.disconnect();
       term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
     };
   }, [sessionId, isConnected, connectionType]);
 
+  // Re-fit the terminal whenever this tab becomes active (container goes from display:none to visible)
+  useEffect(() => {
+    if (isActive && fitRef.current) {
+      // Small delay to allow the browser to lay out the now-visible container
+      const timer = setTimeout(() => {
+        fitRef.current?.fit();
+        termRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isActive]);
+
   if (!sessionId || !isConnected) {
     return (
-      <div className="terminal-view">
+      <div className={`terminal-view ${!isActive ? "terminal-view--hidden" : ""}`}>
         <div className="terminal-view__empty">
           <div className="terminal-view__empty-icon">
             <Monitor size={32} color="#fff" />
@@ -143,7 +156,7 @@ export default function TerminalView({
   }
 
   return (
-    <div className="terminal-view">
+    <div className={`terminal-view ${!isActive ? "terminal-view--hidden" : ""}`}>
       <div ref={containerRef} style={{ height: "100%" }} />
     </div>
   );

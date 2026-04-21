@@ -80,13 +80,28 @@ export default function App() {
                   onCloseTab={handleCloseTab}
                   onAddTab={openConnection}
                 />
-                <TerminalView
-                  sessionId={activeTab?.sessionId || null}
-                  connectionType={activeTab?.connectionType || "ssh"}
-                  isConnected={activeTab?.isConnected || false}
-                  onOpenConnection={openConnection}
-                  onTerminalData={handleTerminalData}
-                />
+                {tabs.length === 0 ? (
+                  <TerminalView
+                    sessionId={null}
+                    connectionType="ssh"
+                    isConnected={false}
+                    isActive={true}
+                    onOpenConnection={openConnection}
+                    onTerminalData={handleTerminalData}
+                  />
+                ) : (
+                  tabs.map((tab) => (
+                    <TerminalView
+                      key={tab.id}
+                      sessionId={tab.sessionId || null}
+                      connectionType={tab.connectionType}
+                      isConnected={tab.isConnected}
+                      isActive={tab.id === activeTabId}
+                      onOpenConnection={openConnection}
+                      onTerminalData={handleTerminalData}
+                    />
+                  ))
+                )}
               </div>
             ) : activeView === "settings" ? (
               <SettingsPanel />
