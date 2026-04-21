@@ -1,0 +1,39 @@
+.statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--statusbar-height);
+  background: var(--accent-blue);
+  padding: 0 10px;
+  font-size: 11px;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.statusbar__left, .statusbar__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.statusbar__item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.9;
+}
+
+.statusbar__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.statusbar__dot--connected {
+  background: #fff;
+  box-shadow: 0 0 6px rgba(255,255,255,0.5);
+}
+
+.statusbar__dot--disconnected {
+  background: rgba(255,255,255,0.4);
+}
