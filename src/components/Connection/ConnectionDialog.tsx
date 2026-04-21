@@ -41,15 +41,24 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     setError("");
     setConnecting(true);
     try {
+      // 自動ログ設定を確認
+      let autoLog = true;
+      try {
+        const cfg = await invoke<{ terminal: { auto_session_log: boolean } }>("config_load");
+        autoLog = cfg.terminal.auto_session_log;
+      } catch { /* デフォルトtrue */ }
+
       if (tab === "ssh") {
         const result = await invoke<{ session_id: string }>("ssh_connect", {
           host, port: parseInt(port), username, password, cols: 120, rows: 30,
         });
-        await invoke("logger_start", {
-          sessionId: result.session_id,
-          connectionType: "ssh",
-          target: `${username}@${host}:${port}`,
-        });
+        if (autoLog) {
+          await invoke("logger_start", {
+            sessionId: result.session_id,
+            connectionType: "ssh",
+            target: `${username}@${host}:${port}`,
+          });
+        }
         onConnect("ssh", result.session_id, `${username}@${host}`);
       } else {
         const sessionId = await invoke<string>("serial_connect", {
@@ -62,11 +71,13 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
             flow_control: "none",
           },
         });
-        await invoke("logger_start", {
-          sessionId,
-          connectionType: "serial",
-          target: selectedPort,
-        });
+        if (autoLog) {
+          await invoke("logger_start", {
+            sessionId,
+            connectionType: "serial",
+            target: selectedPort,
+          });
+        }
         onConnect("serial", sessionId, selectedPort);
       }
     } catch (e: any) {

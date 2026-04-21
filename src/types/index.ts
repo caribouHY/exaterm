@@ -62,6 +62,7 @@ export interface TerminalConfig {
   font_family: string;
   cursor_style: string;
   scrollback: number;
+  auto_session_log: boolean;
 }
 
 export interface SavedConnection {

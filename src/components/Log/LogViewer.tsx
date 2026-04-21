@@ -24,7 +24,7 @@ export default function LogViewer() {
         <div className="log-viewer__empty">
           <FileText size={32} />
           <span>まだログがありません</span>
-          <span>接続するとセッションログが自動保存されます</span>
+          <span>設定で自動セッションログを有効にすると、接続時にログが記録されます</span>
         </div>
       ) : (
         <table className="log-table">

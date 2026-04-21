@@ -57,3 +57,71 @@
   font-size: 12px;
   animation: fadeIn 0.2s ease;
 }
+
+/* ── トグルスイッチ ── */
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.settings-toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-toggle-label span {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.settings-toggle-label small {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--border-secondary);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.toggle input:checked + .toggle-track {
+  background: var(--accent-blue);
+}
+
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+.toggle input:checked + .toggle-track::after {
+  transform: translateX(20px);
+}

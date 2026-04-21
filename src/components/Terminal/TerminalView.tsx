@@ -80,13 +80,21 @@ export default function TerminalView({
       invoke(writeCmd, { sessionId, data }).catch(console.error);
     });
 
+    // 設定を読み込み、自動ログが有効な場合のみロギングを開始
+    let loggingEnabled = true; // デフォルトは有効
+    invoke<{ terminal: { auto_session_log: boolean } }>("config_load")
+      .then((cfg) => { loggingEnabled = cfg.terminal.auto_session_log; })
+      .catch(() => {}); // 取得失敗時はデフォルト(true)のまま
+
     // Backend data -> terminal
     const eventPrefix = connectionType === "ssh" ? "ssh://data" : "serial://data";
     const unlistenData = listen<string>(`${eventPrefix}/${sessionId}`, (event) => {
       term.write(event.payload);
       if (onTerminalData) onTerminalData(event.payload);
-      // Log the data
-      invoke("logger_append", { sessionId, data: event.payload }).catch(() => {});
+      // 自動ログが有効なときのみ書き込み
+      if (loggingEnabled) {
+        invoke("logger_append", { sessionId, data: event.payload }).catch(() => {});
+      }
     });
 
     // Resize handling

@@ -24,7 +24,11 @@ pub struct TerminalConfig {
     pub font_family: String,
     pub cursor_style: String,
     pub scrollback: u32,
+    #[serde(default = "default_true")]
+    pub auto_session_log: bool,
 }
+
+fn default_true() -> bool { true }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedConnection {
@@ -49,6 +53,7 @@ impl Default for AppConfig {
             terminal: TerminalConfig {
                 font_size: 14, font_family: "Consolas, 'Courier New', monospace".into(),
                 cursor_style: "block".into(), scrollback: 10000,
+                auto_session_log: true,
             },
             saved_connections: Vec::new(),
         }

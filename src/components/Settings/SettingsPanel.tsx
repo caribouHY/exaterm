@@ -82,6 +82,24 @@ export default function SettingsPanel() {
         </div>
       </div>
 
+      <div className="settings-section">
+        <div className="settings-section__title">ログ設定</div>
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>自動セッションログ</span>
+            <small>接続時にターミナルの入出力をファイルへ自動記録します</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={config.terminal.auto_session_log}
+              onChange={(e) => update("terminal.auto_session_log", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+      </div>
+
       <div className="settings-actions">
         <button className="btn btn-primary" onClick={handleSave}>保存</button>
         {saved && <span className="settings-saved"><Check size={14} /> 保存しました</span>}
