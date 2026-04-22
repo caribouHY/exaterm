@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Check } from "lucide-react";
 import type { AppConfig } from "../../types";
+import { useTranslation } from "react-i18next";
 import "./SettingsPanel.css";
 
 interface SettingsPanelProps {
@@ -9,6 +10,7 @@ interface SettingsPanelProps {
 }
 
 export default function SettingsPanel({ onSave }: SettingsPanelProps) {
+  const { t, i18n } = useTranslation();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -20,6 +22,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     if (!config) return;
     try {
       await invoke("config_save", { config });
+      if (config.language !== i18n.language) {
+        i18n.changeLanguage(config.language);
+      }
       setSaved(true);
       if (onSave) onSave();
       setTimeout(() => setSaved(false), 2000);
@@ -28,7 +33,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     }
   };
 
-  if (!config) return <div className="settings-panel"><p>読み込み中...</p></div>;
+  if (!config) return <div className="settings-panel"><p>{t("settings.loading")}</p></div>;
 
   const update = (path: string, value: any) => {
     const newConfig = JSON.parse(JSON.stringify(config));
@@ -41,13 +46,25 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
 
   return (
     <div className="settings-panel">
-      <h2>設定</h2>
+      <h2>{t("settings.title")}</h2>
 
       <div className="settings-section">
-        <div className="settings-section__title">AI プロバイダ設定</div>
+        <div className="settings-section__title">{t("settings.language")}</div>
         <div className="settings-row">
           <div>
-            <label className="label">デフォルトプロバイダ</label>
+            <select className="select" value={config.language} onChange={(e) => update("language", e.target.value)}>
+              <option value="en">English</option>
+              <option value="ja">日本語</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section__title">{t("settings.ai_provider")}</div>
+        <div className="settings-row">
+          <div>
+            <label className="label">{t("settings.default_provider")}</label>
             <select className="select" value={config.ai.default_provider} onChange={(e) => update("ai.default_provider", e.target.value)}>
               <option value="OpenAi">OpenAI</option>
               <option value="Anthropic">Anthropic</option>
@@ -57,47 +74,47 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           </div>
         </div>
         <div style={{ marginBottom: 14 }}>
-          <label className="label">OpenAI API キー</label>
+          <label className="label">{t("settings.openai_key")}</label>
           <input className="input" type="password" value={config.ai.openai_api_key} onChange={(e) => update("ai.openai_api_key", e.target.value)} placeholder="sk-..." />
         </div>
         <div style={{ marginBottom: 14 }}>
-          <label className="label">Anthropic API キー</label>
+          <label className="label">{t("settings.anthropic_key")}</label>
           <input className="input" type="password" value={config.ai.anthropic_api_key} onChange={(e) => update("ai.anthropic_api_key", e.target.value)} placeholder="sk-ant-..." />
         </div>
         <div style={{ marginBottom: 14 }}>
-          <label className="label">Google Gemini API キー</label>
+          <label className="label">{t("settings.gemini_key")}</label>
           <input className="input" type="password" value={config.ai.gemini_api_key} onChange={(e) => update("ai.gemini_api_key", e.target.value)} placeholder="AIza..." />
         </div>
         <div style={{ marginBottom: 14 }}>
-          <label className="label">Ollama ベース URL</label>
+          <label className="label">{t("settings.ollama_url")}</label>
           <input className="input" type="text" value={config.ai.ollama_base_url || "http://localhost:11434"} onChange={(e) => update("ai.ollama_base_url", e.target.value)} placeholder="http://localhost:11434" />
         </div>
       </div>
 
       <div className="settings-section">
-        <div className="settings-section__title">ターミナル設定</div>
+        <div className="settings-section__title">{t("settings.terminal_settings")}</div>
         <div className="settings-row">
           <div>
-            <label className="label">フォントサイズ</label>
+            <label className="label">{t("settings.font_size")}</label>
             <input className="input" type="number" value={config.terminal.font_size} onChange={(e) => update("terminal.font_size", parseInt(e.target.value))} min={8} max={32} />
           </div>
           <div>
-            <label className="label">スクロールバック行数</label>
+            <label className="label">{t("settings.scrollback")}</label>
             <input className="input" type="number" value={config.terminal.scrollback} onChange={(e) => update("terminal.scrollback", parseInt(e.target.value))} />
           </div>
         </div>
         <div>
-          <label className="label">フォントファミリー</label>
+          <label className="label">{t("settings.font_family")}</label>
           <input className="input" value={config.terminal.font_family} onChange={(e) => update("terminal.font_family", e.target.value)} />
         </div>
       </div>
 
       <div className="settings-section">
-        <div className="settings-section__title">ログ設定</div>
+        <div className="settings-section__title">{t("settings.log_settings")}</div>
         <div className="settings-toggle-row">
           <div className="settings-toggle-label">
-            <span>自動セッションログ</span>
-            <small>接続時にターミナルの入出力をファイルへ自動記録します</small>
+            <span>{t("settings.auto_session_log")}</span>
+            <small>{t("settings.auto_session_log_desc")}</small>
           </div>
           <label className="toggle">
             <input
@@ -111,8 +128,8 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       </div>
 
       <div className="settings-actions">
-        <button className="btn btn-primary" onClick={handleSave}>保存</button>
-        {saved && <span className="settings-saved"><Check size={14} /> 保存しました</span>}
+        <button className="btn btn-primary" onClick={handleSave}>{t("settings.save")}</button>
+        {saved && <span className="settings-saved"><Check size={14} /> {t("settings.saved")}</span>}
       </div>
     </div>
   );

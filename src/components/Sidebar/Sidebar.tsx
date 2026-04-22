@@ -1,5 +1,6 @@
 import { Monitor, Wifi, Bot, FileText, Settings } from "lucide-react";
 import type { ViewMode } from "../../types";
+import { useTranslation } from "react-i18next";
 import "./Sidebar.css";
 
 interface SidebarProps {
@@ -17,6 +18,8 @@ export default function Sidebar({
   onToggleAiPanel,
   onOpenConnection,
 }: SidebarProps) {
+  const { t } = useTranslation();
+
   return (
     <nav className="sidebar">
       <div className="sidebar__top">
@@ -25,12 +28,12 @@ export default function Sidebar({
           onClick={() => onViewChange("terminal")}
         >
           <Monitor size={20} />
-          <span className="sidebar__tooltip">ターミナル</span>
+          <span className="sidebar__tooltip">{t("sidebar.terminal")}</span>
         </button>
 
         <button className="sidebar__btn" onClick={onOpenConnection}>
           <Wifi size={20} />
-          <span className="sidebar__tooltip">新規接続</span>
+          <span className="sidebar__tooltip">{t("sidebar.new_connection")}</span>
         </button>
 
         <div className="sidebar__divider" />
@@ -40,7 +43,7 @@ export default function Sidebar({
           onClick={onToggleAiPanel}
         >
           <Bot size={20} />
-          <span className="sidebar__tooltip">AIアシスタント</span>
+          <span className="sidebar__tooltip">{t("sidebar.ai_assistant")}</span>
         </button>
 
         <button
@@ -48,7 +51,7 @@ export default function Sidebar({
           onClick={() => onViewChange("logs")}
         >
           <FileText size={20} />
-          <span className="sidebar__tooltip">ログ</span>
+          <span className="sidebar__tooltip">{t("sidebar.logs")}</span>
         </button>
       </div>
 
@@ -58,7 +61,7 @@ export default function Sidebar({
           onClick={() => onViewChange("settings")}
         >
           <Settings size={20} />
-          <span className="sidebar__tooltip">設定</span>
+          <span className="sidebar__tooltip">{t("sidebar.settings")}</span>
         </button>
       </div>
     </nav>

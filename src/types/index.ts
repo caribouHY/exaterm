@@ -44,6 +44,7 @@ export interface LogSession {
 }
 
 export interface AppConfig {
+  language: string;
   ai: AiConfig;
   terminal: TerminalConfig;
   saved_connections: SavedConnection[];

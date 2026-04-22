@@ -1,8 +1,10 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import "./TitleBar.css";
 
 export default function TitleBar() {
+  const { t } = useTranslation();
   const appWindow = getCurrentWindow();
 
   return (
@@ -11,12 +13,12 @@ export default function TitleBar() {
         <div className="titlebar__logo">E</div>
         <span className="titlebar__name">ExaTerm</span>
       </div>
-      <div className="titlebar__center">AIネイティブ ターミナル</div>
+      <div className="titlebar__center">{t("titlebar.subtitle")}</div>
       <div className="titlebar__controls">
         <button
           className="titlebar__btn"
           onClick={() => appWindow.minimize()}
-          aria-label="最小化"
+          aria-label={t("titlebar.minimize")}
         >
           <Minus size={14} />
         </button>
@@ -29,14 +31,14 @@ export default function TitleBar() {
               appWindow.maximize();
             }
           }}
-          aria-label="最大化"
+          aria-label={t("titlebar.maximize")}
         >
           <Square size={12} />
         </button>
         <button
           className="titlebar__btn titlebar__btn--close"
           onClick={() => appWindow.close()}
-          aria-label="閉じる"
+          aria-label={t("titlebar.close")}
         >
           <X size={14} />
         </button>

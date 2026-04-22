@@ -6,6 +6,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { Monitor } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { Encoding, TerminalConfig } from "../../types";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
@@ -24,6 +25,7 @@ interface TerminalViewProps {
 export default function TerminalView({
   sessionId, connectionType, isConnected, isActive, encoding, terminalConfig, onOpenConnection, onTerminalData,
 }: TerminalViewProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -177,23 +179,23 @@ export default function TerminalView({
           </div>
           <div className="terminal-view__empty-title">ExaTerm</div>
           <div className="terminal-view__empty-desc">
-            接続を開始してターミナルセッションを開きます
+            {t("terminal.empty_desc")}
           </div>
           <button className="btn btn-primary" onClick={onOpenConnection}>
-            新規接続
+            {t("connection.new")}
           </button>
           <div className="terminal-view__empty-shortcuts">
             <div className="terminal-view__shortcut">
               <span className="terminal-view__key">Ctrl+N</span>
-              <span>新規接続</span>
+              <span>{t("connection.new")}</span>
             </div>
             <div className="terminal-view__shortcut">
               <span className="terminal-view__key">Ctrl+T</span>
-              <span>新規タブ</span>
+              <span>{t("terminal.new_tab")}</span>
             </div>
             <div className="terminal-view__shortcut">
               <span className="terminal-view__key">Ctrl+,</span>
-              <span>設定</span>
+              <span>{t("sidebar.settings")}</span>
             </div>
           </div>
         </div>

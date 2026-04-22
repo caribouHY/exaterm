@@ -58,10 +58,16 @@ pub async fn ai_get_ollama_models(base_url: String) -> Result<Vec<AiModelInfo>, 
     Ok(models)
 }
 
-fn build_system_prompt(terminal_context: &Option<String>) -> String {
-    let mut s = "あなたはExaTermのAIアシスタントです。ネットワーク操作を支援します。日本語で回答してください。".to_string();
+fn build_system_prompt(terminal_context: &Option<String>, language: &str) -> String {
+    let base = if language == "ja" {
+        "あなたはExaTermのAIアシスタントです。ネットワーク操作を支援します。日本語で回答してください。"
+    } else {
+        "You are the AI assistant for ExaTerm, a network terminal. Help the user with their network operations. Please respond in English."
+    };
+    let mut s = base.to_string();
     if let Some(ctx) = terminal_context {
-        s.push_str(&format!("\n\n【ターミナル出力】\n```\n{}\n```", ctx));
+        let ctx_label = if language == "ja" { "【ターミナル出力】" } else { "[Terminal Output]" };
+        s.push_str(&format!("\n\n{}\n```\n{}\n```", ctx_label, ctx));
     }
     s
 }
@@ -70,9 +76,10 @@ fn build_system_prompt(terminal_context: &Option<String>) -> String {
 pub async fn ai_chat(
     provider: AiProvider, model: String, messages: Vec<ChatMessage>,
     terminal_context: Option<String>, api_key: String,
+    language: String,
 ) -> Result<String, String> {
     let client = reqwest::Client::new();
-    let sys = build_system_prompt(&terminal_context);
+    let sys = build_system_prompt(&terminal_context, &language);
 
     match provider {
         AiProvider::OpenAi => {
@@ -123,8 +130,9 @@ pub async fn ai_chat(
 pub async fn ai_chat_stream(
     app: AppHandle, provider: AiProvider, model: String, messages: Vec<ChatMessage>,
     terminal_context: Option<String>, api_key: String, request_id: String,
+    language: String,
 ) -> Result<(), String> {
-    let result = ai_chat(provider, model, messages, terminal_context, api_key).await?;
+    let result = ai_chat(provider, model, messages, terminal_context, api_key, language).await?;
     let _ = app.emit(&format!("ai://chunk/{}", request_id), &result);
     let _ = app.emit(&format!("ai://done/{}", request_id), "");
     Ok(())

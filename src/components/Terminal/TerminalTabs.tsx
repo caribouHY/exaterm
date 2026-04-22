@@ -1,4 +1,5 @@
 import { Monitor, Usb, Plus, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { TabInfo } from "../../types";
 import "./TerminalTabs.css";
 
@@ -13,6 +14,8 @@ interface TerminalTabsProps {
 export default function TerminalTabs({
   tabs, activeTabId, onSelectTab, onCloseTab, onAddTab,
 }: TerminalTabsProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="terminal-tabs">
       {tabs.map((tab) => (
@@ -38,7 +41,7 @@ export default function TerminalTabs({
           </span>
         </button>
       ))}
-      <button className="terminal-tabs__add" onClick={onAddTab} aria-label="新規タブ">
+      <button className="terminal-tabs__add" onClick={onAddTab} aria-label={t("terminal.new_tab")}>
         <Plus size={14} />
       </button>
     </div>

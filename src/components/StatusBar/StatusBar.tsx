@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import type { TabInfo, Encoding } from "../../types";
 import "./StatusBar.css";
 
@@ -8,6 +9,7 @@ interface StatusBarProps {
 }
 
 export default function StatusBar({ activeTab, onEncodingChange }: StatusBarProps) {
+  const { t } = useTranslation();
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -34,7 +36,7 @@ export default function StatusBar({ activeTab, onEncodingChange }: StatusBarProp
       <div className="statusbar__left">
         <div className="statusbar__item">
           <span className={`statusbar__dot ${activeTab?.isConnected ? "statusbar__dot--connected" : "statusbar__dot--disconnected"}`} />
-          <span>{activeTab?.isConnected ? "接続中" : "未接続"}</span>
+          <span>{activeTab?.isConnected ? t("statusbar.connected") : t("statusbar.disconnected")}</span>
         </div>
         {activeTab && (
           <div className="statusbar__item">

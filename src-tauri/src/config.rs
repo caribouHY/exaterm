@@ -4,10 +4,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(default = "default_language")]
+    pub language: String,
     pub ai: AiConfig,
     pub terminal: TerminalConfig,
     pub saved_connections: Vec<SavedConnection>,
 }
+
+fn default_language() -> String { "en".into() }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiConfig {
@@ -50,6 +54,7 @@ pub struct SavedConnection {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
+            language: default_language(),
             ai: AiConfig {
                 openai_api_key: String::new(), anthropic_api_key: String::new(),
                 gemini_api_key: String::new(), ollama_base_url: default_ollama_url(),

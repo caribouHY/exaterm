@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Bot, Send, Terminal, X } from "lucide-react";
 import type { ChatMessage, AiModelInfo } from "../../types";
+import { useTranslation } from "react-i18next";
 import "./AIChatPanel.css";
 
 interface AIChatPanelProps {
@@ -10,6 +11,7 @@ interface AIChatPanelProps {
 }
 
 export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProps) {
+  const { t, i18n } = useTranslation();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -68,12 +70,13 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
         messages: newMessages,
         terminalContext: useContext ? terminalBuffer.current : null,
         apiKey: currentApiKey,
+        language: i18n.language,
       });
       setMessages([...newMessages, { role: "assistant", content: response }]);
     } catch (e: any) {
       setMessages([...newMessages, {
         role: "assistant",
-        content: `エラー: ${typeof e === "string" ? e : e.message || "不明なエラー"}\n\nAPIキーが設定されているか確認してください（設定 > AI設定）`,
+        content: `Error: ${typeof e === "string" ? e : e.message || "Unknown error"}\n\nPlease check if API keys are set correctly in Settings.`,
       }]);
     }
     setLoading(false);
@@ -82,7 +85,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
   return (
     <div className="ai-panel">
       <div className="ai-panel__header">
-        <span className="ai-panel__title">AI アシスタント</span>
+        <span className="ai-panel__title">{t("ai.title")}</span>
         <button className="btn-icon" onClick={onClose}><X size={14} /></button>
       </div>
 
@@ -91,14 +94,13 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
           <div className="ai-panel__welcome">
             <div className="ai-panel__welcome-icon"><Bot size={24} color="#fff" /></div>
             <div className="ai-panel__welcome-text">
-              AIアシスタントに質問できます。<br />
-              ターミナル出力をコンテキストとして送信することも可能です。
+              {t("ai.title")}
             </div>
           </div>
         ) : (
           messages.map((msg, i) => (
             <div key={i} className={`ai-message ai-message--${msg.role}`}>
-              <span className="ai-message__role">{msg.role === "user" ? "あなた" : "AI"}</span>
+              <span className="ai-message__role">{msg.role === "user" ? "You" : "AI"}</span>
               <div className="ai-message__content">{msg.content}</div>
             </div>
           ))
@@ -120,7 +122,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder="メッセージを入力..."
+            placeholder={t("ai.placeholder")}
             rows={1}
           />
           <button className="ai-panel__send" onClick={handleSend} disabled={loading || !input.trim()}>
@@ -134,7 +136,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
             onClick={() => setUseContext(!useContext)}
           >
             <Terminal size={12} />
-            {useContext ? "ターミナルの内容を含める ✓" : "ターミナルの内容を含める"}
+            {useContext ? `${t("ai.context")} ✓` : t("ai.context")}
           </button>
 
           <div className="ai-panel__provider">
