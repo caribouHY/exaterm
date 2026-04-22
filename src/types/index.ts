@@ -78,6 +78,7 @@ export interface SavedConnection {
 
 export type ConnectionType = 'ssh' | 'serial';
 export type ViewMode = 'terminal' | 'settings' | 'logs';
+export type Encoding = 'utf-8' | 'shift-jis' | 'euc-jp';
 
 export interface TabInfo {
   id: string;
@@ -85,4 +86,5 @@ export interface TabInfo {
   connectionType: ConnectionType;
   sessionId?: string;
   isConnected: boolean;
+  encoding: Encoding;
 }

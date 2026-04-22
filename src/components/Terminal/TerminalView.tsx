@@ -6,6 +6,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { Monitor } from "lucide-react";
+import type { Encoding } from "../../types";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
@@ -14,16 +15,23 @@ interface TerminalViewProps {
   connectionType: "ssh" | "serial";
   isConnected: boolean;
   isActive: boolean;
+  encoding: Encoding;
   onOpenConnection: () => void;
   onTerminalData?: (data: string) => void;
 }
 
 export default function TerminalView({
-  sessionId, connectionType, isConnected, isActive, onOpenConnection, onTerminalData,
+  sessionId, connectionType, isConnected, isActive, encoding, onOpenConnection, onTerminalData,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const decoderRef = useRef(new TextDecoder(encoding));
+
+  // Update decoder when encoding changes
+  useEffect(() => {
+    decoderRef.current = new TextDecoder(encoding);
+  }, [encoding]);
 
   // Create the terminal once when session is connected — never tear it down on tab switch
   useEffect(() => {
@@ -98,14 +106,20 @@ export default function TerminalView({
 
     // Backend data -> terminal
     const eventPrefix = connectionType === "ssh" ? "ssh://data" : "serial://data";
-    const unlistenData = listen<string>(`${eventPrefix}/${sessionId}`, (event) => {
-      term.write(event.payload);
-      if (onTerminalData) onTerminalData(event.payload);
-      // 自動ログが有効なときのみ書き込み
+    const errorPrefix = connectionType === "ssh" ? "ssh://error" : "serial://error";
+
+    const handleData = (event: { payload: number[] }) => {
+      const data = new Uint8Array(event.payload);
+      const text = decoderRef.current.decode(data, { stream: true });
+      term.write(text);
+      if (onTerminalData) onTerminalData(text);
       if (loggingEnabled) {
-        invoke("logger_append", { sessionId, data: event.payload }).catch(() => {});
+        invoke("logger_append", { sessionId, data: text }).catch(() => {});
       }
-    });
+    };
+
+    const unlistenData = listen<number[]>(`${eventPrefix}/${sessionId}`, handleData);
+    const unlistenError = listen<number[]>(`${errorPrefix}/${sessionId}`, handleData);
 
     // Resize handling
     const resizeCmd = connectionType === "ssh" ? "ssh_resize" : null;
@@ -121,6 +135,7 @@ export default function TerminalView({
 
     return () => {
       unlistenData.then((fn) => fn());
+      unlistenError.then((fn) => fn());
       resizeObserver.disconnect();
       term.dispose();
       termRef.current = null;

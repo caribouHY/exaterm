@@ -101,8 +101,7 @@ pub async fn serial_connect(
             if !is_running { break; }
             match port.read(&mut buf) {
                 Ok(n) if n > 0 => {
-                    let text = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let _ = app_clone.emit(&format!("serial://data/{}", sid), text);
+                    let _ = app_clone.emit(&format!("serial://data/{}", sid), buf[..n].to_vec());
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
                 Err(e) => {

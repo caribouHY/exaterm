@@ -8,7 +8,7 @@ import AIChatPanel from "./components/AI/AIChatPanel";
 import StatusBar from "./components/StatusBar/StatusBar";
 import SettingsPanel from "./components/Settings/SettingsPanel";
 import LogViewer from "./components/Log/LogViewer";
-import type { TabInfo, ViewMode, ConnectionType } from "./types";
+import type { TabInfo, ViewMode, ConnectionType, Encoding } from "./types";
 import "./App.css";
 
 export default function App() {
@@ -29,6 +29,7 @@ export default function App() {
         connectionType: type,
         sessionId,
         isConnected: true,
+        encoding: "utf-8",
       };
       setTabs((prev) => [...prev, newTab]);
       setActiveTabId(sessionId);
@@ -54,6 +55,10 @@ export default function App() {
   const handleTerminalData = useCallback((data: string) => {
     // Keep last 2000 chars for AI context
     terminalBuffer.current = (terminalBuffer.current + data).slice(-2000);
+  }, []);
+
+  const handleEncodingChange = useCallback((id: string, encoding: Encoding) => {
+    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, encoding } : t)));
   }, []);
 
   const openConnection = () => setShowConnection(true);
@@ -105,6 +110,7 @@ export default function App() {
                   isActive={activeView === "terminal"}
                   onOpenConnection={openConnection}
                   onTerminalData={handleTerminalData}
+                  encoding="utf-8"
                 />
               ) : (
                 tabs.map((tab) => (
@@ -116,6 +122,7 @@ export default function App() {
                     isActive={activeView === "terminal" && tab.id === activeTabId}
                     onOpenConnection={openConnection}
                     onTerminalData={handleTerminalData}
+                    encoding={tab.encoding}
                   />
                 ))
               )}
@@ -129,7 +136,10 @@ export default function App() {
               />
             )}
           </div>
-          <StatusBar activeTab={activeTab} />
+          <StatusBar 
+            activeTab={activeTab} 
+            onEncodingChange={(encoding) => activeTab && handleEncodingChange(activeTab.id, encoding)} 
+          />
         </div>
       </div>
       {showConnection && (

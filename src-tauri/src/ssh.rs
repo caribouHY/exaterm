@@ -51,10 +51,9 @@ impl russh::client::Handler for SshClientHandler {
         data: &[u8],
         _session: &mut russh::client::Session,
     ) -> Result<(), Self::Error> {
-        let text = String::from_utf8_lossy(data).to_string();
         let _ = self.app.emit(
             &format!("ssh://data/{}", self.session_id),
-            text,
+            data.to_vec(),
         );
         Ok(())
     }
@@ -66,10 +65,9 @@ impl russh::client::Handler for SshClientHandler {
         data: &[u8],
         _session: &mut russh::client::Session,
     ) -> Result<(), Self::Error> {
-        let text = String::from_utf8_lossy(data).to_string();
         let _ = self.app.emit(
             &format!("ssh://error/{}", self.session_id),
-            text,
+            data.to_vec(),
         );
         Ok(())
     }
