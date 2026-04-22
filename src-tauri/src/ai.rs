@@ -30,7 +30,7 @@ pub fn ai_get_models() -> Vec<AiModelInfo> {
         AiModelInfo { provider: "Anthropic".into(), model_id: "claude-sonnet-4-20250514".into(), display_name: "Claude Sonnet 4".into() },
         AiModelInfo { provider: "Anthropic".into(), model_id: "claude-3-5-haiku-20241022".into(), display_name: "Claude 3.5 Haiku".into() },
         AiModelInfo { provider: "Gemini".into(), model_id: "gemini-2.5-pro".into(), display_name: "Gemini 2.5 Pro".into() },
-        AiModelInfo { provider: "Gemini".into(), model_id: "gemini-2.0-flash".into(), display_name: "Gemini 2.0 Flash".into() },
+        AiModelInfo { provider: "Gemini".into(), model_id: "gemini-2.5-flash".into(), display_name: "Gemini 2.5 Flash".into() },
     ]
 }
 
