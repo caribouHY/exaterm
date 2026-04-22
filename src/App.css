@@ -36,3 +36,18 @@
 .app__hidden {
   display: none !important;
 }
+
+.app__resizer {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background var(--transition-fast);
+  z-index: 10;
+  position: relative;
+  margin: 0 -2px;
+}
+
+.app__resizer:hover,
+.app__resizer--dragging {
+  background: var(--accent-blue);
+}

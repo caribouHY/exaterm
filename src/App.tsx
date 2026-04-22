@@ -17,6 +17,8 @@ export default function App() {
   const [showConnection, setShowConnection] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [activeView, setActiveView] = useState<ViewMode>("terminal");
+  const [aiPanelWidth, setAiPanelWidth] = useState(340);
+  const [isDragging, setIsDragging] = useState(false);
   const terminalBuffer = useRef("");
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
@@ -81,6 +83,34 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // AI panel is on the right, so width is (window width - mouse X)
+      const newWidth = window.innerWidth - e.clientX;
+      if (newWidth > 200 && newWidth < window.innerWidth * 0.8) {
+        setAiPanelWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging]);
+
   return (
     <div className="app">
       <TitleBar />
@@ -130,10 +160,18 @@ export default function App() {
             {activeView === "settings" && <SettingsPanel />}
             {activeView === "logs" && <LogViewer />}
             {showAiPanel && (
-              <AIChatPanel
-                onClose={() => setShowAiPanel(false)}
-                terminalBuffer={terminalBuffer}
-              />
+              <>
+                <div 
+                  className={`app__resizer ${isDragging ? 'app__resizer--dragging' : ''}`}
+                  onMouseDown={handleMouseDown}
+                />
+                <div style={{ width: aiPanelWidth, flexShrink: 0 }}>
+                  <AIChatPanel
+                    onClose={() => setShowAiPanel(false)}
+                    terminalBuffer={terminalBuffer}
+                  />
+                </div>
+              </>
             )}
           </div>
           <StatusBar 
