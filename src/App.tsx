@@ -71,43 +71,39 @@ export default function App() {
         />
         <div className="app__main">
           <div className="app__content">
-            {activeView === "terminal" ? (
-              <div className="app__terminal-area">
-                <TerminalTabs
-                  tabs={tabs}
-                  activeTabId={activeTabId}
-                  onSelectTab={setActiveTabId}
-                  onCloseTab={handleCloseTab}
-                  onAddTab={openConnection}
+            <div className={`app__terminal-area ${activeView !== "terminal" ? "app__hidden" : ""}`}>
+              <TerminalTabs
+                tabs={tabs}
+                activeTabId={activeTabId}
+                onSelectTab={setActiveTabId}
+                onCloseTab={handleCloseTab}
+                onAddTab={openConnection}
+              />
+              {tabs.length === 0 ? (
+                <TerminalView
+                  sessionId={null}
+                  connectionType="ssh"
+                  isConnected={false}
+                  isActive={activeView === "terminal"}
+                  onOpenConnection={openConnection}
+                  onTerminalData={handleTerminalData}
                 />
-                {tabs.length === 0 ? (
+              ) : (
+                tabs.map((tab) => (
                   <TerminalView
-                    sessionId={null}
-                    connectionType="ssh"
-                    isConnected={false}
-                    isActive={true}
+                    key={tab.id}
+                    sessionId={tab.sessionId || null}
+                    connectionType={tab.connectionType}
+                    isConnected={tab.isConnected}
+                    isActive={activeView === "terminal" && tab.id === activeTabId}
                     onOpenConnection={openConnection}
                     onTerminalData={handleTerminalData}
                   />
-                ) : (
-                  tabs.map((tab) => (
-                    <TerminalView
-                      key={tab.id}
-                      sessionId={tab.sessionId || null}
-                      connectionType={tab.connectionType}
-                      isConnected={tab.isConnected}
-                      isActive={tab.id === activeTabId}
-                      onOpenConnection={openConnection}
-                      onTerminalData={handleTerminalData}
-                    />
-                  ))
-                )}
-              </div>
-            ) : activeView === "settings" ? (
-              <SettingsPanel />
-            ) : (
-              <LogViewer />
-            )}
+                ))
+              )}
+            </div>
+            {activeView === "settings" && <SettingsPanel />}
+            {activeView === "logs" && <LogViewer />}
             {showAiPanel && (
               <AIChatPanel
                 onClose={() => setShowAiPanel(false)}
