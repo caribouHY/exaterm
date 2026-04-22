@@ -132,7 +132,7 @@ export default function App() {
             {showAiPanel && (
               <AIChatPanel
                 onClose={() => setShowAiPanel(false)}
-                terminalBuffer={terminalBuffer.current}
+                terminalBuffer={terminalBuffer}
               />
             )}
           </div>

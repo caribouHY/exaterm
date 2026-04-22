@@ -6,7 +6,7 @@ import "./AIChatPanel.css";
 
 interface AIChatPanelProps {
   onClose: () => void;
-  terminalBuffer: string;
+  terminalBuffer: React.MutableRefObject<string>;
 }
 
 export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProps) {
@@ -66,7 +66,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
         provider: selectedProvider,
         model: selectedModel,
         messages: newMessages,
-        terminalContext: useContext ? terminalBuffer : null,
+        terminalContext: useContext ? terminalBuffer.current : null,
         apiKey: currentApiKey,
       });
       setMessages([...newMessages, { role: "assistant", content: response }]);
