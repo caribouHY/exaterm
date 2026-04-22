@@ -41,7 +41,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
           setModels(prev => [...prev.filter(m => m.provider !== 'Ollama'), ...ollamaModels]);
         })
         .catch(e => console.error("Ollama models fetch failed:", e));
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -51,7 +51,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
   const providerModels = models.filter((m) => m.provider === selectedProvider);
   const currentApiKey = selectedProvider === "OpenAi" ? apiKeys.openai
     : selectedProvider === "Anthropic" ? apiKeys.anthropic
-    : selectedProvider === "Gemini" ? apiKeys.gemini : apiKeys.ollama;
+      : selectedProvider === "Gemini" ? apiKeys.gemini : apiKeys.ollama;
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -83,23 +83,6 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
     <div className="ai-panel">
       <div className="ai-panel__header">
         <span className="ai-panel__title">AI アシスタント</span>
-        <div className="ai-panel__provider">
-          <select value={selectedProvider} onChange={(e) => {
-            setSelectedProvider(e.target.value);
-            const pm = models.filter((m) => m.provider === e.target.value);
-            if (pm.length > 0) setSelectedModel(pm[0].model_id);
-          }}>
-            <option value="OpenAi">OpenAI</option>
-            <option value="Anthropic">Anthropic</option>
-            <option value="Gemini">Gemini</option>
-            <option value="Ollama">Ollama</option>
-          </select>
-          <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
-            {providerModels.map((m) => (
-              <option key={m.model_id} value={m.model_id}>{m.display_name}</option>
-            ))}
-          </select>
-        </div>
         <button className="btn-icon" onClick={onClose}><X size={14} /></button>
       </div>
 
@@ -131,13 +114,6 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
       </div>
 
       <div className="ai-panel__input-area">
-        <button
-          className={`ai-panel__context-btn ${useContext ? "ai-panel__context-btn--active" : ""}`}
-          onClick={() => setUseContext(!useContext)}
-        >
-          <Terminal size={12} />
-          {useContext ? "ターミナル出力を含む ✓" : "ターミナル出力を含む"}
-        </button>
         <div className="ai-panel__input-row">
           <textarea
             className="ai-panel__input"
@@ -150,6 +126,34 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
           <button className="ai-panel__send" onClick={handleSend} disabled={loading || !input.trim()}>
             <Send size={16} />
           </button>
+        </div>
+
+        <div className="ai-panel__bottom-row">
+          <button
+            className={`ai-panel__context-btn ${useContext ? "ai-panel__context-btn--active" : ""}`}
+            onClick={() => setUseContext(!useContext)}
+          >
+            <Terminal size={12} />
+            {useContext ? "ターミナルの内容を含める ✓" : "ターミナルの内容を含める"}
+          </button>
+
+          <div className="ai-panel__provider">
+            <select value={selectedProvider} onChange={(e) => {
+              setSelectedProvider(e.target.value);
+              const pm = models.filter((m) => m.provider === e.target.value);
+              if (pm.length > 0) setSelectedModel(pm[0].model_id);
+            }}>
+              <option value="OpenAi">OpenAI</option>
+              <option value="Anthropic">Anthropic</option>
+              <option value="Gemini">Gemini</option>
+              <option value="Ollama">Ollama</option>
+            </select>
+            <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
+              {providerModels.map((m) => (
+                <option key={m.model_id} value={m.model_id}>{m.display_name}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
     </div>

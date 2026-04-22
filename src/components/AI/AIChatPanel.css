@@ -14,9 +14,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 0 12px;
+  height: var(--tab-height);
   border-bottom: 1px solid var(--border-secondary);
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .ai-panel__title {
@@ -140,7 +142,8 @@
   border-top: 1px solid var(--border-secondary);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  background: var(--bg-surface);
 }
 
 .ai-panel__context-btn {
@@ -170,6 +173,14 @@
 .ai-panel__input-row {
   display: flex;
   gap: 6px;
+  align-items: flex-end;
+}
+
+.ai-panel__bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .ai-panel__input {
