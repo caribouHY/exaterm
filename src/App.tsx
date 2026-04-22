@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import TitleBar from "./components/TitleBar/TitleBar";
 import Sidebar from "./components/Sidebar/Sidebar";
 import TerminalTabs from "./components/Terminal/TerminalTabs";
@@ -57,6 +57,24 @@ export default function App() {
   }, []);
 
   const openConnection = () => setShowConnection(true);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.key.toLowerCase();
+        if (key === "n" || key === "t") {
+          e.preventDefault();
+          setShowConnection(true);
+        } else if (key === ",") {
+          e.preventDefault();
+          setActiveView("settings");
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   return (
     <div className="app">

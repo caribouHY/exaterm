@@ -60,6 +60,16 @@ export default function TerminalView({
       allowProposedApi: true,
     });
 
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.key.toLowerCase();
+        if (key === "n" || key === "t" || key === ",") {
+          return false;
+        }
+      }
+      return true;
+    });
+
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon();
     const searchAddon = new SearchAddon();
