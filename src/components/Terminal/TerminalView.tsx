@@ -6,7 +6,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { Monitor } from "lucide-react";
-import type { Encoding } from "../../types";
+import type { Encoding, TerminalConfig } from "../../types";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
@@ -16,12 +16,13 @@ interface TerminalViewProps {
   isConnected: boolean;
   isActive: boolean;
   encoding: Encoding;
+  terminalConfig?: TerminalConfig;
   onOpenConnection: () => void;
   onTerminalData?: (data: string) => void;
 }
 
 export default function TerminalView({
-  sessionId, connectionType, isConnected, isActive, encoding, onOpenConnection, onTerminalData,
+  sessionId, connectionType, isConnected, isActive, encoding, terminalConfig, onOpenConnection, onTerminalData,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -38,8 +39,8 @@ export default function TerminalView({
     if (!containerRef.current || !sessionId || !isConnected) return;
 
     const term = new Terminal({
-      fontFamily: "'JetBrains Mono', Consolas, 'Courier New', monospace",
-      fontSize: 14,
+      fontFamily: terminalConfig?.font_family || "'JetBrains Mono', Consolas, 'Courier New', monospace",
+      fontSize: terminalConfig?.font_size || 14,
       theme: {
         background: "#1e1e1e",
         foreground: "#cccccc",
@@ -63,8 +64,8 @@ export default function TerminalView({
         brightWhite: "#ffffff",
       },
       cursorBlink: true,
-      cursorStyle: "block",
-      scrollback: 10000,
+      cursorStyle: (terminalConfig?.cursor_style as any) || "block",
+      scrollback: terminalConfig?.scrollback || 10000,
       allowProposedApi: true,
     });
 
@@ -99,10 +100,7 @@ export default function TerminalView({
     });
 
     // 設定を読み込み、自動ログが有効な場合のみロギングを開始
-    let loggingEnabled = true; // デフォルトは有効
-    invoke<{ terminal: { auto_session_log: boolean } }>("config_load")
-      .then((cfg) => { loggingEnabled = cfg.terminal.auto_session_log; })
-      .catch(() => {}); // 取得失敗時はデフォルト(true)のまま
+    const loggingEnabled = terminalConfig?.auto_session_log ?? true;
 
     // Backend data -> terminal
     const eventPrefix = connectionType === "ssh" ? "ssh://data" : "serial://data";
@@ -154,6 +152,21 @@ export default function TerminalView({
       return () => clearTimeout(timer);
     }
   }, [isActive]);
+
+  // Update terminal options when config changes
+  useEffect(() => {
+    if (termRef.current && terminalConfig) {
+      termRef.current.options.fontSize = terminalConfig.font_size;
+      termRef.current.options.fontFamily = terminalConfig.font_family;
+      termRef.current.options.cursorStyle = terminalConfig.cursor_style as any;
+      termRef.current.options.scrollback = terminalConfig.scrollback;
+      
+      // Re-fit to adjust for potential size changes
+      setTimeout(() => {
+        fitRef.current?.fit();
+      }, 50);
+    }
+  }, [terminalConfig]);
 
   if (!sessionId || !isConnected) {
     return (

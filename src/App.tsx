@@ -8,7 +8,8 @@ import AIChatPanel from "./components/AI/AIChatPanel";
 import StatusBar from "./components/StatusBar/StatusBar";
 import SettingsPanel from "./components/Settings/SettingsPanel";
 import LogViewer from "./components/Log/LogViewer";
-import type { TabInfo, ViewMode, ConnectionType, Encoding } from "./types";
+import type { TabInfo, ViewMode, ConnectionType, Encoding, AppConfig } from "./types";
+import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
   const [activeView, setActiveView] = useState<ViewMode>("terminal");
   const [aiPanelWidth, setAiPanelWidth] = useState(340);
   const [isDragging, setIsDragging] = useState(false);
+  const [config, setConfig] = useState<AppConfig | null>(null);
   const terminalBuffer = useRef("");
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
@@ -83,6 +85,19 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const refreshConfig = useCallback(async () => {
+    try {
+      const cfg = await invoke<AppConfig>("config_load");
+      setConfig(cfg);
+    } catch (e) {
+      console.error("Failed to load config:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshConfig();
+  }, [refreshConfig]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -141,6 +156,7 @@ export default function App() {
                   onOpenConnection={openConnection}
                   onTerminalData={handleTerminalData}
                   encoding="utf-8"
+                  terminalConfig={config?.terminal}
                 />
               ) : (
                 tabs.map((tab) => (
@@ -153,11 +169,12 @@ export default function App() {
                     onOpenConnection={openConnection}
                     onTerminalData={handleTerminalData}
                     encoding={tab.encoding}
+                    terminalConfig={config?.terminal}
                   />
                 ))
               )}
             </div>
-            {activeView === "settings" && <SettingsPanel />}
+            {activeView === "settings" && <SettingsPanel onSave={refreshConfig} />}
             {activeView === "logs" && <LogViewer />}
             {showAiPanel && (
               <>

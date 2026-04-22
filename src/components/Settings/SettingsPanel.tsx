@@ -4,7 +4,11 @@ import { Check } from "lucide-react";
 import type { AppConfig } from "../../types";
 import "./SettingsPanel.css";
 
-export default function SettingsPanel() {
+interface SettingsPanelProps {
+  onSave?: () => void;
+}
+
+export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -17,6 +21,7 @@ export default function SettingsPanel() {
     try {
       await invoke("config_save", { config });
       setSaved(true);
+      if (onSave) onSave();
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       console.error(e);
