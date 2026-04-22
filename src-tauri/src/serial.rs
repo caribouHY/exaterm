@@ -60,7 +60,17 @@ fn to_flow_control(f: &str) -> serialport::FlowControl {
 #[tauri::command]
 pub fn serial_list_ports() -> Result<Vec<PortInfo>, String> {
     let ports = serialport::available_ports().map_err(|e| format!("ポート一覧取得エラー: {}", e))?;
-    Ok(ports.into_iter().map(|p| PortInfo { name: p.port_name, port_type: format!("{:?}", p.port_type) }).collect())
+    Ok(ports.into_iter().map(|p| {
+        let port_type_str = match &p.port_type {
+            serialport::SerialPortType::UsbPort(info) => {
+                info.product.clone().unwrap_or_else(|| "USB".to_string())
+            },
+            serialport::SerialPortType::PciPort => "PCI".to_string(),
+            serialport::SerialPortType::BluetoothPort => "Bluetooth".to_string(),
+            serialport::SerialPortType::Unknown => "Unknown".to_string(),
+        };
+        PortInfo { name: p.port_name, port_type: port_type_str }
+    }).collect())
 }
 
 #[tauri::command]
