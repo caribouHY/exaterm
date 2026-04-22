@@ -53,6 +53,7 @@ export interface AiConfig {
   openai_api_key: string;
   anthropic_api_key: string;
   gemini_api_key: string;
+  ollama_base_url: string;
   default_provider: string;
   default_model: string;
 }

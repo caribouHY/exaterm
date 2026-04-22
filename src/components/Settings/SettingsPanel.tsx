@@ -47,6 +47,7 @@ export default function SettingsPanel() {
               <option value="OpenAi">OpenAI</option>
               <option value="Anthropic">Anthropic</option>
               <option value="Gemini">Google Gemini</option>
+              <option value="Ollama">Ollama</option>
             </select>
           </div>
         </div>
@@ -61,6 +62,10 @@ export default function SettingsPanel() {
         <div style={{ marginBottom: 14 }}>
           <label className="label">Google Gemini API キー</label>
           <input className="input" type="password" value={config.ai.gemini_api_key} onChange={(e) => update("ai.gemini_api_key", e.target.value)} placeholder="AIza..." />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label className="label">Ollama ベース URL</label>
+          <input className="input" type="text" value={config.ai.ollama_base_url || "http://localhost:11434"} onChange={(e) => update("ai.ollama_base_url", e.target.value)} placeholder="http://localhost:11434" />
         </div>
       </div>
 

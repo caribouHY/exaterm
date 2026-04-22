@@ -17,7 +17,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
   const [selectedModel, setSelectedModel] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("OpenAi");
   const [useContext, setUseContext] = useState(false);
-  const [apiKeys, setApiKeys] = useState({ openai: "", anthropic: "", gemini: "" });
+  const [apiKeys, setApiKeys] = useState({ openai: "", anthropic: "", gemini: "", ollama: "" });
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -26,13 +26,21 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
       if (m.length > 0) setSelectedModel(m[0].model_id);
     });
     invoke<any>("config_load").then((cfg) => {
+      const ollamaUrl = cfg.ai.ollama_base_url || "http://localhost:11434";
       setApiKeys({
         openai: cfg.ai.openai_api_key || "",
         anthropic: cfg.ai.anthropic_api_key || "",
         gemini: cfg.ai.gemini_api_key || "",
+        ollama: ollamaUrl,
       });
       if (cfg.ai.default_provider) setSelectedProvider(cfg.ai.default_provider);
       if (cfg.ai.default_model) setSelectedModel(cfg.ai.default_model);
+
+      invoke<AiModelInfo[]>("ai_get_ollama_models", { baseUrl: ollamaUrl })
+        .then((ollamaModels) => {
+          setModels(prev => [...prev.filter(m => m.provider !== 'Ollama'), ...ollamaModels]);
+        })
+        .catch(e => console.error("Ollama models fetch failed:", e));
     }).catch(() => {});
   }, []);
 
@@ -42,7 +50,8 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
 
   const providerModels = models.filter((m) => m.provider === selectedProvider);
   const currentApiKey = selectedProvider === "OpenAi" ? apiKeys.openai
-    : selectedProvider === "Anthropic" ? apiKeys.anthropic : apiKeys.gemini;
+    : selectedProvider === "Anthropic" ? apiKeys.anthropic
+    : selectedProvider === "Gemini" ? apiKeys.gemini : apiKeys.ollama;
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -83,6 +92,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
             <option value="OpenAi">OpenAI</option>
             <option value="Anthropic">Anthropic</option>
             <option value="Gemini">Gemini</option>
+            <option value="Ollama">Ollama</option>
           </select>
           <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
             {providerModels.map((m) => (

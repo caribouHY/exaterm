@@ -14,9 +14,14 @@ pub struct AiConfig {
     pub openai_api_key: String,
     pub anthropic_api_key: String,
     pub gemini_api_key: String,
+    #[serde(default = "default_ollama_url")]
+    pub ollama_base_url: String,
     pub default_provider: String,
     pub default_model: String,
 }
+
+fn default_ollama_url() -> String { "http://localhost:11434".into() }
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerminalConfig {
@@ -47,7 +52,8 @@ impl Default for AppConfig {
         Self {
             ai: AiConfig {
                 openai_api_key: String::new(), anthropic_api_key: String::new(),
-                gemini_api_key: String::new(), default_provider: "OpenAi".into(),
+                gemini_api_key: String::new(), ollama_base_url: default_ollama_url(),
+                default_provider: "OpenAi".into(),
                 default_model: "gpt-4o".into(),
             },
             terminal: TerminalConfig {

@@ -28,6 +28,7 @@ pub fn run() {
             serial::serial_disconnect,
             // AI
             ai::ai_get_models,
+            ai::ai_get_ollama_models,
             ai::ai_chat,
             ai::ai_chat_stream,
             // Logger

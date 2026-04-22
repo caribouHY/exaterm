@@ -6,6 +6,7 @@ pub enum AiProvider {
     OpenAi,
     Anthropic,
     Gemini,
+    Ollama,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,6 +32,30 @@ pub fn ai_get_models() -> Vec<AiModelInfo> {
         AiModelInfo { provider: "Gemini".into(), model_id: "gemini-2.5-pro".into(), display_name: "Gemini 2.5 Pro".into() },
         AiModelInfo { provider: "Gemini".into(), model_id: "gemini-2.0-flash".into(), display_name: "Gemini 2.0 Flash".into() },
     ]
+}
+
+#[tauri::command]
+pub async fn ai_get_ollama_models(base_url: String) -> Result<Vec<AiModelInfo>, String> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/api/tags", base_url.trim_end_matches('/'));
+    
+    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    
+    let mut models = Vec::new();
+    if let Some(models_arr) = body["models"].as_array() {
+        for m in models_arr {
+            if let Some(name) = m["name"].as_str() {
+                models.push(AiModelInfo {
+                    provider: "Ollama".into(),
+                    model_id: name.into(),
+                    display_name: name.into(),
+                });
+            }
+        }
+    }
+    
+    Ok(models)
 }
 
 fn build_system_prompt(terminal_context: &Option<String>) -> String {
@@ -80,6 +105,16 @@ pub async fn ai_chat(
                 .send().await.map_err(|e| e.to_string())?;
             let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
             body["candidates"][0]["content"]["parts"][0]["text"].as_str().map(|s|s.to_string()).ok_or_else(||format!("応答エラー: {}",body))
+        }
+        AiProvider::Ollama => {
+            let mut msgs = vec![serde_json::json!({"role":"system","content":sys})];
+            for m in &messages { msgs.push(serde_json::json!({"role":&m.role,"content":&m.content})); }
+            let url = format!("{}/api/chat", api_key.trim_end_matches('/'));
+            let resp = client.post(&url)
+                .json(&serde_json::json!({"model":model,"messages":msgs,"stream":false}))
+                .send().await.map_err(|e| e.to_string())?;
+            let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+            body["message"]["content"].as_str().map(|s|s.to_string()).ok_or_else(||format!("応答エラー: {}",body))
         }
     }
 }
