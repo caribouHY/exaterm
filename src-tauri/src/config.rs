@@ -15,9 +15,6 @@ fn default_language() -> String { "en".into() }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiConfig {
-    pub openai_api_key: String,
-    pub anthropic_api_key: String,
-    pub gemini_api_key: String,
     #[serde(default = "default_ollama_url")]
     pub ollama_base_url: String,
     pub default_provider: String,
@@ -56,8 +53,7 @@ impl Default for AppConfig {
         Self {
             language: default_language(),
             ai: AiConfig {
-                openai_api_key: String::new(), anthropic_api_key: String::new(),
-                gemini_api_key: String::new(), ollama_base_url: default_ollama_url(),
+                ollama_base_url: default_ollama_url(),
                 default_provider: "OpenAi".into(),
                 default_model: "gpt-4o".into(),
             },

@@ -29,6 +29,9 @@ pub fn run() {
             // AI
             ai::ai_get_models,
             ai::ai_get_ollama_models,
+            ai::ai_secret_status,
+            ai::ai_secret_set,
+            ai::ai_secret_clear,
             ai::ai_chat,
             ai::ai_chat_stream,
             // Logger

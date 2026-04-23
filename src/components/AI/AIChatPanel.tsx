@@ -19,7 +19,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
   const [selectedModel, setSelectedModel] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("OpenAi");
   const [useContext, setUseContext] = useState(false);
-  const [apiKeys, setApiKeys] = useState({ openai: "", anthropic: "", gemini: "", ollama: "" });
+  const [ollamaBaseUrl, setOllamaBaseUrl] = useState("http://localhost:11434");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,12 +29,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
     });
     invoke<any>("config_load").then((cfg) => {
       const ollamaUrl = cfg.ai.ollama_base_url || "http://localhost:11434";
-      setApiKeys({
-        openai: cfg.ai.openai_api_key || "",
-        anthropic: cfg.ai.anthropic_api_key || "",
-        gemini: cfg.ai.gemini_api_key || "",
-        ollama: ollamaUrl,
-      });
+      setOllamaBaseUrl(ollamaUrl);
       if (cfg.ai.default_provider) setSelectedProvider(cfg.ai.default_provider);
       if (cfg.ai.default_model) setSelectedModel(cfg.ai.default_model);
 
@@ -51,9 +46,6 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
   }, [messages]);
 
   const providerModels = models.filter((m) => m.provider === selectedProvider);
-  const currentApiKey = selectedProvider === "OpenAi" ? apiKeys.openai
-    : selectedProvider === "Anthropic" ? apiKeys.anthropic
-      : selectedProvider === "Gemini" ? apiKeys.gemini : apiKeys.ollama;
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -69,14 +61,18 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
         model: selectedModel,
         messages: newMessages,
         terminalContext: useContext ? terminalBuffer.current : null,
-        apiKey: currentApiKey,
         language: i18n.language,
+        ollamaBaseUrl: selectedProvider === "Ollama" ? ollamaBaseUrl : null,
       });
       setMessages([...newMessages, { role: "assistant", content: response }]);
     } catch (e: any) {
+      const detail = typeof e === "string" ? e : e.message || "Unknown error";
+      const guidance = selectedProvider === "Ollama"
+        ? "Please check whether the Ollama URL is correct and the Ollama server is running."
+        : "Please check whether the API key is saved in Settings.";
       setMessages([...newMessages, {
         role: "assistant",
-        content: `Error: ${typeof e === "string" ? e : e.message || "Unknown error"}\n\nPlease check if API keys are set correctly in Settings.`,
+        content: `Error: ${detail}\n\n${guidance}`,
       }]);
     }
     setLoading(false);

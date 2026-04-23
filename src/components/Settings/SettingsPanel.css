@@ -49,6 +49,12 @@
   margin-top: 20px;
 }
 
+.settings-secret-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .settings-saved {
   display: inline-flex;
   align-items: center;
@@ -56,6 +62,13 @@
   color: var(--accent-green);
   font-size: 12px;
   animation: fadeIn 0.2s ease;
+}
+
+.settings-error {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent-red);
+  font-size: 12px;
 }
 
 /* ── トグルスイッチ ── */

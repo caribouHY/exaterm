@@ -9,19 +9,80 @@ interface SettingsPanelProps {
   onSave?: () => void;
 }
 
+interface AiSecretStatus {
+  openai: boolean;
+  anthropic: boolean;
+  gemini: boolean;
+}
+
+interface SecretEdits {
+  openai: string;
+  anthropic: string;
+  gemini: string;
+}
+
+const MASKED_VALUE = "••••••••";
+
+const EMPTY_SECRET_STATUS: AiSecretStatus = {
+  openai: false,
+  anthropic: false,
+  gemini: false,
+};
+
+const EMPTY_SECRET_EDITS: SecretEdits = {
+  openai: "",
+  anthropic: "",
+  gemini: "",
+};
+
 export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   const { t, i18n } = useTranslation();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const [secretStatus, setSecretStatus] = useState<AiSecretStatus>(EMPTY_SECRET_STATUS);
+  const [secretEdits, setSecretEdits] = useState<SecretEdits>(EMPTY_SECRET_EDITS);
+  const [secretEditMode, setSecretEditMode] = useState({
+    openai: false,
+    anthropic: false,
+    gemini: false,
+  });
+
+  const refreshSecretStatus = async () => {
+    try {
+      const status = await invoke<AiSecretStatus>("ai_secret_status");
+      setSecretStatus(status);
+    } catch (e) {
+      console.error("Failed to load AI secret status:", e);
+      setSecretStatus(EMPTY_SECRET_STATUS);
+    }
+  };
 
   useEffect(() => {
     invoke<AppConfig>("config_load").then(setConfig).catch(() => {});
+    refreshSecretStatus();
   }, []);
 
   const handleSave = async () => {
     if (!config) return;
     try {
+      setError("");
       await invoke("config_save", { config });
+
+      if (secretEdits.openai.trim()) {
+        await invoke("ai_secret_set", { provider: "OpenAi", value: secretEdits.openai.trim() });
+      }
+      if (secretEdits.anthropic.trim()) {
+        await invoke("ai_secret_set", { provider: "Anthropic", value: secretEdits.anthropic.trim() });
+      }
+      if (secretEdits.gemini.trim()) {
+        await invoke("ai_secret_set", { provider: "Gemini", value: secretEdits.gemini.trim() });
+      }
+
+      setSecretEdits(EMPTY_SECRET_EDITS);
+      setSecretEditMode({ openai: false, anthropic: false, gemini: false });
+      await refreshSecretStatus();
+
       if (config.language !== i18n.language) {
         i18n.changeLanguage(config.language);
       }
@@ -30,6 +91,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       console.error(e);
+      setError(typeof e === "string" ? e : "Failed to save settings.");
     }
   };
 
@@ -42,6 +104,64 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     for (let i = 0; i < keys.length - 1; i++) obj = obj[keys[i]];
     obj[keys[keys.length - 1]] = value;
     setConfig(newConfig);
+  };
+
+  const clearSecret = async (provider: "OpenAi" | "Anthropic" | "Gemini", key: "openai" | "anthropic" | "gemini") => {
+    try {
+      await invoke("ai_secret_clear", { provider });
+      setSecretEdits((prev) => ({ ...prev, [key]: "" }));
+      setSecretEditMode((prev) => ({ ...prev, [key]: false }));
+      setSecretStatus((prev) => ({ ...prev, [key]: false }));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const beginEditSecret = (key: "openai" | "anthropic" | "gemini") => {
+    setSecretEditMode((prev) => ({ ...prev, [key]: true }));
+    setSecretEdits((prev) => ({ ...prev, [key]: "" }));
+  };
+
+  const cancelEditSecret = (key: "openai" | "anthropic" | "gemini") => {
+    setSecretEditMode((prev) => ({ ...prev, [key]: false }));
+    setSecretEdits((prev) => ({ ...prev, [key]: "" }));
+  };
+
+  const renderSecretField = (
+    key: "openai" | "anthropic" | "gemini",
+    provider: "OpenAi" | "Anthropic" | "Gemini",
+    label: string,
+    placeholder: string,
+  ) => {
+    const hasSecret = secretStatus[key];
+    const isEditing = secretEditMode[key];
+    const canType = !hasSecret || isEditing;
+    const value = canType ? secretEdits[key] : MASKED_VALUE;
+
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <label className="label">{label}</label>
+        <div className="settings-secret-row">
+          <input
+            className="input"
+            type="password"
+            value={value}
+            readOnly={!canType}
+            onChange={(e) => setSecretEdits((prev) => ({ ...prev, [key]: e.target.value }))}
+            placeholder={hasSecret ? "" : placeholder}
+          />
+          {hasSecret && !isEditing && (
+            <>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => beginEditSecret(key)}>{t("settings.change")}</button>
+              <button type="button" className="btn btn-danger btn-sm" onClick={() => clearSecret(provider, key)}>{t("settings.clear")}</button>
+            </>
+          )}
+          {isEditing && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => cancelEditSecret(key)}>{t("settings.cancel")}</button>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -73,18 +193,11 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             </select>
           </div>
         </div>
-        <div style={{ marginBottom: 14 }}>
-          <label className="label">{t("settings.openai_key")}</label>
-          <input className="input" type="password" value={config.ai.openai_api_key} onChange={(e) => update("ai.openai_api_key", e.target.value)} placeholder="sk-..." />
-        </div>
-        <div style={{ marginBottom: 14 }}>
-          <label className="label">{t("settings.anthropic_key")}</label>
-          <input className="input" type="password" value={config.ai.anthropic_api_key} onChange={(e) => update("ai.anthropic_api_key", e.target.value)} placeholder="sk-ant-..." />
-        </div>
-        <div style={{ marginBottom: 14 }}>
-          <label className="label">{t("settings.gemini_key")}</label>
-          <input className="input" type="password" value={config.ai.gemini_api_key} onChange={(e) => update("ai.gemini_api_key", e.target.value)} placeholder="AIza..." />
-        </div>
+
+        {renderSecretField("openai", "OpenAi", t("settings.openai_key"), "sk-...")}
+        {renderSecretField("anthropic", "Anthropic", t("settings.anthropic_key"), "sk-ant-...")}
+        {renderSecretField("gemini", "Gemini", t("settings.gemini_key"), "AIza...")}
+
         <div style={{ marginBottom: 14 }}>
           <label className="label">{t("settings.ollama_url")}</label>
           <input className="input" type="text" value={config.ai.ollama_base_url || "http://localhost:11434"} onChange={(e) => update("ai.ollama_base_url", e.target.value)} placeholder="http://localhost:11434" />
@@ -130,6 +243,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       <div className="settings-actions">
         <button className="btn btn-primary" onClick={handleSave}>{t("settings.save")}</button>
         {saved && <span className="settings-saved"><Check size={14} /> {t("settings.saved")}</span>}
+        {error && <span className="settings-error">{error}</span>}
       </div>
     </div>
   );
