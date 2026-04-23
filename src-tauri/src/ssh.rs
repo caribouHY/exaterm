@@ -11,7 +11,6 @@ use uuid::Uuid;
 struct SshSession {
     handle: russh::client::Handle<SshClientHandler>,
     channel: russh::Channel<russh::client::Msg>,
-    session_id: String,
 }
 
 /// Global SSH session store
@@ -111,7 +110,7 @@ pub async fn ssh_connect(
         return Err("SSH認証失敗: ユーザー名またはパスワードが正しくありません".to_string());
     }
 
-    let mut channel = handle
+    let channel = handle
         .channel_open_session()
         .await
         .map_err(|e| format!("SSHチャネルオープンエラー: {}", e))?;
@@ -137,7 +136,6 @@ pub async fn ssh_connect(
     let session = SshSession {
         handle,
         channel,
-        session_id: session_id.clone(),
     };
 
     state
@@ -164,7 +162,7 @@ pub async fn ssh_write(
         .ok_or("セッションが見つかりません")?
         .clone();
 
-    let mut session = session.lock().await;
+    let session = session.lock().await;
     session
         .channel
         .data(data.as_bytes())
@@ -188,7 +186,7 @@ pub async fn ssh_resize(
         .ok_or("セッションが見つかりません")?
         .clone();
 
-    let mut session = session.lock().await;
+    let session = session.lock().await;
     session
         .channel
         .window_change(cols, rows, 0, 0)
@@ -207,7 +205,7 @@ pub async fn ssh_disconnect(
 ) -> Result<(), String> {
     let mut sessions = state.sessions.lock().await;
     if let Some(session) = sessions.remove(&session_id) {
-        let mut session = session.lock().await;
+        let session = session.lock().await;
         let _ = session
             .handle
             .disconnect(Disconnect::ByApplication, "User disconnected", "en")
@@ -216,4 +214,3 @@ pub async fn ssh_disconnect(
     let _ = app.emit("ssh://disconnected", &session_id);
     Ok(())
 }
-

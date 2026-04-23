@@ -1,10 +1,10 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,7 +18,13 @@ pub struct SerialConfig {
 
 impl Default for SerialConfig {
     fn default() -> Self {
-        Self { baud_rate: 9600, data_bits: 8, parity: "none".into(), stop_bits: 1, flow_control: "none".into() }
+        Self {
+            baud_rate: 9600,
+            data_bits: 8,
+            parity: "none".into(),
+            stop_bits: 1,
+            flow_control: "none".into(),
+        }
     }
 }
 
@@ -29,7 +35,6 @@ pub struct PortInfo {
 }
 
 struct SerialSession {
-    session_id: String,
     running: Arc<Mutex<bool>>,
     writer: Arc<Mutex<Box<dyn serialport::SerialPort>>>,
 }
@@ -40,42 +45,70 @@ pub struct SerialState {
 
 impl SerialState {
     pub fn new() -> Self {
-        Self { sessions: Arc::new(Mutex::new(HashMap::new())) }
+        Self {
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 }
 
 fn to_data_bits(b: u8) -> serialport::DataBits {
-    match b { 5 => serialport::DataBits::Five, 6 => serialport::DataBits::Six, 7 => serialport::DataBits::Seven, _ => serialport::DataBits::Eight }
+    match b {
+        5 => serialport::DataBits::Five,
+        6 => serialport::DataBits::Six,
+        7 => serialport::DataBits::Seven,
+        _ => serialport::DataBits::Eight,
+    }
 }
 fn to_parity(p: &str) -> serialport::Parity {
-    match p { "odd" => serialport::Parity::Odd, "even" => serialport::Parity::Even, _ => serialport::Parity::None }
+    match p {
+        "odd" => serialport::Parity::Odd,
+        "even" => serialport::Parity::Even,
+        _ => serialport::Parity::None,
+    }
 }
 fn to_stop_bits(b: u8) -> serialport::StopBits {
-    match b { 2 => serialport::StopBits::Two, _ => serialport::StopBits::One }
+    match b {
+        2 => serialport::StopBits::Two,
+        _ => serialport::StopBits::One,
+    }
 }
 fn to_flow_control(f: &str) -> serialport::FlowControl {
-    match f { "software" => serialport::FlowControl::Software, "hardware" => serialport::FlowControl::Hardware, _ => serialport::FlowControl::None }
+    match f {
+        "software" => serialport::FlowControl::Software,
+        "hardware" => serialport::FlowControl::Hardware,
+        _ => serialport::FlowControl::None,
+    }
 }
 
 #[tauri::command]
 pub fn serial_list_ports() -> Result<Vec<PortInfo>, String> {
-    let ports = serialport::available_ports().map_err(|e| format!("ポート一覧取得エラー: {}", e))?;
-    Ok(ports.into_iter().map(|p| {
-        let port_type_str = match &p.port_type {
-            serialport::SerialPortType::UsbPort(info) => {
-                info.product.clone().unwrap_or_else(|| "USB".to_string())
-            },
-            serialport::SerialPortType::PciPort => "PCI".to_string(),
-            serialport::SerialPortType::BluetoothPort => "Bluetooth".to_string(),
-            serialport::SerialPortType::Unknown => "Unknown".to_string(),
-        };
-        PortInfo { name: p.port_name, port_type: port_type_str }
-    }).collect())
+    let ports =
+        serialport::available_ports().map_err(|e| format!("ポート一覧取得エラー: {}", e))?;
+    Ok(ports
+        .into_iter()
+        .map(|p| {
+            let port_type_str = match &p.port_type {
+                serialport::SerialPortType::UsbPort(info) => {
+                    info.product.clone().unwrap_or_else(|| "USB".to_string())
+                }
+                serialport::SerialPortType::PciPort => "PCI".to_string(),
+                serialport::SerialPortType::BluetoothPort => "Bluetooth".to_string(),
+                serialport::SerialPortType::Unknown => "Unknown".to_string(),
+            };
+            PortInfo {
+                name: p.port_name,
+                port_type: port_type_str,
+            }
+        })
+        .collect())
 }
 
 #[tauri::command]
 pub async fn serial_connect(
-    app: AppHandle, state: tauri::State<'_, SerialState>, port: String, config: SerialConfig,
+    app: AppHandle,
+    state: tauri::State<'_, SerialState>,
+    port: String,
+    config: SerialConfig,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let running = Arc::new(Mutex::new(true));
@@ -89,14 +122,21 @@ pub async fn serial_connect(
         .open()
         .map_err(|e| format!("シリアルポートオープンエラー: {}", e))?;
 
-    let writer = Arc::new(Mutex::new(serial_port.try_clone().map_err(|e| format!("ポート複製エラー: {}", e))?));
+    let writer = Arc::new(Mutex::new(
+        serial_port
+            .try_clone()
+            .map_err(|e| format!("ポート複製エラー: {}", e))?,
+    ));
 
     let session = SerialSession {
-        session_id: session_id.clone(),
         running: running.clone(),
         writer: writer.clone(),
     };
-    state.sessions.lock().await.insert(session_id.clone(), session);
+    state
+        .sessions
+        .lock()
+        .await
+        .insert(session_id.clone(), session);
 
     // Background read loop
     let sid = session_id.clone();
@@ -108,7 +148,9 @@ pub async fn serial_connect(
         loop {
             let rt = tokio::runtime::Handle::current();
             let is_running = rt.block_on(async { *run_flag.lock().await });
-            if !is_running { break; }
+            if !is_running {
+                break;
+            }
             match port.read(&mut buf) {
                 Ok(n) if n > 0 => {
                     let _ = app_clone.emit(&format!("serial://data/{}", sid), buf[..n].to_vec());
@@ -129,19 +171,29 @@ pub async fn serial_connect(
 
 #[tauri::command]
 pub async fn serial_write(
-    state: tauri::State<'_, SerialState>, session_id: String, data: String,
+    state: tauri::State<'_, SerialState>,
+    session_id: String,
+    data: String,
 ) -> Result<(), String> {
     let sessions = state.sessions.lock().await;
-    let session = sessions.get(&session_id).ok_or("セッションが見つかりません")?;
+    let session = sessions
+        .get(&session_id)
+        .ok_or("セッションが見つかりません")?;
     let mut writer = session.writer.lock().await;
-    writer.write_all(data.as_bytes()).map_err(|e| format!("送信エラー: {}", e))?;
-    writer.flush().map_err(|e| format!("フラッシュエラー: {}", e))?;
+    writer
+        .write_all(data.as_bytes())
+        .map_err(|e| format!("送信エラー: {}", e))?;
+    writer
+        .flush()
+        .map_err(|e| format!("フラッシュエラー: {}", e))?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn serial_disconnect(
-    app: AppHandle, state: tauri::State<'_, SerialState>, session_id: String,
+    app: AppHandle,
+    state: tauri::State<'_, SerialState>,
+    session_id: String,
 ) -> Result<(), String> {
     let mut sessions = state.sessions.lock().await;
     if let Some(session) = sessions.remove(&session_id) {
