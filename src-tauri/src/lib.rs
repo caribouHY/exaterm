@@ -1,4 +1,5 @@
 mod ssh;
+mod ssh_known_hosts;
 mod serial;
 mod ai;
 mod logger;
@@ -17,6 +18,8 @@ pub fn run() {
         .manage(LoggerState::new())
         .invoke_handler(tauri::generate_handler![
             // SSH
+            ssh::ssh_probe_host_key,
+            ssh::ssh_trust_host_key,
             ssh::ssh_connect,
             ssh::ssh_write,
             ssh::ssh_resize,

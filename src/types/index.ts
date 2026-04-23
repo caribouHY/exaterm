@@ -11,6 +11,17 @@ export interface SshConnectParams {
   rows: number;
 }
 
+export type HostKeyCheckStatus = 'trusted' | 'unknown' | 'mismatch';
+
+export interface HostKeyCheckResult {
+  status: HostKeyCheckStatus;
+  host: string;
+  port: number;
+  algorithm: string;
+  fingerprint: string;
+  known_fingerprint?: string;
+}
+
 export interface SerialConfig {
   baud_rate: number;
   data_bits: number;

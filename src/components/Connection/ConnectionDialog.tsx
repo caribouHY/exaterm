@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { X } from "lucide-react";
-import type { ConnectionType, PortInfo } from "../../types";
+import type { ConnectionType, HostKeyCheckResult, PortInfo } from "../../types";
 import { useTranslation } from "react-i18next";
 import "./ConnectionDialog.css";
 
@@ -15,6 +15,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   const [tab, setTab] = useState<ConnectionType>("ssh");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
+  const [hostKeyCheck, setHostKeyCheck] = useState<HostKeyCheckResult | null>(null);
 
   // SSH fields
   const [host, setHost] = useState("192.168.1.1");
@@ -32,86 +33,215 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
 
   useEffect(() => {
     if (tab === "serial") {
-      invoke<PortInfo[]>("serial_list_ports").then((p) => {
-        setPorts(p);
-        if (p.length > 0 && !selectedPort) setSelectedPort(p[0].name);
-      }).catch(() => {});
+      invoke<PortInfo[]>("serial_list_ports")
+        .then((p) => {
+          setPorts(p);
+          if (p.length > 0 && !selectedPort) setSelectedPort(p[0].name);
+        })
+        .catch(() => {});
     }
-  }, [tab]);
+  }, [selectedPort, tab]);
+
+  const getAutoLogPreference = async () => {
+    try {
+      const cfg = await invoke<{ terminal: { auto_session_log: boolean } }>("config_load");
+      return cfg.terminal.auto_session_log;
+    } catch {
+      return true;
+    }
+  };
+
+  const performSshConnect = async (autoLog: boolean, sshPort: number) => {
+    const result = await invoke<{ session_id: string }>("ssh_connect", {
+      host,
+      port: sshPort,
+      username,
+      password,
+      cols: 120,
+      rows: 30,
+    });
+    if (autoLog) {
+      await invoke("logger_start", {
+        sessionId: result.session_id,
+        connectionType: "ssh",
+        target: `${username}@${host}:${sshPort}`,
+      });
+    }
+    onConnect("ssh", result.session_id, `${username}@${host}`);
+  };
+
+  const handleTrustAndConnect = async (replace: boolean) => {
+    if (!hostKeyCheck) return;
+
+    setError("");
+    setConnecting(true);
+    try {
+      await invoke("ssh_trust_host_key", {
+        host: hostKeyCheck.host,
+        port: hostKeyCheck.port,
+        replace,
+      });
+      setHostKeyCheck(null);
+      const autoLog = await getAutoLogPreference();
+      await performSshConnect(autoLog, hostKeyCheck.port);
+    } catch (e: unknown) {
+      const message = typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
+      setError(message);
+      setConnecting(false);
+    }
+  };
 
   const handleConnect = async () => {
     setError("");
     setConnecting(true);
     try {
-      // 自動ログ設定を確認
-      let autoLog = true;
-      try {
-        const cfg = await invoke<{ terminal: { auto_session_log: boolean } }>("config_load");
-        autoLog = cfg.terminal.auto_session_log;
-      } catch { /* デフォルトtrue */ }
+      const autoLog = await getAutoLogPreference();
 
       if (tab === "ssh") {
-        const result = await invoke<{ session_id: string }>("ssh_connect", {
-          host, port: parseInt(port), username, password, cols: 120, rows: 30,
-        });
-        if (autoLog) {
-          await invoke("logger_start", {
-            sessionId: result.session_id,
-            connectionType: "ssh",
-            target: `${username}@${host}:${port}`,
-          });
+        const sshPort = Number.parseInt(port, 10);
+        if (Number.isNaN(sshPort)) {
+          throw new Error(t("connection.error"));
         }
-        onConnect("ssh", result.session_id, `${username}@${host}`);
-      } else {
-        const sessionId = await invoke<string>("serial_connect", {
-          port: selectedPort,
-          config: {
-            baud_rate: parseInt(baudRate),
-            data_bits: parseInt(dataBits),
-            parity,
-            stop_bits: parseInt(stopBits),
-            flow_control: "none",
-          },
+
+        const result = await invoke<HostKeyCheckResult>("ssh_probe_host_key", {
+          host,
+          port: sshPort,
         });
-        if (autoLog) {
-          await invoke("logger_start", {
-            sessionId,
-            connectionType: "serial",
-            target: selectedPort,
-          });
+
+        if (result.status === "trusted") {
+          await performSshConnect(autoLog, sshPort);
+          return;
         }
-        onConnect("serial", sessionId, selectedPort);
+
+        setHostKeyCheck(result);
+        setConnecting(false);
+        return;
       }
-    } catch (e: any) {
-      setError(typeof e === "string" ? e : e.message || t("connection.error"));
+
+      const sessionId = await invoke<string>("serial_connect", {
+        port: selectedPort,
+        config: {
+          baud_rate: Number.parseInt(baudRate, 10),
+          data_bits: Number.parseInt(dataBits, 10),
+          parity,
+          stop_bits: Number.parseInt(stopBits, 10),
+          flow_control: "none",
+        },
+      });
+      if (autoLog) {
+        await invoke("logger_start", {
+          sessionId,
+          connectionType: "serial",
+          target: selectedPort,
+        });
+      }
+      onConnect("serial", sessionId, selectedPort);
+    } catch (e: unknown) {
+      const message = typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
+      setError(message);
       setConnecting(false);
     }
   };
+
+  const hostKeyTitle =
+    hostKeyCheck?.status === "mismatch"
+      ? t("connection.host_key_mismatch.title")
+      : t("connection.host_key_unknown.title");
 
   return (
     <div className="connection-overlay" onClick={onClose}>
       <div className="connection-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="connection-dialog__header">
-          <span className="connection-dialog__title">{t("connection.new")}</span>
-          <button className="btn-icon" onClick={onClose}><X size={16} /></button>
+          <span className="connection-dialog__title">
+            {hostKeyCheck ? hostKeyTitle : t("connection.new")}
+          </span>
+          <button className="btn-icon" onClick={onClose}>
+            <X size={16} />
+          </button>
         </div>
 
-        <div className="connection-dialog__tabs">
-          <button className={`connection-dialog__tab ${tab === "ssh" ? "connection-dialog__tab--active" : ""}`} onClick={() => setTab("ssh")}>{t("connection.ssh")}</button>
-          <button className={`connection-dialog__tab ${tab === "serial" ? "connection-dialog__tab--active" : ""}`} onClick={() => setTab("serial")}>{t("connection.serial")}</button>
-        </div>
+        {!hostKeyCheck && (
+          <div className="connection-dialog__tabs">
+            <button
+              className={`connection-dialog__tab ${tab === "ssh" ? "connection-dialog__tab--active" : ""}`}
+              onClick={() => setTab("ssh")}
+            >
+              {t("connection.ssh")}
+            </button>
+            <button
+              className={`connection-dialog__tab ${tab === "serial" ? "connection-dialog__tab--active" : ""}`}
+              onClick={() => setTab("serial")}
+            >
+              {t("connection.serial")}
+            </button>
+          </div>
+        )}
 
         <div className="connection-dialog__body">
-          {tab === "ssh" ? (
+          {hostKeyCheck ? (
+            <div className="connection-dialog__host-key">
+              <div className="connection-dialog__host-key-message">
+                {hostKeyCheck.status === "mismatch"
+                  ? t("connection.host_key_mismatch.message", {
+                      host: hostKeyCheck.host,
+                      port: hostKeyCheck.port,
+                    })
+                  : t("connection.host_key_unknown.message", {
+                      host: hostKeyCheck.host,
+                      port: hostKeyCheck.port,
+                    })}
+              </div>
+
+              <div className="connection-dialog__host-key-grid">
+                <div className="connection-dialog__host-key-label">{t("connection.host")}</div>
+                <div className="connection-dialog__host-key-value">
+                  {hostKeyCheck.host}:{hostKeyCheck.port}
+                </div>
+
+                <div className="connection-dialog__host-key-label">{t("connection.host_key_algorithm")}</div>
+                <div className="connection-dialog__host-key-value">{hostKeyCheck.algorithm}</div>
+
+                <div className="connection-dialog__host-key-label">{t("connection.host_key_fingerprint")}</div>
+                <div className="connection-dialog__host-key-value connection-dialog__host-key-value--mono">
+                  SHA256:{hostKeyCheck.fingerprint}
+                </div>
+
+                {hostKeyCheck.known_fingerprint && (
+                  <>
+                    <div className="connection-dialog__host-key-label">
+                      {t("connection.host_key_known_fingerprint")}
+                    </div>
+                    <div className="connection-dialog__host-key-value connection-dialog__host-key-value--mono">
+                      SHA256:{hostKeyCheck.known_fingerprint}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="connection-dialog__host-key-warning">
+                {t("connection.host_key_warning")}
+              </div>
+            </div>
+          ) : tab === "ssh" ? (
             <>
               <div className="connection-dialog__row">
                 <div>
                   <label className="label">{t("connection.host")}</label>
-                  <input className="input" value={host} onChange={(e) => setHost(e.target.value)} placeholder="192.168.1.1" />
+                  <input
+                    className="input"
+                    value={host}
+                    onChange={(e) => setHost(e.target.value)}
+                    placeholder="192.168.1.1"
+                  />
                 </div>
                 <div style={{ maxWidth: 100 }}>
                   <label className="label">{t("connection.port")}</label>
-                  <input className="input" type="number" value={port} onChange={(e) => setPort(e.target.value)} />
+                  <input
+                    className="input"
+                    type="number"
+                    value={port}
+                    onChange={(e) => setPort(e.target.value)}
+                  />
                 </div>
               </div>
               <div>
@@ -120,36 +250,74 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
               </div>
               <div>
                 <label className="label">{t("connection.password")}</label>
-                <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleConnect()} />
+                <input
+                  className="input"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleConnect()}
+                />
               </div>
             </>
           ) : (
             <>
               <div>
                 <label className="label">{t("connection.port")}</label>
-                <select className="select" style={{ width: "100%" }} value={selectedPort} onChange={(e) => setSelectedPort(e.target.value)}>
+                <select
+                  className="select"
+                  style={{ width: "100%" }}
+                  value={selectedPort}
+                  onChange={(e) => setSelectedPort(e.target.value)}
+                >
                   {ports.length === 0 && <option value="">{t("connection.no_ports")}</option>}
-                  {ports.map((p) => <option key={p.name} value={p.name}>{p.name} ({p.port_type})</option>)}
+                  {ports.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.name} ({p.port_type})
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="connection-dialog__row">
                 <div>
                   <label className="label">{t("connection.baud_rate")}</label>
-                  <select className="select" style={{ width: "100%" }} value={baudRate} onChange={(e) => setBaudRate(e.target.value)}>
-                    {["300","1200","2400","4800","9600","19200","38400","57600","115200"].map((r) => <option key={r} value={r}>{r}</option>)}
+                  <select
+                    className="select"
+                    style={{ width: "100%" }}
+                    value={baudRate}
+                    onChange={(e) => setBaudRate(e.target.value)}
+                  >
+                    {["300", "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200"].map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
                   <label className="label">{t("connection.data_bits")}</label>
-                  <select className="select" style={{ width: "100%" }} value={dataBits} onChange={(e) => setDataBits(e.target.value)}>
-                    {["5","6","7","8"].map((d) => <option key={d} value={d}>{d}</option>)}
+                  <select
+                    className="select"
+                    style={{ width: "100%" }}
+                    value={dataBits}
+                    onChange={(e) => setDataBits(e.target.value)}
+                  >
+                    {["5", "6", "7", "8"].map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
               <div className="connection-dialog__row">
                 <div>
                   <label className="label">{t("connection.parity")}</label>
-                  <select className="select" style={{ width: "100%" }} value={parity} onChange={(e) => setParity(e.target.value)}>
+                  <select
+                    className="select"
+                    style={{ width: "100%" }}
+                    value={parity}
+                    onChange={(e) => setParity(e.target.value)}
+                  >
                     <option value="none">{t("connection.parity_none")}</option>
                     <option value="odd">{t("connection.parity_odd")}</option>
                     <option value="even">{t("connection.parity_even")}</option>
@@ -157,7 +325,12 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                 </div>
                 <div>
                   <label className="label">{t("connection.stop_bits")}</label>
-                  <select className="select" style={{ width: "100%" }} value={stopBits} onChange={(e) => setStopBits(e.target.value)}>
+                  <select
+                    className="select"
+                    style={{ width: "100%" }}
+                    value={stopBits}
+                    onChange={(e) => setStopBits(e.target.value)}
+                  >
                     <option value="1">1</option>
                     <option value="2">2</option>
                   </select>
@@ -174,10 +347,28 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
               <div className="connection-dialog__spinner" />
               {t("connection.connecting")}
             </div>
+          ) : hostKeyCheck ? (
+            <>
+              <button className="btn btn-ghost" onClick={() => setHostKeyCheck(null)}>
+                {t("connection.cancel")}
+              </button>
+              <button
+                className={`btn ${hostKeyCheck.status === "mismatch" ? "btn-danger" : "btn-primary"}`}
+                onClick={() => handleTrustAndConnect(hostKeyCheck.status === "mismatch")}
+              >
+                {hostKeyCheck.status === "mismatch"
+                  ? t("connection.host_key_replace_connect")
+                  : t("connection.host_key_trust_connect")}
+              </button>
+            </>
           ) : (
             <>
-              <button className="btn btn-ghost" onClick={onClose}>{t("connection.cancel")}</button>
-              <button className="btn btn-primary" onClick={handleConnect}>{t("connection.connect")}</button>
+              <button className="btn btn-ghost" onClick={onClose}>
+                {t("connection.cancel")}
+              </button>
+              <button className="btn btn-primary" onClick={handleConnect}>
+                {t("connection.connect")}
+              </button>
             </>
           )}
         </div>
