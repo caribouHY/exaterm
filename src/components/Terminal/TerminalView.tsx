@@ -108,7 +108,7 @@ export default function TerminalView({
     });
 
     // 設定を読み込み、自動ログが有効な場合のみロギングを開始
-    const loggingEnabled = terminalConfig?.auto_session_log ?? true;
+    const loggingEnabled = terminalConfig?.auto_session_log ?? false;
 
     // Backend data -> terminal
     const eventPrefix = connectionType === "ssh" ? "ssh://data" : "serial://data";

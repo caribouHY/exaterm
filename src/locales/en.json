@@ -14,7 +14,7 @@
   "settings.font_family": "Font Family",
   "settings.log_settings": "Log Settings",
   "settings.auto_session_log": "Auto Session Log",
-  "settings.auto_session_log_desc": "Automatically record terminal I/O to a file upon connection",
+  "settings.auto_session_log_desc": "When enabled, SSH/Serial terminal input and output are saved as plaintext logs",
   "settings.save": "Save",
   "settings.saved": "Saved",
   "settings.change": "Change",

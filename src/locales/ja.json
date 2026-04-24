@@ -14,7 +14,7 @@
   "settings.font_family": "フォントファミリー",
   "settings.log_settings": "ログ設定",
   "settings.auto_session_log": "自動セッションログ",
-  "settings.auto_session_log_desc": "接続時にターミナルの入出力をファイルへ自動記録します",
+  "settings.auto_session_log_desc": "有効にすると、SSH/シリアルのターミナル入力と出力を平文ログとして保存します",
   "settings.save": "保存",
   "settings.saved": "保存しました",
   "settings.change": "変更",

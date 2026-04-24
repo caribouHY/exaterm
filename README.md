@@ -11,6 +11,15 @@ SSH and Serial communication terminal with AI assistant.
   - Anthropic
   - Gemini
   - Ollama
+- Optional session logging
+
+## Session Logs
+
+Session logging is off by default. New installs do not create terminal session logs unless you explicitly enable Auto Session Log in Settings.
+
+When Auto Session Log is enabled, ExaTerm records SSH and Serial terminal input/output as plaintext log files. These logs can include commands, command output, prompts, hostnames, usernames, device output, and other sensitive terminal content.
+
+Logs are stored under `%AppData%/ExaTerm/logs` on Windows. The same location is shown in the Logs view.
 
 ## Getting Started
 

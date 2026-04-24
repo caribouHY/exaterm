@@ -47,7 +47,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       const cfg = await invoke<{ terminal: { auto_session_log: boolean } }>("config_load");
       return cfg.terminal.auto_session_log;
     } catch {
-      return true;
+      return false;
     }
   };
 
