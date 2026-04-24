@@ -58,7 +58,6 @@ export interface AppConfig {
   language: string;
   ai: AiConfig;
   terminal: TerminalConfig;
-  saved_connections: SavedConnection[];
 }
 
 export interface AiConfig {
@@ -74,17 +73,6 @@ export interface TerminalConfig {
   cursor_style: string;
   scrollback: number;
   auto_session_log: boolean;
-}
-
-export interface SavedConnection {
-  id: string;
-  name: string;
-  connection_type: string;
-  host?: string;
-  port?: number;
-  username?: string;
-  serial_port?: string;
-  baud_rate?: number;
 }
 
 export type ConnectionType = 'ssh' | 'serial';

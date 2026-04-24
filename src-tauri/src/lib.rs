@@ -36,7 +36,6 @@ pub fn run() {
             ai::ai_secret_set,
             ai::ai_secret_clear,
             ai::ai_chat,
-            ai::ai_chat_stream,
             // Logger
             logger::logger_start,
             logger::logger_append,

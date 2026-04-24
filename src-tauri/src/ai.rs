@@ -4,8 +4,6 @@ mod providers;
 mod secrets;
 mod types;
 
-use tauri::{AppHandle, Emitter};
-
 pub use catalog::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
 pub use types::{AiModelInfo, AiProvider, AiSecretStatus, ChatMessage};
 
@@ -119,29 +117,4 @@ pub async fn ai_chat(
         ollama_base_url.as_deref(),
     )
     .await
-}
-
-#[tauri::command]
-pub async fn ai_chat_stream(
-    app: AppHandle,
-    provider: AiProvider,
-    model: String,
-    messages: Vec<ChatMessage>,
-    terminal_context: Option<String>,
-    request_id: String,
-    language: String,
-    ollama_base_url: Option<String>,
-) -> Result<(), String> {
-    let result = ai_chat(
-        provider,
-        model,
-        messages,
-        terminal_context,
-        language,
-        ollama_base_url,
-    )
-    .await?;
-    let _ = app.emit(&format!("ai://chunk/{}", request_id), &result);
-    let _ = app.emit(&format!("ai://done/{}", request_id), "");
-    Ok(())
 }

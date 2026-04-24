@@ -10,6 +10,7 @@ pub struct AppConfig {
     pub language: String,
     pub ai: AiConfig,
     pub terminal: TerminalConfig,
+    #[serde(default)]
     pub saved_connections: Vec<SavedConnection>,
 }
 
