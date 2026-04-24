@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
+
+use crate::ai::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -11,7 +13,9 @@ pub struct AppConfig {
     pub saved_connections: Vec<SavedConnection>,
 }
 
-fn default_language() -> String { "en".into() }
+fn default_language() -> String {
+    "en".into()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiConfig {
@@ -21,8 +25,9 @@ pub struct AiConfig {
     pub default_model: String,
 }
 
-fn default_ollama_url() -> String { "http://localhost:11434".into() }
-
+fn default_ollama_url() -> String {
+    "http://localhost:11434".into()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerminalConfig {
@@ -52,12 +57,14 @@ impl Default for AppConfig {
             language: default_language(),
             ai: AiConfig {
                 ollama_base_url: default_ollama_url(),
-                default_provider: "OpenAi".into(),
-                default_model: "gpt-4o".into(),
+                default_provider: DEFAULT_AI_PROVIDER.into(),
+                default_model: DEFAULT_AI_MODEL.into(),
             },
             terminal: TerminalConfig {
-                font_size: 14, font_family: "Consolas, 'Courier New', monospace".into(),
-                cursor_style: "block".into(), scrollback: 10000,
+                font_size: 14,
+                font_family: "Consolas, 'Courier New', monospace".into(),
+                cursor_style: "block".into(),
+                scrollback: 10000,
                 auto_session_log: false,
             },
             saved_connections: Vec::new(),
@@ -66,7 +73,10 @@ impl Default for AppConfig {
 }
 
 fn config_path() -> PathBuf {
-    dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("ExaTerm").join("config.json")
+    dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("ExaTerm")
+        .join("config.json")
 }
 
 #[tauri::command]
@@ -85,7 +95,9 @@ pub fn config_load() -> Result<AppConfig, String> {
 #[tauri::command]
 pub fn config_save(config: AppConfig) -> Result<(), String> {
     let path = config_path();
-    if let Some(parent) = path.parent() { let _ = fs::create_dir_all(parent); }
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
     let data = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
     fs::write(&path, data).map_err(|e| e.to_string())
 }
