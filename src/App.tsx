@@ -10,6 +10,7 @@ import SettingsPanel from "./components/Settings/SettingsPanel";
 import LogViewer from "./components/Log/LogViewer";
 import type { TabInfo, ViewMode, ConnectionType, Encoding, AppConfig } from "./types";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 
 export default function App() {
@@ -49,6 +50,21 @@ export default function App() {
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
+
+  useEffect(() => {
+    const unlisten = listen<string>("ssh://disconnected", (event) => {
+      const sessionId = event.payload;
+      setTabs((prev) =>
+        prev.map((tab) =>
+          tab.sessionId === sessionId ? { ...tab, isConnected: false } : tab
+        )
+      );
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     if (activeTabId && !tabs.some((tab) => tab.id === activeTabId)) {

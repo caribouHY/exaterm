@@ -143,6 +143,7 @@ impl HostKeyVerifier {
 struct SshClientHandler {
     app: AppHandle,
     session_id: String,
+    sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
     host_verifier: HostKeyVerifier,
 }
 
@@ -196,6 +197,40 @@ impl russh::client::Handler for SshClientHandler {
             .app
             .emit(&format!("ssh://error/{}", self.session_id), data.to_vec());
         Ok(())
+    }
+
+    async fn channel_close(
+        &mut self,
+        _channel: ChannelId,
+        _session: &mut russh::client::Session,
+    ) -> Result<(), Self::Error> {
+        self.mark_disconnected().await;
+        Ok(())
+    }
+
+    async fn disconnected(
+        &mut self,
+        reason: russh::client::DisconnectReason<Self::Error>,
+    ) -> Result<(), Self::Error> {
+        self.mark_disconnected().await;
+        match reason {
+            russh::client::DisconnectReason::ReceivedDisconnect(_) => Ok(()),
+            russh::client::DisconnectReason::Error(error) => Err(error),
+        }
+    }
+}
+
+impl SshClientHandler {
+    async fn mark_disconnected(&self) {
+        let was_connected = self
+            .sessions
+            .lock()
+            .await
+            .remove(&self.session_id)
+            .is_some();
+        if was_connected {
+            let _ = self.app.emit("ssh://disconnected", &self.session_id);
+        }
     }
 }
 
@@ -313,6 +348,7 @@ pub async fn ssh_connect(
     let handler = SshClientHandler {
         app: app.clone(),
         session_id: session_id.clone(),
+        sessions: state.sessions.clone(),
         host_verifier: host_verifier.clone(),
     };
 
@@ -411,8 +447,8 @@ pub async fn ssh_disconnect(
     state: tauri::State<'_, SshState>,
     session_id: String,
 ) -> Result<(), String> {
-    let mut sessions = state.sessions.lock().await;
-    if let Some(session) = sessions.remove(&session_id) {
+    let session = state.sessions.lock().await.remove(&session_id);
+    if let Some(session) = session {
         let session = session.lock().await;
         let _ = session.channel.eof().await;
         let _ = session.channel.close().await;

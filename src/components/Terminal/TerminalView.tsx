@@ -30,15 +30,20 @@ export default function TerminalView({
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const decoderRef = useRef(new TextDecoder(encoding));
+  const isConnectedRef = useRef(isConnected);
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
 
   // Update decoder when encoding changes
   useEffect(() => {
     decoderRef.current = new TextDecoder(encoding);
   }, [encoding]);
 
-  // Create the terminal once when session is connected — never tear it down on tab switch
+  // Create the terminal once per session and keep it mounted after disconnect.
   useEffect(() => {
-    if (!containerRef.current || !sessionId || !isConnected) return;
+    if (!containerRef.current || !sessionId || termRef.current) return;
 
     const term = new Terminal({
       fontFamily: terminalConfig?.font_family || "'JetBrains Mono', Consolas, 'Courier New', monospace",
@@ -98,6 +103,7 @@ export default function TerminalView({
     // Terminal input -> backend
     const writeCmd = connectionType === "ssh" ? "ssh_write" : "serial_write";
     term.onData((data) => {
+      if (!isConnectedRef.current) return;
       invoke(writeCmd, { sessionId, data }).catch(console.error);
     });
 
@@ -125,7 +131,7 @@ export default function TerminalView({
     const resizeCmd = connectionType === "ssh" ? "ssh_resize" : null;
     const handleResize = () => {
       fitAddon.fit();
-      if (resizeCmd && sessionId) {
+      if (resizeCmd && sessionId && isConnectedRef.current) {
         invoke(resizeCmd, { sessionId, cols: term.cols, rows: term.rows }).catch(() => {});
       }
     };
@@ -141,7 +147,7 @@ export default function TerminalView({
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [sessionId, isConnected, connectionType]);
+  }, [sessionId, connectionType]);
 
   // Re-fit the terminal whenever this tab becomes active (container goes from display:none to visible)
   useEffect(() => {
@@ -170,7 +176,7 @@ export default function TerminalView({
     }
   }, [terminalConfig]);
 
-  if (!sessionId || !isConnected) {
+  if (!sessionId) {
     return (
       <div className={`terminal-view ${!isActive ? "terminal-view--hidden" : ""}`}>
         <div className="terminal-view__empty">
