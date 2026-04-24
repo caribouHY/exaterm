@@ -15,6 +15,7 @@ import "./App.css";
 export default function App() {
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [closingTabIds, setClosingTabIds] = useState<string[]>([]);
   const [showConnection, setShowConnection] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [activeView, setActiveView] = useState<ViewMode>("terminal");
@@ -22,6 +23,8 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const terminalBuffer = useRef("");
+  const tabsRef = useRef<TabInfo[]>([]);
+  const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
 
@@ -43,17 +46,66 @@ export default function App() {
     []
   );
 
-  const handleCloseTab = useCallback(
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
+  useEffect(() => {
+    if (activeTabId && !tabs.some((tab) => tab.id === activeTabId)) {
+      setActiveTabId(tabs.length > 0 ? tabs[tabs.length - 1].id : null);
+    }
+  }, [activeTabId, tabs]);
+
+  const removeTabFromState = useCallback((id: string) => {
+    setTabs((prev) => prev.filter((tab) => tab.id !== id));
+  }, []);
+
+  const disconnectTab = useCallback(
     (id: string) => {
-      setTabs((prev) => {
-        const next = prev.filter((t) => t.id !== id);
-        if (activeTabId === id) {
-          setActiveTabId(next.length > 0 ? next[next.length - 1].id : null);
+      const existingOperation = closeOperationsRef.current.get(id);
+      if (existingOperation) {
+        return existingOperation;
+      }
+
+      const operation = (async () => {
+        const tab = tabsRef.current.find((item) => item.id === id);
+        if (!tab) {
+          return true;
         }
-        return next;
-      });
+
+        setClosingTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+
+        if (!tab.sessionId) {
+          removeTabFromState(id);
+          return true;
+        }
+
+        const disconnectCommand = tab.connectionType === "ssh" ? "ssh_disconnect" : "serial_disconnect";
+
+        try {
+          await invoke(disconnectCommand, { sessionId: tab.sessionId });
+          removeTabFromState(id);
+          return true;
+        } catch (error) {
+          console.error(`Failed to disconnect ${tab.connectionType} session ${tab.sessionId}:`, error);
+          return false;
+        } finally {
+          closeOperationsRef.current.delete(id);
+          setClosingTabIds((prev) => prev.filter((tabId) => tabId !== id));
+        }
+      })();
+
+      closeOperationsRef.current.set(id, operation);
+      return operation;
     },
-    [activeTabId]
+    [removeTabFromState]
+  );
+
+  const handleCloseTab = useCallback(
+    async (id: string) => {
+      await disconnectTab(id);
+    },
+    [disconnectTab]
   );
 
   const handleTerminalData = useCallback((data: string) => {
@@ -143,6 +195,7 @@ export default function App() {
               <TerminalTabs
                 tabs={tabs}
                 activeTabId={activeTabId}
+                closingTabIds={closingTabIds}
                 onSelectTab={setActiveTabId}
                 onCloseTab={handleCloseTab}
                 onAddTab={openConnection}

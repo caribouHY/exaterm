@@ -414,6 +414,8 @@ pub async fn ssh_disconnect(
     let mut sessions = state.sessions.lock().await;
     if let Some(session) = sessions.remove(&session_id) {
         let session = session.lock().await;
+        let _ = session.channel.eof().await;
+        let _ = session.channel.close().await;
         let _ = session
             .handle
             .disconnect(Disconnect::ByApplication, "User disconnected", "en")
