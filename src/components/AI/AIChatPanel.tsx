@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Bot, Send, Terminal, X } from "lucide-react";
-import type { ChatMessage, AiModelInfo } from "../../types";
+import type { AppConfig, ChatMessage, AiModelInfo } from "../../types";
 import { useTranslation } from "react-i18next";
 import "./AIChatPanel.css";
 
@@ -43,7 +43,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
 
     const loadAiSettings = async () => {
       let cloudModels: AiModelInfo[] = [];
-      let cfg: any = null;
+      let cfg: AppConfig | null = null;
       let secretStatus: AiSecretStatus = {
         openai: false,
         anthropic: false,
@@ -63,32 +63,37 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
       }
 
       try {
-        cfg = await invoke<any>("config_load");
+        cfg = await invoke<AppConfig>("config_load");
       } catch (e) {
         console.error("Config load failed:", e);
       }
 
       const ollamaUrl = cfg?.ai?.ollama_base_url || "http://localhost:11434";
       const enabledProviders = PROVIDERS.filter((provider) => (
-        provider.secretKey ? secretStatus[provider.secretKey] : true
+        provider.id === "Ollama"
+          ? Boolean(cfg?.ai?.ollama_enabled)
+          : secretStatus[provider.secretKey!]
       ));
       let nextModels = cloudModels.filter((model) => (
         enabledProviders.some((provider) => provider.id === model.provider)
       ));
 
-      try {
-        const ollamaModels = await invoke<AiModelInfo[]>("ai_get_ollama_models", { baseUrl: ollamaUrl });
-        nextModels = [...nextModels.filter(m => m.provider !== "Ollama"), ...ollamaModels];
-      } catch (e) {
-        console.error("Ollama models fetch failed:", e);
+      if (cfg?.ai?.ollama_enabled) {
+        try {
+          const ollamaModels = await invoke<AiModelInfo[]>("ai_get_ollama_models", { baseUrl: ollamaUrl });
+          nextModels = [...nextModels.filter(m => m.provider !== "Ollama"), ...ollamaModels];
+        } catch (e) {
+          console.error("Ollama models fetch failed:", e);
+        }
       }
 
       if (cancelled) return;
 
       const savedProvider = cfg?.ai?.default_provider || "OpenAi";
-      const nextProvider = enabledProviders.some((provider) => provider.id === savedProvider)
+      const hasSavedProviderModels = nextModels.some((model) => model.provider === savedProvider);
+      const nextProvider = enabledProviders.some((provider) => provider.id === savedProvider) && hasSavedProviderModels
         ? savedProvider
-        : enabledProviders[0]?.id || "";
+        : nextModels[0]?.provider || "";
       const providerModels = nextModels.filter((m) => m.provider === nextProvider);
       const savedModel = cfg?.ai?.default_model || "";
       const nextModel = providerModels.some((m) => m.model_id === savedModel)
@@ -115,7 +120,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
   const providerModels = models.filter((m) => m.provider === selectedProvider);
   const visibleProviders = useMemo(() => (
     PROVIDERS.filter((provider) => (
-      provider.id === "Ollama" || models.some((model) => model.provider === provider.id)
+      models.some((model) => model.provider === provider.id)
     ))
   ), [models]);
 

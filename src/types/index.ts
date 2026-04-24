@@ -62,6 +62,7 @@ export interface AppConfig {
 }
 
 export interface AiConfig {
+  ollama_enabled: boolean;
   ollama_base_url: string;
   default_provider: string;
   default_model: string;

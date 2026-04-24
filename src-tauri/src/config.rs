@@ -19,6 +19,8 @@ fn default_language() -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiConfig {
+    #[serde(default)]
+    pub ollama_enabled: bool,
     #[serde(default = "default_ollama_url")]
     pub ollama_base_url: String,
     pub default_provider: String,
@@ -56,6 +58,7 @@ impl Default for AppConfig {
         Self {
             language: default_language(),
             ai: AiConfig {
+                ollama_enabled: false,
                 ollama_base_url: default_ollama_url(),
                 default_provider: DEFAULT_AI_PROVIDER.into(),
                 default_model: DEFAULT_AI_MODEL.into(),

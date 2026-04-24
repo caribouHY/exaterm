@@ -198,6 +198,21 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         {renderSecretField("anthropic", "Anthropic", t("settings.anthropic_key"), "sk-ant-...")}
         {renderSecretField("gemini", "Gemini", t("settings.gemini_key"), "AIza...")}
 
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.ollama_enabled")}</span>
+            <small>{t("settings.ollama_enabled_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(config.ai.ollama_enabled)}
+              onChange={(e) => update("ai.ollama_enabled", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+
         <div style={{ marginBottom: 14 }}>
           <label className="label">{t("settings.ollama_url")}</label>
           <input className="input" type="text" value={config.ai.ollama_base_url || "http://localhost:11434"} onChange={(e) => update("ai.ollama_base_url", e.target.value)} placeholder="http://localhost:11434" />

@@ -7,6 +7,8 @@
   "settings.openai_key": "OpenAI API キー",
   "settings.anthropic_key": "Anthropic API キー",
   "settings.gemini_key": "Google Gemini API キー",
+  "settings.ollama_enabled": "Ollama を有効化",
+  "settings.ollama_enabled_desc": "有効にすると、接続できるOllamaモデルをAIパネルに表示します",
   "settings.ollama_url": "Ollama ベース URL",
   "settings.terminal_settings": "ターミナル設定",
   "settings.font_size": "フォントサイズ",

@@ -7,6 +7,8 @@
   "settings.openai_key": "OpenAI API Key",
   "settings.anthropic_key": "Anthropic API Key",
   "settings.gemini_key": "Google Gemini API Key",
+  "settings.ollama_enabled": "Enable Ollama",
+  "settings.ollama_enabled_desc": "When enabled, available Ollama models are shown in the AI panel",
   "settings.ollama_url": "Ollama Base URL",
   "settings.terminal_settings": "Terminal Settings",
   "settings.font_size": "Font Size",
