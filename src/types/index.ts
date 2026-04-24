@@ -55,9 +55,11 @@ export interface LogSession {
 }
 
 export interface AppConfig {
+  config_version: number;
   language: string;
   ai: AiConfig;
   terminal: TerminalConfig;
+  saved_connections: SavedConnection[];
 }
 
 export interface AiConfig {
@@ -73,6 +75,17 @@ export interface TerminalConfig {
   cursor_style: string;
   scrollback: number;
   auto_session_log: boolean;
+}
+
+export interface SavedConnection {
+  id: string;
+  name: string;
+  connection_type: string;
+  host?: string | null;
+  port?: number | null;
+  username?: string | null;
+  serial_port?: string | null;
+  baud_rate?: number | null;
 }
 
 export type ConnectionType = 'ssh' | 'serial';
