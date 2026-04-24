@@ -1,14 +1,30 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Bot, Send, Terminal, X } from "lucide-react";
 import type { ChatMessage, AiModelInfo } from "../../types";
 import { useTranslation } from "react-i18next";
 import "./AIChatPanel.css";
 
+type CloudProviderId = "OpenAi" | "Anthropic" | "Gemini";
+type ProviderId = CloudProviderId | "Ollama";
+
+interface AiSecretStatus {
+  openai: boolean;
+  anthropic: boolean;
+  gemini: boolean;
+}
+
 interface AIChatPanelProps {
   onClose: () => void;
   terminalBuffer: React.MutableRefObject<string>;
 }
+
+const PROVIDERS: Array<{ id: ProviderId; label: string; secretKey?: keyof AiSecretStatus }> = [
+  { id: "OpenAi", label: "OpenAI", secretKey: "openai" },
+  { id: "Anthropic", label: "Anthropic", secretKey: "anthropic" },
+  { id: "Gemini", label: "Gemini", secretKey: "gemini" },
+  { id: "Ollama", label: "Ollama" },
+];
 
 export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProps) {
   const { t, i18n } = useTranslation();
@@ -28,6 +44,17 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
     const loadAiSettings = async () => {
       let cloudModels: AiModelInfo[] = [];
       let cfg: any = null;
+      let secretStatus: AiSecretStatus = {
+        openai: false,
+        anthropic: false,
+        gemini: false,
+      };
+
+      try {
+        secretStatus = await invoke<AiSecretStatus>("ai_secret_status");
+      } catch (e) {
+        console.error("AI secret status fetch failed:", e);
+      }
 
       try {
         cloudModels = await invoke<AiModelInfo[]>("ai_get_models");
@@ -42,7 +69,12 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
       }
 
       const ollamaUrl = cfg?.ai?.ollama_base_url || "http://localhost:11434";
-      let nextModels = cloudModels;
+      const enabledProviders = PROVIDERS.filter((provider) => (
+        provider.secretKey ? secretStatus[provider.secretKey] : true
+      ));
+      let nextModels = cloudModels.filter((model) => (
+        enabledProviders.some((provider) => provider.id === model.provider)
+      ));
 
       try {
         const ollamaModels = await invoke<AiModelInfo[]>("ai_get_ollama_models", { baseUrl: ollamaUrl });
@@ -53,7 +85,10 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
 
       if (cancelled) return;
 
-      const nextProvider = cfg?.ai?.default_provider || "OpenAi";
+      const savedProvider = cfg?.ai?.default_provider || "OpenAi";
+      const nextProvider = enabledProviders.some((provider) => provider.id === savedProvider)
+        ? savedProvider
+        : enabledProviders[0]?.id || "";
       const providerModels = nextModels.filter((m) => m.provider === nextProvider);
       const savedModel = cfg?.ai?.default_model || "";
       const nextModel = providerModels.some((m) => m.model_id === savedModel)
@@ -78,8 +113,18 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
   }, [messages]);
 
   const providerModels = models.filter((m) => m.provider === selectedProvider);
+  const visibleProviders = useMemo(() => (
+    PROVIDERS.filter((provider) => (
+      provider.id === "Ollama" || models.some((model) => model.provider === provider.id)
+    ))
+  ), [models]);
 
   useEffect(() => {
+    if (visibleProviders.length > 0 && !visibleProviders.some((provider) => provider.id === selectedProvider)) {
+      setSelectedProvider(visibleProviders[0].id);
+      return;
+    }
+
     const availableModels = models.filter((m) => m.provider === selectedProvider);
     if (availableModels.length === 0) {
       if (selectedModel) setSelectedModel("");
@@ -88,7 +133,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
     if (!availableModels.some((m) => m.model_id === selectedModel)) {
       setSelectedModel(availableModels[0].model_id);
     }
-  }, [models, selectedProvider, selectedModel]);
+  }, [models, selectedProvider, selectedModel, visibleProviders]);
 
   const handleSend = async () => {
     if (!input.trim() || loading || !selectedModel) return;
@@ -181,10 +226,9 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
               const pm = models.filter((m) => m.provider === e.target.value);
               setSelectedModel(pm[0]?.model_id || "");
             }}>
-              <option value="OpenAi">OpenAI</option>
-              <option value="Anthropic">Anthropic</option>
-              <option value="Gemini">Gemini</option>
-              <option value="Ollama">Ollama</option>
+              {visibleProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>{provider.label}</option>
+              ))}
             </select>
             <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} disabled={providerModels.length === 0}>
               {providerModels.map((m) => (
