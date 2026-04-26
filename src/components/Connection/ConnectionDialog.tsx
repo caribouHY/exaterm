@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { X } from "lucide-react";
 import type { ConnectionType, HostKeyCheckResult, PortInfo } from "../../types";
@@ -12,6 +12,7 @@ interface ConnectionDialogProps {
 
 export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialogProps) {
   const { t } = useTranslation();
+  const overlayMouseDownStartedRef = useRef(false);
   const [tab, setTab] = useState<ConnectionType>("ssh");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
@@ -148,8 +149,23 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       ? t("connection.host_key_mismatch.title")
       : t("connection.host_key_unknown.title");
 
+  const handleOverlayMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    overlayMouseDownStartedRef.current = e.target === e.currentTarget;
+  };
+
+  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (overlayMouseDownStartedRef.current && e.target === e.currentTarget) {
+      onClose();
+    }
+    overlayMouseDownStartedRef.current = false;
+  };
+
   return (
-    <div className="connection-overlay" onClick={onClose}>
+    <div
+      className="connection-overlay"
+      onMouseDown={handleOverlayMouseDown}
+      onClick={handleOverlayClick}
+    >
       <div className="connection-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="connection-dialog__header">
           <span className="connection-dialog__title">
