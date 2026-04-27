@@ -32,6 +32,9 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
   "config_version": 1,
   "language": "en",
   "ai": {
+    "azure_openai_enabled": false,
+    "azure_openai_endpoint": "",
+    "azure_openai_deployment": "",
     "ollama_enabled": false,
     "ollama_base_url": "http://localhost:11434",
     "default_provider": "OpenAi",
@@ -60,27 +63,33 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 ## ai
 
-| Parameter             | Type    | Default                    | Description                                                                                                                                                                                                                            |
-| --------------------- | ------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ai.ollama_enabled`   | boolean | `false`                    | When set to `true`, Ollama models are shown in the AI panel. To use Ollama, a local or configured Ollama server must be running.                                                                                                       |
-| `ai.ollama_base_url`  | string  | `"http://localhost:11434"` | The base URL for the Ollama API. For a standard local setup, use `"http://localhost:11434"`. If this is an empty string, the UI treats it as the default URL.                                                                          |
-| `ai.default_provider` | string  | `"OpenAi"`                 | The provider selected by default in the AI panel. Supported values are `"OpenAi"`, `"Anthropic"`, `"Gemini"`, and `"Ollama"`.                                                                                                          |
-| `ai.default_model`    | string  | `"gpt-4o"`                 | The model ID selected by default in the AI panel. This is not currently editable from the Settings screen, so edit it manually if needed. If the saved model is not available, ExaTerm automatically falls back to an available model. |
+| Parameter                    | Type    | Default                    | Description                                                                                                                                                                                                                            |
+| ---------------------------- | ------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ai.azure_openai_enabled`    | boolean | `false`                    | When set to `true`, Azure OpenAI is shown in the AI panel when the endpoint, model deployment name, and API key are configured.                                                                                                        |
+| `ai.azure_openai_endpoint`   | string  | `""`                       | The Azure OpenAI resource endpoint, such as `"https://your-resource.openai.azure.com"`. ExaTerm appends `/openai/v1/chat/completions` automatically.                                                                                   |
+| `ai.azure_openai_deployment` | string  | `""`                       | The Azure OpenAI model deployment name. With the v1 API, this value is sent as the `model` field.                                                                                                                                      |
+| `ai.ollama_enabled`          | boolean | `false`                    | When set to `true`, Ollama models are shown in the AI panel. To use Ollama, a local or configured Ollama server must be running.                                                                                                       |
+| `ai.ollama_base_url`         | string  | `"http://localhost:11434"` | The base URL for the Ollama API. For a standard local setup, use `"http://localhost:11434"`. If this is an empty string, the UI treats it as the default URL.                                                                          |
+| `ai.default_provider`        | string  | `"OpenAi"`                 | The provider selected by default in the AI panel. Supported values are `"OpenAi"`, `"AzureOpenAi"`, `"Anthropic"`, `"Gemini"`, and `"Ollama"`.                                                                                         |
+| `ai.default_model`           | string  | `"gpt-4o"`                 | The model ID selected by default in the AI panel. This is not currently editable from the Settings screen, so edit it manually if needed. If the saved model is not available, ExaTerm automatically falls back to an available model. |
 
 ### AI API Keys
 
-API keys for OpenAI, Anthropic, and Google Gemini are not stored in `config.json`. Keys registered from the Settings screen are stored in the operating system credential store.
+API keys for OpenAI, Azure OpenAI, Anthropic, and Google Gemini are not stored in `config.json`. Keys registered from the Settings screen are stored in the operating system credential store.
+
+Azure OpenAI uses the v1 API, so you do not need to set an `api-version` value. Enter the resource endpoint and model deployment name instead.
 
 Ollama usually does not require an API key. Configure `ai.ollama_enabled` and `ai.ollama_base_url` instead.
 
 ### Common Model IDs
 
-| Provider  | Example model IDs                                       |
-| --------- | ------------------------------------------------------- |
-| OpenAI    | `gpt-4o`, `gpt-4o-mini`                                 |
-| Anthropic | `claude-sonnet-4-20250514`, `claude-3-5-haiku-20241022` |
-| Gemini    | `gemini-2.5-pro`, `gemini-2.5-flash`                    |
-| Ollama    | Model names installed in your local Ollama instance     |
+| Provider     | Example model IDs                                       |
+| ------------ | ------------------------------------------------------- |
+| OpenAI       | `gpt-4o`, `gpt-4o-mini`                                 |
+| Azure OpenAI | Your Azure model deployment name, such as `my-gpt4o`    |
+| Anthropic    | `claude-sonnet-4-20250514`, `claude-3-5-haiku-20241022` |
+| Gemini       | `gemini-2.5-pro`, `gemini-2.5-flash`                    |
+| Ollama       | Model names installed in your local Ollama instance     |
 
 ## terminal
 
@@ -160,6 +169,20 @@ Example:
 
 Set `default_model` to a model name installed in Ollama.
 
+### Enable Azure OpenAI
+
+```json
+"ai": {
+  "azure_openai_enabled": true,
+  "azure_openai_endpoint": "https://your-resource.openai.azure.com",
+  "azure_openai_deployment": "my-gpt4o",
+  "default_provider": "AzureOpenAi",
+  "default_model": "my-gpt4o"
+}
+```
+
+Save the Azure OpenAI API key from the Settings screen. ExaTerm sends requests to `/openai/v1/chat/completions` and does not require an `api-version` setting.
+
 ### Disable Session Logs
 
 ```json
@@ -172,10 +195,10 @@ Keep the other fields in the actual `terminal` object. The snippet above only sh
 
 ## Troubleshooting
 
-| Symptom                          | Action                                                                                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| ExaTerm cannot load settings     | Check the JSON syntax, especially extra commas, quotation marks, and braces.                                                   |
-| Changes are not reflected        | Restart ExaTerm or save the settings again from the Settings screen.                                                           |
-| An AI provider does not appear   | Cloud providers require API keys. For Ollama, check `ollama_enabled` and make sure the Ollama server is running.               |
-| Text is hard to read             | Adjust `terminal.font_size` or `terminal.font_family`.                                                                         |
-| You do not want logs to be saved | Set `terminal.auto_session_log` to `false`. If logs were already created, delete them from `%AppData%\ExaTerm\logs` as needed. |
+| Symptom                          | Action                                                                                                                                                                                                                        |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ExaTerm cannot load settings     | Check the JSON syntax, especially extra commas, quotation marks, and braces.                                                                                                                                                  |
+| Changes are not reflected        | Restart ExaTerm or save the settings again from the Settings screen.                                                                                                                                                          |
+| An AI provider does not appear   | Cloud providers require API keys. For Azure OpenAI, also check `azure_openai_enabled`, `azure_openai_endpoint`, and `azure_openai_deployment`. For Ollama, check `ollama_enabled` and make sure the Ollama server is running. |
+| Text is hard to read             | Adjust `terminal.font_size` or `terminal.font_family`.                                                                                                                                                                        |
+| You do not want logs to be saved | Set `terminal.auto_session_log` to `false`. If logs were already created, delete them from `%AppData%\ExaTerm\logs` as needed.                                                                                                |

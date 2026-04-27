@@ -32,6 +32,9 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
   "config_version": 1,
   "language": "ja",
   "ai": {
+    "azure_openai_enabled": false,
+    "azure_openai_endpoint": "",
+    "azure_openai_deployment": "",
     "ollama_enabled": false,
     "ollama_base_url": "http://localhost:11434",
     "default_provider": "OpenAi",
@@ -60,27 +63,33 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 ## ai
 
-| パラメータ            | 型      | 既定値                     | 説明                                                                                                                                                                                                    |
-| --------------------- | ------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ai.ollama_enabled`   | boolean | `false`                    | `true` にすると、Ollama のモデルを AI パネルに表示します。Ollama を使用するには、ローカルまたは指定 URL の Ollama サーバーが起動している必要があります。                                                |
-| `ai.ollama_base_url`  | string  | `"http://localhost:11434"` | Ollama API のベース URL です。ローカル環境の標準設定では `"http://localhost:11434"` を使用します。空文字の場合、画面上では既定 URL として扱われます。                                                   |
-| `ai.default_provider` | string  | `"OpenAi"`                 | AI パネルで優先的に選択されるプロバイダです。使用可能な値は `"OpenAi"`, `"Anthropic"`, `"Gemini"`, `"Ollama"` です。                                                                                    |
-| `ai.default_model`    | string  | `"gpt-4o"`                 | AI パネルで優先的に選択されるモデル ID です。設定画面からは現在直接編集できないため、必要な場合は手動で編集します。保存したモデルが利用できない場合は、利用可能なモデルへ自動的にフォールバックします。 |
+| パラメータ                   | 型      | 既定値                     | 説明                                                                                                                                                                                                    |
+| ---------------------------- | ------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ai.azure_openai_enabled`    | boolean | `false`                    | `true` にすると、Endpoint、モデルデプロイ名、API キーが設定されている場合に Azure OpenAI を AI パネルに表示します。                                                                                     |
+| `ai.azure_openai_endpoint`   | string  | `""`                       | Azure OpenAI リソースのエンドポイントです。例: `"https://your-resource.openai.azure.com"`。ExaTerm が `/openai/v1/chat/completions` を自動で付与します。                                                |
+| `ai.azure_openai_deployment` | string  | `""`                       | Azure OpenAI のモデルデプロイ名です。v1 API では、この値を `model` フィールドとして送信します。                                                                                                         |
+| `ai.ollama_enabled`          | boolean | `false`                    | `true` にすると、Ollama のモデルを AI パネルに表示します。Ollama を使用するには、ローカルまたは指定 URL の Ollama サーバーが起動している必要があります。                                                |
+| `ai.ollama_base_url`         | string  | `"http://localhost:11434"` | Ollama API のベース URL です。ローカル環境の標準設定では `"http://localhost:11434"` を使用します。空文字の場合、画面上では既定 URL として扱われます。                                                   |
+| `ai.default_provider`        | string  | `"OpenAi"`                 | AI パネルで優先的に選択されるプロバイダです。使用可能な値は `"OpenAi"`, `"AzureOpenAi"`, `"Anthropic"`, `"Gemini"`, `"Ollama"` です。                                                                   |
+| `ai.default_model`           | string  | `"gpt-4o"`                 | AI パネルで優先的に選択されるモデル ID です。設定画面からは現在直接編集できないため、必要な場合は手動で編集します。保存したモデルが利用できない場合は、利用可能なモデルへ自動的にフォールバックします。 |
 
 ### AI API キーについて
 
-OpenAI、Anthropic、Google Gemini の API キーは `config.json` には保存されません。設定画面で登録したキーは、OS の資格情報ストアに保存されます。
+OpenAI、Azure OpenAI、Anthropic、Google Gemini の API キーは `config.json` には保存されません。設定画面で登録したキーは、OS の資格情報ストアに保存されます。
+
+Azure OpenAI は v1 API を使用するため、`api-version` の設定は不要です。リソースのエンドポイントとモデルデプロイ名を設定してください。
 
 Ollama は通常 API キーを必要としません。`ai.ollama_enabled` と `ai.ollama_base_url` を設定してください。
 
 ### 代表的なモデル ID
 
-| プロバイダ | モデル ID の例                                          |
-| ---------- | ------------------------------------------------------- |
-| OpenAI     | `gpt-4o`, `gpt-4o-mini`                                 |
-| Anthropic  | `claude-sonnet-4-20250514`, `claude-3-5-haiku-20241022` |
-| Gemini     | `gemini-2.5-pro`, `gemini-2.5-flash`                    |
-| Ollama     | ローカルの Ollama にインストール済みのモデル名          |
+| プロバイダ   | モデル ID の例                                          |
+| ------------ | ------------------------------------------------------- |
+| OpenAI       | `gpt-4o`, `gpt-4o-mini`                                 |
+| Azure OpenAI | Azure のモデルデプロイ名。例: `my-gpt4o`                |
+| Anthropic    | `claude-sonnet-4-20250514`, `claude-3-5-haiku-20241022` |
+| Gemini       | `gemini-2.5-pro`, `gemini-2.5-flash`                    |
+| Ollama       | ローカルの Ollama にインストール済みのモデル名          |
 
 ## terminal
 
@@ -160,6 +169,20 @@ Ollama は通常 API キーを必要としません。`ai.ollama_enabled` と `a
 
 `default_model` には、Ollama にインストール済みのモデル名を指定してください。
 
+### Azure OpenAI を有効にする
+
+```json
+"ai": {
+  "azure_openai_enabled": true,
+  "azure_openai_endpoint": "https://your-resource.openai.azure.com",
+  "azure_openai_deployment": "my-gpt4o",
+  "default_provider": "AzureOpenAi",
+  "default_model": "my-gpt4o"
+}
+```
+
+Azure OpenAI API キーは設定画面から保存してください。ExaTerm は `/openai/v1/chat/completions` にリクエストを送信し、`api-version` の設定は必要ありません。
+
 ### セッションログを無効にする
 
 ```json
@@ -172,10 +195,10 @@ Ollama は通常 API キーを必要としません。`ai.ollama_enabled` と `a
 
 ## トラブルシューティング
 
-| 症状                         | 対処                                                                                                                                    |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| ExaTerm が設定を読み込めない | JSON の構文を確認してください。特に余分なカンマ、引用符、波括弧の不足を確認します。                                                     |
-| 設定を変更しても反映されない | ExaTerm を再起動するか、設定画面で保存し直してください。                                                                                |
-| AI プロバイダが表示されない  | クラウド系プロバイダは API キー登録が必要です。Ollama は `ollama_enabled` と Ollama サーバーの起動状態を確認してください。              |
-| 文字が見づらい               | `terminal.font_size` または `terminal.font_family` を調整してください。                                                                 |
-| ログを残したくない           | `terminal.auto_session_log` を `false` にしてください。既に作成済みのログは必要に応じて `%AppData%\ExaTerm\logs` から削除してください。 |
+| 症状                         | 対処                                                                                                                                                                                                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ExaTerm が設定を読み込めない | JSON の構文を確認してください。特に余分なカンマ、引用符、波括弧の不足を確認します。                                                                                                                                                       |
+| 設定を変更しても反映されない | ExaTerm を再起動するか、設定画面で保存し直してください。                                                                                                                                                                                  |
+| AI プロバイダが表示されない  | クラウド系プロバイダは API キー登録が必要です。Azure OpenAI は `azure_openai_enabled`、`azure_openai_endpoint`、`azure_openai_deployment` も確認してください。Ollama は `ollama_enabled` と Ollama サーバーの起動状態を確認してください。 |
+| 文字が見づらい               | `terminal.font_size` または `terminal.font_family` を調整してください。                                                                                                                                                                   |
+| ログを残したくない           | `terminal.auto_session_log` を `false` にしてください。既に作成済みのログは必要に応じて `%AppData%\ExaTerm\logs` から削除してください。                                                                                                   |

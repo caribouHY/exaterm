@@ -27,6 +27,12 @@ fn default_language() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiConfig {
     #[serde(default)]
+    pub azure_openai_enabled: bool,
+    #[serde(default)]
+    pub azure_openai_endpoint: String,
+    #[serde(default)]
+    pub azure_openai_deployment: String,
+    #[serde(default)]
     pub ollama_enabled: bool,
     #[serde(default = "default_ollama_url")]
     pub ollama_base_url: String,
@@ -39,6 +45,9 @@ pub struct AiConfig {
 impl Default for AiConfig {
     fn default() -> Self {
         Self {
+            azure_openai_enabled: false,
+            azure_openai_endpoint: String::new(),
+            azure_openai_deployment: String::new(),
             ollama_enabled: false,
             ollama_base_url: default_ollama_url(),
             default_provider: DEFAULT_AI_PROVIDER.into(),
@@ -203,6 +212,9 @@ mod tests {
         assert_eq!(cfg.language, "ja");
         assert_eq!(cfg.ai.default_provider, DEFAULT_AI_PROVIDER);
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
+        assert!(!cfg.ai.azure_openai_enabled);
+        assert_eq!(cfg.ai.azure_openai_endpoint, "");
+        assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.terminal.font_size, 14);
         assert_eq!(cfg.terminal.scrollback, 10000);
         assert!(cfg.saved_connections.is_empty());
@@ -221,6 +233,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(cfg.ai.default_provider, "Ollama");
+        assert!(!cfg.ai.azure_openai_enabled);
+        assert_eq!(cfg.ai.azure_openai_endpoint, "");
+        assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.ai.ollama_base_url, "http://localhost:11434");
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
         assert_eq!(cfg.terminal.font_size, 14);

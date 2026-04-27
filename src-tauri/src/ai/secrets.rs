@@ -5,6 +5,7 @@ use super::types::AiProvider;
 
 const KEYRING_SERVICE: &str = "com.caribouhy.exaterm";
 pub const KEY_OPENAI: &str = "openai_api_key";
+pub const KEY_AZURE_OPENAI: &str = "azure_openai_api_key";
 pub const KEY_ANTHROPIC: &str = "anthropic_api_key";
 pub const KEY_GEMINI: &str = "gemini_api_key";
 
@@ -15,6 +16,7 @@ fn keyring_entry(key_name: &str) -> Result<Entry, String> {
 pub fn provider_secret_key(provider: &str) -> Option<&'static str> {
     match provider {
         "OpenAi" => Some(KEY_OPENAI),
+        "AzureOpenAi" => Some(KEY_AZURE_OPENAI),
         "Anthropic" => Some(KEY_ANTHROPIC),
         "Gemini" => Some(KEY_GEMINI),
         _ => None,
@@ -33,6 +35,7 @@ pub fn is_secret_present(key_name: &str) -> Result<bool, String> {
 fn secret_key_for_provider(provider: &AiProvider) -> Option<&'static str> {
     match provider {
         AiProvider::OpenAi => Some(KEY_OPENAI),
+        AiProvider::AzureOpenAi => Some(KEY_AZURE_OPENAI),
         AiProvider::Anthropic => Some(KEY_ANTHROPIC),
         AiProvider::Gemini => Some(KEY_GEMINI),
         AiProvider::Ollama => None,
@@ -75,5 +78,19 @@ pub fn clear_secret(key_name: &str) -> Result<(), String> {
     match entry.delete_credential() {
         Ok(_) | Err(KeyringError::NoEntry) => Ok(()),
         Err(e) => Err(e.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_azure_openai_to_credential_key() {
+        assert_eq!(provider_secret_key("AzureOpenAi"), Some(KEY_AZURE_OPENAI));
+        assert_eq!(
+            secret_key_for_provider(&AiProvider::AzureOpenAi),
+            Some(KEY_AZURE_OPENAI)
+        );
     }
 }

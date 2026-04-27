@@ -11,12 +11,14 @@ interface SettingsPanelProps {
 
 interface AiSecretStatus {
   openai: boolean;
+  azure_openai: boolean;
   anthropic: boolean;
   gemini: boolean;
 }
 
 interface SecretEdits {
   openai: string;
+  azure_openai: string;
   anthropic: string;
   gemini: string;
 }
@@ -25,12 +27,14 @@ const MASKED_VALUE = "••••••••";
 
 const EMPTY_SECRET_STATUS: AiSecretStatus = {
   openai: false,
+  azure_openai: false,
   anthropic: false,
   gemini: false,
 };
 
 const EMPTY_SECRET_EDITS: SecretEdits = {
   openai: "",
+  azure_openai: "",
   anthropic: "",
   gemini: "",
 };
@@ -44,6 +48,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   const [secretEdits, setSecretEdits] = useState<SecretEdits>(EMPTY_SECRET_EDITS);
   const [secretEditMode, setSecretEditMode] = useState({
     openai: false,
+    azure_openai: false,
     anthropic: false,
     gemini: false,
   });
@@ -74,6 +79,12 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       if (secretEdits.openai.trim()) {
         await invoke("ai_secret_set", { provider: "OpenAi", value: secretEdits.openai.trim() });
       }
+      if (secretEdits.azure_openai.trim()) {
+        await invoke("ai_secret_set", {
+          provider: "AzureOpenAi",
+          value: secretEdits.azure_openai.trim(),
+        });
+      }
       if (secretEdits.anthropic.trim()) {
         await invoke("ai_secret_set", {
           provider: "Anthropic",
@@ -85,7 +96,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       }
 
       setSecretEdits(EMPTY_SECRET_EDITS);
-      setSecretEditMode({ openai: false, anthropic: false, gemini: false });
+      setSecretEditMode({ openai: false, azure_openai: false, anthropic: false, gemini: false });
       await refreshSecretStatus();
 
       if (config.language !== i18n.language) {
@@ -117,8 +128,8 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   };
 
   const clearSecret = async (
-    provider: "OpenAi" | "Anthropic" | "Gemini",
-    key: "openai" | "anthropic" | "gemini"
+    provider: "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini",
+    key: "openai" | "azure_openai" | "anthropic" | "gemini"
   ) => {
     try {
       await invoke("ai_secret_clear", { provider });
@@ -130,19 +141,19 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     }
   };
 
-  const beginEditSecret = (key: "openai" | "anthropic" | "gemini") => {
+  const beginEditSecret = (key: "openai" | "azure_openai" | "anthropic" | "gemini") => {
     setSecretEditMode((prev) => ({ ...prev, [key]: true }));
     setSecretEdits((prev) => ({ ...prev, [key]: "" }));
   };
 
-  const cancelEditSecret = (key: "openai" | "anthropic" | "gemini") => {
+  const cancelEditSecret = (key: "openai" | "azure_openai" | "anthropic" | "gemini") => {
     setSecretEditMode((prev) => ({ ...prev, [key]: false }));
     setSecretEdits((prev) => ({ ...prev, [key]: "" }));
   };
 
   const renderSecretField = (
-    key: "openai" | "anthropic" | "gemini",
-    provider: "OpenAi" | "Anthropic" | "Gemini",
+    key: "openai" | "azure_openai" | "anthropic" | "gemini",
+    provider: "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini",
     label: string,
     placeholder: string
   ) => {
@@ -226,6 +237,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               onChange={(e) => update("ai.default_provider", e.target.value)}
             >
               <option value="OpenAi">OpenAI</option>
+              <option value="AzureOpenAi">Azure OpenAI</option>
               <option value="Anthropic">Anthropic</option>
               <option value="Gemini">Google Gemini</option>
               <option value="Ollama">Ollama</option>
@@ -234,8 +246,46 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         </div>
 
         {renderSecretField("openai", "OpenAi", t("settings.openai_key"), "sk-...")}
+        {renderSecretField("azure_openai", "AzureOpenAi", t("settings.azure_openai_key"), "...")}
         {renderSecretField("anthropic", "Anthropic", t("settings.anthropic_key"), "sk-ant-...")}
         {renderSecretField("gemini", "Gemini", t("settings.gemini_key"), "AIza...")}
+
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.azure_openai_enabled")}</span>
+            <small>{t("settings.azure_openai_enabled_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(config.ai.azure_openai_enabled)}
+              onChange={(e) => update("ai.azure_openai_enabled", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label className="label">{t("settings.azure_openai_endpoint")}</label>
+          <input
+            className="input"
+            type="text"
+            value={config.ai.azure_openai_endpoint}
+            onChange={(e) => update("ai.azure_openai_endpoint", e.target.value)}
+            placeholder="https://your-resource.openai.azure.com"
+          />
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label className="label">{t("settings.azure_openai_deployment")}</label>
+          <input
+            className="input"
+            type="text"
+            value={config.ai.azure_openai_deployment}
+            onChange={(e) => update("ai.azure_openai_deployment", e.target.value)}
+            placeholder="my-gpt4o-deployment"
+          />
+        </div>
 
         <div className="settings-toggle-row">
           <div className="settings-toggle-label">

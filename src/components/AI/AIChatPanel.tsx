@@ -5,11 +5,12 @@ import type { AppConfig, ChatMessage, AiModelInfo } from "../../types";
 import { useTranslation } from "react-i18next";
 import "./AIChatPanel.css";
 
-type CloudProviderId = "OpenAi" | "Anthropic" | "Gemini";
+type CloudProviderId = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini";
 type ProviderId = CloudProviderId | "Ollama";
 
 interface AiSecretStatus {
   openai: boolean;
+  azure_openai: boolean;
   anthropic: boolean;
   gemini: boolean;
 }
@@ -21,6 +22,7 @@ interface AIChatPanelProps {
 
 const PROVIDERS: Array<{ id: ProviderId; label: string; secretKey?: keyof AiSecretStatus }> = [
   { id: "OpenAi", label: "OpenAI", secretKey: "openai" },
+  { id: "AzureOpenAi", label: "Azure OpenAI", secretKey: "azure_openai" },
   { id: "Anthropic", label: "Anthropic", secretKey: "anthropic" },
   { id: "Gemini", label: "Gemini", secretKey: "gemini" },
   { id: "Ollama", label: "Ollama" },
@@ -36,6 +38,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
   const [selectedProvider, setSelectedProvider] = useState("OpenAi");
   const [useContext, setUseContext] = useState(false);
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState("http://localhost:11434");
+  const [azureOpenAiEndpoint, setAzureOpenAiEndpoint] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -46,6 +49,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
       let cfg: AppConfig | null = null;
       let secretStatus: AiSecretStatus = {
         openai: false,
+        azure_openai: false,
         anthropic: false,
         gemini: false,
       };
@@ -69,14 +73,39 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
       }
 
       const ollamaUrl = cfg?.ai?.ollama_base_url || "http://localhost:11434";
+      const azureEndpoint = cfg?.ai?.azure_openai_endpoint?.trim() || "";
+      const azureDeployment = cfg?.ai?.azure_openai_deployment?.trim() || "";
       const enabledProviders = PROVIDERS.filter((provider) =>
         provider.id === "Ollama"
           ? Boolean(cfg?.ai?.ollama_enabled)
-          : secretStatus[provider.secretKey!]
+          : provider.id === "AzureOpenAi"
+            ? Boolean(
+                cfg?.ai?.azure_openai_enabled &&
+                secretStatus.azure_openai &&
+                azureEndpoint &&
+                azureDeployment
+              )
+            : secretStatus[provider.secretKey!]
       );
       let nextModels = cloudModels.filter((model) =>
         enabledProviders.some((provider) => provider.id === model.provider)
       );
+
+      if (
+        cfg?.ai?.azure_openai_enabled &&
+        secretStatus.azure_openai &&
+        azureEndpoint &&
+        azureDeployment
+      ) {
+        nextModels = [
+          ...nextModels.filter((m) => m.provider !== "AzureOpenAi"),
+          {
+            provider: "AzureOpenAi",
+            model_id: azureDeployment,
+            display_name: azureDeployment,
+          },
+        ];
+      }
 
       if (cfg?.ai?.ollama_enabled) {
         try {
@@ -105,6 +134,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
 
       setModels(nextModels);
       setOllamaBaseUrl(ollamaUrl);
+      setAzureOpenAiEndpoint(azureEndpoint);
       setSelectedProvider(nextProvider);
       setSelectedModel(nextModel);
     };
@@ -161,6 +191,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
         terminalContext: useContext ? terminalBuffer.current : null,
         language: i18n.language,
         ollamaBaseUrl: selectedProvider === "Ollama" ? ollamaBaseUrl : null,
+        azureOpenAiEndpoint: selectedProvider === "AzureOpenAi" ? azureOpenAiEndpoint : null,
       });
       setMessages([...newMessages, { role: "assistant", content: response }]);
     } catch (e: any) {

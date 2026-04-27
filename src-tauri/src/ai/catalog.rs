@@ -7,6 +7,7 @@ pub const DEFAULT_AI_MODEL: &str = "gpt-4o";
 pub fn fallback_models_for(provider: &AiProvider) -> Vec<AiModelInfo> {
     let rows: &[(&str, &str)] = match provider {
         AiProvider::OpenAi => &[(DEFAULT_AI_MODEL, "GPT-4o"), ("gpt-4o-mini", "GPT-4o Mini")],
+        AiProvider::AzureOpenAi => &[],
         AiProvider::Anthropic => &[
             ("claude-sonnet-4-20250514", "Claude Sonnet 4"),
             ("claude-3-5-haiku-20241022", "Claude 3.5 Haiku"),

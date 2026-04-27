@@ -11,7 +11,7 @@ use catalog::{fallback_cloud_models, fallback_models_for};
 use providers::{fetch_provider_models, send_chat_request};
 use secrets::{
     is_secret_present, load_provider_secret_optional, provider_secret_key, KEY_ANTHROPIC,
-    KEY_GEMINI, KEY_OPENAI,
+    KEY_AZURE_OPENAI, KEY_GEMINI, KEY_OPENAI,
 };
 
 #[tauri::command]
@@ -70,6 +70,7 @@ fn build_system_prompt(terminal_context: &Option<String>, language: &str) -> Str
 pub fn ai_secret_status() -> Result<AiSecretStatus, String> {
     Ok(AiSecretStatus {
         openai: is_secret_present(KEY_OPENAI)?,
+        azure_openai: is_secret_present(KEY_AZURE_OPENAI)?,
         anthropic: is_secret_present(KEY_ANTHROPIC)?,
         gemini: is_secret_present(KEY_GEMINI)?,
     })
@@ -103,6 +104,7 @@ pub async fn ai_chat(
     terminal_context: Option<String>,
     language: String,
     ollama_base_url: Option<String>,
+    azure_openai_endpoint: Option<String>,
 ) -> Result<String, String> {
     let client = reqwest::Client::new();
     let system_prompt = build_system_prompt(&terminal_context, &language);
@@ -115,6 +117,7 @@ pub async fn ai_chat(
         &system_prompt,
         &language,
         ollama_base_url.as_deref(),
+        azure_openai_endpoint.as_deref(),
     )
     .await
 }

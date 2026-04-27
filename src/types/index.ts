@@ -63,6 +63,9 @@ export interface AppConfig {
 }
 
 export interface AiConfig {
+  azure_openai_enabled: boolean;
+  azure_openai_endpoint: string;
+  azure_openai_deployment: string;
   ollama_enabled: boolean;
   ollama_base_url: string;
   default_provider: string;
