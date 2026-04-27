@@ -1,0 +1,382 @@
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Check } from "lucide-react";
+import type { AppConfig } from "../../types";
+import { useTranslation } from "react-i18next";
+import "./SettingsPanel.css";
+
+interface SettingsPanelProps {
+  onSave?: () => void;
+}
+
+interface AiSecretStatus {
+  openai: boolean;
+  azure_openai: boolean;
+  anthropic: boolean;
+  gemini: boolean;
+}
+
+interface SecretEdits {
+  openai: string;
+  azure_openai: string;
+  anthropic: string;
+  gemini: string;
+}
+
+const MASKED_VALUE = "••••••••";
+
+const EMPTY_SECRET_STATUS: AiSecretStatus = {
+  openai: false,
+  azure_openai: false,
+  anthropic: false,
+  gemini: false,
+};
+
+const EMPTY_SECRET_EDITS: SecretEdits = {
+  openai: "",
+  azure_openai: "",
+  anthropic: "",
+  gemini: "",
+};
+
+export default function SettingsPanel({ onSave }: SettingsPanelProps) {
+  const { t, i18n } = useTranslation();
+  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const [secretStatus, setSecretStatus] = useState<AiSecretStatus>(EMPTY_SECRET_STATUS);
+  const [secretEdits, setSecretEdits] = useState<SecretEdits>(EMPTY_SECRET_EDITS);
+  const [secretEditMode, setSecretEditMode] = useState({
+    openai: false,
+    azure_openai: false,
+    anthropic: false,
+    gemini: false,
+  });
+
+  const refreshSecretStatus = async () => {
+    try {
+      const status = await invoke<AiSecretStatus>("ai_secret_status");
+      setSecretStatus(status);
+    } catch (e) {
+      console.error("Failed to load AI secret status:", e);
+      setSecretStatus(EMPTY_SECRET_STATUS);
+    }
+  };
+
+  useEffect(() => {
+    invoke<AppConfig>("config_load")
+      .then(setConfig)
+      .catch(() => {});
+    refreshSecretStatus();
+  }, []);
+
+  const handleSave = async () => {
+    if (!config) return;
+    try {
+      setError("");
+      await invoke("config_save", { config });
+
+      if (secretEdits.openai.trim()) {
+        await invoke("ai_secret_set", { provider: "OpenAi", value: secretEdits.openai.trim() });
+      }
+      if (secretEdits.azure_openai.trim()) {
+        await invoke("ai_secret_set", {
+          provider: "AzureOpenAi",
+          value: secretEdits.azure_openai.trim(),
+        });
+      }
+      if (secretEdits.anthropic.trim()) {
+        await invoke("ai_secret_set", {
+          provider: "Anthropic",
+          value: secretEdits.anthropic.trim(),
+        });
+      }
+      if (secretEdits.gemini.trim()) {
+        await invoke("ai_secret_set", { provider: "Gemini", value: secretEdits.gemini.trim() });
+      }
+
+      setSecretEdits(EMPTY_SECRET_EDITS);
+      setSecretEditMode({ openai: false, azure_openai: false, anthropic: false, gemini: false });
+      await refreshSecretStatus();
+
+      if (config.language !== i18n.language) {
+        i18n.changeLanguage(config.language);
+      }
+      setSaved(true);
+      if (onSave) onSave();
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      console.error(e);
+      setError(typeof e === "string" ? e : "Failed to save settings.");
+    }
+  };
+
+  if (!config)
+    return (
+      <div className="settings-panel">
+        <p>{t("settings.loading")}</p>
+      </div>
+    );
+
+  const update = (path: string, value: any) => {
+    const newConfig = JSON.parse(JSON.stringify(config));
+    const keys = path.split(".");
+    let obj = newConfig;
+    for (let i = 0; i < keys.length - 1; i++) obj = obj[keys[i]];
+    obj[keys[keys.length - 1]] = value;
+    setConfig(newConfig);
+  };
+
+  const clearSecret = async (
+    provider: "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini",
+    key: "openai" | "azure_openai" | "anthropic" | "gemini"
+  ) => {
+    try {
+      await invoke("ai_secret_clear", { provider });
+      setSecretEdits((prev) => ({ ...prev, [key]: "" }));
+      setSecretEditMode((prev) => ({ ...prev, [key]: false }));
+      setSecretStatus((prev) => ({ ...prev, [key]: false }));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const beginEditSecret = (key: "openai" | "azure_openai" | "anthropic" | "gemini") => {
+    setSecretEditMode((prev) => ({ ...prev, [key]: true }));
+    setSecretEdits((prev) => ({ ...prev, [key]: "" }));
+  };
+
+  const cancelEditSecret = (key: "openai" | "azure_openai" | "anthropic" | "gemini") => {
+    setSecretEditMode((prev) => ({ ...prev, [key]: false }));
+    setSecretEdits((prev) => ({ ...prev, [key]: "" }));
+  };
+
+  const renderSecretField = (
+    key: "openai" | "azure_openai" | "anthropic" | "gemini",
+    provider: "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini",
+    label: string,
+    placeholder: string
+  ) => {
+    const hasSecret = secretStatus[key];
+    const isEditing = secretEditMode[key];
+    const canType = !hasSecret || isEditing;
+    const value = canType ? secretEdits[key] : MASKED_VALUE;
+
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <label className="label">{label}</label>
+        <div className="settings-secret-row">
+          <input
+            className="input"
+            type="password"
+            value={value}
+            readOnly={!canType}
+            onChange={(e) => setSecretEdits((prev) => ({ ...prev, [key]: e.target.value }))}
+            placeholder={hasSecret ? "" : placeholder}
+          />
+          {hasSecret && !isEditing && (
+            <>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => beginEditSecret(key)}
+              >
+                {t("settings.change")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => clearSecret(provider, key)}
+              >
+                {t("settings.clear")}
+              </button>
+            </>
+          )}
+          {isEditing && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => cancelEditSecret(key)}
+            >
+              {t("settings.cancel")}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="settings-panel">
+      <h2>{t("settings.title")}</h2>
+
+      <div className="settings-section">
+        <div className="settings-section__title">{t("settings.language")}</div>
+        <div className="settings-row">
+          <div>
+            <select
+              className="select"
+              value={config.language}
+              onChange={(e) => update("language", e.target.value)}
+            >
+              <option value="en">English</option>
+              <option value="ja">日本語</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section__title">{t("settings.ai_provider")}</div>
+        <div className="settings-row">
+          <div>
+            <label className="label">{t("settings.default_provider")}</label>
+            <select
+              className="select"
+              value={config.ai.default_provider}
+              onChange={(e) => update("ai.default_provider", e.target.value)}
+            >
+              <option value="OpenAi">OpenAI</option>
+              <option value="AzureOpenAi">Azure OpenAI</option>
+              <option value="Anthropic">Anthropic</option>
+              <option value="Gemini">Google Gemini</option>
+              <option value="Ollama">Ollama</option>
+            </select>
+          </div>
+        </div>
+
+        {renderSecretField("openai", "OpenAi", t("settings.openai_key"), "sk-...")}
+        {renderSecretField("azure_openai", "AzureOpenAi", t("settings.azure_openai_key"), "...")}
+        {renderSecretField("anthropic", "Anthropic", t("settings.anthropic_key"), "sk-ant-...")}
+        {renderSecretField("gemini", "Gemini", t("settings.gemini_key"), "AIza...")}
+
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.azure_openai_enabled")}</span>
+            <small>{t("settings.azure_openai_enabled_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(config.ai.azure_openai_enabled)}
+              onChange={(e) => update("ai.azure_openai_enabled", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label className="label">{t("settings.azure_openai_endpoint")}</label>
+          <input
+            className="input"
+            type="text"
+            value={config.ai.azure_openai_endpoint}
+            onChange={(e) => update("ai.azure_openai_endpoint", e.target.value)}
+            placeholder="https://your-resource.openai.azure.com"
+          />
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label className="label">{t("settings.azure_openai_deployment")}</label>
+          <input
+            className="input"
+            type="text"
+            value={config.ai.azure_openai_deployment}
+            onChange={(e) => update("ai.azure_openai_deployment", e.target.value)}
+            placeholder="my-gpt4o-deployment"
+          />
+        </div>
+
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.ollama_enabled")}</span>
+            <small>{t("settings.ollama_enabled_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(config.ai.ollama_enabled)}
+              onChange={(e) => update("ai.ollama_enabled", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label className="label">{t("settings.ollama_url")}</label>
+          <input
+            className="input"
+            type="text"
+            value={config.ai.ollama_base_url || "http://localhost:11434"}
+            onChange={(e) => update("ai.ollama_base_url", e.target.value)}
+            placeholder="http://localhost:11434"
+          />
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section__title">{t("settings.terminal_settings")}</div>
+        <div className="settings-row">
+          <div>
+            <label className="label">{t("settings.font_size")}</label>
+            <input
+              className="input"
+              type="number"
+              value={config.terminal.font_size}
+              onChange={(e) => update("terminal.font_size", parseInt(e.target.value))}
+              min={8}
+              max={32}
+            />
+          </div>
+          <div>
+            <label className="label">{t("settings.scrollback")}</label>
+            <input
+              className="input"
+              type="number"
+              value={config.terminal.scrollback}
+              onChange={(e) => update("terminal.scrollback", parseInt(e.target.value))}
+            />
+          </div>
+        </div>
+        <div>
+          <label className="label">{t("settings.font_family")}</label>
+          <input
+            className="input"
+            value={config.terminal.font_family}
+            onChange={(e) => update("terminal.font_family", e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section__title">{t("settings.log_settings")}</div>
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.auto_session_log")}</span>
+            <small>{t("settings.auto_session_log_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={config.terminal.auto_session_log}
+              onChange={(e) => update("terminal.auto_session_log", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+      </div>
+
+      <div className="settings-actions">
+        <button className="btn btn-primary" onClick={handleSave}>
+          {t("settings.save")}
+        </button>
+        {saved && (
+          <span className="settings-saved">
+            <Check size={14} /> {t("settings.saved")}
+          </span>
+        )}
+        {error && <span className="settings-error">{error}</span>}
+      </div>
+    </div>
+  );
+}

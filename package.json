@@ -1,0 +1,40 @@
+{
+  "name": "exaterm",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "format": "npm run format:frontend && npm run format:rust",
+    "format:check": "npm run format:frontend:check && npm run format:rust:check",
+    "format:frontend": "prettier --write \"src/**/*.{ts,tsx,css,json}\" \"*.{html,json,ts}\" \".github/**/*.yml\" \".vscode/*.json\" \"ai-docs/**/*.md\" \"docs/**/*.md\" \"src-tauri/*.json\"",
+    "format:frontend:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\" \"*.{html,json,ts}\" \".github/**/*.yml\" \".vscode/*.json\" \"ai-docs/**/*.md\" \"docs/**/*.md\" \"src-tauri/*.json\"",
+    "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml",
+    "format:rust:check": "cargo fmt --manifest-path src-tauri/Cargo.toml --check"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-search": "^0.16.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "i18next": "^26.0.6",
+    "lucide-react": "^1.8.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-i18next": "^17.0.4"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "prettier": "^3.8.3",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  }
+}
