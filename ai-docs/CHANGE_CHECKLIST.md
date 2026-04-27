@@ -25,6 +25,7 @@ Use this checklist before and after code changes. It is intentionally short and 
 
 ## After Changing Code
 
+- Format the changed area before validation, using `npm run format` or the narrower formatter command when appropriate.
 - Confirm AI-facing implementation notes stayed in `ai-docs/` or `AGENTS.md`, not in `docs/`.
 - Confirm user-facing documentation stayed in `docs/`.
 - Confirm Markdown links and referenced paths exist.

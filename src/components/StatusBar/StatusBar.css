@@ -10,7 +10,8 @@
   flex-shrink: 0;
 }
 
-.statusbar__left, .statusbar__right {
+.statusbar__left,
+.statusbar__right {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -92,9 +93,9 @@
 
 .statusbar__dot--connected {
   background: #fff;
-  box-shadow: 0 0 6px rgba(255,255,255,0.5);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
 }
 
 .statusbar__dot--disconnected {
-  background: rgba(255,255,255,0.4);
+  background: rgba(255, 255, 255, 0.4);
 }

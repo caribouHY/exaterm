@@ -7,7 +7,13 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "format": "npm run format:frontend && npm run format:rust",
+    "format:check": "npm run format:frontend:check && npm run format:rust:check",
+    "format:frontend": "prettier --write \"src/**/*.{ts,tsx,css,json}\" \"*.{html,json,ts}\" \".github/**/*.yml\" \".vscode/*.json\" \"ai-docs/**/*.md\" \"docs/**/*.md\" \"src-tauri/*.json\"",
+    "format:frontend:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\" \"*.{html,json,ts}\" \".github/**/*.yml\" \".vscode/*.json\" \"ai-docs/**/*.md\" \"docs/**/*.md\" \"src-tauri/*.json\"",
+    "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml",
+    "format:rust:check": "cargo fmt --manifest-path src-tauri/Cargo.toml --check"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -27,6 +33,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "prettier": "^3.8.3",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"
   }

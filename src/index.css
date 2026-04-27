@@ -60,8 +60,8 @@
   --panel-min-width: 280px;
 
   /* Typography */
-  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, "Courier New", monospace;
 
   /* Radius */
   --radius-sm: 3px;
@@ -79,13 +79,17 @@
    Reset & Base
    ============================================ */
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   width: 100%;
   overflow: hidden;
@@ -127,16 +131,36 @@ body {
    Utility Classes
    ============================================ */
 
-.flex { display: flex; }
-.flex-col { flex-direction: column; }
-.flex-1 { flex: 1; }
-.items-center { align-items: center; }
-.justify-center { justify-content: center; }
-.justify-between { justify-content: space-between; }
-.gap-xs { gap: 4px; }
-.gap-sm { gap: 8px; }
-.gap-md { gap: 12px; }
-.gap-lg { gap: 16px; }
+.flex {
+  display: flex;
+}
+.flex-col {
+  flex-direction: column;
+}
+.flex-1 {
+  flex: 1;
+}
+.items-center {
+  align-items: center;
+}
+.justify-center {
+  justify-content: center;
+}
+.justify-between {
+  justify-content: space-between;
+}
+.gap-xs {
+  gap: 4px;
+}
+.gap-sm {
+  gap: 8px;
+}
+.gap-md {
+  gap: 12px;
+}
+.gap-lg {
+  gap: 16px;
+}
 
 /* ============================================
    Button Styles
@@ -269,31 +293,64 @@ body {
    ============================================ */
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes slideInRight {
-  from { transform: translateX(20px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+  from {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 @keyframes slideInUp {
-  from { transform: translateY(10px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.animate-fade-in { animation: fadeIn var(--transition-normal) forwards; }
-.animate-slide-right { animation: slideInRight var(--transition-slow) forwards; }
-.animate-slide-up { animation: slideInUp var(--transition-normal) forwards; }
-.animate-pulse { animation: pulse 2s infinite; }
-.animate-spin { animation: spin 1s linear infinite; }
+.animate-fade-in {
+  animation: fadeIn var(--transition-normal) forwards;
+}
+.animate-slide-right {
+  animation: slideInRight var(--transition-slow) forwards;
+}
+.animate-slide-up {
+  animation: slideInUp var(--transition-normal) forwards;
+}
+.animate-pulse {
+  animation: pulse 2s infinite;
+}
+.animate-spin {
+  animation: spin 1s linear infinite;
+}

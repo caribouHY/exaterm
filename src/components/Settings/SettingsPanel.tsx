@@ -59,7 +59,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   };
 
   useEffect(() => {
-    invoke<AppConfig>("config_load").then(setConfig).catch(() => {});
+    invoke<AppConfig>("config_load")
+      .then(setConfig)
+      .catch(() => {});
     refreshSecretStatus();
   }, []);
 
@@ -73,7 +75,10 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         await invoke("ai_secret_set", { provider: "OpenAi", value: secretEdits.openai.trim() });
       }
       if (secretEdits.anthropic.trim()) {
-        await invoke("ai_secret_set", { provider: "Anthropic", value: secretEdits.anthropic.trim() });
+        await invoke("ai_secret_set", {
+          provider: "Anthropic",
+          value: secretEdits.anthropic.trim(),
+        });
       }
       if (secretEdits.gemini.trim()) {
         await invoke("ai_secret_set", { provider: "Gemini", value: secretEdits.gemini.trim() });
@@ -95,7 +100,12 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     }
   };
 
-  if (!config) return <div className="settings-panel"><p>{t("settings.loading")}</p></div>;
+  if (!config)
+    return (
+      <div className="settings-panel">
+        <p>{t("settings.loading")}</p>
+      </div>
+    );
 
   const update = (path: string, value: any) => {
     const newConfig = JSON.parse(JSON.stringify(config));
@@ -106,7 +116,10 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     setConfig(newConfig);
   };
 
-  const clearSecret = async (provider: "OpenAi" | "Anthropic" | "Gemini", key: "openai" | "anthropic" | "gemini") => {
+  const clearSecret = async (
+    provider: "OpenAi" | "Anthropic" | "Gemini",
+    key: "openai" | "anthropic" | "gemini"
+  ) => {
     try {
       await invoke("ai_secret_clear", { provider });
       setSecretEdits((prev) => ({ ...prev, [key]: "" }));
@@ -131,7 +144,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     key: "openai" | "anthropic" | "gemini",
     provider: "OpenAi" | "Anthropic" | "Gemini",
     label: string,
-    placeholder: string,
+    placeholder: string
   ) => {
     const hasSecret = secretStatus[key];
     const isEditing = secretEditMode[key];
@@ -152,12 +165,30 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           />
           {hasSecret && !isEditing && (
             <>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => beginEditSecret(key)}>{t("settings.change")}</button>
-              <button type="button" className="btn btn-danger btn-sm" onClick={() => clearSecret(provider, key)}>{t("settings.clear")}</button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => beginEditSecret(key)}
+              >
+                {t("settings.change")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => clearSecret(provider, key)}
+              >
+                {t("settings.clear")}
+              </button>
             </>
           )}
           {isEditing && (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => cancelEditSecret(key)}>{t("settings.cancel")}</button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => cancelEditSecret(key)}
+            >
+              {t("settings.cancel")}
+            </button>
           )}
         </div>
       </div>
@@ -172,7 +203,11 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         <div className="settings-section__title">{t("settings.language")}</div>
         <div className="settings-row">
           <div>
-            <select className="select" value={config.language} onChange={(e) => update("language", e.target.value)}>
+            <select
+              className="select"
+              value={config.language}
+              onChange={(e) => update("language", e.target.value)}
+            >
               <option value="en">English</option>
               <option value="ja">日本語</option>
             </select>
@@ -185,7 +220,11 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         <div className="settings-row">
           <div>
             <label className="label">{t("settings.default_provider")}</label>
-            <select className="select" value={config.ai.default_provider} onChange={(e) => update("ai.default_provider", e.target.value)}>
+            <select
+              className="select"
+              value={config.ai.default_provider}
+              onChange={(e) => update("ai.default_provider", e.target.value)}
+            >
               <option value="OpenAi">OpenAI</option>
               <option value="Anthropic">Anthropic</option>
               <option value="Gemini">Google Gemini</option>
@@ -215,7 +254,13 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
 
         <div style={{ marginBottom: 14 }}>
           <label className="label">{t("settings.ollama_url")}</label>
-          <input className="input" type="text" value={config.ai.ollama_base_url || "http://localhost:11434"} onChange={(e) => update("ai.ollama_base_url", e.target.value)} placeholder="http://localhost:11434" />
+          <input
+            className="input"
+            type="text"
+            value={config.ai.ollama_base_url || "http://localhost:11434"}
+            onChange={(e) => update("ai.ollama_base_url", e.target.value)}
+            placeholder="http://localhost:11434"
+          />
         </div>
       </div>
 
@@ -224,16 +269,32 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         <div className="settings-row">
           <div>
             <label className="label">{t("settings.font_size")}</label>
-            <input className="input" type="number" value={config.terminal.font_size} onChange={(e) => update("terminal.font_size", parseInt(e.target.value))} min={8} max={32} />
+            <input
+              className="input"
+              type="number"
+              value={config.terminal.font_size}
+              onChange={(e) => update("terminal.font_size", parseInt(e.target.value))}
+              min={8}
+              max={32}
+            />
           </div>
           <div>
             <label className="label">{t("settings.scrollback")}</label>
-            <input className="input" type="number" value={config.terminal.scrollback} onChange={(e) => update("terminal.scrollback", parseInt(e.target.value))} />
+            <input
+              className="input"
+              type="number"
+              value={config.terminal.scrollback}
+              onChange={(e) => update("terminal.scrollback", parseInt(e.target.value))}
+            />
           </div>
         </div>
         <div>
           <label className="label">{t("settings.font_family")}</label>
-          <input className="input" value={config.terminal.font_family} onChange={(e) => update("terminal.font_family", e.target.value)} />
+          <input
+            className="input"
+            value={config.terminal.font_family}
+            onChange={(e) => update("terminal.font_family", e.target.value)}
+          />
         </div>
       </div>
 
@@ -256,8 +317,14 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       </div>
 
       <div className="settings-actions">
-        <button className="btn btn-primary" onClick={handleSave}>{t("settings.save")}</button>
-        {saved && <span className="settings-saved"><Check size={14} /> {t("settings.saved")}</span>}
+        <button className="btn btn-primary" onClick={handleSave}>
+          {t("settings.save")}
+        </button>
+        {saved && (
+          <span className="settings-saved">
+            <Check size={14} /> {t("settings.saved")}
+          </span>
+        )}
         {error && <span className="settings-error">{error}</span>}
       </div>
     </div>

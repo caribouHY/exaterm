@@ -23,7 +23,14 @@ interface TerminalViewProps {
 }
 
 export default function TerminalView({
-  sessionId, connectionType, isConnected, isActive, encoding, terminalConfig, onOpenConnection, onTerminalData,
+  sessionId,
+  connectionType,
+  isConnected,
+  isActive,
+  encoding,
+  terminalConfig,
+  onOpenConnection,
+  onTerminalData,
 }: TerminalViewProps) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -46,7 +53,8 @@ export default function TerminalView({
     if (!containerRef.current || !sessionId || termRef.current) return;
 
     const term = new Terminal({
-      fontFamily: terminalConfig?.font_family || "'JetBrains Mono', Consolas, 'Courier New', monospace",
+      fontFamily:
+        terminalConfig?.font_family || "'JetBrains Mono', Consolas, 'Courier New', monospace",
       fontSize: terminalConfig?.font_size || 14,
       theme: {
         background: "#1e1e1e",
@@ -168,7 +176,7 @@ export default function TerminalView({
       termRef.current.options.fontFamily = terminalConfig.font_family;
       termRef.current.options.cursorStyle = terminalConfig.cursor_style as any;
       termRef.current.options.scrollback = terminalConfig.scrollback;
-      
+
       // Re-fit to adjust for potential size changes
       setTimeout(() => {
         fitRef.current?.fit();
@@ -184,9 +192,7 @@ export default function TerminalView({
             <Monitor size={32} color="#fff" />
           </div>
           <div className="terminal-view__empty-title">ExaTerm</div>
-          <div className="terminal-view__empty-desc">
-            {t("terminal.empty_desc")}
-          </div>
+          <div className="terminal-view__empty-desc">{t("terminal.empty_desc")}</div>
           <button className="btn btn-primary" onClick={onOpenConnection}>
             {t("connection.new")}
           </button>

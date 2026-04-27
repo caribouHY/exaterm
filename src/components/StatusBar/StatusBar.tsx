@@ -35,8 +35,12 @@ export default function StatusBar({ activeTab, onEncodingChange }: StatusBarProp
     <div className="statusbar">
       <div className="statusbar__left">
         <div className="statusbar__item">
-          <span className={`statusbar__dot ${activeTab?.isConnected ? "statusbar__dot--connected" : "statusbar__dot--disconnected"}`} />
-          <span>{activeTab?.isConnected ? t("statusbar.connected") : t("statusbar.disconnected")}</span>
+          <span
+            className={`statusbar__dot ${activeTab?.isConnected ? "statusbar__dot--connected" : "statusbar__dot--disconnected"}`}
+          />
+          <span>
+            {activeTab?.isConnected ? t("statusbar.connected") : t("statusbar.disconnected")}
+          </span>
         </div>
         {activeTab && (
           <div className="statusbar__item">
@@ -49,11 +53,12 @@ export default function StatusBar({ activeTab, onEncodingChange }: StatusBarProp
       <div className="statusbar__right">
         {activeTab && (
           <div className="statusbar__encoding-container" ref={menuRef}>
-            <button 
-              className="statusbar__item statusbar__item--clickable" 
+            <button
+              className="statusbar__item statusbar__item--clickable"
               onClick={() => setShowMenu(!showMenu)}
             >
-              {encodings.find(e => e.value === activeTab.encoding)?.label || activeTab.encoding.toUpperCase()}
+              {encodings.find((e) => e.value === activeTab.encoding)?.label ||
+                activeTab.encoding.toUpperCase()}
             </button>
             {showMenu && (
               <div className="statusbar__menu">

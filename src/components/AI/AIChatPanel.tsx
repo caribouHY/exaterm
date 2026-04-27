@@ -69,19 +69,21 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
       }
 
       const ollamaUrl = cfg?.ai?.ollama_base_url || "http://localhost:11434";
-      const enabledProviders = PROVIDERS.filter((provider) => (
+      const enabledProviders = PROVIDERS.filter((provider) =>
         provider.id === "Ollama"
           ? Boolean(cfg?.ai?.ollama_enabled)
           : secretStatus[provider.secretKey!]
-      ));
-      let nextModels = cloudModels.filter((model) => (
+      );
+      let nextModels = cloudModels.filter((model) =>
         enabledProviders.some((provider) => provider.id === model.provider)
-      ));
+      );
 
       if (cfg?.ai?.ollama_enabled) {
         try {
-          const ollamaModels = await invoke<AiModelInfo[]>("ai_get_ollama_models", { baseUrl: ollamaUrl });
-          nextModels = [...nextModels.filter(m => m.provider !== "Ollama"), ...ollamaModels];
+          const ollamaModels = await invoke<AiModelInfo[]>("ai_get_ollama_models", {
+            baseUrl: ollamaUrl,
+          });
+          nextModels = [...nextModels.filter((m) => m.provider !== "Ollama"), ...ollamaModels];
         } catch (e) {
           console.error("Ollama models fetch failed:", e);
         }
@@ -91,9 +93,10 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
 
       const savedProvider = cfg?.ai?.default_provider || "OpenAi";
       const hasSavedProviderModels = nextModels.some((model) => model.provider === savedProvider);
-      const nextProvider = enabledProviders.some((provider) => provider.id === savedProvider) && hasSavedProviderModels
-        ? savedProvider
-        : nextModels[0]?.provider || "";
+      const nextProvider =
+        enabledProviders.some((provider) => provider.id === savedProvider) && hasSavedProviderModels
+          ? savedProvider
+          : nextModels[0]?.provider || "";
       const providerModels = nextModels.filter((m) => m.provider === nextProvider);
       const savedModel = cfg?.ai?.default_model || "";
       const nextModel = providerModels.some((m) => m.model_id === savedModel)
@@ -118,14 +121,16 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
   }, [messages]);
 
   const providerModels = models.filter((m) => m.provider === selectedProvider);
-  const visibleProviders = useMemo(() => (
-    PROVIDERS.filter((provider) => (
-      models.some((model) => model.provider === provider.id)
-    ))
-  ), [models]);
+  const visibleProviders = useMemo(
+    () => PROVIDERS.filter((provider) => models.some((model) => model.provider === provider.id)),
+    [models]
+  );
 
   useEffect(() => {
-    if (visibleProviders.length > 0 && !visibleProviders.some((provider) => provider.id === selectedProvider)) {
+    if (
+      visibleProviders.length > 0 &&
+      !visibleProviders.some((provider) => provider.id === selectedProvider)
+    ) {
       setSelectedProvider(visibleProviders[0].id);
       return;
     }
@@ -160,10 +165,13 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
       setMessages([...newMessages, { role: "assistant", content: response }]);
     } catch (e: any) {
       const detail = typeof e === "string" ? e : e.message || "Unknown error";
-      setMessages([...newMessages, {
-        role: "assistant",
-        content: `Error: ${detail}`,
-      }]);
+      setMessages([
+        ...newMessages,
+        {
+          role: "assistant",
+          content: `Error: ${detail}`,
+        },
+      ]);
     }
     setLoading(false);
   };
@@ -172,16 +180,18 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
     <div className="ai-panel">
       <div className="ai-panel__header">
         <span className="ai-panel__title">{t("ai.title")}</span>
-        <button className="btn-icon" onClick={onClose}><X size={14} /></button>
+        <button className="btn-icon" onClick={onClose}>
+          <X size={14} />
+        </button>
       </div>
 
       <div className="ai-panel__messages">
         {messages.length === 0 ? (
           <div className="ai-panel__welcome">
-            <div className="ai-panel__welcome-icon"><Bot size={24} color="#fff" /></div>
-            <div className="ai-panel__welcome-text">
-              {t("ai.title")}
+            <div className="ai-panel__welcome-icon">
+              <Bot size={24} color="#fff" />
             </div>
+            <div className="ai-panel__welcome-text">{t("ai.title")}</div>
           </div>
         ) : (
           messages.map((msg, i) => (
@@ -207,11 +217,20 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
             className="ai-panel__input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
             placeholder={t("ai.placeholder")}
             rows={1}
           />
-          <button className="ai-panel__send" onClick={handleSend} disabled={loading || !input.trim() || !selectedModel}>
+          <button
+            className="ai-panel__send"
+            onClick={handleSend}
+            disabled={loading || !input.trim() || !selectedModel}
+          >
             <Send size={16} />
           </button>
         </div>
@@ -226,18 +245,29 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
           </button>
 
           <div className="ai-panel__provider">
-            <select value={selectedProvider} onChange={(e) => {
-              setSelectedProvider(e.target.value);
-              const pm = models.filter((m) => m.provider === e.target.value);
-              setSelectedModel(pm[0]?.model_id || "");
-            }}>
+            <select
+              value={selectedProvider}
+              onChange={(e) => {
+                setSelectedProvider(e.target.value);
+                const pm = models.filter((m) => m.provider === e.target.value);
+                setSelectedModel(pm[0]?.model_id || "");
+              }}
+            >
               {visibleProviders.map((provider) => (
-                <option key={provider.id} value={provider.id}>{provider.label}</option>
+                <option key={provider.id} value={provider.id}>
+                  {provider.label}
+                </option>
               ))}
             </select>
-            <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} disabled={providerModels.length === 0}>
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              disabled={providerModels.length === 0}
+            >
               {providerModels.map((m) => (
-                <option key={m.model_id} value={m.model_id}>{m.display_name}</option>
+                <option key={m.model_id} value={m.model_id}>
+                  {m.display_name}
+                </option>
               ))}
             </select>
           </div>

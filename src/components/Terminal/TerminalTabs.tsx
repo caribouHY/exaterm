@@ -13,7 +13,12 @@ interface TerminalTabsProps {
 }
 
 export default function TerminalTabs({
-  tabs, activeTabId, closingTabIds, onSelectTab, onCloseTab, onAddTab,
+  tabs,
+  activeTabId,
+  closingTabIds,
+  onSelectTab,
+  onCloseTab,
+  onAddTab,
 }: TerminalTabsProps) {
   const { t } = useTranslation();
 
@@ -40,7 +45,9 @@ export default function TerminalTabs({
             </span>
             <span
               className={`terminal-tab__status ${
-                tab.isConnected ? "terminal-tab__status--connected" : "terminal-tab__status--disconnected"
+                tab.isConnected
+                  ? "terminal-tab__status--connected"
+                  : "terminal-tab__status--disconnected"
               }`}
             />
             <span className="terminal-tab__label">{tab.title}</span>

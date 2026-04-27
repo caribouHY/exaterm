@@ -86,7 +86,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       const autoLog = await getAutoLogPreference();
       await performSshConnect(autoLog, hostKeyCheck.port);
     } catch (e: unknown) {
-      const message = typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
+      const message =
+        typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
       setError(message);
       setConnecting(false);
     }
@@ -138,7 +139,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       }
       onConnect("serial", sessionId, selectedPort);
     } catch (e: unknown) {
-      const message = typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
+      const message =
+        typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
       setError(message);
       setConnecting(false);
     }
@@ -214,10 +216,14 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                   {hostKeyCheck.host}:{hostKeyCheck.port}
                 </div>
 
-                <div className="connection-dialog__host-key-label">{t("connection.host_key_algorithm")}</div>
+                <div className="connection-dialog__host-key-label">
+                  {t("connection.host_key_algorithm")}
+                </div>
                 <div className="connection-dialog__host-key-value">{hostKeyCheck.algorithm}</div>
 
-                <div className="connection-dialog__host-key-label">{t("connection.host_key_fingerprint")}</div>
+                <div className="connection-dialog__host-key-label">
+                  {t("connection.host_key_fingerprint")}
+                </div>
                 <div className="connection-dialog__host-key-value connection-dialog__host-key-value--mono">
                   SHA256:{hostKeyCheck.fingerprint}
                 </div>
@@ -262,7 +268,11 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
               </div>
               <div>
                 <label className="label">{t("connection.username")}</label>
-                <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} />
+                <input
+                  className="input"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                />
               </div>
               <div>
                 <label className="label">{t("connection.password")}</label>
@@ -302,7 +312,17 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                     value={baudRate}
                     onChange={(e) => setBaudRate(e.target.value)}
                   >
-                    {["300", "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200"].map((r) => (
+                    {[
+                      "300",
+                      "1200",
+                      "2400",
+                      "4800",
+                      "9600",
+                      "19200",
+                      "38400",
+                      "57600",
+                      "115200",
+                    ].map((r) => (
                       <option key={r} value={r}>
                         {r}
                       </option>

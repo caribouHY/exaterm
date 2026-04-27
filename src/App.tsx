@@ -29,23 +29,20 @@ export default function App() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
 
-  const handleConnect = useCallback(
-    (type: ConnectionType, sessionId: string, title: string) => {
-      const newTab: TabInfo = {
-        id: sessionId,
-        title,
-        connectionType: type,
-        sessionId,
-        isConnected: true,
-        encoding: "utf-8",
-      };
-      setTabs((prev) => [...prev, newTab]);
-      setActiveTabId(sessionId);
-      setShowConnection(false);
-      setActiveView("terminal");
-    },
-    []
-  );
+  const handleConnect = useCallback((type: ConnectionType, sessionId: string, title: string) => {
+    const newTab: TabInfo = {
+      id: sessionId,
+      title,
+      connectionType: type,
+      sessionId,
+      isConnected: true,
+      encoding: "utf-8",
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(sessionId);
+    setShowConnection(false);
+    setActiveView("terminal");
+  }, []);
 
   useEffect(() => {
     tabsRef.current = tabs;
@@ -55,9 +52,7 @@ export default function App() {
     const unlisten = listen<string>("ssh://disconnected", (event) => {
       const sessionId = event.payload;
       setTabs((prev) =>
-        prev.map((tab) =>
-          tab.sessionId === sessionId ? { ...tab, isConnected: false } : tab
-        )
+        prev.map((tab) => (tab.sessionId === sessionId ? { ...tab, isConnected: false } : tab))
       );
     });
 
@@ -96,14 +91,18 @@ export default function App() {
           return true;
         }
 
-        const disconnectCommand = tab.connectionType === "ssh" ? "ssh_disconnect" : "serial_disconnect";
+        const disconnectCommand =
+          tab.connectionType === "ssh" ? "ssh_disconnect" : "serial_disconnect";
 
         try {
           await invoke(disconnectCommand, { sessionId: tab.sessionId });
           removeTabFromState(id);
           return true;
         } catch (error) {
-          console.error(`Failed to disconnect ${tab.connectionType} session ${tab.sessionId}:`, error);
+          console.error(
+            `Failed to disconnect ${tab.connectionType} session ${tab.sessionId}:`,
+            error
+          );
           return false;
         } finally {
           closeOperationsRef.current.delete(id);
@@ -247,8 +246,8 @@ export default function App() {
             {activeView === "logs" && <LogViewer />}
             {showAiPanel && (
               <>
-                <div 
-                  className={`app__resizer ${isDragging ? 'app__resizer--dragging' : ''}`}
+                <div
+                  className={`app__resizer ${isDragging ? "app__resizer--dragging" : ""}`}
                   onMouseDown={handleMouseDown}
                 />
                 <div style={{ width: aiPanelWidth, flexShrink: 0 }}>
@@ -260,17 +259,16 @@ export default function App() {
               </>
             )}
           </div>
-          <StatusBar 
-            activeTab={activeTab} 
-            onEncodingChange={(encoding) => activeTab && handleEncodingChange(activeTab.id, encoding)} 
+          <StatusBar
+            activeTab={activeTab}
+            onEncodingChange={(encoding) =>
+              activeTab && handleEncodingChange(activeTab.id, encoding)
+            }
           />
         </div>
       </div>
       {showConnection && (
-        <ConnectionDialog
-          onClose={() => setShowConnection(false)}
-          onConnect={handleConnect}
-        />
+        <ConnectionDialog onClose={() => setShowConnection(false)} onConnect={handleConnect} />
       )}
     </div>
   );

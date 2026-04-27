@@ -1,13 +1,13 @@
+mod ai;
+mod config;
+mod logger;
+mod serial;
 mod ssh;
 mod ssh_known_hosts;
-mod serial;
-mod ai;
-mod logger;
-mod config;
 
-use ssh::SshState;
-use serial::SerialState;
 use logger::LoggerState;
+use serial::SerialState;
+use ssh::SshState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

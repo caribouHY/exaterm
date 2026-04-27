@@ -85,7 +85,12 @@ pub fn inspect_host_key_with_path<P: AsRef<Path>>(
     })
 }
 
-pub fn write_trusted_host(host: &str, port: u16, key: &PublicKey, replace: bool) -> Result<(), String> {
+pub fn write_trusted_host(
+    host: &str,
+    port: u16,
+    key: &PublicKey,
+    replace: bool,
+) -> Result<(), String> {
     write_trusted_host_with_path(host, port, key, replace, &known_hosts_path())
 }
 
@@ -239,7 +244,11 @@ mod tests {
     fn matching_key_is_trusted() {
         let path = temp_known_hosts_path();
         let key = ed25519_key();
-        fs::write(&path, format!("{}\n", render_known_host_line("example.com", 22, &key))).unwrap();
+        fs::write(
+            &path,
+            format!("{}\n", render_known_host_line("example.com", 22, &key)),
+        )
+        .unwrap();
 
         let result = inspect_host_key_with_path("example.com", 22, &key, &path).unwrap();
         assert_eq!(result.status, HostKeyCheckStatus::Trusted);
@@ -250,7 +259,11 @@ mod tests {
         let path = temp_known_hosts_path();
         let key = ed25519_key();
         let other = other_ed25519_key();
-        fs::write(&path, format!("{}\n", render_known_host_line("example.com", 22, &other))).unwrap();
+        fs::write(
+            &path,
+            format!("{}\n", render_known_host_line("example.com", 22, &other)),
+        )
+        .unwrap();
 
         let result = inspect_host_key_with_path("example.com", 22, &key, &path).unwrap();
         assert_eq!(result.status, HostKeyCheckStatus::Mismatch);
@@ -261,7 +274,11 @@ mod tests {
     fn different_port_does_not_match() {
         let path = temp_known_hosts_path();
         let key = ed25519_key();
-        fs::write(&path, format!("{}\n", render_known_host_line("example.com", 22, &key))).unwrap();
+        fs::write(
+            &path,
+            format!("{}\n", render_known_host_line("example.com", 22, &key)),
+        )
+        .unwrap();
 
         let result = inspect_host_key_with_path("example.com", 2222, &key, &path).unwrap();
         assert_eq!(result.status, HostKeyCheckStatus::Unknown);
@@ -272,7 +289,8 @@ mod tests {
         let path = temp_known_hosts_path();
         let old_key = other_ed25519_key();
         let new_key = ed25519_key();
-        let other_host_key = read_test_key("AAAAC3NzaC1lZDI1NTE5AAAAIA6rWI3G1sz07DnfFlrouTcysQlj2P+jpNSOEWD9OJ3X");
+        let other_host_key =
+            read_test_key("AAAAC3NzaC1lZDI1NTE5AAAAIA6rWI3G1sz07DnfFlrouTcysQlj2P+jpNSOEWD9OJ3X");
 
         let content = format!(
             "# keep-comment\n{}\n{}\n",

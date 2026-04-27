@@ -11,16 +11,18 @@ export default function LogViewer() {
   const [logDir, setLogDir] = useState("");
 
   useEffect(() => {
-    invoke<LogSession[]>("logger_get_sessions").then(setSessions).catch(() => {});
-    invoke<string>("logger_get_log_dir").then(setLogDir).catch(() => {});
+    invoke<LogSession[]>("logger_get_sessions")
+      .then(setSessions)
+      .catch(() => {});
+    invoke<string>("logger_get_log_dir")
+      .then(setLogDir)
+      .catch(() => {});
   }, []);
 
   return (
     <div className="log-viewer">
       <h2>{t("logs.title")}</h2>
-      <div className="log-viewer__subtitle">
-        {logDir || t("logs.loading")}
-      </div>
+      <div className="log-viewer__subtitle">{logDir || t("logs.loading")}</div>
 
       {sessions.length === 0 ? (
         <div className="log-viewer__empty">
@@ -46,8 +48,14 @@ export default function LogViewer() {
                   </span>
                 </td>
                 <td>{s.target}</td>
-                <td>{new Date(s.started_at).toLocaleString(i18n.language === "ja" ? "ja-JP" : "en-US")}</td>
-                <td className="log-table__path" title={s.file_path}>{s.file_path.split(/[\\/]/).pop()}</td>
+                <td>
+                  {new Date(s.started_at).toLocaleString(
+                    i18n.language === "ja" ? "ja-JP" : "en-US"
+                  )}
+                </td>
+                <td className="log-table__path" title={s.file_path}>
+                  {s.file_path.split(/[\\/]/).pop()}
+                </td>
               </tr>
             ))}
           </tbody>
