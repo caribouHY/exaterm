@@ -17,6 +17,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub terminal: TerminalConfig,
     #[serde(default)]
+    pub ssh: SshConfig,
+    #[serde(default)]
     pub saved_connections: Vec<SavedConnection>,
 }
 
@@ -66,6 +68,20 @@ fn default_ai_model() -> String {
 
 fn default_ollama_url() -> String {
     "http://localhost:11434".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SshConfig {
+    #[serde(default)]
+    pub allow_legacy_algorithms: bool,
+}
+
+impl Default for SshConfig {
+    fn default() -> Self {
+        Self {
+            allow_legacy_algorithms: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +168,7 @@ impl Default for AppConfig {
             language: default_language(),
             ai: AiConfig::default(),
             terminal: TerminalConfig::default(),
+            ssh: SshConfig::default(),
             saved_connections: Vec::new(),
         }
     }
@@ -217,6 +234,7 @@ mod tests {
         assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.terminal.font_size, 14);
         assert_eq!(cfg.terminal.scrollback, 10000);
+        assert!(!cfg.ssh.allow_legacy_algorithms);
         assert!(cfg.saved_connections.is_empty());
     }
 
@@ -226,6 +244,7 @@ mod tests {
             r#"{
                 "config_version": 1,
                 "ai": {"default_provider": "Ollama"},
+                "ssh": {"allow_legacy_algorithms": true},
                 "terminal": {"auto_session_log": true},
                 "saved_connections": [{"name": "dev box"}]
             }"#,
@@ -240,6 +259,7 @@ mod tests {
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
         assert_eq!(cfg.terminal.font_size, 14);
         assert!(cfg.terminal.auto_session_log);
+        assert!(cfg.ssh.allow_legacy_algorithms);
         assert_eq!(cfg.saved_connections[0].name, "dev box");
         assert_eq!(cfg.saved_connections[0].id, "");
     }

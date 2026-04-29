@@ -59,6 +59,7 @@ export interface AppConfig {
   language: string;
   ai: AiConfig;
   terminal: TerminalConfig;
+  ssh: SshConfig;
   saved_connections: SavedConnection[];
 }
 
@@ -78,6 +79,10 @@ export interface TerminalConfig {
   cursor_style: string;
   scrollback: number;
   auto_session_log: boolean;
+}
+
+export interface SshConfig {
+  allow_legacy_algorithms: boolean;
 }
 
 export interface SavedConnection {

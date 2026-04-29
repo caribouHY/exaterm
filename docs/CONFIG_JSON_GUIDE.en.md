@@ -47,6 +47,9 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "scrollback": 10000,
     "auto_session_log": false
   },
+  "ssh": {
+    "allow_legacy_algorithms": false
+  },
   "saved_connections": []
 }
 ```
@@ -59,6 +62,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | `language`          | string | `"en"`    | Display language. Use `"en"` for English or `"ja"` for Japanese.                                                                           |
 | `ai`                | object | See below | AI assistant settings.                                                                                                                     |
 | `terminal`          | object | See below | Terminal display and logging settings.                                                                                                     |
+| `ssh`               | object | See below | SSH connection compatibility settings.                                                                                                     |
 | `saved_connections` | array  | `[]`      | Saved connection information. In the current UI, this is mostly treated as internal data.                                                  |
 
 ## ai
@@ -117,6 +121,29 @@ Logs are usually stored here:
 ```
 
 In sensitive environments, enable session logging only when necessary.
+
+## ssh
+
+| Parameter                     | Type    | Default | Description                                                                                                                                 |
+| ----------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ssh.allow_legacy_algorithms` | boolean | `false` | When set to `true`, ExaTerm also offers legacy SSH algorithms for older devices that do not support modern SSH defaults.                     |
+
+### Legacy SSH Algorithm Notice
+
+Keep `ssh.allow_legacy_algorithms` set to `false` unless you need to connect to an older SSH server or network device. Enabling it allows weaker compatibility algorithms such as SHA-1 based key exchange, CBC/3DES ciphers, and `ssh-rsa` host keys.
+
+### Available SSH Algorithms
+
+ExaTerm offers the following SSH algorithms. Legacy add-ons are offered only when `ssh.allow_legacy_algorithms` is set to `true`.
+
+| Category     | Default algorithms                                                                                                                                                     | Legacy add-ons                                                                 |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Key exchange | `curve25519-sha256`, `curve25519-sha256@libssh.org`, `diffie-hellman-group16-sha512`, `diffie-hellman-group14-sha256`                                                | `diffie-hellman-group1-sha1`, `diffie-hellman-group14-sha1`                    |
+| Cipher       | `chacha20-poly1305@openssh.com`, `aes256-gcm@openssh.com`, `aes256-ctr`, `aes192-ctr`, `aes128-ctr`                                                                   | `aes128-cbc`, `aes192-cbc`, `aes256-cbc`, `3des-cbc`                           |
+| MAC          | `hmac-sha2-512-etm@openssh.com`, `hmac-sha2-256-etm@openssh.com`, `hmac-sha2-512`, `hmac-sha2-256`, `hmac-sha1-etm@openssh.com`, `hmac-sha1`                         | No additional MAC algorithms are added; the current default already includes `hmac-sha1` variants. |
+| Host key     | `ssh-ed25519`, `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp521`, `rsa-sha2-256`, `rsa-sha2-512`                                                                           | `ssh-rsa`                                                                      |
+
+Internal SSH extension markers, such as strict key exchange and extension info markers, are intentionally omitted from this list because users do not configure them directly.
 
 ## saved_connections
 
@@ -193,6 +220,16 @@ Save the Azure OpenAI API key from the Settings screen. ExaTerm sends requests t
 
 Keep the other fields in the actual `terminal` object. The snippet above only shows the field being changed.
 
+### Allow Legacy SSH Algorithms
+
+```json
+"ssh": {
+  "allow_legacy_algorithms": true
+}
+```
+
+Use this only for older devices that cannot negotiate with the default SSH algorithms.
+
 ## Troubleshooting
 
 | Symptom                          | Action                                                                                                                                                                                                                        |
@@ -200,5 +237,6 @@ Keep the other fields in the actual `terminal` object. The snippet above only sh
 | ExaTerm cannot load settings     | Check the JSON syntax, especially extra commas, quotation marks, and braces.                                                                                                                                                  |
 | Changes are not reflected        | Restart ExaTerm or save the settings again from the Settings screen.                                                                                                                                                          |
 | An AI provider does not appear   | Cloud providers require API keys. For Azure OpenAI, also check `azure_openai_enabled`, `azure_openai_endpoint`, and `azure_openai_deployment`. For Ollama, check `ollama_enabled` and make sure the Ollama server is running. |
+| An older SSH device will not connect | If the error indicates no common SSH algorithm, set `ssh.allow_legacy_algorithms` to `true`, then try connecting again. Disable it again when it is no longer needed.                                      |
 | Text is hard to read             | Adjust `terminal.font_size` or `terminal.font_family`.                                                                                                                                                                        |
 | You do not want logs to be saved | Set `terminal.auto_session_log` to `false`. If logs were already created, delete them from `%AppData%\ExaTerm\logs` as needed.                                                                                                |

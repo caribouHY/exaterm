@@ -315,6 +315,24 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       </div>
 
       <div className="settings-section">
+        <div className="settings-section__title">{t("settings.ssh_settings")}</div>
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.allow_legacy_ssh_algorithms")}</span>
+            <small>{t("settings.allow_legacy_ssh_algorithms_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(config.ssh.allow_legacy_algorithms)}
+              onChange={(e) => update("ssh.allow_legacy_algorithms", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+      </div>
+
+      <div className="settings-section">
         <div className="settings-section__title">{t("settings.terminal_settings")}</div>
         <div className="settings-row">
           <div>

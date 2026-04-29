@@ -47,6 +47,9 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "scrollback": 10000,
     "auto_session_log": false
   },
+  "ssh": {
+    "allow_legacy_algorithms": false
+  },
   "saved_connections": []
 }
 ```
@@ -59,6 +62,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | `language`          | string | `"en"`   | 画面表示言語です。`"en"` は英語、`"ja"` は日本語です。                                                               |
 | `ai`                | object | 下記参照 | AI アシスタント関連の設定です。                                                                                      |
 | `terminal`          | object | 下記参照 | ターミナル表示とログ関連の設定です。                                                                                 |
+| `ssh`               | object | 下記参照 | SSH 接続の互換性設定です。                                                                                           |
 | `saved_connections` | array  | `[]`     | 保存済み接続情報です。現状の設定画面では主に内部データとして扱われます。                                             |
 
 ## ai
@@ -117,6 +121,29 @@ Ollama は通常 API キーを必要としません。`ai.ollama_enabled` と `a
 ```
 
 機密性の高い環境では、必要な場合のみ有効にしてください。
+
+## ssh
+
+| パラメータ                    | 型      | 既定値  | 説明                                                                                                                                        |
+| ----------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ssh.allow_legacy_algorithms` | boolean | `false` | `true` にすると、現代的な SSH 既定アルゴリズムに対応していない古い機器向けに、レガシー SSH アルゴリズムも提示します。                     |
+
+### レガシー SSH アルゴリズムの注意
+
+古い SSH サーバーやネットワーク機器へ接続する必要がある場合を除き、`ssh.allow_legacy_algorithms` は `false` のままにしてください。有効にすると、SHA-1 ベースの鍵交換、CBC/3DES 暗号、`ssh-rsa` ホスト鍵など、強度の低い互換アルゴリズムを許可します。
+
+### 利用可能な SSH アルゴリズム
+
+ExaTerm は次の SSH アルゴリズムを提示します。レガシー追加分は、`ssh.allow_legacy_algorithms` を `true` にした場合のみ提示されます。
+
+| カテゴリ   | 既定で利用可能                                                                                                                                                         | レガシー追加分                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 鍵交換     | `curve25519-sha256`, `curve25519-sha256@libssh.org`, `diffie-hellman-group16-sha512`, `diffie-hellman-group14-sha256`                                                | `diffie-hellman-group1-sha1`, `diffie-hellman-group14-sha1`                    |
+| 暗号       | `chacha20-poly1305@openssh.com`, `aes256-gcm@openssh.com`, `aes256-ctr`, `aes192-ctr`, `aes128-ctr`                                                                   | `aes128-cbc`, `aes192-cbc`, `aes256-cbc`, `3des-cbc`                           |
+| MAC        | `hmac-sha2-512-etm@openssh.com`, `hmac-sha2-256-etm@openssh.com`, `hmac-sha2-512`, `hmac-sha2-256`, `hmac-sha1-etm@openssh.com`, `hmac-sha1`                         | 追加される MAC アルゴリズムはありません。現在の既定値に `hmac-sha1` 系が含まれています。 |
+| ホスト鍵   | `ssh-ed25519`, `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp521`, `rsa-sha2-256`, `rsa-sha2-512`                                                                           | `ssh-rsa`                                                                      |
+
+Strict key exchange や extension info などの SSH 内部拡張マーカーは、ユーザーが直接設定するものではないため、この一覧には含めていません。
 
 ## saved_connections
 
@@ -193,6 +220,16 @@ Azure OpenAI API キーは設定画面から保存してください。ExaTerm �
 
 実際の `terminal` オブジェクトには他の項目も残してください。上記は変更箇所だけを示した例です。
 
+### レガシー SSH アルゴリズムを許可する
+
+```json
+"ssh": {
+  "allow_legacy_algorithms": true
+}
+```
+
+既定の SSH アルゴリズムでは接続できない古い機器に限って使用してください。
+
 ## トラブルシューティング
 
 | 症状                         | 対処                                                                                                                                                                                                                                      |
@@ -200,5 +237,6 @@ Azure OpenAI API キーは設定画面から保存してください。ExaTerm �
 | ExaTerm が設定を読み込めない | JSON の構文を確認してください。特に余分なカンマ、引用符、波括弧の不足を確認します。                                                                                                                                                       |
 | 設定を変更しても反映されない | ExaTerm を再起動するか、設定画面で保存し直してください。                                                                                                                                                                                  |
 | AI プロバイダが表示されない  | クラウド系プロバイダは API キー登録が必要です。Azure OpenAI は `azure_openai_enabled`、`azure_openai_endpoint`、`azure_openai_deployment` も確認してください。Ollama は `ollama_enabled` と Ollama サーバーの起動状態を確認してください。 |
+| 古い SSH 機器に接続できない  | 共通の SSH アルゴリズムがないことを示すエラーの場合は、`ssh.allow_legacy_algorithms` を `true` にして再接続してください。不要になったら無効に戻してください。                                         |
 | 文字が見づらい               | `terminal.font_size` または `terminal.font_family` を調整してください。                                                                                                                                                                   |
 | ログを残したくない           | `terminal.auto_session_log` を `false` にしてください。既に作成済みのログは必要に応じて `%AppData%\ExaTerm\logs` から削除してください。                                                                                                   |
