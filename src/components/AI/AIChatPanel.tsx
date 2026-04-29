@@ -18,6 +18,8 @@ interface AiSecretStatus {
 interface AIChatPanelProps {
   onClose: () => void;
   terminalBuffer: React.MutableRefObject<string>;
+  messages: ChatMessage[];
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
 }
 
 const PROVIDERS: Array<{ id: ProviderId; label: string; secretKey?: keyof AiSecretStatus }> = [
@@ -28,9 +30,13 @@ const PROVIDERS: Array<{ id: ProviderId; label: string; secretKey?: keyof AiSecr
   { id: "Ollama", label: "Ollama" },
 ];
 
-export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProps) {
+export default function AIChatPanel({
+  onClose,
+  terminalBuffer,
+  messages,
+  setMessages,
+}: AIChatPanelProps) {
   const { t, i18n } = useTranslation();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [models, setModels] = useState<AiModelInfo[]>([]);
@@ -179,7 +185,7 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
     if (!input.trim() || loading || !selectedModel) return;
     const userMsg: ChatMessage = { role: "user", content: input.trim() };
     const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
+    setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
 
@@ -193,11 +199,11 @@ export default function AIChatPanel({ onClose, terminalBuffer }: AIChatPanelProp
         ollamaBaseUrl: selectedProvider === "Ollama" ? ollamaBaseUrl : null,
         azureOpenAiEndpoint: selectedProvider === "AzureOpenAi" ? azureOpenAiEndpoint : null,
       });
-      setMessages([...newMessages, { role: "assistant", content: response }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: response }]);
     } catch (e: any) {
       const detail = typeof e === "string" ? e : e.message || "Unknown error";
-      setMessages([
-        ...newMessages,
+      setMessages((prev) => [
+        ...prev,
         {
           role: "assistant",
           content: `Error: ${detail}`,

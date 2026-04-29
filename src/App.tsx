@@ -8,7 +8,7 @@ import AIChatPanel from "./components/AI/AIChatPanel";
 import StatusBar from "./components/StatusBar/StatusBar";
 import SettingsPanel from "./components/Settings/SettingsPanel";
 import LogViewer from "./components/Log/LogViewer";
-import type { TabInfo, ViewMode, ConnectionType, Encoding, AppConfig } from "./types";
+import type { TabInfo, ViewMode, ConnectionType, Encoding, AppConfig, ChatMessage } from "./types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
@@ -23,6 +23,7 @@ export default function App() {
   const [aiPanelWidth, setAiPanelWidth] = useState(340);
   const [isDragging, setIsDragging] = useState(false);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const terminalBuffer = useRef("");
   const tabsRef = useRef<TabInfo[]>([]);
   const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
@@ -269,6 +270,8 @@ export default function App() {
                   <AIChatPanel
                     onClose={() => setShowAiPanel(false)}
                     terminalBuffer={terminalBuffer}
+                    messages={aiMessages}
+                    setMessages={setAiMessages}
                   />
                 </div>
               </>
