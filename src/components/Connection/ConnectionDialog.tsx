@@ -24,6 +24,10 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
 
+  // Telnet fields
+  const [telnetHost, setTelnetHost] = useState("192.168.1.1");
+  const [telnetPort, setTelnetPort] = useState("23");
+
   // Serial fields
   const [ports, setPorts] = useState<PortInfo[]>([]);
   const [selectedPort, setSelectedPort] = useState("");
@@ -139,6 +143,29 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         return;
       }
 
+      if (tab === "telnet") {
+        const parsedTelnetPort = Number.parseInt(telnetPort, 10);
+        if (Number.isNaN(parsedTelnetPort)) {
+          throw new Error(t("connection.error"));
+        }
+
+        const sessionId = await invoke<string>("telnet_connect", {
+          host: telnetHost,
+          port: parsedTelnetPort,
+          cols: 120,
+          rows: 30,
+        });
+        if (autoLog) {
+          await invoke("logger_start", {
+            sessionId,
+            connectionType: "telnet",
+            target: `${telnetHost}:${parsedTelnetPort}`,
+          });
+        }
+        onConnect("telnet", sessionId, `${telnetHost}:${parsedTelnetPort}`);
+        return;
+      }
+
       const sessionId = await invoke<string>("serial_connect", {
         port: selectedPort,
         config: {
@@ -204,6 +231,12 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
               onClick={() => setTab("ssh")}
             >
               {t("connection.ssh")}
+            </button>
+            <button
+              className={`connection-dialog__tab ${tab === "telnet" ? "connection-dialog__tab--active" : ""}`}
+              onClick={() => setTab("telnet")}
+            >
+              {t("connection.telnet")}
             </button>
             <button
               className={`connection-dialog__tab ${tab === "serial" ? "connection-dialog__tab--active" : ""}`}
@@ -302,6 +335,30 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                   onChange={(e) => setPassword(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleConnect()}
                 />
+              </div>
+            </>
+          ) : tab === "telnet" ? (
+            <>
+              <div className="connection-dialog__row">
+                <div>
+                  <label className="label">{t("connection.host")}</label>
+                  <input
+                    className="input"
+                    value={telnetHost}
+                    onChange={(e) => setTelnetHost(e.target.value)}
+                    placeholder="192.168.1.1"
+                  />
+                </div>
+                <div style={{ maxWidth: 100 }}>
+                  <label className="label">{t("connection.port")}</label>
+                  <input
+                    className="input"
+                    type="number"
+                    value={telnetPort}
+                    onChange={(e) => setTelnetPort(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleConnect()}
+                  />
+                </div>
               </div>
             </>
           ) : (

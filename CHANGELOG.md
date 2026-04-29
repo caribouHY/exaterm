@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added Telnet connections with basic option negotiation, terminal resizing, and optional session logging.
 - Added an opt-in setting to allow legacy SSH algorithms for older devices.
 - Added Escape key cancellation for the new connection dialog.
 

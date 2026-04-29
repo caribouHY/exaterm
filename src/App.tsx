@@ -49,15 +49,26 @@ export default function App() {
   }, [tabs]);
 
   useEffect(() => {
-    const unlisten = listen<string>("ssh://disconnected", (event) => {
-      const sessionId = event.payload;
+    const markDisconnected = (sessionId: string) => {
       setTabs((prev) =>
         prev.map((tab) => (tab.sessionId === sessionId ? { ...tab, isConnected: false } : tab))
       );
+    };
+
+    const unlistenSsh = listen<string>("ssh://disconnected", (event) => {
+      markDisconnected(event.payload);
+    });
+    const unlistenSerial = listen<string>("serial://disconnected", (event) => {
+      markDisconnected(event.payload);
+    });
+    const unlistenTelnet = listen<string>("telnet://disconnected", (event) => {
+      markDisconnected(event.payload);
     });
 
     return () => {
-      unlisten.then((fn) => fn());
+      unlistenSsh.then((fn) => fn());
+      unlistenSerial.then((fn) => fn());
+      unlistenTelnet.then((fn) => fn());
     };
   }, []);
 
@@ -91,8 +102,12 @@ export default function App() {
           return true;
         }
 
-        const disconnectCommand =
-          tab.connectionType === "ssh" ? "ssh_disconnect" : "serial_disconnect";
+        const disconnectCommands: Record<ConnectionType, string> = {
+          ssh: "ssh_disconnect",
+          serial: "serial_disconnect",
+          telnet: "telnet_disconnect",
+        };
+        const disconnectCommand = disconnectCommands[tab.connectionType];
 
         try {
           await invoke(disconnectCommand, { sessionId: tab.sessionId });

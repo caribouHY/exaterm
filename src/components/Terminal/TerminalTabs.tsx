@@ -1,4 +1,4 @@
-import { Monitor, Usb, Plus, X } from "lucide-react";
+import { Monitor, Network, Usb, Plus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { TabInfo } from "../../types";
 import "./TerminalTabs.css";
@@ -21,6 +21,11 @@ export default function TerminalTabs({
   onAddTab,
 }: TerminalTabsProps) {
   const { t } = useTranslation();
+  const iconFor = (connectionType: TabInfo["connectionType"]) => {
+    if (connectionType === "ssh") return <Monitor size={13} />;
+    if (connectionType === "telnet") return <Network size={13} />;
+    return <Usb size={13} />;
+  };
 
   return (
     <div className="terminal-tabs">
@@ -40,9 +45,7 @@ export default function TerminalTabs({
             disabled={isClosing}
             aria-busy={isClosing}
           >
-            <span className="terminal-tab__icon">
-              {tab.connectionType === "ssh" ? <Monitor size={13} /> : <Usb size={13} />}
-            </span>
+            <span className="terminal-tab__icon">{iconFor(tab.connectionType)}</span>
             <span
               className={`terminal-tab__status ${
                 tab.isConnected

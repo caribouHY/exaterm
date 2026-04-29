@@ -4,10 +4,12 @@ mod logger;
 mod serial;
 mod ssh;
 mod ssh_known_hosts;
+mod telnet;
 
 use logger::LoggerState;
 use serial::SerialState;
 use ssh::SshState;
+use telnet::TelnetState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -15,6 +17,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(SshState::new())
         .manage(SerialState::new())
+        .manage(TelnetState::new())
         .manage(LoggerState::new())
         .invoke_handler(tauri::generate_handler![
             // SSH
@@ -29,6 +32,11 @@ pub fn run() {
             serial::serial_connect,
             serial::serial_write,
             serial::serial_disconnect,
+            // Telnet
+            telnet::telnet_connect,
+            telnet::telnet_write,
+            telnet::telnet_resize,
+            telnet::telnet_disconnect,
             // AI
             ai::ai_get_models,
             ai::ai_get_ollama_models,

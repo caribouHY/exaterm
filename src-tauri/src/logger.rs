@@ -9,8 +9,8 @@ use tokio::sync::Mutex;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogSession {
     pub session_id: String,
-    pub connection_type: String, // "ssh" or "serial"
-    pub target: String,          // e.g. "user@host:22" or "COM3"
+    pub connection_type: String, // "ssh", "serial", or "telnet"
+    pub target: String,          // e.g. "user@host:22", "COM3", or "host:23"
     pub started_at: String,
     pub file_path: String,
 }

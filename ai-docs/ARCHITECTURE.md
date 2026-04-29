@@ -19,7 +19,7 @@ The app is currently planned and documented around a Windows desktop beta.
 
 - `src/App.tsx` owns the main shell, active view, terminal tabs, AI panel visibility, config refresh, and tab close/disconnect flow.
 - `src/components/Terminal/` owns xterm.js rendering, terminal input/output, resize handling, encoding selection support, and optional log append calls.
-- `src/components/Connection/` owns SSH and Serial connection forms, SSH host-key confirmation, serial port listing, and session start.
+- `src/components/Connection/` owns SSH, Serial, and Telnet connection forms, SSH host-key confirmation, serial port listing, and session start.
 - `src/components/Settings/` owns config editing and AI API key save/clear UI.
 - `src/components/AI/` owns model/provider selection and chat calls.
 - `src/components/Log/` owns session log listing.
@@ -32,6 +32,7 @@ Avoid changes that remount terminal views or drop active tab state unless the ta
 - `src-tauri/src/ssh.rs` handles SSH sessions, writes, resizes, disconnects, and host-key probing/trust flow integration.
 - `src-tauri/src/ssh_known_hosts.rs` handles the ExaTerm known-hosts file and fingerprint trust decisions.
 - `src-tauri/src/serial.rs` handles serial port listing and serial sessions.
+- `src-tauri/src/telnet.rs` handles Telnet sessions, minimal option negotiation, writes, resizes, and disconnects.
 - `src-tauri/src/ai.rs` and `src-tauri/src/ai/` handle provider catalogs, provider calls, errors, and secret lookup.
 - `src-tauri/src/ai/secrets.rs` stores cloud provider API keys in the operating system credential store, not in `config.json`.
 - `src-tauri/src/config.rs` loads, defaults, migrates, and saves user settings.
@@ -55,8 +56,8 @@ Preserve the opt-in logging model unless the task explicitly changes it.
 ## Important Data Flow
 
 - Frontend calls Rust through `@tauri-apps/api/core` `invoke`.
-- SSH and Serial connection dialogs start backend sessions, then `App.tsx` creates tabs from returned session IDs.
-- Terminal input writes to `ssh_write` or `serial_write`; terminal output is rendered by xterm.js and may be appended to logs only when auto session logging is enabled.
+- SSH, Serial, and Telnet connection dialogs start backend sessions, then `App.tsx` creates tabs from returned session IDs.
+- Terminal input writes to the matching backend command (`ssh_write`, `serial_write`, or `telnet_write`); terminal output is rendered by xterm.js and may be appended to logs only when auto session logging is enabled.
 - Settings are loaded through `config_load` and saved through `config_save`.
 - AI chat loads configured provider/model preferences, checks secret status for cloud providers, and calls `ai_chat`.
 - SSH host keys are probed before trust decisions and stored through the known-hosts module.

@@ -75,6 +75,11 @@
   color: var(--accent-green);
 }
 
+.log-table__type--telnet {
+  background: rgba(204, 167, 0, 0.15);
+  color: var(--accent-yellow);
+}
+
 .log-table__path {
   font-family: var(--font-mono);
   font-size: 11px;

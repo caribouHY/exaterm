@@ -7,13 +7,13 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { Encoding, TerminalConfig } from "../../types";
+import type { ConnectionType, Encoding, TerminalConfig } from "../../types";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
 interface TerminalViewProps {
   sessionId: string | null;
-  connectionType: "ssh" | "serial";
+  connectionType: ConnectionType;
   isConnected: boolean;
   isActive: boolean;
   encoding: Encoding;
@@ -38,6 +38,30 @@ export default function TerminalView({
   const fitRef = useRef<FitAddon | null>(null);
   const decoderRef = useRef(new TextDecoder(encoding));
   const isConnectedRef = useRef(isConnected);
+
+  const connectionCommands: Record<
+    ConnectionType,
+    { write: string; dataEvent: string; errorEvent: string; resize: string | null }
+  > = {
+    ssh: {
+      write: "ssh_write",
+      dataEvent: "ssh://data",
+      errorEvent: "ssh://error",
+      resize: "ssh_resize",
+    },
+    serial: {
+      write: "serial_write",
+      dataEvent: "serial://data",
+      errorEvent: "serial://error",
+      resize: null,
+    },
+    telnet: {
+      write: "telnet_write",
+      dataEvent: "telnet://data",
+      errorEvent: "telnet://error",
+      resize: "telnet_resize",
+    },
+  };
 
   useEffect(() => {
     isConnectedRef.current = isConnected;
@@ -109,18 +133,18 @@ export default function TerminalView({
     fitRef.current = fitAddon;
 
     // Terminal input -> backend
-    const writeCmd = connectionType === "ssh" ? "ssh_write" : "serial_write";
+    const protocol = connectionCommands[connectionType];
     term.onData((data) => {
       if (!isConnectedRef.current) return;
-      invoke(writeCmd, { sessionId, data }).catch(console.error);
+      invoke(protocol.write, { sessionId, data }).catch(console.error);
     });
 
     // 設定を読み込み、自動ログが有効な場合のみロギングを開始
     const loggingEnabled = terminalConfig?.auto_session_log ?? false;
 
     // Backend data -> terminal
-    const eventPrefix = connectionType === "ssh" ? "ssh://data" : "serial://data";
-    const errorPrefix = connectionType === "ssh" ? "ssh://error" : "serial://error";
+    const eventPrefix = protocol.dataEvent;
+    const errorPrefix = protocol.errorEvent;
 
     const handleData = (event: { payload: number[] }) => {
       const data = new Uint8Array(event.payload);
@@ -136,7 +160,7 @@ export default function TerminalView({
     const unlistenError = listen<number[]>(`${errorPrefix}/${sessionId}`, handleData);
 
     // Resize handling
-    const resizeCmd = connectionType === "ssh" ? "ssh_resize" : null;
+    const resizeCmd = protocol.resize;
     const handleResize = () => {
       fitAddon.fit();
       if (resizeCmd && sessionId && isConnectedRef.current) {

@@ -96,7 +96,7 @@ export interface SavedConnection {
   baud_rate?: number | null;
 }
 
-export type ConnectionType = "ssh" | "serial";
+export type ConnectionType = "ssh" | "serial" | "telnet";
 export type ViewMode = "terminal" | "settings" | "logs";
 export type Encoding = "utf-8" | "shift-jis" | "euc-jp";
 
