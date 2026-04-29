@@ -272,7 +272,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             type="text"
             value={config.ai.azure_openai_endpoint}
             onChange={(e) => update("ai.azure_openai_endpoint", e.target.value)}
-            placeholder="https://your-resource.openai.azure.com"
+            placeholder="https://your-resource.openai.azure.com/openai/v1/chat/completions"
           />
         </div>
 

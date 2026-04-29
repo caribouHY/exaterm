@@ -129,7 +129,7 @@ async fn send_azure_openai_chat(
 ) -> Result<String, String> {
     let provider = AiProvider::AzureOpenAi;
     let api_key = load_provider_secret(&provider, language)?;
-    let url = azure_openai_v1_chat_url(
+    let url = azure_openai_chat_url(
         azure_openai_endpoint.unwrap_or_default(),
         deployment,
         language,
@@ -144,9 +144,7 @@ async fn send_azure_openai_chat(
         .post(url)
         .header("api-key", api_key)
         .header("content-type", "application/json")
-        .json(
-            &serde_json::json!({"model":deployment,"messages":payload_messages,"temperature":0.7}),
-        )
+        .json(&serde_json::json!({"model":deployment,"messages":payload_messages}))
         .send()
         .await
         .map_err(|e| format_network_error(&provider, language, &e))?;
@@ -377,12 +375,12 @@ fn normalized_ollama_base_url(ollama_base_url: Option<&str>) -> String {
         .to_string()
 }
 
-fn azure_openai_v1_chat_url(
+fn azure_openai_chat_url(
     endpoint: &str,
     deployment: &str,
     language: &str,
 ) -> Result<String, String> {
-    let endpoint = endpoint.trim().trim_end_matches('/');
+    let endpoint = endpoint.trim();
     let deployment = deployment.trim();
 
     if endpoint.is_empty() || deployment.is_empty() {
@@ -394,7 +392,7 @@ fn azure_openai_v1_chat_url(
         });
     }
 
-    let mut url = reqwest::Url::parse(&format!("{}/", endpoint)).map_err(|_| -> String {
+    reqwest::Url::parse(endpoint).map_err(|_| -> String {
         if ErrorLanguage::from_language(language).is_ja() {
             "Azure OpenAI の Endpoint URL が正しくありません。Settings の入力内容を確認してください。"
                 .to_string()
@@ -403,20 +401,7 @@ fn azure_openai_v1_chat_url(
         }
     })?;
 
-    {
-        let mut segments = url.path_segments_mut().map_err(|_| -> String {
-            if ErrorLanguage::from_language(language).is_ja() {
-                "Azure OpenAI の Endpoint URL を利用できません。Settings の入力内容を確認してください。"
-                    .to_string()
-            } else {
-                "The Azure OpenAI endpoint URL cannot be used. Check the value in Settings."
-                    .to_string()
-            }
-        })?;
-        segments.extend(["openai", "v1", "chat", "completions"]);
-    }
-
-    Ok(url.to_string())
+    Ok(endpoint.to_string())
 }
 
 fn model_is_available(available: &[AiModelInfo], model: &str) -> bool {
@@ -518,21 +503,26 @@ mod tests {
     }
 
     #[test]
-    fn builds_azure_openai_v1_chat_url_without_api_version() {
-        let url = azure_openai_v1_chat_url("https://example.openai.azure.com/", "my-gpt4o", "en")
-            .unwrap();
+    fn uses_configured_azure_openai_chat_url_as_is() {
+        let endpoint = "https://example.openai.azure.com/openai/v1/chat/completions";
+        let url = azure_openai_chat_url(endpoint, "my-gpt4o", "en").unwrap();
 
-        assert_eq!(
-            url,
-            "https://example.openai.azure.com/openai/v1/chat/completions"
-        );
-        assert!(!url.contains("api-version"));
+        assert_eq!(url, endpoint);
+    }
+
+    #[test]
+    fn preserves_azure_openai_chat_url_query_string() {
+        let endpoint =
+            "https://example.openai.azure.com/openai/deployments/my-gpt4o/chat/completions?api-version=2024-10-21";
+        let url = azure_openai_chat_url(endpoint, "my-gpt4o", "en").unwrap();
+
+        assert_eq!(url, endpoint);
+        assert!(url.contains("api-version=2024-10-21"));
     }
 
     #[test]
     fn rejects_incomplete_azure_openai_v1_settings() {
-        let err =
-            azure_openai_v1_chat_url("https://example.openai.azure.com", "", "en").unwrap_err();
+        let err = azure_openai_chat_url("https://example.openai.azure.com", "", "en").unwrap_err();
 
         assert!(err.contains("Azure OpenAI endpoint"));
     }

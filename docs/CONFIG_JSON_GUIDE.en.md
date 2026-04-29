@@ -66,7 +66,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | Parameter                    | Type    | Default                    | Description                                                                                                                                                                                                                            |
 | ---------------------------- | ------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ai.azure_openai_enabled`    | boolean | `false`                    | When set to `true`, Azure OpenAI is shown in the AI panel when the endpoint, model deployment name, and API key are configured.                                                                                                        |
-| `ai.azure_openai_endpoint`   | string  | `""`                       | The Azure OpenAI resource endpoint, such as `"https://your-resource.openai.azure.com"`. ExaTerm appends `/openai/v1/chat/completions` automatically.                                                                                   |
+| `ai.azure_openai_endpoint`   | string  | `""`                       | The full Azure OpenAI chat completions URL to send requests to, such as `"https://your-resource.openai.azure.com/openai/v1/chat/completions"` or a deployment URL with `api-version`. ExaTerm uses this URL as entered.                  |
 | `ai.azure_openai_deployment` | string  | `""`                       | The Azure OpenAI model deployment name. With the v1 API, this value is sent as the `model` field.                                                                                                                                      |
 | `ai.ollama_enabled`          | boolean | `false`                    | When set to `true`, Ollama models are shown in the AI panel. To use Ollama, a local or configured Ollama server must be running.                                                                                                       |
 | `ai.ollama_base_url`         | string  | `"http://localhost:11434"` | The base URL for the Ollama API. For a standard local setup, use `"http://localhost:11434"`. If this is an empty string, the UI treats it as the default URL.                                                                          |
@@ -77,7 +77,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 API keys for OpenAI, Azure OpenAI, Anthropic, and Google Gemini are not stored in `config.json`. Keys registered from the Settings screen are stored in the operating system credential store.
 
-Azure OpenAI uses the v1 API, so you do not need to set an `api-version` value. Enter the resource endpoint and model deployment name instead.
+Enter the full Azure OpenAI chat completions URL and model deployment name. ExaTerm uses the endpoint URL exactly as entered and does not append a path or `api-version` value.
 
 Ollama usually does not require an API key. Configure `ai.ollama_enabled` and `ai.ollama_base_url` instead.
 
@@ -174,14 +174,14 @@ Set `default_model` to a model name installed in Ollama.
 ```json
 "ai": {
   "azure_openai_enabled": true,
-  "azure_openai_endpoint": "https://your-resource.openai.azure.com",
+  "azure_openai_endpoint": "https://your-resource.openai.azure.com/openai/v1/chat/completions",
   "azure_openai_deployment": "my-gpt4o",
   "default_provider": "AzureOpenAi",
   "default_model": "my-gpt4o"
 }
 ```
 
-Save the Azure OpenAI API key from the Settings screen. ExaTerm sends requests to `/openai/v1/chat/completions` and does not require an `api-version` setting.
+Save the Azure OpenAI API key from the Settings screen. ExaTerm sends requests to the configured endpoint URL without modifying it.
 
 ### Disable Session Logs
 

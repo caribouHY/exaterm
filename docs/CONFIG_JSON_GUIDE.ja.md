@@ -66,7 +66,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | パラメータ                   | 型      | 既定値                     | 説明                                                                                                                                                                                                    |
 | ---------------------------- | ------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ai.azure_openai_enabled`    | boolean | `false`                    | `true` にすると、Endpoint、モデルデプロイ名、API キーが設定されている場合に Azure OpenAI を AI パネルに表示します。                                                                                     |
-| `ai.azure_openai_endpoint`   | string  | `""`                       | Azure OpenAI リソースのエンドポイントです。例: `"https://your-resource.openai.azure.com"`。ExaTerm が `/openai/v1/chat/completions` を自動で付与します。                                                |
+| `ai.azure_openai_endpoint`   | string  | `""`                       | リクエスト送信先の Azure OpenAI chat completions URL 全体です。例: `"https://your-resource.openai.azure.com/openai/v1/chat/completions"`、または `api-version` 付きのデプロイ URL。ExaTerm は入力された URL をそのまま使用します。      |
 | `ai.azure_openai_deployment` | string  | `""`                       | Azure OpenAI のモデルデプロイ名です。v1 API では、この値を `model` フィールドとして送信します。                                                                                                         |
 | `ai.ollama_enabled`          | boolean | `false`                    | `true` にすると、Ollama のモデルを AI パネルに表示します。Ollama を使用するには、ローカルまたは指定 URL の Ollama サーバーが起動している必要があります。                                                |
 | `ai.ollama_base_url`         | string  | `"http://localhost:11434"` | Ollama API のベース URL です。ローカル環境の標準設定では `"http://localhost:11434"` を使用します。空文字の場合、画面上では既定 URL として扱われます。                                                   |
@@ -77,7 +77,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 OpenAI、Azure OpenAI、Anthropic、Google Gemini の API キーは `config.json` には保存されません。設定画面で登録したキーは、OS の資格情報ストアに保存されます。
 
-Azure OpenAI は v1 API を使用するため、`api-version` の設定は不要です。リソースのエンドポイントとモデルデプロイ名を設定してください。
+Azure OpenAI の chat completions URL 全体とモデルデプロイ名を設定してください。ExaTerm は Endpoint URL を入力どおりに使用し、パスや `api-version` は自動付与しません。
 
 Ollama は通常 API キーを必要としません。`ai.ollama_enabled` と `ai.ollama_base_url` を設定してください。
 
@@ -174,14 +174,14 @@ Ollama は通常 API キーを必要としません。`ai.ollama_enabled` と `a
 ```json
 "ai": {
   "azure_openai_enabled": true,
-  "azure_openai_endpoint": "https://your-resource.openai.azure.com",
+  "azure_openai_endpoint": "https://your-resource.openai.azure.com/openai/v1/chat/completions",
   "azure_openai_deployment": "my-gpt4o",
   "default_provider": "AzureOpenAi",
   "default_model": "my-gpt4o"
 }
 ```
 
-Azure OpenAI API キーは設定画面から保存してください。ExaTerm は `/openai/v1/chat/completions` にリクエストを送信し、`api-version` の設定は必要ありません。
+Azure OpenAI API キーは設定画面から保存してください。ExaTerm は設定された Endpoint URL に、変更を加えずリクエストを送信します。
 
 ### セッションログを無効にする
 
