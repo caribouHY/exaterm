@@ -43,6 +43,25 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     }
   }, [selectedPort, tab]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+
+      event.preventDefault();
+      if (connecting) return;
+
+      if (hostKeyCheck) {
+        setHostKeyCheck(null);
+        return;
+      }
+
+      onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [connecting, hostKeyCheck, onClose]);
+
   const getAutoLogPreference = async () => {
     try {
       const cfg = await invoke<{ terminal: { auto_session_log: boolean } }>("config_load");

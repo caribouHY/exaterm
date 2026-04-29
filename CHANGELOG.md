@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added Escape key cancellation for the new connection dialog.
+
 ### Fixed
 
 - Improved serial input responsiveness.
