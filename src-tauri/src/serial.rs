@@ -1,11 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 use uuid::Uuid;
+
+const SERIAL_IO_TIMEOUT: Duration = Duration::from_millis(1);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SerialConfig {
@@ -35,8 +38,8 @@ pub struct PortInfo {
 }
 
 struct SerialSession {
-    running: Arc<Mutex<bool>>,
-    writer: Arc<Mutex<Box<dyn serialport::SerialPort>>>,
+    running: Arc<AtomicBool>,
+    writer: mpsc::Sender<Vec<u8>>,
 }
 
 pub struct SerialState {
@@ -111,22 +114,21 @@ pub async fn serial_connect(
     config: SerialConfig,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
-    let running = Arc::new(Mutex::new(true));
+    let running = Arc::new(AtomicBool::new(true));
 
     let serial_port = serialport::new(&port, config.baud_rate)
         .data_bits(to_data_bits(config.data_bits))
         .parity(to_parity(&config.parity))
         .stop_bits(to_stop_bits(config.stop_bits))
         .flow_control(to_flow_control(&config.flow_control))
-        .timeout(Duration::from_millis(100))
+        .timeout(SERIAL_IO_TIMEOUT)
         .open()
         .map_err(|e| format!("シリアルポートオープンエラー: {}", e))?;
 
-    let writer = Arc::new(Mutex::new(
-        serial_port
-            .try_clone()
-            .map_err(|e| format!("ポート複製エラー: {}", e))?,
-    ));
+    let mut writer_port = serial_port
+        .try_clone()
+        .map_err(|e| format!("ポート複製エラー: {}", e))?;
+    let (writer, write_rx) = mpsc::channel::<Vec<u8>>();
 
     let session = SerialSession {
         running: running.clone(),
@@ -138,6 +140,17 @@ pub async fn serial_connect(
         .await
         .insert(session_id.clone(), session);
 
+    let write_sid = session_id.clone();
+    let write_app = app.clone();
+    tokio::task::spawn_blocking(move || {
+        while let Ok(data) = write_rx.recv() {
+            if let Err(e) = writer_port.write_all(&data) {
+                let _ = write_app.emit(&format!("serial://error/{}", write_sid), e.to_string());
+                break;
+            }
+        }
+    });
+
     // Background read loop
     let sid = session_id.clone();
     let app_clone = app.clone();
@@ -146,9 +159,7 @@ pub async fn serial_connect(
         let mut port = serial_port;
         let mut buf = [0u8; 4096];
         loop {
-            let rt = tokio::runtime::Handle::current();
-            let is_running = rt.block_on(async { *run_flag.lock().await });
-            if !is_running {
+            if !run_flag.load(Ordering::SeqCst) {
                 break;
             }
             match port.read(&mut buf) {
@@ -175,18 +186,18 @@ pub async fn serial_write(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    let sessions = state.sessions.lock().await;
-    let session = sessions
-        .get(&session_id)
-        .ok_or("セッションが見つかりません")?;
-    let mut writer = session.writer.lock().await;
+    let writer = {
+        let sessions = state.sessions.lock().await;
+        sessions
+            .get(&session_id)
+            .ok_or("セッションが見つかりません")?
+            .writer
+            .clone()
+    };
+
     writer
-        .write_all(data.as_bytes())
-        .map_err(|e| format!("送信エラー: {}", e))?;
-    writer
-        .flush()
-        .map_err(|e| format!("フラッシュエラー: {}", e))?;
-    Ok(())
+        .send(data.into_bytes())
+        .map_err(|e| format!("送信エラー: {}", e))
 }
 
 #[tauri::command]
@@ -197,7 +208,7 @@ pub async fn serial_disconnect(
 ) -> Result<(), String> {
     let mut sessions = state.sessions.lock().await;
     if let Some(session) = sessions.remove(&session_id) {
-        *session.running.lock().await = false;
+        session.running.store(false, Ordering::SeqCst);
     }
     let _ = app.emit("serial://disconnected", &session_id);
     Ok(())
