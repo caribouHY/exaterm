@@ -20,6 +20,7 @@ Use this checklist before and after code changes. It is intentionally short and 
 - Keep cloud API keys in the OS credential store, not in `config.json` or logs.
 - Keep Rust and TypeScript payload shapes synchronized.
 - Update both English and Japanese locale files for user-visible text.
+- Add a concise entry to `CHANGELOG.md` for user-visible behavior changes, fixes, and notable internal changes.
 - Register new backend commands in `src-tauri/src/lib.rs`.
 - Keep changes scoped to the subsystem requested by the task.
 
