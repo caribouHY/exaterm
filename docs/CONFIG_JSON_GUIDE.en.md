@@ -63,7 +63,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | `ai`                | object | See below | AI assistant settings.                                                                                                                     |
 | `terminal`          | object | See below | Terminal display and logging settings.                                                                                                     |
 | `ssh`               | object | See below | SSH connection compatibility settings.                                                                                                     |
-| `saved_connections` | array  | `[]`      | Saved connection information. In the current UI, this is mostly treated as internal data.                                                  |
+| `saved_connections` | array  | `[]`      | Saved SSH connection profiles. SSH profiles can be created, selected, and deleted from the connection dialog.                             |
 
 ## ai
 
@@ -147,31 +147,25 @@ Internal SSH extension markers, such as strict key exchange and extension info m
 
 ## saved_connections
 
-`saved_connections` is an array of saved connection entries. Each entry can contain the following fields.
+`saved_connections` is an array of saved SSH connection profiles. SSH profiles can be managed from the connection dialog. Telnet and serial profiles are not currently supported. Passwords are not stored in this section.
 
 | Parameter         | Type           | Description                                                  |
 | ----------------- | -------------- | ------------------------------------------------------------ |
-| `id`              | string         | Identifier for the saved connection.                         |
-| `name`            | string         | Display name for the connection.                             |
-| `connection_type` | string         | Connection type. Usually `"ssh"`, `"serial"`, or `"telnet"`. |
+| `id`              | string         | Profile name and identifier.                                 |
+| `connection_type` | string         | Connection type. Currently only `"ssh"` is supported.        |
 | `host`            | string or null | SSH target host.                                             |
 | `port`            | number or null | SSH target port.                                             |
 | `username`        | string or null | SSH username.                                                |
-| `serial_port`     | string or null | Serial port name.                                            |
-| `baud_rate`       | number or null | Serial baud rate.                                            |
 
 Example:
 
 ```json
 {
   "id": "dev-server",
-  "name": "Development Server",
   "connection_type": "ssh",
   "host": "192.168.1.10",
   "port": 22,
-  "username": "admin",
-  "serial_port": null,
-  "baud_rate": null
+  "username": "admin"
 }
 ```
 

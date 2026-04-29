@@ -87,13 +87,10 @@ export interface SshConfig {
 
 export interface SavedConnection {
   id: string;
-  name: string;
-  connection_type: string;
+  connection_type: "ssh" | (string & {});
   host?: string | null;
   port?: number | null;
   username?: string | null;
-  serial_port?: string | null;
-  baud_rate?: number | null;
 }
 
 export type ConnectionType = "ssh" | "serial" | "telnet";

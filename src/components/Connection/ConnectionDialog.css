@@ -87,6 +87,31 @@
   flex: 1;
 }
 
+.connection-dialog__profile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.connection-dialog__profile-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.connection-dialog__profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.connection-dialog__profile-actions span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .connection-dialog__footer {
   display: flex;
   justify-content: flex-end;

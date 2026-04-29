@@ -131,8 +131,6 @@ pub struct SavedConnection {
     #[serde(default)]
     pub id: String,
     #[serde(default)]
-    pub name: String,
-    #[serde(default)]
     pub connection_type: String,
     #[serde(default)]
     pub host: Option<String>,
@@ -140,23 +138,16 @@ pub struct SavedConnection {
     pub port: Option<u16>,
     #[serde(default)]
     pub username: Option<String>,
-    #[serde(default)]
-    pub serial_port: Option<String>,
-    #[serde(default)]
-    pub baud_rate: Option<u32>,
 }
 
 impl Default for SavedConnection {
     fn default() -> Self {
         Self {
             id: String::new(),
-            name: String::new(),
             connection_type: String::new(),
             host: None,
             port: None,
             username: None,
-            serial_port: None,
-            baud_rate: None,
         }
     }
 }
@@ -246,7 +237,7 @@ mod tests {
                 "ai": {"default_provider": "Ollama"},
                 "ssh": {"allow_legacy_algorithms": true},
                 "terminal": {"auto_session_log": true},
-                "saved_connections": [{"name": "dev box"}]
+                "saved_connections": [{"id": "dev box", "connection_type": "ssh"}]
             }"#,
         )
         .unwrap();
@@ -260,7 +251,6 @@ mod tests {
         assert_eq!(cfg.terminal.font_size, 14);
         assert!(cfg.terminal.auto_session_log);
         assert!(cfg.ssh.allow_legacy_algorithms);
-        assert_eq!(cfg.saved_connections[0].name, "dev box");
-        assert_eq!(cfg.saved_connections[0].id, "");
+        assert_eq!(cfg.saved_connections[0].id, "dev box");
     }
 }

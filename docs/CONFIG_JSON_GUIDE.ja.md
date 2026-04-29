@@ -63,7 +63,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | `ai`                | object | 下記参照 | AI アシスタント関連の設定です。                                                                                      |
 | `terminal`          | object | 下記参照 | ターミナル表示とログ関連の設定です。                                                                                 |
 | `ssh`               | object | 下記参照 | SSH 接続の互換性設定です。                                                                                           |
-| `saved_connections` | array  | `[]`     | 保存済み接続情報です。現状の設定画面では主に内部データとして扱われます。                                             |
+| `saved_connections` | array  | `[]`     | 保存済み SSH 接続プロファイルです。SSH プロファイルは接続ダイアログから作成、選択、削除できます。                    |
 
 ## ai
 
@@ -147,31 +147,25 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
 
 ## saved_connections
 
-`saved_connections` は保存済み接続を表す配列です。各要素には次の項目があります。
+`saved_connections` は保存済み SSH 接続プロファイルを表す配列です。SSH プロファイルは接続ダイアログから管理できます。Telnet とシリアルのプロファイルは現状非対応です。パスワードはこのセクションには保存されません。
 
 | パラメータ        | 型                 | 説明                                                               |
 | ----------------- | ------------------ | ------------------------------------------------------------------ |
-| `id`              | string             | 接続情報の識別子です。                                             |
-| `name`            | string             | 接続名です。                                                       |
-| `connection_type` | string             | 接続種別です。通常は `"ssh"`、`"serial"`、または `"telnet"` です。 |
+| `id`              | string             | プロファイル名兼識別子です。                                       |
+| `connection_type` | string             | 接続種別です。現状は `"ssh"` のみ対応しています。                  |
 | `host`            | string または null | SSH 接続先ホストです。                                             |
 | `port`            | number または null | SSH 接続先ポートです。                                             |
 | `username`        | string または null | SSH ユーザー名です。                                               |
-| `serial_port`     | string または null | シリアルポート名です。                                             |
-| `baud_rate`       | number または null | シリアル通信のボーレートです。                                     |
 
 例:
 
 ```json
 {
   "id": "dev-server",
-  "name": "開発サーバー",
   "connection_type": "ssh",
   "host": "192.168.1.10",
   "port": 22,
-  "username": "admin",
-  "serial_port": null,
-  "baud_rate": null
+  "username": "admin"
 }
 ```
 
