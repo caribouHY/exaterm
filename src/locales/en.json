@@ -55,6 +55,7 @@
   "connection.connecting": "Connecting...",
   "connection.cancel": "Cancel",
   "connection.connect": "Connect",
+  "connection.shortcut_ctrl_enter": "Ctrl+Enter",
   "connection.host_key_unknown.title": "Verify SSH Host Key",
   "connection.host_key_unknown.message": "The host key for {{host}}:{{port}} is not trusted yet. Verify the fingerprint before connecting.",
   "connection.host_key_mismatch.title": "SSH Host Key Changed",

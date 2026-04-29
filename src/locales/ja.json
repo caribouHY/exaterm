@@ -55,6 +55,7 @@
   "connection.connecting": "接続中...",
   "connection.cancel": "キャンセル",
   "connection.connect": "接続",
+  "connection.shortcut_ctrl_enter": "Ctrl+Enter",
   "connection.host_key_unknown.title": "SSHホスト鍵を確認",
   "connection.host_key_unknown.message": "{{host}}:{{port}} のホスト鍵はまだ信頼されていません。接続前にフィンガープリントを確認してください。",
   "connection.host_key_mismatch.title": "SSHホスト鍵が変わりました",

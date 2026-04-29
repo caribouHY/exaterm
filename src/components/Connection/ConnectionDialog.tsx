@@ -13,6 +13,7 @@ interface ConnectionDialogProps {
 export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialogProps) {
   const { t } = useTranslation();
   const overlayMouseDownStartedRef = useRef(false);
+  const connectingRef = useRef(false);
   const [tab, setTab] = useState<ConnectionType>("ssh");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
@@ -37,6 +38,10 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   const [stopBits, setStopBits] = useState("1");
 
   useEffect(() => {
+    connectingRef.current = connecting;
+  }, [connecting]);
+
+  useEffect(() => {
     if (tab === "serial") {
       invoke<PortInfo[]>("serial_list_ports")
         .then((p) => {
@@ -46,25 +51,6 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         .catch(() => {});
     }
   }, [selectedPort, tab]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-
-      event.preventDefault();
-      if (connecting) return;
-
-      if (hostKeyCheck) {
-        setHostKeyCheck(null);
-        return;
-      }
-
-      onClose();
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [connecting, hostKeyCheck, onClose]);
 
   const getAutoLogPreference = async () => {
     try {
@@ -95,9 +81,10 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   };
 
   const handleTrustAndConnect = async (replace: boolean) => {
-    if (!hostKeyCheck) return;
+    if (!hostKeyCheck || connectingRef.current) return;
 
     setError("");
+    connectingRef.current = true;
     setConnecting(true);
     try {
       await invoke("ssh_trust_host_key", {
@@ -112,12 +99,16 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
       setError(message);
+      connectingRef.current = false;
       setConnecting(false);
     }
   };
 
   const handleConnect = async () => {
+    if (connectingRef.current) return;
+
     setError("");
+    connectingRef.current = true;
     setConnecting(true);
     try {
       const autoLog = await getAutoLogPreference();
@@ -139,6 +130,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         }
 
         setHostKeyCheck(result);
+        connectingRef.current = false;
         setConnecting(false);
         return;
       }
@@ -188,6 +180,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
       setError(message);
+      connectingRef.current = false;
       setConnecting(false);
     }
   };
@@ -207,6 +200,40 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     }
     overlayMouseDownStartedRef.current = false;
   };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (connecting) return;
+
+        if (hostKeyCheck) {
+          setHostKeyCheck(null);
+          return;
+        }
+
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) return;
+
+      event.preventDefault();
+      if (connecting) return;
+
+      if (hostKeyCheck) {
+        handleTrustAndConnect(hostKeyCheck.status === "mismatch");
+        return;
+      }
+
+      handleConnect();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [connecting, handleConnect, handleTrustAndConnect, hostKeyCheck, onClose]);
+
+  const shortcutText = t("connection.shortcut_ctrl_enter");
 
   return (
     <div
@@ -470,7 +497,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
               >
                 {hostKeyCheck.status === "mismatch"
                   ? t("connection.host_key_replace_connect")
-                  : t("connection.host_key_trust_connect")}
+                  : t("connection.host_key_trust_connect")}{" "}
+                <span className="connection-dialog__shortcut">{shortcutText}</span>
               </button>
             </>
           ) : (
@@ -479,7 +507,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                 {t("connection.cancel")}
               </button>
               <button className="btn btn-primary" onClick={handleConnect}>
-                {t("connection.connect")}
+                {t("connection.connect")}{" "}
+                <span className="connection-dialog__shortcut">{shortcutText}</span>
               </button>
             </>
           )}
