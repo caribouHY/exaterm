@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -22,16 +22,23 @@ interface TerminalViewProps {
   onTerminalData?: (data: string) => void;
 }
 
-export default function TerminalView({
-  sessionId,
-  connectionType,
-  isConnected,
-  isActive,
-  encoding,
-  terminalConfig,
-  onOpenConnection,
-  onTerminalData,
-}: TerminalViewProps) {
+export interface TerminalViewHandle {
+  insertText: (text: string) => void;
+}
+
+const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
+  {
+    sessionId,
+    connectionType,
+    isConnected,
+    isActive,
+    encoding,
+    terminalConfig,
+    onOpenConnection,
+    onTerminalData,
+  },
+  ref
+) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -66,6 +73,21 @@ export default function TerminalView({
   useEffect(() => {
     isConnectedRef.current = isConnected;
   }, [isConnected]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      insertText: (text: string) => {
+        if (!sessionId || !isConnectedRef.current) return;
+        const data = text.replace(/\r?\n+$/g, "");
+        if (!data) return;
+        const protocol = connectionCommands[connectionType];
+        invoke(protocol.write, { sessionId, data }).catch(console.error);
+        termRef.current?.focus();
+      },
+    }),
+    [sessionId, connectionType]
+  );
 
   // Update decoder when encoding changes
   useEffect(() => {
@@ -244,4 +266,6 @@ export default function TerminalView({
       <div ref={containerRef} style={{ height: "100%" }} />
     </div>
   );
-}
+});
+
+export default TerminalView;

@@ -55,6 +55,15 @@ fn build_system_prompt(terminal_context: &Option<String>, language: &str) -> Str
         "You are the AI assistant for ExaTerm, a network terminal. Help the user with their network operations. Please respond in English."
     };
     let mut s = base.to_string();
+    if language == "ja" {
+        s.push_str(
+            "\n\n実行候補のコマンドを提示する場合は、bash、sh、powershell、ps1、cmd、bat、terminal、console のいずれかの言語名付きコードブロックで書いてください。ユーザーが確認してから実行するため、コマンドを自動実行する前提の表現は避けてください。",
+        );
+    } else {
+        s.push_str(
+            "\n\nWhen you suggest commands to run, put each executable candidate in a fenced code block labeled bash, sh, powershell, ps1, cmd, bat, terminal, or console. The user will review commands before running them, so do not imply that commands execute automatically.",
+        );
+    }
     if let Some(ctx) = terminal_context {
         let ctx_label = if language == "ja" {
             "【ターミナル出力】"

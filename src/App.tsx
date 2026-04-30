@@ -3,6 +3,7 @@ import TitleBar from "./components/TitleBar/TitleBar";
 import Sidebar from "./components/Sidebar/Sidebar";
 import TerminalTabs from "./components/Terminal/TerminalTabs";
 import TerminalView from "./components/Terminal/TerminalView";
+import type { TerminalViewHandle } from "./components/Terminal/TerminalView";
 import ConnectionDialog from "./components/Connection/ConnectionDialog";
 import AIChatPanel from "./components/AI/AIChatPanel";
 import StatusBar from "./components/StatusBar/StatusBar";
@@ -27,6 +28,7 @@ export default function App() {
   const [aiSelectedProvider, setAiSelectedProvider] = useState("");
   const [aiSelectedModel, setAiSelectedModel] = useState("");
   const terminalBuffer = useRef("");
+  const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
   const tabsRef = useRef<TabInfo[]>([]);
   const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
 
@@ -146,6 +148,14 @@ export default function App() {
     terminalBuffer.current = (terminalBuffer.current + data).slice(-2000);
   }, []);
 
+  const handleInsertCommand = useCallback(
+    (command: string) => {
+      if (!activeTab || !activeTab.isConnected) return;
+      terminalViewRefs.current.get(activeTab.id)?.insertText(command);
+    },
+    [activeTab]
+  );
+
   const handleEncodingChange = useCallback((id: string, encoding: Encoding) => {
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, encoding } : t)));
   }, []);
@@ -248,6 +258,13 @@ export default function App() {
                 tabs.map((tab) => (
                   <TerminalView
                     key={tab.id}
+                    ref={(handle) => {
+                      if (handle) {
+                        terminalViewRefs.current.set(tab.id, handle);
+                      } else {
+                        terminalViewRefs.current.delete(tab.id);
+                      }
+                    }}
                     sessionId={tab.sessionId || null}
                     connectionType={tab.connectionType}
                     isConnected={tab.isConnected}
@@ -278,6 +295,8 @@ export default function App() {
                     setSelectedProvider={setAiSelectedProvider}
                     selectedModel={aiSelectedModel}
                     setSelectedModel={setAiSelectedModel}
+                    onInsertCommand={handleInsertCommand}
+                    canInsertCommand={Boolean(activeTab?.isConnected)}
                   />
                 </div>
               </>

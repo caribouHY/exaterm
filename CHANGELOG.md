@@ -9,6 +9,7 @@
 - Added SSH connection profiles in the new connection dialog.
 - Added Escape key cancellation for the new connection dialog.
 - Added Ctrl+Enter shortcuts for starting new connections.
+- Added structured AI command suggestions with buttons to insert reviewed commands into the active terminal.
 
 ### Fixed
 

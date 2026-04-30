@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Bot, Send, Terminal, X } from "lucide-react";
+import { Bot, ClipboardPaste, Send, Terminal, X } from "lucide-react";
 import type { AppConfig, ChatMessage, AiModelInfo } from "../../types";
 import { useTranslation } from "react-i18next";
 import "./AIChatPanel.css";
@@ -24,6 +24,8 @@ interface AIChatPanelProps {
   setSelectedProvider: React.Dispatch<React.SetStateAction<string>>;
   selectedModel: string;
   setSelectedModel: React.Dispatch<React.SetStateAction<string>>;
+  onInsertCommand: (command: string) => void;
+  canInsertCommand: boolean;
 }
 
 const PROVIDERS: Array<{ id: ProviderId; label: string; secretKey?: keyof AiSecretStatus }> = [
@@ -34,6 +36,61 @@ const PROVIDERS: Array<{ id: ProviderId; label: string; secretKey?: keyof AiSecr
   { id: "Ollama", label: "Ollama" },
 ];
 
+const COMMAND_BLOCK_LANGUAGES = new Set([
+  "bash",
+  "sh",
+  "powershell",
+  "ps1",
+  "cmd",
+  "bat",
+  "terminal",
+  "console",
+]);
+
+interface CommandSuggestion {
+  language: string;
+  command: string;
+}
+
+type AssistantContentSegment =
+  | { type: "text"; content: string }
+  | { type: "command"; suggestion: CommandSuggestion };
+
+function parseAssistantContent(content: string): AssistantContentSegment[] {
+  const segments: AssistantContentSegment[] = [];
+  const fencePattern = /```([^\n`]*)\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = fencePattern.exec(content)) !== null) {
+    const [block, rawLanguage, code] = match;
+    const language = rawLanguage.trim().split(/\s+/)[0].toLowerCase();
+    const leadingText = content.slice(lastIndex, match.index).trim();
+
+    if (leadingText) {
+      segments.push({ type: "text", content: leadingText });
+    }
+
+    if (COMMAND_BLOCK_LANGUAGES.has(language)) {
+      const command = code.replace(/\r?\n+$/g, "");
+      if (command.trim()) {
+        segments.push({ type: "command", suggestion: { language, command } });
+      }
+    } else {
+      segments.push({ type: "text", content: block });
+    }
+
+    lastIndex = match.index + block.length;
+  }
+
+  const trailingText = content.slice(lastIndex).trim();
+  if (trailingText) {
+    segments.push({ type: "text", content: trailingText });
+  }
+
+  return segments;
+}
+
 export default function AIChatPanel({
   onClose,
   terminalBuffer,
@@ -43,6 +100,8 @@ export default function AIChatPanel({
   setSelectedProvider,
   selectedModel,
   setSelectedModel,
+  onInsertCommand,
+  canInsertCommand,
 }: AIChatPanelProps) {
   const { t, i18n } = useTranslation();
   const [input, setInput] = useState("");
@@ -245,12 +304,53 @@ export default function AIChatPanel({
             <div className="ai-panel__welcome-text">{t("ai.title")}</div>
           </div>
         ) : (
-          messages.map((msg, i) => (
-            <div key={i} className={`ai-message ai-message--${msg.role}`}>
-              <span className="ai-message__role">{msg.role === "user" ? "You" : "AI"}</span>
-              <div className="ai-message__content">{msg.content}</div>
-            </div>
-          ))
+          messages.map((msg, i) => {
+            const segments =
+              msg.role === "assistant"
+                ? parseAssistantContent(msg.content)
+                : [{ type: "text" as const, content: msg.content }];
+
+            return (
+              <div key={i} className={`ai-message ai-message--${msg.role}`}>
+                <span className="ai-message__role">{msg.role === "user" ? "You" : "AI"}</span>
+                {segments.map((segment, segmentIndex) =>
+                  segment.type === "text" ? (
+                    <div className="ai-message__content" key={`${i}-${segmentIndex}`}>
+                      {segment.content}
+                    </div>
+                  ) : (
+                    <div className="ai-command" key={`${i}-${segmentIndex}`}>
+                      <div className="ai-command-list__title">{t("ai.command_suggestions")}</div>
+                      <div className="ai-command__body">
+                        <div className="ai-command__header">
+                          <span className="ai-command__language">
+                            {segment.suggestion.language}
+                          </span>
+                          <button
+                            className="ai-command__insert"
+                            type="button"
+                            onClick={() => onInsertCommand(segment.suggestion.command)}
+                            disabled={!canInsertCommand}
+                            title={
+                              canInsertCommand
+                                ? t("ai.insert_command")
+                                : t("ai.insert_command_disabled")
+                            }
+                          >
+                            <ClipboardPaste size={13} />
+                            {t("ai.insert_command")}
+                          </button>
+                        </div>
+                        <pre className="ai-command__code">
+                          <code>{segment.suggestion.command}</code>
+                        </pre>
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+            );
+          })
         )}
         {loading && (
           <div className="ai-panel__loading">
