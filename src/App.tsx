@@ -24,6 +24,8 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
+  const [aiSelectedProvider, setAiSelectedProvider] = useState("");
+  const [aiSelectedModel, setAiSelectedModel] = useState("");
   const terminalBuffer = useRef("");
   const tabsRef = useRef<TabInfo[]>([]);
   const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
@@ -272,6 +274,10 @@ export default function App() {
                     terminalBuffer={terminalBuffer}
                     messages={aiMessages}
                     setMessages={setAiMessages}
+                    selectedProvider={aiSelectedProvider}
+                    setSelectedProvider={setAiSelectedProvider}
+                    selectedModel={aiSelectedModel}
+                    setSelectedModel={setAiSelectedModel}
                   />
                 </div>
               </>

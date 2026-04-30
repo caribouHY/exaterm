@@ -14,7 +14,7 @@
 
 - Improved serial input responsiveness.
 - Fixed Azure OpenAI request endpoint handling.
-- Preserved AI assistant conversation history while the panel is closed during the current app session.
+- Preserved AI assistant conversation history and model selection while the panel is closed during the current app session.
 
 ## v0.1.0
 

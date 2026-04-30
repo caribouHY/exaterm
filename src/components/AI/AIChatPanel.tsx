@@ -20,6 +20,10 @@ interface AIChatPanelProps {
   terminalBuffer: React.MutableRefObject<string>;
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+  selectedProvider: string;
+  setSelectedProvider: React.Dispatch<React.SetStateAction<string>>;
+  selectedModel: string;
+  setSelectedModel: React.Dispatch<React.SetStateAction<string>>;
 }
 
 const PROVIDERS: Array<{ id: ProviderId; label: string; secretKey?: keyof AiSecretStatus }> = [
@@ -35,13 +39,15 @@ export default function AIChatPanel({
   terminalBuffer,
   messages,
   setMessages,
+  selectedProvider,
+  setSelectedProvider,
+  selectedModel,
+  setSelectedModel,
 }: AIChatPanelProps) {
   const { t, i18n } = useTranslation();
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [models, setModels] = useState<AiModelInfo[]>([]);
-  const [selectedModel, setSelectedModel] = useState("");
-  const [selectedProvider, setSelectedProvider] = useState("OpenAi");
   const [useContext, setUseContext] = useState(false);
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState("http://localhost:11434");
   const [azureOpenAiEndpoint, setAzureOpenAiEndpoint] = useState("");
@@ -127,16 +133,24 @@ export default function AIChatPanel({
       if (cancelled) return;
 
       const savedProvider = cfg?.ai?.default_provider || "OpenAi";
+      const rememberedProviderModels = nextModels.filter((m) => m.provider === selectedProvider);
+      const hasRememberedModel = rememberedProviderModels.some((m) => m.model_id === selectedModel);
       const hasSavedProviderModels = nextModels.some((model) => model.provider === savedProvider);
       const nextProvider =
-        enabledProviders.some((provider) => provider.id === savedProvider) && hasSavedProviderModels
-          ? savedProvider
-          : nextModels[0]?.provider || "";
+        selectedProvider && selectedModel && hasRememberedModel
+          ? selectedProvider
+          : enabledProviders.some((provider) => provider.id === savedProvider) &&
+              hasSavedProviderModels
+            ? savedProvider
+            : nextModels[0]?.provider || "";
       const providerModels = nextModels.filter((m) => m.provider === nextProvider);
       const savedModel = cfg?.ai?.default_model || "";
-      const nextModel = providerModels.some((m) => m.model_id === savedModel)
-        ? savedModel
-        : providerModels[0]?.model_id || nextModels[0]?.model_id || "";
+      const nextModel =
+        selectedProvider && selectedModel && hasRememberedModel
+          ? selectedModel
+          : providerModels.some((m) => m.model_id === savedModel)
+            ? savedModel
+            : providerModels[0]?.model_id || nextModels[0]?.model_id || "";
 
       setModels(nextModels);
       setOllamaBaseUrl(ollamaUrl);
