@@ -165,7 +165,7 @@ async fn send_openai_chat(
 ) -> Result<String, String> {
     let provider = AiProvider::OpenAi;
     let api_key = load_provider_secret(&provider, language)?;
-    validate_model(client, &provider, model, Some(&api_key), None, language).await?;
+    ensure_model_selected(model, language)?;
 
     let mut payload_messages = vec![serde_json::json!({"role":"system","content":system_prompt})];
     for message in messages {
@@ -196,7 +196,7 @@ async fn send_anthropic_chat(
 ) -> Result<String, String> {
     let provider = AiProvider::Anthropic;
     let api_key = load_provider_secret(&provider, language)?;
-    validate_model(client, &provider, model, Some(&api_key), None, language).await?;
+    ensure_model_selected(model, language)?;
 
     let payload_messages: Vec<_> = messages
         .iter()
@@ -229,7 +229,7 @@ async fn send_gemini_chat(
 ) -> Result<String, String> {
     let provider = AiProvider::Gemini;
     let api_key = load_provider_secret(&provider, language)?;
-    validate_model(client, &provider, model, Some(&api_key), None, language).await?;
+    ensure_model_selected(model, language)?;
 
     let mut parts = vec![serde_json::json!({"text":system_prompt})];
     for message in messages {
@@ -264,7 +264,7 @@ async fn send_ollama_chat(
 ) -> Result<String, String> {
     let provider = AiProvider::Ollama;
     let base_url = normalized_ollama_base_url(ollama_base_url);
-    validate_model(client, &provider, model, None, Some(&base_url), language).await?;
+    ensure_model_selected(model, language)?;
 
     let mut payload_messages = vec![serde_json::json!({"role":"system","content":system_prompt})];
     for message in messages {
@@ -404,20 +404,7 @@ fn azure_openai_chat_url(
     Ok(endpoint.to_string())
 }
 
-fn model_is_available(available: &[AiModelInfo], model: &str) -> bool {
-    available
-        .iter()
-        .any(|available_model| available_model.model_id == model)
-}
-
-async fn validate_model(
-    client: &reqwest::Client,
-    provider: &AiProvider,
-    model: &str,
-    api_key: Option<&str>,
-    ollama_base_url: Option<&str>,
-    language: &str,
-) -> Result<(), String> {
+fn ensure_model_selected(model: &str, language: &str) -> Result<(), String> {
     if model.trim().is_empty() {
         return Err(if ErrorLanguage::from_language(language).is_ja() {
             "AI モデルが選択されていません。モデルを選択してから再試行してください。".into()
@@ -426,31 +413,12 @@ async fn validate_model(
         });
     }
 
-    let available =
-        fetch_provider_models(client, provider, api_key, ollama_base_url, language).await?;
-    if model_is_available(&available, model) {
-        return Ok(());
-    }
-
-    Err(if ErrorLanguage::from_language(language).is_ja() {
-        format!(
-            "{} ではモデル '{}' を利用できません。モデル一覧を更新し、利用可能なモデルを選択してください。",
-            provider.display_name(),
-            model
-        )
-    } else {
-        format!(
-            "Model '{}' is not available for {}. Refresh the model list and choose an available model.",
-            model,
-            provider.display_name()
-        )
-    })
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::catalog::fallback_models_for;
 
     #[test]
     fn parses_and_normalizes_gemini_models() {
@@ -528,10 +496,22 @@ mod tests {
     }
 
     #[test]
-    fn model_availability_accepts_existing_model_and_rejects_bad_model() {
-        let models = fallback_models_for(&AiProvider::Anthropic);
+    fn accepts_non_empty_model_without_fetching_model_list() {
+        assert!(ensure_model_selected("claude-sonnet-4-20250514", "en").is_ok());
+        assert!(ensure_model_selected("not-a-real-model", "en").is_ok());
+    }
 
-        assert!(model_is_available(&models, "claude-sonnet-4-20250514"));
-        assert!(!model_is_available(&models, "not-a-real-model"));
+    #[test]
+    fn rejects_empty_model_in_english() {
+        let err = ensure_model_selected("   ", "en").unwrap_err();
+
+        assert!(err.contains("No AI model is selected"));
+    }
+
+    #[test]
+    fn rejects_empty_model_in_japanese() {
+        let err = ensure_model_selected("", "ja").unwrap_err();
+
+        assert!(err.contains("AI モデルが選択されていません"));
     }
 }
