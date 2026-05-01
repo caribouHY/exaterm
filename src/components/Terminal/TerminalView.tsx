@@ -92,12 +92,13 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         if (!sessionId || !isConnectedRef.current) return;
         const data = text.replace(/\r?\n+$/g, "");
         if (!data) return;
-        const protocol = connectionCommands[connectionType];
-        invoke(protocol.write, { sessionId, data }).catch(console.error);
-        termRef.current?.focus();
+        const term = termRef.current;
+        if (!term) return;
+        term.paste(data);
+        term.focus();
       },
     }),
-    [sessionId, connectionType]
+    [sessionId]
   );
 
   // Update decoder when encoding changes
