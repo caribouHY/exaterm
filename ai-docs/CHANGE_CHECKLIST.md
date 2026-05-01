@@ -21,6 +21,7 @@ Use this checklist before and after code changes. It is intentionally short and 
 - Keep Rust and TypeScript payload shapes synchronized.
 - Update both English and Japanese locale files for user-visible text.
 - Add a concise entry to `CHANGELOG.md` for user-visible behavior changes, fixes, and notable internal changes.
+- For release version bumps, also use `ai-docs/RELEASE_CHECKLIST.md`.
 - Register new backend commands in `src-tauri/src/lib.rs`.
 - Keep changes scoped to the subsystem requested by the task.
 

@@ -1,6 +1,6 @@
 [package]
 name = "exaterm"
-version = "0.1.0"
+version = "0.2.0"
 description = "ExaTerm - AI-native network terminal"
 authors = ["caribouHY"]
 edition = "2021"

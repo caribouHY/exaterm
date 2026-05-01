@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.2.0
+
 ### Added
 
 - Added Telnet connections with basic option negotiation, terminal resizing, and optional session logging.
