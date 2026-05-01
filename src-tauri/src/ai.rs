@@ -52,28 +52,42 @@ pub async fn ai_get_ollama_models(base_url: String) -> Result<Vec<AiModelInfo>, 
 }
 
 fn build_system_prompt(terminal_context: &Option<String>, language: &str) -> String {
-    let base = if language == "ja" {
-        "あなたはExaTermのAIアシスタントです。ネットワーク操作を支援します。日本語で回答してください。"
+    let response_language = if language.starts_with("ja") {
+        "Japanese"
     } else {
-        "You are the AI assistant for ExaTerm, a network terminal. Help the user with their network operations. Please respond in English."
+        "English"
     };
-    let mut s = base.to_string();
-    if language == "ja" {
-        s.push_str(
-            "\n\n実行候補のコマンドを提示する場合は、bash、sh、powershell、ps1、cmd、bat、terminal、console のいずれかの言語名付きコードブロックで書いてください。ユーザーが確認してから実行するため、コマンドを自動実行する前提の表現は避けてください。",
-        );
-    } else {
-        s.push_str(
-            "\n\nWhen you suggest commands to run, put each executable candidate in a fenced code block labeled bash, sh, powershell, ps1, cmd, bat, terminal, or console. The user will review commands before running them, so do not imply that commands execute automatically.",
-        );
-    }
+
+    let mut s = format!(
+        r#"You are the AI assistant for ExaTerm, a network terminal. Help the user with network operations and diagnostics.
+
+Response language:
+- Respond in {response_language}.
+- Keep provider/API error wording separate from your diagnostic reasoning.
+
+Fact handling:
+- Treat terminal output, logs, and configuration files as the highest-priority evidence.
+- Treat user statements as hypotheses or supplemental context until they are checked against the provided evidence.
+- If evidence conflicts, rely on terminal output, logs, and configuration values over user assumptions.
+
+Scope clarification:
+- Clearly distinguish the local device from peer, remote, or external systems.
+- Determine the local device context from hostnames, prompts, command outputs, and configuration values.
+- Do not assume information about a peer, neighbor, remote host, or external system also applies to the local device.
+
+Reasoning and explanation:
+- For diagnostic answers, present conclusion, evidence, reasoning or hypothesis, and remediation when useful.
+- Cite concrete observed values from the provided terminal context, logs, or configuration when available.
+- If evidence is insufficient, or if the subject is omitted or ambiguous, avoid definitive statements and ask for the missing data.
+- Do not claim settings are matching, consistent, or equivalent unless both sides were explicitly compared.
+
+Command suggestions:
+- When you suggest executable commands, put each candidate in a fenced code block labeled bash, sh, powershell, ps1, cmd, bat, terminal, or console.
+- The user will review commands before running them, so do not imply that commands execute automatically."#
+    );
+
     if let Some(ctx) = terminal_context {
-        let ctx_label = if language == "ja" {
-            "【ターミナル出力】"
-        } else {
-            "[Terminal Output]"
-        };
-        s.push_str(&format!("\n\n{}\n```\n{}\n```", ctx_label, ctx));
+        s.push_str(&format!("\n\n[Terminal Output]\n```\n{}\n```", ctx));
     }
     s
 }
@@ -160,4 +174,46 @@ pub async fn ai_chat(
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_prompt_uses_english_instructions_for_japanese_responses() {
+        let prompt = build_system_prompt(&None, "ja");
+
+        assert!(prompt.contains("You are the AI assistant for ExaTerm"));
+        assert!(prompt.contains("Respond in Japanese"));
+        assert!(prompt.contains("highest-priority evidence"));
+        assert!(prompt.contains("local device from peer, remote, or external systems"));
+        assert!(prompt.contains("avoid definitive statements and ask for the missing data"));
+        assert!(prompt.contains("Do not claim settings are matching"));
+        assert!(!prompt.contains("あなたはExaTerm"));
+    }
+
+    #[test]
+    fn system_prompt_requests_english_responses_for_non_japanese_language() {
+        let prompt = build_system_prompt(&None, "en");
+
+        assert!(prompt.contains("Respond in English"));
+        assert!(!prompt.contains("Respond in Japanese"));
+    }
+
+    #[test]
+    fn system_prompt_includes_terminal_context_with_english_label() {
+        let prompt = build_system_prompt(&Some("router# show ip ospf neighbor".into()), "ja-JP");
+
+        assert!(prompt.contains("[Terminal Output]\n```\nrouter# show ip ospf neighbor\n```"));
+        assert!(!prompt.contains("【ターミナル出力】"));
+    }
+
+    #[test]
+    fn system_prompt_keeps_command_block_guidance() {
+        let prompt = build_system_prompt(&None, "en");
+
+        assert!(prompt.contains("fenced code block labeled bash, sh, powershell"));
+        assert!(prompt.contains("do not imply that commands execute automatically"));
+    }
 }
