@@ -30,9 +30,11 @@ export default function App() {
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiSelectedProvider, setAiSelectedProvider] = useState("");
   const [aiSelectedModel, setAiSelectedModel] = useState("");
-  const terminalBuffer = useRef("");
+  const activeTerminalBuffer = useRef("");
+  const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
   const tabsRef = useRef<TabInfo[]>([]);
+  const activeTabIdRef = useRef<string | null>(null);
   const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
@@ -60,6 +62,13 @@ export default function App() {
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
+
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+    activeTerminalBuffer.current = activeTabId
+      ? terminalBuffers.current.get(activeTabId) || ""
+      : "";
+  }, [activeTabId]);
 
   useEffect(() => {
     const markDisconnected = (sessionId: string) => {
@@ -92,6 +101,10 @@ export default function App() {
   }, [activeTabId, tabs]);
 
   const removeTabFromState = useCallback((id: string) => {
+    terminalBuffers.current.delete(id);
+    if (activeTabIdRef.current === id) {
+      activeTerminalBuffer.current = "";
+    }
     setTabs((prev) => prev.filter((tab) => tab.id !== id));
   }, []);
 
@@ -151,9 +164,13 @@ export default function App() {
     [disconnectTab]
   );
 
-  const handleTerminalData = useCallback((data: string) => {
-    // Keep last 2000 chars for AI context
-    terminalBuffer.current = (terminalBuffer.current + data).slice(-2000);
+  const handleTerminalData = useCallback((tabId: string, data: string) => {
+    // Keep last 2000 chars per tab for AI context.
+    const nextBuffer = ((terminalBuffers.current.get(tabId) || "") + data).slice(-2000);
+    terminalBuffers.current.set(tabId, nextBuffer);
+    if (activeTabIdRef.current === tabId) {
+      activeTerminalBuffer.current = nextBuffer;
+    }
   }, []);
 
   const handleInsertCommand = useCallback(
@@ -329,7 +346,7 @@ export default function App() {
                   isActive={activeView === "terminal"}
                   isLoggingActive={false}
                   onOpenConnection={openConnection}
-                  onTerminalData={handleTerminalData}
+                  onTerminalData={() => {}}
                   encoding="utf-8"
                   terminalConfig={config?.terminal}
                 />
@@ -350,7 +367,7 @@ export default function App() {
                     isActive={activeView === "terminal" && tab.id === activeTabId}
                     isLoggingActive={Boolean(tab.isAutoLogging || tab.isManualLogging)}
                     onOpenConnection={openConnection}
-                    onTerminalData={handleTerminalData}
+                    onTerminalData={(data) => handleTerminalData(tab.id, data)}
                     encoding={tab.encoding}
                     terminalConfig={config?.terminal}
                   />
@@ -368,7 +385,7 @@ export default function App() {
                 <div style={{ width: aiPanelWidth, flexShrink: 0 }}>
                   <AIChatPanel
                     onClose={() => setShowAiPanel(false)}
-                    terminalBuffer={terminalBuffer}
+                    terminalBuffer={activeTerminalBuffer}
                     messages={aiMessages}
                     setMessages={setAiMessages}
                     selectedProvider={aiSelectedProvider}

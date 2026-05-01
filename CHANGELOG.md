@@ -17,6 +17,7 @@
 
 - Improved serial input responsiveness.
 - Fixed Azure OpenAI request endpoint handling.
+- Fixed AI terminal context so it follows the active tab instead of mixing output from other tabs.
 - Preserved AI assistant conversation history and model selection while the panel is closed during the current app session.
 - Stopped fetching AI model lists before every chat request.
 
