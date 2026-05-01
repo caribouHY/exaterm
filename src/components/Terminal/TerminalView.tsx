@@ -8,6 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ConnectionType, Encoding, TerminalConfig } from "../../types";
+import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
@@ -163,6 +164,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
     // 設定を読み込み、自動ログが有効な場合のみロギングを開始
     const loggingEnabled = terminalConfig?.auto_session_log ?? false;
+    const logSanitizer = createTerminalLogSanitizer(terminalConfig?.log_format ?? "display");
 
     // Backend data -> terminal
     const eventPrefix = protocol.dataEvent;
@@ -174,7 +176,10 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       term.write(text);
       if (onTerminalData) onTerminalData(text);
       if (loggingEnabled) {
-        invoke("logger_append", { sessionId, data: text }).catch(() => {});
+        const logText = logSanitizer.push(text);
+        if (logText) {
+          invoke("logger_append", { sessionId, data: logText }).catch(() => {});
+        }
       }
     };
 
@@ -196,6 +201,12 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     return () => {
       unlistenData.then((fn) => fn());
       unlistenError.then((fn) => fn());
+      if (loggingEnabled) {
+        const logText = logSanitizer.flush();
+        if (logText) {
+          invoke("logger_append", { sessionId, data: logText }).catch(() => {});
+        }
+      }
       resizeObserver.disconnect();
       term.dispose();
       termRef.current = null;

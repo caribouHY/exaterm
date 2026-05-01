@@ -96,6 +96,8 @@ pub struct TerminalConfig {
     pub scrollback: u32,
     #[serde(default)]
     pub auto_session_log: bool,
+    #[serde(default = "default_terminal_log_format")]
+    pub log_format: String,
 }
 
 impl Default for TerminalConfig {
@@ -106,6 +108,7 @@ impl Default for TerminalConfig {
             cursor_style: default_terminal_cursor_style(),
             scrollback: default_terminal_scrollback(),
             auto_session_log: false,
+            log_format: default_terminal_log_format(),
         }
     }
 }
@@ -124,6 +127,10 @@ fn default_terminal_cursor_style() -> String {
 
 fn default_terminal_scrollback() -> u32 {
     10000
+}
+
+fn default_terminal_log_format() -> String {
+    "display".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -225,6 +232,7 @@ mod tests {
         assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.terminal.font_size, 14);
         assert_eq!(cfg.terminal.scrollback, 10000);
+        assert_eq!(cfg.terminal.log_format, "display");
         assert!(!cfg.ssh.allow_legacy_algorithms);
         assert!(cfg.saved_connections.is_empty());
     }
@@ -250,6 +258,7 @@ mod tests {
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
         assert_eq!(cfg.terminal.font_size, 14);
         assert!(cfg.terminal.auto_session_log);
+        assert_eq!(cfg.terminal.log_format, "display");
         assert!(cfg.ssh.allow_legacy_algorithms);
         assert_eq!(cfg.saved_connections[0].id, "dev box");
     }

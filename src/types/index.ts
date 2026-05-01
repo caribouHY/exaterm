@@ -79,7 +79,10 @@ export interface TerminalConfig {
   cursor_style: string;
   scrollback: number;
   auto_session_log: boolean;
+  log_format: LogFormat;
 }
+
+export type LogFormat = "display" | "strip_controls";
 
 export interface SshConfig {
   allow_legacy_algorithms: boolean;

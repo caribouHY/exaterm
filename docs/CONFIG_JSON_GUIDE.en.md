@@ -45,7 +45,8 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "font_family": "Consolas, 'Courier New', monospace",
     "cursor_style": "block",
     "scrollback": 10000,
-    "auto_session_log": false
+    "auto_session_log": false,
+    "log_format": "display"
   },
   "ssh": {
     "allow_legacy_algorithms": false
@@ -63,7 +64,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | `ai`                | object | See below | AI assistant settings.                                                                                                                     |
 | `terminal`          | object | See below | Terminal display and logging settings.                                                                                                     |
 | `ssh`               | object | See below | SSH connection compatibility settings.                                                                                                     |
-| `saved_connections` | array  | `[]`      | Saved SSH connection profiles. SSH profiles can be created, selected, and deleted from the connection dialog.                             |
+| `saved_connections` | array  | `[]`      | Saved SSH connection profiles. SSH profiles can be created, selected, and deleted from the connection dialog.                              |
 
 ## ai
 
@@ -104,6 +105,7 @@ Ollama usually does not require an API key. Configure `ai.ollama_enabled` and `a
 | `terminal.cursor_style`     | string  | `"block"`                              | Terminal cursor shape. The default is a block cursor. When editing manually, use a value accepted by xterm.js, such as `"block"`, `"underline"`, or `"bar"`. |
 | `terminal.scrollback`       | number  | `10000`                                | Number of terminal scrollback lines. Larger values keep more history but may increase memory usage.                                                          |
 | `terminal.auto_session_log` | boolean | `false`                                | When set to `true`, SSH, serial, and Telnet terminal input/output is saved as plaintext logs.                                                                |
+| `terminal.log_format`       | string  | `"display"`                            | Session log formatting mode. `"display"` saves text closer to the terminal screen; `"strip_controls"` removes control sequences.                             |
 
 ### Session Log Notice
 
@@ -121,6 +123,8 @@ Logs are usually stored here:
 ```
 
 In sensitive environments, enable session logging only when necessary.
+
+When `terminal.log_format` is `"display"`, common line edits such as Backspace, cursor-left, and erase-to-end-of-line are applied before text is saved. When it is `"strip_controls"`, control sequences are removed, but partially edited text may remain.
 
 ## ssh
 
@@ -149,13 +153,13 @@ Internal SSH extension markers, such as strict key exchange and extension info m
 
 `saved_connections` is an array of saved SSH connection profiles. SSH profiles can be managed from the connection dialog. Telnet and serial profiles are not currently supported. Passwords are not stored in this section.
 
-| Parameter         | Type           | Description                                                  |
-| ----------------- | -------------- | ------------------------------------------------------------ |
-| `id`              | string         | Profile name and identifier.                                 |
-| `connection_type` | string         | Connection type. Currently only `"ssh"` is supported.        |
-| `host`            | string or null | SSH target host.                                             |
-| `port`            | number or null | SSH target port.                                             |
-| `username`        | string or null | SSH username.                                                |
+| Parameter         | Type           | Description                                           |
+| ----------------- | -------------- | ----------------------------------------------------- |
+| `id`              | string         | Profile name and identifier.                          |
+| `connection_type` | string         | Connection type. Currently only `"ssh"` is supported. |
+| `host`            | string or null | SSH target host.                                      |
+| `port`            | number or null | SSH target port.                                      |
+| `username`        | string or null | SSH username.                                         |
 
 Example:
 

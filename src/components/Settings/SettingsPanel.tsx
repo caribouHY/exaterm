@@ -382,6 +382,17 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <span className="toggle-track" />
           </label>
         </div>
+        <div style={{ marginBottom: 14 }}>
+          <label className="label">{t("settings.log_format")}</label>
+          <select
+            className="select"
+            value={config.terminal.log_format || "display"}
+            onChange={(e) => update("terminal.log_format", e.target.value)}
+          >
+            <option value="display">{t("settings.log_format_display")}</option>
+            <option value="strip_controls">{t("settings.log_format_strip_controls")}</option>
+          </select>
+        </div>
       </div>
 
       <div className="settings-actions">
