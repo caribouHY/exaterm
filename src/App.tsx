@@ -12,6 +12,7 @@ import LogViewer from "./components/Log/LogViewer";
 import type { TabInfo, ViewMode, ConnectionType, Encoding, AppConfig, ChatMessage } from "./types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { save } from "@tauri-apps/plugin-dialog";
 import "./App.css";
 
 export default function App() {
@@ -24,6 +25,8 @@ export default function App() {
   const [aiPanelWidth, setAiPanelWidth] = useState(340);
   const [isDragging, setIsDragging] = useState(false);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [manualLogBusyTabId, setManualLogBusyTabId] = useState<string | null>(null);
+  const [logStatusMessage, setLogStatusMessage] = useState("");
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiSelectedProvider, setAiSelectedProvider] = useState("");
   const [aiSelectedModel, setAiSelectedModel] = useState("");
@@ -34,20 +37,25 @@ export default function App() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || null;
 
-  const handleConnect = useCallback((type: ConnectionType, sessionId: string, title: string) => {
-    const newTab: TabInfo = {
-      id: sessionId,
-      title,
-      connectionType: type,
-      sessionId,
-      isConnected: true,
-      encoding: "utf-8",
-    };
-    setTabs((prev) => [...prev, newTab]);
-    setActiveTabId(sessionId);
-    setShowConnection(false);
-    setActiveView("terminal");
-  }, []);
+  const handleConnect = useCallback(
+    (type: ConnectionType, sessionId: string, title: string, isAutoLogging: boolean) => {
+      const newTab: TabInfo = {
+        id: sessionId,
+        title,
+        connectionType: type,
+        sessionId,
+        isConnected: true,
+        encoding: "utf-8",
+        isAutoLogging,
+        isManualLogging: false,
+      };
+      setTabs((prev) => [...prev, newTab]);
+      setActiveTabId(sessionId);
+      setShowConnection(false);
+      setActiveView("terminal");
+    },
+    []
+  );
 
   useEffect(() => {
     tabsRef.current = tabs;
@@ -160,6 +168,76 @@ export default function App() {
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, encoding } : t)));
   }, []);
 
+  const buildManualLogFileName = useCallback((tab: TabInfo) => {
+    const now = new Date();
+    const stamp = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+      "_",
+      String(now.getHours()).padStart(2, "0"),
+      String(now.getMinutes()).padStart(2, "0"),
+      String(now.getSeconds()).padStart(2, "0"),
+    ].join("");
+    const sessionPrefix = (tab.sessionId ?? tab.id).slice(0, 8);
+    return `exaterm_${stamp}_${sessionPrefix}.log`;
+  }, []);
+
+  const showTemporaryLogStatus = useCallback((message: string) => {
+    setLogStatusMessage(message);
+    window.setTimeout(() => setLogStatusMessage(""), 3000);
+  }, []);
+
+  const handleStartManualLog = useCallback(async () => {
+    if (!activeTab?.sessionId || !activeTab.isConnected || activeTab.isManualLogging) return;
+
+    setManualLogBusyTabId(activeTab.id);
+    try {
+      const selectedPath = await save({
+        title: "Save ExaTerm Log",
+        defaultPath: buildManualLogFileName(activeTab),
+        filters: [{ name: "Log", extensions: ["log", "txt"] }],
+      });
+      if (!selectedPath) return;
+
+      const filePath = await invoke<string>("logger_start_manual", {
+        sessionId: activeTab.sessionId,
+        connectionType: activeTab.connectionType,
+        target: activeTab.title,
+        filePath: selectedPath,
+      });
+      setTabs((prev) =>
+        prev.map((tab) =>
+          tab.id === activeTab.id
+            ? { ...tab, isManualLogging: true, manualLogFilePath: filePath }
+            : tab
+        )
+      );
+    } catch (error) {
+      console.error("Failed to start manual log:", error);
+      showTemporaryLogStatus("statusbar.log_start_failed");
+    } finally {
+      setManualLogBusyTabId(null);
+    }
+  }, [activeTab, buildManualLogFileName, showTemporaryLogStatus]);
+
+  const handleStopManualLog = useCallback(async () => {
+    if (!activeTab?.sessionId || !activeTab.isManualLogging) return;
+
+    setManualLogBusyTabId(activeTab.id);
+    try {
+      await invoke("logger_stop_manual", { sessionId: activeTab.sessionId });
+      setTabs((prev) =>
+        prev.map((tab) => (tab.id === activeTab.id ? { ...tab, isManualLogging: false } : tab))
+      );
+    } catch (error) {
+      console.error("Failed to stop manual log:", error);
+      showTemporaryLogStatus("statusbar.log_stop_failed");
+    } finally {
+      setManualLogBusyTabId(null);
+    }
+  }, [activeTab, showTemporaryLogStatus]);
+
   const openConnection = () => setShowConnection(true);
 
   useEffect(() => {
@@ -249,6 +327,7 @@ export default function App() {
                   connectionType="ssh"
                   isConnected={false}
                   isActive={activeView === "terminal"}
+                  isLoggingActive={false}
                   onOpenConnection={openConnection}
                   onTerminalData={handleTerminalData}
                   encoding="utf-8"
@@ -269,6 +348,7 @@ export default function App() {
                     connectionType={tab.connectionType}
                     isConnected={tab.isConnected}
                     isActive={activeView === "terminal" && tab.id === activeTabId}
+                    isLoggingActive={Boolean(tab.isAutoLogging || tab.isManualLogging)}
                     onOpenConnection={openConnection}
                     onTerminalData={handleTerminalData}
                     encoding={tab.encoding}
@@ -307,6 +387,10 @@ export default function App() {
             onEncodingChange={(encoding) =>
               activeTab && handleEncodingChange(activeTab.id, encoding)
             }
+            onStartManualLog={handleStartManualLog}
+            onStopManualLog={handleStopManualLog}
+            manualLogBusy={Boolean(activeTab && manualLogBusyTabId === activeTab.id)}
+            logStatusMessage={logStatusMessage}
           />
         </div>
       </div>

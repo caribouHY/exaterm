@@ -15,6 +15,7 @@ use telnet::TelnetState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(SshState::new())
         .manage(SerialState::new())
         .manage(TelnetState::new())
@@ -46,6 +47,10 @@ pub fn run() {
             ai::ai_chat,
             // Logger
             logger::logger_start,
+            logger::logger_start_auto,
+            logger::logger_start_manual,
+            logger::logger_stop_manual,
+            logger::logger_is_manual_active,
             logger::logger_append,
             logger::logger_get_sessions,
             logger::logger_get_log_dir,

@@ -41,6 +41,31 @@
   opacity: 1;
 }
 
+.statusbar__item--clickable:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.statusbar__item--clickable:disabled:hover {
+  background: transparent;
+}
+
+.statusbar__log {
+  min-width: 0;
+  max-width: 180px;
+}
+
+.statusbar__log span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusbar__log--manual {
+  background: rgba(255, 255, 255, 0.16);
+  opacity: 1;
+}
+
 .statusbar__encoding-container {
   position: relative;
   height: 100%;

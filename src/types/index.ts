@@ -52,6 +52,7 @@ export interface LogSession {
   target: string;
   started_at: string;
   file_path: string;
+  log_mode: "auto" | "manual";
 }
 
 export interface AppConfig {
@@ -107,4 +108,7 @@ export interface TabInfo {
   sessionId?: string;
   isConnected: boolean;
   encoding: Encoding;
+  isAutoLogging?: boolean;
+  isManualLogging?: boolean;
+  manualLogFilePath?: string;
 }

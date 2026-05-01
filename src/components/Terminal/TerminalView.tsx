@@ -18,6 +18,7 @@ interface TerminalViewProps {
   isConnected: boolean;
   isActive: boolean;
   encoding: Encoding;
+  isLoggingActive: boolean;
   terminalConfig?: TerminalConfig;
   onOpenConnection: () => void;
   onTerminalData?: (data: string) => void;
@@ -34,6 +35,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     isConnected,
     isActive,
     encoding,
+    isLoggingActive,
     terminalConfig,
     onOpenConnection,
     onTerminalData,
@@ -46,6 +48,10 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const fitRef = useRef<FitAddon | null>(null);
   const decoderRef = useRef(new TextDecoder(encoding));
   const isConnectedRef = useRef(isConnected);
+  const isLoggingActiveRef = useRef(isLoggingActive);
+  const logSanitizerRef = useRef(
+    createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
+  );
 
   const connectionCommands: Record<
     ConnectionType,
@@ -75,6 +81,10 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     isConnectedRef.current = isConnected;
   }, [isConnected]);
 
+  useEffect(() => {
+    isLoggingActiveRef.current = isLoggingActive;
+  }, [isLoggingActive]);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -94,6 +104,10 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   useEffect(() => {
     decoderRef.current = new TextDecoder(encoding);
   }, [encoding]);
+
+  useEffect(() => {
+    logSanitizerRef.current = createTerminalLogSanitizer(terminalConfig?.log_format ?? "display");
+  }, [terminalConfig?.log_format]);
 
   // Create the terminal once per session and keep it mounted after disconnect.
   useEffect(() => {
@@ -162,10 +176,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       invoke(protocol.write, { sessionId, data }).catch(console.error);
     });
 
-    // 設定を読み込み、自動ログが有効な場合のみロギングを開始
-    const loggingEnabled = terminalConfig?.auto_session_log ?? false;
-    const logSanitizer = createTerminalLogSanitizer(terminalConfig?.log_format ?? "display");
-
     // Backend data -> terminal
     const eventPrefix = protocol.dataEvent;
     const errorPrefix = protocol.errorEvent;
@@ -175,8 +185,8 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       const text = decoderRef.current.decode(data, { stream: true });
       term.write(text);
       if (onTerminalData) onTerminalData(text);
-      if (loggingEnabled) {
-        const logText = logSanitizer.push(text);
+      if (isLoggingActiveRef.current) {
+        const logText = logSanitizerRef.current.push(text);
         if (logText) {
           invoke("logger_append", { sessionId, data: logText }).catch(() => {});
         }
@@ -201,8 +211,8 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     return () => {
       unlistenData.then((fn) => fn());
       unlistenError.then((fn) => fn());
-      if (loggingEnabled) {
-        const logText = logSanitizer.flush();
+      if (isLoggingActiveRef.current) {
+        const logText = logSanitizerRef.current.flush();
         if (logText) {
           invoke("logger_append", { sessionId, data: logText }).catch(() => {});
         }

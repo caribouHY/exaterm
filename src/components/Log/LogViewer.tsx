@@ -34,6 +34,7 @@ export default function LogViewer() {
           <thead>
             <tr>
               <th>{t("logs.type")}</th>
+              <th>{t("logs.mode")}</th>
               <th>{t("logs.target")}</th>
               <th>{t("logs.started_at")}</th>
               <th>{t("logs.file")}</th>
@@ -41,12 +42,13 @@ export default function LogViewer() {
           </thead>
           <tbody>
             {sessions.map((s) => (
-              <tr key={s.session_id}>
+              <tr key={`${s.session_id}-${s.log_mode}`}>
                 <td>
                   <span className={`log-table__type log-table__type--${s.connection_type}`}>
                     {s.connection_type}
                   </span>
                 </td>
+                <td>{t(`logs.mode_${s.log_mode}`)}</td>
                 <td>{s.target}</td>
                 <td>
                   {new Date(s.started_at).toLocaleString(

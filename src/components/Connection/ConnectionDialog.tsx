@@ -13,7 +13,12 @@ import "./ConnectionDialog.css";
 
 interface ConnectionDialogProps {
   onClose: () => void;
-  onConnect: (type: ConnectionType, sessionId: string, title: string) => void;
+  onConnect: (
+    type: ConnectionType,
+    sessionId: string,
+    title: string,
+    isAutoLogging: boolean
+  ) => void;
 }
 
 export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialogProps) {
@@ -193,13 +198,13 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       rows: 30,
     });
     if (autoLog) {
-      await invoke("logger_start", {
+      await invoke("logger_start_auto", {
         sessionId: result.session_id,
         connectionType: "ssh",
         target: `${username}@${host}:${sshPort}`,
       });
     }
-    onConnect("ssh", result.session_id, `${username}@${host}`);
+    onConnect("ssh", result.session_id, `${username}@${host}`, autoLog);
   };
 
   const handleTrustAndConnect = async (replace: boolean) => {
@@ -270,13 +275,13 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
           rows: 30,
         });
         if (autoLog) {
-          await invoke("logger_start", {
+          await invoke("logger_start_auto", {
             sessionId,
             connectionType: "telnet",
             target: `${telnetHost}:${parsedTelnetPort}`,
           });
         }
-        onConnect("telnet", sessionId, `${telnetHost}:${parsedTelnetPort}`);
+        onConnect("telnet", sessionId, `${telnetHost}:${parsedTelnetPort}`, autoLog);
         return;
       }
 
@@ -291,13 +296,13 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         },
       });
       if (autoLog) {
-        await invoke("logger_start", {
+        await invoke("logger_start_auto", {
           sessionId,
           connectionType: "serial",
           target: selectedPort,
         });
       }
-      onConnect("serial", sessionId, selectedPort);
+      onConnect("serial", sessionId, selectedPort, autoLog);
     } catch (e: unknown) {
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
