@@ -42,6 +42,8 @@ pub struct AiConfig {
     pub default_provider: String,
     #[serde(default = "default_ai_model")]
     pub default_model: String,
+    #[serde(default)]
+    pub debug_log_enabled: bool,
 }
 
 impl Default for AiConfig {
@@ -54,6 +56,7 @@ impl Default for AiConfig {
             ollama_base_url: default_ollama_url(),
             default_provider: DEFAULT_AI_PROVIDER.into(),
             default_model: DEFAULT_AI_MODEL.into(),
+            debug_log_enabled: false,
         }
     }
 }
@@ -190,17 +193,19 @@ fn config_path() -> PathBuf {
 
 #[tauri::command]
 pub fn config_load() -> Result<AppConfig, String> {
+    let cfg = config_read()?;
+    config_save(cfg.clone())?;
+    Ok(cfg)
+}
+
+pub(crate) fn config_read() -> Result<AppConfig, String> {
     let path = config_path();
     if path.exists() {
         let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
         let cfg: AppConfig = serde_json::from_str(&data).map_err(|e| e.to_string())?;
-        let cfg = cfg.migrate();
-        config_save(cfg.clone())?;
-        Ok(cfg)
+        Ok(cfg.migrate())
     } else {
-        let cfg = AppConfig::default();
-        config_save(cfg.clone())?;
-        Ok(cfg)
+        Ok(AppConfig::default())
     }
 }
 
@@ -227,6 +232,7 @@ mod tests {
         assert_eq!(cfg.language, "ja");
         assert_eq!(cfg.ai.default_provider, DEFAULT_AI_PROVIDER);
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
+        assert!(!cfg.ai.debug_log_enabled);
         assert!(!cfg.ai.azure_openai_enabled);
         assert_eq!(cfg.ai.azure_openai_endpoint, "");
         assert_eq!(cfg.ai.azure_openai_deployment, "");
@@ -256,6 +262,7 @@ mod tests {
         assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.ai.ollama_base_url, "http://localhost:11434");
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
+        assert!(!cfg.ai.debug_log_enabled);
         assert_eq!(cfg.terminal.font_size, 14);
         assert!(cfg.terminal.auto_session_log);
         assert_eq!(cfg.terminal.log_format, "display");

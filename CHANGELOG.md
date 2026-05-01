@@ -10,6 +10,7 @@
 - Added Escape key cancellation for the new connection dialog.
 - Added Ctrl+Enter shortcuts for starting new connections.
 - Added structured AI command suggestions with buttons to insert reviewed commands into the active terminal.
+- Added config-only AI chat debug logs for troubleshooting provider requests and responses.
 - Added selectable session log formatting, defaulting to screen-display logs that apply common line edits before saving.
 - Added manual session logging with user-selected log files, including parallel saving while auto logging is enabled.
 

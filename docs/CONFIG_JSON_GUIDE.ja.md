@@ -38,7 +38,8 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "ollama_enabled": false,
     "ollama_base_url": "http://localhost:11434",
     "default_provider": "OpenAi",
-    "default_model": "gpt-4o"
+    "default_model": "gpt-4o",
+    "debug_log_enabled": false
   },
   "terminal": {
     "font_size": 14,
@@ -77,6 +78,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | `ai.ollama_base_url`         | string  | `"http://localhost:11434"` | Ollama API のベース URL です。ローカル環境の標準設定では `"http://localhost:11434"` を使用します。空文字の場合、画面上では既定 URL として扱われます。                                                                              |
 | `ai.default_provider`        | string  | `"OpenAi"`                 | AI パネルで優先的に選択されるプロバイダです。使用可能な値は `"OpenAi"`, `"AzureOpenAi"`, `"Anthropic"`, `"Gemini"`, `"Ollama"` です。                                                                                              |
 | `ai.default_model`           | string  | `"gpt-4o"`                 | AI パネルで優先的に選択されるモデル ID です。設定画面からは現在直接編集できないため、必要な場合は手動で編集します。保存したモデルが利用できない場合は、利用可能なモデルへ自動的にフォールバックします。                            |
+| `ai.debug_log_enabled`       | boolean | `false`                    | `true` にすると、AI チャットのリクエストと応答を JSON Lines 形式のデバッグログとして `%AppData%\ExaTerm\ai-debug` に保存します。                                                                                                  |
 
 ### AI API キーについて
 
@@ -85,6 +87,10 @@ OpenAI、Azure OpenAI、Anthropic、Google Gemini の API キーは `config.json
 Azure OpenAI の chat completions URL 全体とモデルデプロイ名を設定してください。ExaTerm は Endpoint URL を入力どおりに使用し、パスや `api-version` は自動付与しません。
 
 Ollama は通常 API キーを必要としません。`ai.ollama_enabled` と `ai.ollama_base_url` を設定してください。
+
+### AI デバッグログ
+
+AI チャットの動作を調査する必要がある場合のみ、`ai.debug_log_enabled` を `true` にしてください。デバッグログは `%AppData%\ExaTerm\ai-debug\YYYYMMDD.log` に保存され、プロンプト、AI 応答、ターミナルコンテキストの本文を含む可能性があります。API キーと HTTP ヘッダーは保存されません。
 
 ### 代表的なモデル ID
 
@@ -188,7 +194,8 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
   "ollama_enabled": true,
   "ollama_base_url": "http://localhost:11434",
   "default_provider": "Ollama",
-  "default_model": "llama3.1"
+  "default_model": "llama3.1",
+  "debug_log_enabled": false
 }
 ```
 
@@ -202,7 +209,8 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
   "azure_openai_endpoint": "https://your-resource.openai.azure.com/openai/v1/chat/completions",
   "azure_openai_deployment": "my-gpt4o",
   "default_provider": "AzureOpenAi",
-  "default_model": "my-gpt4o"
+  "default_model": "my-gpt4o",
+  "debug_log_enabled": false
 }
 ```
 

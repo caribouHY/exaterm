@@ -1,4 +1,5 @@
 mod catalog;
+mod debug_log;
 mod errors;
 mod providers;
 mod secrets;
@@ -8,11 +9,13 @@ pub use catalog::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
 pub use types::{AiModelInfo, AiProvider, AiSecretStatus, ChatMessage};
 
 use catalog::{fallback_cloud_models, fallback_models_for};
+use debug_log::{append_chat_debug_log, ChatDebugLogInput, ChatDebugLogOutcome};
 use providers::{fetch_provider_models, send_chat_request};
 use secrets::{
     is_secret_present, load_provider_secret_optional, provider_secret_key, KEY_ANTHROPIC,
     KEY_AZURE_OPENAI, KEY_GEMINI, KEY_OPENAI,
 };
+use std::time::Instant;
 
 #[tauri::command]
 pub async fn ai_get_models() -> Result<Vec<AiModelInfo>, String> {
@@ -117,10 +120,17 @@ pub async fn ai_chat(
 ) -> Result<String, String> {
     let client = reqwest::Client::new();
     let system_prompt = build_system_prompt(&terminal_context, &language);
+    let debug_log_enabled = crate::config::config_read()
+        .map(|cfg| cfg.ai.debug_log_enabled)
+        .unwrap_or_else(|e| {
+            log::warn!("Failed to load config for AI debug logging: {}", e);
+            false
+        });
+    let started = Instant::now();
 
-    send_chat_request(
+    let result = send_chat_request(
         &client,
-        provider,
+        provider.clone(),
         &model,
         &messages,
         &system_prompt,
@@ -128,5 +138,26 @@ pub async fn ai_chat(
         ollama_base_url.as_deref(),
         azure_openai_endpoint.as_deref(),
     )
-    .await
+    .await;
+
+    if debug_log_enabled {
+        let outcome = match &result {
+            Ok(response) => ChatDebugLogOutcome::Success { response },
+            Err(error) => ChatDebugLogOutcome::Error { error },
+        };
+        if let Err(e) = append_chat_debug_log(ChatDebugLogInput {
+            provider: &provider,
+            model: &model,
+            language: &language,
+            terminal_context_included: terminal_context.is_some(),
+            messages: &messages,
+            system_prompt: &system_prompt,
+            duration_ms: started.elapsed().as_millis(),
+            outcome,
+        }) {
+            log::warn!("Failed to write AI debug log: {}", e);
+        }
+    }
+
+    result
 }

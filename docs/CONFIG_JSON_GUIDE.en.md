@@ -38,7 +38,8 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "ollama_enabled": false,
     "ollama_base_url": "http://localhost:11434",
     "default_provider": "OpenAi",
-    "default_model": "gpt-4o"
+    "default_model": "gpt-4o",
+    "debug_log_enabled": false
   },
   "terminal": {
     "font_size": 14,
@@ -77,6 +78,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | `ai.ollama_base_url`         | string  | `"http://localhost:11434"` | The base URL for the Ollama API. For a standard local setup, use `"http://localhost:11434"`. If this is an empty string, the UI treats it as the default URL.                                                                          |
 | `ai.default_provider`        | string  | `"OpenAi"`                 | The provider selected by default in the AI panel. Supported values are `"OpenAi"`, `"AzureOpenAi"`, `"Anthropic"`, `"Gemini"`, and `"Ollama"`.                                                                                         |
 | `ai.default_model`           | string  | `"gpt-4o"`                 | The model ID selected by default in the AI panel. This is not currently editable from the Settings screen, so edit it manually if needed. If the saved model is not available, ExaTerm automatically falls back to an available model. |
+| `ai.debug_log_enabled`       | boolean | `false`                    | When set to `true`, AI chat requests and responses are saved as JSON Lines debug logs under `%AppData%\ExaTerm\ai-debug`.                                                                                                            |
 
 ### AI API Keys
 
@@ -85,6 +87,10 @@ API keys for OpenAI, Azure OpenAI, Anthropic, and Google Gemini are not stored i
 Enter the full Azure OpenAI chat completions URL and model deployment name. ExaTerm uses the endpoint URL exactly as entered and does not append a path or `api-version` value.
 
 Ollama usually does not require an API key. Configure `ai.ollama_enabled` and `ai.ollama_base_url` instead.
+
+### AI Debug Logs
+
+Set `ai.debug_log_enabled` to `true` only when you need to troubleshoot AI chat behavior. Debug logs are saved to `%AppData%\ExaTerm\ai-debug\YYYYMMDD.log` and may include prompts, AI responses, and terminal context text. API keys and HTTP headers are not saved.
 
 ### Common Model IDs
 
@@ -188,7 +194,8 @@ Example:
   "ollama_enabled": true,
   "ollama_base_url": "http://localhost:11434",
   "default_provider": "Ollama",
-  "default_model": "llama3.1"
+  "default_model": "llama3.1",
+  "debug_log_enabled": false
 }
 ```
 
@@ -202,7 +209,8 @@ Set `default_model` to a model name installed in Ollama.
   "azure_openai_endpoint": "https://your-resource.openai.azure.com/openai/v1/chat/completions",
   "azure_openai_deployment": "my-gpt4o",
   "default_provider": "AzureOpenAi",
-  "default_model": "my-gpt4o"
+  "default_model": "my-gpt4o",
+  "debug_log_enabled": false
 }
 ```
 

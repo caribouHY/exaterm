@@ -72,6 +72,7 @@ export interface AiConfig {
   ollama_base_url: string;
   default_provider: string;
   default_model: string;
+  debug_log_enabled: boolean;
 }
 
 export interface TerminalConfig {
