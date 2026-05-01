@@ -78,7 +78,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | `ai.ollama_base_url`         | string  | `"http://localhost:11434"` | Ollama API のベース URL です。ローカル環境の標準設定では `"http://localhost:11434"` を使用します。空文字の場合、画面上では既定 URL として扱われます。                                                                              |
 | `ai.default_provider`        | string  | `"OpenAi"`                 | AI パネルで優先的に選択されるプロバイダです。使用可能な値は `"OpenAi"`, `"AzureOpenAi"`, `"Anthropic"`, `"Gemini"`, `"Ollama"` です。                                                                                              |
 | `ai.default_model`           | string  | `"gpt-4o"`                 | AI パネルで優先的に選択されるモデル ID です。設定画面からは現在直接編集できないため、必要な場合は手動で編集します。保存したモデルが利用できない場合は、利用可能なモデルへ自動的にフォールバックします。                            |
-| `ai.debug_log_enabled`       | boolean | `false`                    | `true` にすると、AI チャットのリクエストと応答を JSON Lines 形式のデバッグログとして `%AppData%\ExaTerm\ai-debug` に保存します。                                                                                                  |
+| `ai.debug_log_enabled`       | boolean | `false`                    | `true` にすると、AI チャットのリクエストと応答を JSON Lines 形式のデバッグログとして `%AppData%\ExaTerm\ai-debug` に保存します。                                                                                                   |
 
 ### AI API キーについて
 

@@ -24,6 +24,7 @@ Use this checklist when preparing a new ExaTerm release version.
 
 ## Validation
 
+- Run `npm run format:check` before opening or updating the release PR. Editor format-on-save is not enough because CI also checks Markdown, JSON, and files that may not have been saved through the editor.
 - Run `npm run build` for frontend and TypeScript validation.
 - Run `cargo test` from `src-tauri/` or use `cargo test --manifest-path src-tauri/Cargo.toml`.
 - Run `git status --short` and confirm only intended release-preparation files changed.

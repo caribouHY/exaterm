@@ -78,7 +78,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | `ai.ollama_base_url`         | string  | `"http://localhost:11434"` | The base URL for the Ollama API. For a standard local setup, use `"http://localhost:11434"`. If this is an empty string, the UI treats it as the default URL.                                                                          |
 | `ai.default_provider`        | string  | `"OpenAi"`                 | The provider selected by default in the AI panel. Supported values are `"OpenAi"`, `"AzureOpenAi"`, `"Anthropic"`, `"Gemini"`, and `"Ollama"`.                                                                                         |
 | `ai.default_model`           | string  | `"gpt-4o"`                 | The model ID selected by default in the AI panel. This is not currently editable from the Settings screen, so edit it manually if needed. If the saved model is not available, ExaTerm automatically falls back to an available model. |
-| `ai.debug_log_enabled`       | boolean | `false`                    | When set to `true`, AI chat requests and responses are saved as JSON Lines debug logs under `%AppData%\ExaTerm\ai-debug`.                                                                                                            |
+| `ai.debug_log_enabled`       | boolean | `false`                    | When set to `true`, AI chat requests and responses are saved as JSON Lines debug logs under `%AppData%\ExaTerm\ai-debug`.                                                                                                              |
 
 ### AI API Keys
 
