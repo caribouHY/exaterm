@@ -17,6 +17,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub terminal: TerminalConfig,
     #[serde(default)]
+    pub ssh: SshConfig,
+    #[serde(default)]
     pub saved_connections: Vec<SavedConnection>,
 }
 
@@ -40,6 +42,8 @@ pub struct AiConfig {
     pub default_provider: String,
     #[serde(default = "default_ai_model")]
     pub default_model: String,
+    #[serde(default)]
+    pub debug_log_enabled: bool,
 }
 
 impl Default for AiConfig {
@@ -52,6 +56,7 @@ impl Default for AiConfig {
             ollama_base_url: default_ollama_url(),
             default_provider: DEFAULT_AI_PROVIDER.into(),
             default_model: DEFAULT_AI_MODEL.into(),
+            debug_log_enabled: false,
         }
     }
 }
@@ -69,6 +74,20 @@ fn default_ollama_url() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SshConfig {
+    #[serde(default)]
+    pub allow_legacy_algorithms: bool,
+}
+
+impl Default for SshConfig {
+    fn default() -> Self {
+        Self {
+            allow_legacy_algorithms: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerminalConfig {
     #[serde(default = "default_terminal_font_size")]
     pub font_size: u32,
@@ -80,6 +99,8 @@ pub struct TerminalConfig {
     pub scrollback: u32,
     #[serde(default)]
     pub auto_session_log: bool,
+    #[serde(default = "default_terminal_log_format")]
+    pub log_format: String,
 }
 
 impl Default for TerminalConfig {
@@ -90,6 +111,7 @@ impl Default for TerminalConfig {
             cursor_style: default_terminal_cursor_style(),
             scrollback: default_terminal_scrollback(),
             auto_session_log: false,
+            log_format: default_terminal_log_format(),
         }
     }
 }
@@ -110,12 +132,14 @@ fn default_terminal_scrollback() -> u32 {
     10000
 }
 
+fn default_terminal_log_format() -> String {
+    "display".into()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedConnection {
     #[serde(default)]
     pub id: String,
-    #[serde(default)]
-    pub name: String,
     #[serde(default)]
     pub connection_type: String,
     #[serde(default)]
@@ -124,23 +148,16 @@ pub struct SavedConnection {
     pub port: Option<u16>,
     #[serde(default)]
     pub username: Option<String>,
-    #[serde(default)]
-    pub serial_port: Option<String>,
-    #[serde(default)]
-    pub baud_rate: Option<u32>,
 }
 
 impl Default for SavedConnection {
     fn default() -> Self {
         Self {
             id: String::new(),
-            name: String::new(),
             connection_type: String::new(),
             host: None,
             port: None,
             username: None,
-            serial_port: None,
-            baud_rate: None,
         }
     }
 }
@@ -152,6 +169,7 @@ impl Default for AppConfig {
             language: default_language(),
             ai: AiConfig::default(),
             terminal: TerminalConfig::default(),
+            ssh: SshConfig::default(),
             saved_connections: Vec::new(),
         }
     }
@@ -175,17 +193,19 @@ fn config_path() -> PathBuf {
 
 #[tauri::command]
 pub fn config_load() -> Result<AppConfig, String> {
+    let cfg = config_read()?;
+    config_save(cfg.clone())?;
+    Ok(cfg)
+}
+
+pub(crate) fn config_read() -> Result<AppConfig, String> {
     let path = config_path();
     if path.exists() {
         let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
         let cfg: AppConfig = serde_json::from_str(&data).map_err(|e| e.to_string())?;
-        let cfg = cfg.migrate();
-        config_save(cfg.clone())?;
-        Ok(cfg)
+        Ok(cfg.migrate())
     } else {
-        let cfg = AppConfig::default();
-        config_save(cfg.clone())?;
-        Ok(cfg)
+        Ok(AppConfig::default())
     }
 }
 
@@ -212,11 +232,14 @@ mod tests {
         assert_eq!(cfg.language, "ja");
         assert_eq!(cfg.ai.default_provider, DEFAULT_AI_PROVIDER);
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
+        assert!(!cfg.ai.debug_log_enabled);
         assert!(!cfg.ai.azure_openai_enabled);
         assert_eq!(cfg.ai.azure_openai_endpoint, "");
         assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.terminal.font_size, 14);
         assert_eq!(cfg.terminal.scrollback, 10000);
+        assert_eq!(cfg.terminal.log_format, "display");
+        assert!(!cfg.ssh.allow_legacy_algorithms);
         assert!(cfg.saved_connections.is_empty());
     }
 
@@ -226,8 +249,9 @@ mod tests {
             r#"{
                 "config_version": 1,
                 "ai": {"default_provider": "Ollama"},
+                "ssh": {"allow_legacy_algorithms": true},
                 "terminal": {"auto_session_log": true},
-                "saved_connections": [{"name": "dev box"}]
+                "saved_connections": [{"id": "dev box", "connection_type": "ssh"}]
             }"#,
         )
         .unwrap();
@@ -238,9 +262,11 @@ mod tests {
         assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.ai.ollama_base_url, "http://localhost:11434");
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
+        assert!(!cfg.ai.debug_log_enabled);
         assert_eq!(cfg.terminal.font_size, 14);
         assert!(cfg.terminal.auto_session_log);
-        assert_eq!(cfg.saved_connections[0].name, "dev box");
-        assert_eq!(cfg.saved_connections[0].id, "");
+        assert_eq!(cfg.terminal.log_format, "display");
+        assert!(cfg.ssh.allow_legacy_algorithms);
+        assert_eq!(cfg.saved_connections[0].id, "dev box");
     }
 }

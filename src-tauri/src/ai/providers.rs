@@ -129,7 +129,7 @@ async fn send_azure_openai_chat(
 ) -> Result<String, String> {
     let provider = AiProvider::AzureOpenAi;
     let api_key = load_provider_secret(&provider, language)?;
-    let url = azure_openai_v1_chat_url(
+    let url = azure_openai_chat_url(
         azure_openai_endpoint.unwrap_or_default(),
         deployment,
         language,
@@ -144,9 +144,7 @@ async fn send_azure_openai_chat(
         .post(url)
         .header("api-key", api_key)
         .header("content-type", "application/json")
-        .json(
-            &serde_json::json!({"model":deployment,"messages":payload_messages,"temperature":0.7}),
-        )
+        .json(&serde_json::json!({"model":deployment,"messages":payload_messages}))
         .send()
         .await
         .map_err(|e| format_network_error(&provider, language, &e))?;
@@ -167,7 +165,7 @@ async fn send_openai_chat(
 ) -> Result<String, String> {
     let provider = AiProvider::OpenAi;
     let api_key = load_provider_secret(&provider, language)?;
-    validate_model(client, &provider, model, Some(&api_key), None, language).await?;
+    ensure_model_selected(model, language)?;
 
     let mut payload_messages = vec![serde_json::json!({"role":"system","content":system_prompt})];
     for message in messages {
@@ -198,7 +196,7 @@ async fn send_anthropic_chat(
 ) -> Result<String, String> {
     let provider = AiProvider::Anthropic;
     let api_key = load_provider_secret(&provider, language)?;
-    validate_model(client, &provider, model, Some(&api_key), None, language).await?;
+    ensure_model_selected(model, language)?;
 
     let payload_messages: Vec<_> = messages
         .iter()
@@ -231,7 +229,7 @@ async fn send_gemini_chat(
 ) -> Result<String, String> {
     let provider = AiProvider::Gemini;
     let api_key = load_provider_secret(&provider, language)?;
-    validate_model(client, &provider, model, Some(&api_key), None, language).await?;
+    ensure_model_selected(model, language)?;
 
     let mut parts = vec![serde_json::json!({"text":system_prompt})];
     for message in messages {
@@ -266,7 +264,7 @@ async fn send_ollama_chat(
 ) -> Result<String, String> {
     let provider = AiProvider::Ollama;
     let base_url = normalized_ollama_base_url(ollama_base_url);
-    validate_model(client, &provider, model, None, Some(&base_url), language).await?;
+    ensure_model_selected(model, language)?;
 
     let mut payload_messages = vec![serde_json::json!({"role":"system","content":system_prompt})];
     for message in messages {
@@ -377,12 +375,12 @@ fn normalized_ollama_base_url(ollama_base_url: Option<&str>) -> String {
         .to_string()
 }
 
-fn azure_openai_v1_chat_url(
+fn azure_openai_chat_url(
     endpoint: &str,
     deployment: &str,
     language: &str,
 ) -> Result<String, String> {
-    let endpoint = endpoint.trim().trim_end_matches('/');
+    let endpoint = endpoint.trim();
     let deployment = deployment.trim();
 
     if endpoint.is_empty() || deployment.is_empty() {
@@ -394,7 +392,7 @@ fn azure_openai_v1_chat_url(
         });
     }
 
-    let mut url = reqwest::Url::parse(&format!("{}/", endpoint)).map_err(|_| -> String {
+    reqwest::Url::parse(endpoint).map_err(|_| -> String {
         if ErrorLanguage::from_language(language).is_ja() {
             "Azure OpenAI の Endpoint URL が正しくありません。Settings の入力内容を確認してください。"
                 .to_string()
@@ -403,36 +401,10 @@ fn azure_openai_v1_chat_url(
         }
     })?;
 
-    {
-        let mut segments = url.path_segments_mut().map_err(|_| -> String {
-            if ErrorLanguage::from_language(language).is_ja() {
-                "Azure OpenAI の Endpoint URL を利用できません。Settings の入力内容を確認してください。"
-                    .to_string()
-            } else {
-                "The Azure OpenAI endpoint URL cannot be used. Check the value in Settings."
-                    .to_string()
-            }
-        })?;
-        segments.extend(["openai", "v1", "chat", "completions"]);
-    }
-
-    Ok(url.to_string())
+    Ok(endpoint.to_string())
 }
 
-fn model_is_available(available: &[AiModelInfo], model: &str) -> bool {
-    available
-        .iter()
-        .any(|available_model| available_model.model_id == model)
-}
-
-async fn validate_model(
-    client: &reqwest::Client,
-    provider: &AiProvider,
-    model: &str,
-    api_key: Option<&str>,
-    ollama_base_url: Option<&str>,
-    language: &str,
-) -> Result<(), String> {
+fn ensure_model_selected(model: &str, language: &str) -> Result<(), String> {
     if model.trim().is_empty() {
         return Err(if ErrorLanguage::from_language(language).is_ja() {
             "AI モデルが選択されていません。モデルを選択してから再試行してください。".into()
@@ -441,31 +413,12 @@ async fn validate_model(
         });
     }
 
-    let available =
-        fetch_provider_models(client, provider, api_key, ollama_base_url, language).await?;
-    if model_is_available(&available, model) {
-        return Ok(());
-    }
-
-    Err(if ErrorLanguage::from_language(language).is_ja() {
-        format!(
-            "{} ではモデル '{}' を利用できません。モデル一覧を更新し、利用可能なモデルを選択してください。",
-            provider.display_name(),
-            model
-        )
-    } else {
-        format!(
-            "Model '{}' is not available for {}. Refresh the model list and choose an available model.",
-            model,
-            provider.display_name()
-        )
-    })
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::catalog::fallback_models_for;
 
     #[test]
     fn parses_and_normalizes_gemini_models() {
@@ -518,30 +471,47 @@ mod tests {
     }
 
     #[test]
-    fn builds_azure_openai_v1_chat_url_without_api_version() {
-        let url = azure_openai_v1_chat_url("https://example.openai.azure.com/", "my-gpt4o", "en")
-            .unwrap();
+    fn uses_configured_azure_openai_chat_url_as_is() {
+        let endpoint = "https://example.openai.azure.com/openai/v1/chat/completions";
+        let url = azure_openai_chat_url(endpoint, "my-gpt4o", "en").unwrap();
 
-        assert_eq!(
-            url,
-            "https://example.openai.azure.com/openai/v1/chat/completions"
-        );
-        assert!(!url.contains("api-version"));
+        assert_eq!(url, endpoint);
+    }
+
+    #[test]
+    fn preserves_azure_openai_chat_url_query_string() {
+        let endpoint =
+            "https://example.openai.azure.com/openai/deployments/my-gpt4o/chat/completions?api-version=2024-10-21";
+        let url = azure_openai_chat_url(endpoint, "my-gpt4o", "en").unwrap();
+
+        assert_eq!(url, endpoint);
+        assert!(url.contains("api-version=2024-10-21"));
     }
 
     #[test]
     fn rejects_incomplete_azure_openai_v1_settings() {
-        let err =
-            azure_openai_v1_chat_url("https://example.openai.azure.com", "", "en").unwrap_err();
+        let err = azure_openai_chat_url("https://example.openai.azure.com", "", "en").unwrap_err();
 
         assert!(err.contains("Azure OpenAI endpoint"));
     }
 
     #[test]
-    fn model_availability_accepts_existing_model_and_rejects_bad_model() {
-        let models = fallback_models_for(&AiProvider::Anthropic);
+    fn accepts_non_empty_model_without_fetching_model_list() {
+        assert!(ensure_model_selected("claude-sonnet-4-20250514", "en").is_ok());
+        assert!(ensure_model_selected("not-a-real-model", "en").is_ok());
+    }
 
-        assert!(model_is_available(&models, "claude-sonnet-4-20250514"));
-        assert!(!model_is_available(&models, "not-a-real-model"));
+    #[test]
+    fn rejects_empty_model_in_english() {
+        let err = ensure_model_selected("   ", "en").unwrap_err();
+
+        assert!(err.contains("No AI model is selected"));
+    }
+
+    #[test]
+    fn rejects_empty_model_in_japanese() {
+        let err = ensure_model_selected("", "ja").unwrap_err();
+
+        assert!(err.contains("AI モデルが選択されていません"));
     }
 }

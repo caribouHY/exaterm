@@ -52,6 +52,7 @@ export interface LogSession {
   target: string;
   started_at: string;
   file_path: string;
+  log_mode: "auto" | "manual";
 }
 
 export interface AppConfig {
@@ -59,6 +60,7 @@ export interface AppConfig {
   language: string;
   ai: AiConfig;
   terminal: TerminalConfig;
+  ssh: SshConfig;
   saved_connections: SavedConnection[];
 }
 
@@ -70,6 +72,7 @@ export interface AiConfig {
   ollama_base_url: string;
   default_provider: string;
   default_model: string;
+  debug_log_enabled: boolean;
 }
 
 export interface TerminalConfig {
@@ -78,20 +81,24 @@ export interface TerminalConfig {
   cursor_style: string;
   scrollback: number;
   auto_session_log: boolean;
+  log_format: LogFormat;
+}
+
+export type LogFormat = "display" | "strip_controls";
+
+export interface SshConfig {
+  allow_legacy_algorithms: boolean;
 }
 
 export interface SavedConnection {
   id: string;
-  name: string;
-  connection_type: string;
+  connection_type: "ssh" | (string & {});
   host?: string | null;
   port?: number | null;
   username?: string | null;
-  serial_port?: string | null;
-  baud_rate?: number | null;
 }
 
-export type ConnectionType = "ssh" | "serial";
+export type ConnectionType = "ssh" | "serial" | "telnet";
 export type ViewMode = "terminal" | "settings" | "logs";
 export type Encoding = "utf-8" | "shift-jis" | "euc-jp";
 
@@ -102,4 +109,7 @@ export interface TabInfo {
   sessionId?: string;
   isConnected: boolean;
   encoding: Encoding;
+  isAutoLogging?: boolean;
+  isManualLogging?: boolean;
+  manualLogFilePath?: string;
 }

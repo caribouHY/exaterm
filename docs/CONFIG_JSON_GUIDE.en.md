@@ -38,14 +38,19 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "ollama_enabled": false,
     "ollama_base_url": "http://localhost:11434",
     "default_provider": "OpenAi",
-    "default_model": "gpt-4o"
+    "default_model": "gpt-4o",
+    "debug_log_enabled": false
   },
   "terminal": {
     "font_size": 14,
     "font_family": "Consolas, 'Courier New', monospace",
     "cursor_style": "block",
     "scrollback": 10000,
-    "auto_session_log": false
+    "auto_session_log": false,
+    "log_format": "display"
+  },
+  "ssh": {
+    "allow_legacy_algorithms": false
   },
   "saved_connections": []
 }
@@ -59,27 +64,33 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | `language`          | string | `"en"`    | Display language. Use `"en"` for English or `"ja"` for Japanese.                                                                           |
 | `ai`                | object | See below | AI assistant settings.                                                                                                                     |
 | `terminal`          | object | See below | Terminal display and logging settings.                                                                                                     |
-| `saved_connections` | array  | `[]`      | Saved connection information. In the current UI, this is mostly treated as internal data.                                                  |
+| `ssh`               | object | See below | SSH connection compatibility settings.                                                                                                     |
+| `saved_connections` | array  | `[]`      | Saved SSH connection profiles. SSH profiles can be created, selected, and deleted from the connection dialog.                              |
 
 ## ai
 
 | Parameter                    | Type    | Default                    | Description                                                                                                                                                                                                                            |
 | ---------------------------- | ------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ai.azure_openai_enabled`    | boolean | `false`                    | When set to `true`, Azure OpenAI is shown in the AI panel when the endpoint, model deployment name, and API key are configured.                                                                                                        |
-| `ai.azure_openai_endpoint`   | string  | `""`                       | The Azure OpenAI resource endpoint, such as `"https://your-resource.openai.azure.com"`. ExaTerm appends `/openai/v1/chat/completions` automatically.                                                                                   |
+| `ai.azure_openai_endpoint`   | string  | `""`                       | The full Azure OpenAI chat completions URL to send requests to, such as `"https://your-resource.openai.azure.com/openai/v1/chat/completions"` or a deployment URL with `api-version`. ExaTerm uses this URL as entered.                |
 | `ai.azure_openai_deployment` | string  | `""`                       | The Azure OpenAI model deployment name. With the v1 API, this value is sent as the `model` field.                                                                                                                                      |
 | `ai.ollama_enabled`          | boolean | `false`                    | When set to `true`, Ollama models are shown in the AI panel. To use Ollama, a local or configured Ollama server must be running.                                                                                                       |
 | `ai.ollama_base_url`         | string  | `"http://localhost:11434"` | The base URL for the Ollama API. For a standard local setup, use `"http://localhost:11434"`. If this is an empty string, the UI treats it as the default URL.                                                                          |
 | `ai.default_provider`        | string  | `"OpenAi"`                 | The provider selected by default in the AI panel. Supported values are `"OpenAi"`, `"AzureOpenAi"`, `"Anthropic"`, `"Gemini"`, and `"Ollama"`.                                                                                         |
 | `ai.default_model`           | string  | `"gpt-4o"`                 | The model ID selected by default in the AI panel. This is not currently editable from the Settings screen, so edit it manually if needed. If the saved model is not available, ExaTerm automatically falls back to an available model. |
+| `ai.debug_log_enabled`       | boolean | `false`                    | When set to `true`, AI chat requests and responses are saved as JSON Lines debug logs under `%AppData%\ExaTerm\ai-debug`.                                                                                                              |
 
 ### AI API Keys
 
 API keys for OpenAI, Azure OpenAI, Anthropic, and Google Gemini are not stored in `config.json`. Keys registered from the Settings screen are stored in the operating system credential store.
 
-Azure OpenAI uses the v1 API, so you do not need to set an `api-version` value. Enter the resource endpoint and model deployment name instead.
+Enter the full Azure OpenAI chat completions URL and model deployment name. ExaTerm uses the endpoint URL exactly as entered and does not append a path or `api-version` value.
 
 Ollama usually does not require an API key. Configure `ai.ollama_enabled` and `ai.ollama_base_url` instead.
+
+### AI Debug Logs
+
+Set `ai.debug_log_enabled` to `true` only when you need to troubleshoot AI chat behavior. Debug logs are saved to `%AppData%\ExaTerm\ai-debug\YYYYMMDD.log` and may include prompts, AI responses, and terminal context text. API keys and HTTP headers are not saved.
 
 ### Common Model IDs
 
@@ -99,7 +110,8 @@ Ollama usually does not require an API key. Configure `ai.ollama_enabled` and `a
 | `terminal.font_family`      | string  | `"Consolas, 'Courier New', monospace"` | Terminal font family. Use the same format as CSS `font-family`.                                                                                              |
 | `terminal.cursor_style`     | string  | `"block"`                              | Terminal cursor shape. The default is a block cursor. When editing manually, use a value accepted by xterm.js, such as `"block"`, `"underline"`, or `"bar"`. |
 | `terminal.scrollback`       | number  | `10000`                                | Number of terminal scrollback lines. Larger values keep more history but may increase memory usage.                                                          |
-| `terminal.auto_session_log` | boolean | `false`                                | When set to `true`, SSH and serial terminal input/output is saved as plaintext logs.                                                                         |
+| `terminal.auto_session_log` | boolean | `false`                                | When set to `true`, SSH, serial, and Telnet terminal input/output is saved as plaintext logs.                                                                |
+| `terminal.log_format`       | string  | `"display"`                            | Session log formatting mode. `"display"` saves text closer to the terminal screen; `"strip_controls"` removes control sequences.                             |
 
 ### Session Log Notice
 
@@ -118,33 +130,52 @@ Logs are usually stored here:
 
 In sensitive environments, enable session logging only when necessary.
 
+When `terminal.log_format` is `"display"`, common line edits such as Backspace, cursor-left, and erase-to-end-of-line are applied before text is saved. When it is `"strip_controls"`, control sequences are removed, but partially edited text may remain.
+
+## ssh
+
+| Parameter                     | Type    | Default | Description                                                                                                              |
+| ----------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `ssh.allow_legacy_algorithms` | boolean | `false` | When set to `true`, ExaTerm also offers legacy SSH algorithms for older devices that do not support modern SSH defaults. |
+
+### Legacy SSH Algorithm Notice
+
+Keep `ssh.allow_legacy_algorithms` set to `false` unless you need to connect to an older SSH server or network device. Enabling it allows weaker compatibility algorithms such as SHA-1 based key exchange, CBC/3DES ciphers, and `ssh-rsa` host keys.
+
+### Available SSH Algorithms
+
+ExaTerm offers the following SSH algorithms. Legacy add-ons are offered only when `ssh.allow_legacy_algorithms` is set to `true`.
+
+| Category     | Default algorithms                                                                                                                           | Legacy add-ons                                                                                     |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Key exchange | `curve25519-sha256`, `curve25519-sha256@libssh.org`, `diffie-hellman-group16-sha512`, `diffie-hellman-group14-sha256`                        | `diffie-hellman-group1-sha1`, `diffie-hellman-group14-sha1`                                        |
+| Cipher       | `chacha20-poly1305@openssh.com`, `aes256-gcm@openssh.com`, `aes256-ctr`, `aes192-ctr`, `aes128-ctr`                                          | `aes128-cbc`, `aes192-cbc`, `aes256-cbc`, `3des-cbc`                                               |
+| MAC          | `hmac-sha2-512-etm@openssh.com`, `hmac-sha2-256-etm@openssh.com`, `hmac-sha2-512`, `hmac-sha2-256`, `hmac-sha1-etm@openssh.com`, `hmac-sha1` | No additional MAC algorithms are added; the current default already includes `hmac-sha1` variants. |
+| Host key     | `ssh-ed25519`, `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp521`, `rsa-sha2-256`, `rsa-sha2-512`                                                  | `ssh-rsa`                                                                                          |
+
+Internal SSH extension markers, such as strict key exchange and extension info markers, are intentionally omitted from this list because users do not configure them directly.
+
 ## saved_connections
 
-`saved_connections` is an array of saved connection entries. Each entry can contain the following fields.
+`saved_connections` is an array of saved SSH connection profiles. SSH profiles can be managed from the connection dialog. Telnet and serial profiles are not currently supported. Passwords are not stored in this section.
 
-| Parameter         | Type           | Description                                     |
-| ----------------- | -------------- | ----------------------------------------------- |
-| `id`              | string         | Identifier for the saved connection.            |
-| `name`            | string         | Display name for the connection.                |
-| `connection_type` | string         | Connection type. Usually `"ssh"` or `"serial"`. |
-| `host`            | string or null | SSH target host.                                |
-| `port`            | number or null | SSH target port.                                |
-| `username`        | string or null | SSH username.                                   |
-| `serial_port`     | string or null | Serial port name.                               |
-| `baud_rate`       | number or null | Serial baud rate.                               |
+| Parameter         | Type           | Description                                           |
+| ----------------- | -------------- | ----------------------------------------------------- |
+| `id`              | string         | Profile name and identifier.                          |
+| `connection_type` | string         | Connection type. Currently only `"ssh"` is supported. |
+| `host`            | string or null | SSH target host.                                      |
+| `port`            | number or null | SSH target port.                                      |
+| `username`        | string or null | SSH username.                                         |
 
 Example:
 
 ```json
 {
   "id": "dev-server",
-  "name": "Development Server",
   "connection_type": "ssh",
   "host": "192.168.1.10",
   "port": 22,
-  "username": "admin",
-  "serial_port": null,
-  "baud_rate": null
+  "username": "admin"
 }
 ```
 
@@ -163,7 +194,8 @@ Example:
   "ollama_enabled": true,
   "ollama_base_url": "http://localhost:11434",
   "default_provider": "Ollama",
-  "default_model": "llama3.1"
+  "default_model": "llama3.1",
+  "debug_log_enabled": false
 }
 ```
 
@@ -174,14 +206,15 @@ Set `default_model` to a model name installed in Ollama.
 ```json
 "ai": {
   "azure_openai_enabled": true,
-  "azure_openai_endpoint": "https://your-resource.openai.azure.com",
+  "azure_openai_endpoint": "https://your-resource.openai.azure.com/openai/v1/chat/completions",
   "azure_openai_deployment": "my-gpt4o",
   "default_provider": "AzureOpenAi",
-  "default_model": "my-gpt4o"
+  "default_model": "my-gpt4o",
+  "debug_log_enabled": false
 }
 ```
 
-Save the Azure OpenAI API key from the Settings screen. ExaTerm sends requests to `/openai/v1/chat/completions` and does not require an `api-version` setting.
+Save the Azure OpenAI API key from the Settings screen. ExaTerm sends requests to the configured endpoint URL without modifying it.
 
 ### Disable Session Logs
 
@@ -193,12 +226,23 @@ Save the Azure OpenAI API key from the Settings screen. ExaTerm sends requests t
 
 Keep the other fields in the actual `terminal` object. The snippet above only shows the field being changed.
 
+### Allow Legacy SSH Algorithms
+
+```json
+"ssh": {
+  "allow_legacy_algorithms": true
+}
+```
+
+Use this only for older devices that cannot negotiate with the default SSH algorithms.
+
 ## Troubleshooting
 
-| Symptom                          | Action                                                                                                                                                                                                                        |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ExaTerm cannot load settings     | Check the JSON syntax, especially extra commas, quotation marks, and braces.                                                                                                                                                  |
-| Changes are not reflected        | Restart ExaTerm or save the settings again from the Settings screen.                                                                                                                                                          |
-| An AI provider does not appear   | Cloud providers require API keys. For Azure OpenAI, also check `azure_openai_enabled`, `azure_openai_endpoint`, and `azure_openai_deployment`. For Ollama, check `ollama_enabled` and make sure the Ollama server is running. |
-| Text is hard to read             | Adjust `terminal.font_size` or `terminal.font_family`.                                                                                                                                                                        |
-| You do not want logs to be saved | Set `terminal.auto_session_log` to `false`. If logs were already created, delete them from `%AppData%\ExaTerm\logs` as needed.                                                                                                |
+| Symptom                              | Action                                                                                                                                                                                                                        |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ExaTerm cannot load settings         | Check the JSON syntax, especially extra commas, quotation marks, and braces.                                                                                                                                                  |
+| Changes are not reflected            | Restart ExaTerm or save the settings again from the Settings screen.                                                                                                                                                          |
+| An AI provider does not appear       | Cloud providers require API keys. For Azure OpenAI, also check `azure_openai_enabled`, `azure_openai_endpoint`, and `azure_openai_deployment`. For Ollama, check `ollama_enabled` and make sure the Ollama server is running. |
+| An older SSH device will not connect | If the error indicates no common SSH algorithm, set `ssh.allow_legacy_algorithms` to `true`, then try connecting again. Disable it again when it is no longer needed.                                                         |
+| Text is hard to read                 | Adjust `terminal.font_size` or `terminal.font_family`.                                                                                                                                                                        |
+| You do not want logs to be saved     | Set `terminal.auto_session_log` to `false`. If logs were already created, delete them from `%AppData%\ExaTerm\logs` as needed.                                                                                                |

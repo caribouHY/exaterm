@@ -20,12 +20,15 @@ Use this checklist before and after code changes. It is intentionally short and 
 - Keep cloud API keys in the OS credential store, not in `config.json` or logs.
 - Keep Rust and TypeScript payload shapes synchronized.
 - Update both English and Japanese locale files for user-visible text.
+- Add a concise entry to `CHANGELOG.md` for user-visible behavior changes, fixes, and notable internal changes.
+- For release version bumps, also use `ai-docs/RELEASE_CHECKLIST.md`.
 - Register new backend commands in `src-tauri/src/lib.rs`.
 - Keep changes scoped to the subsystem requested by the task.
 
 ## After Changing Code
 
 - Format the changed area before validation, using `npm run format` or the narrower formatter command when appropriate.
+- Do not rely on editor format-on-save as the only formatting gate. Before opening or updating a PR, run `npm run format:check` so Markdown, JSON, and files not saved in the editor are checked the same way CI checks them.
 - Confirm AI-facing implementation notes stayed in `ai-docs/` or `AGENTS.md`, not in `docs/`.
 - Confirm user-facing documentation stayed in `docs/`.
 - Confirm Markdown links and referenced paths exist.

@@ -272,7 +272,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             type="text"
             value={config.ai.azure_openai_endpoint}
             onChange={(e) => update("ai.azure_openai_endpoint", e.target.value)}
-            placeholder="https://your-resource.openai.azure.com"
+            placeholder="https://your-resource.openai.azure.com/openai/v1/chat/completions"
           />
         </div>
 
@@ -311,6 +311,24 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             onChange={(e) => update("ai.ollama_base_url", e.target.value)}
             placeholder="http://localhost:11434"
           />
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section__title">{t("settings.ssh_settings")}</div>
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.allow_legacy_ssh_algorithms")}</span>
+            <small>{t("settings.allow_legacy_ssh_algorithms_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(config.ssh.allow_legacy_algorithms)}
+              onChange={(e) => update("ssh.allow_legacy_algorithms", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
         </div>
       </div>
 
@@ -363,6 +381,17 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             />
             <span className="toggle-track" />
           </label>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label className="label">{t("settings.log_format")}</label>
+          <select
+            className="select"
+            value={config.terminal.log_format || "display"}
+            onChange={(e) => update("terminal.log_format", e.target.value)}
+          >
+            <option value="display">{t("settings.log_format_display")}</option>
+            <option value="strip_controls">{t("settings.log_format_strip_controls")}</option>
+          </select>
         </div>
       </div>
 

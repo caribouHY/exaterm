@@ -1,10 +1,11 @@
 # ExaTerm
 
-ExaTerm is a terminal for SSH and serial communication with an AI assistant.
+ExaTerm is a terminal for SSH, Telnet, and serial communication with an AI assistant.
 
 ## Features
 
 - SSH terminal sessions with multiple tabs
+- Telnet terminal sessions with multiple tabs
 - Serial terminal sessions with multiple tabs
 - AI assistant support for OpenAI, Anthropic, Gemini, and Ollama
 - Optional plaintext session logging
@@ -52,7 +53,7 @@ API keys for cloud AI providers are not stored in `config.json`. They are saved 
 
 Session logging is off by default. New installs do not create terminal session logs unless you explicitly enable Auto Session Log in Settings.
 
-When Auto Session Log is enabled, ExaTerm records SSH and serial terminal input and output as plaintext log files. These logs can include commands, command output, prompts, hostnames, usernames, device output, and other sensitive terminal content.
+When Auto Session Log is enabled, ExaTerm records SSH, Telnet, and serial terminal input and output as plaintext log files. These logs can include commands, command output, prompts, hostnames, usernames, device output, and other sensitive terminal content.
 
 Logs are stored under:
 
@@ -82,7 +83,7 @@ You can rename or remove `config.json` to let ExaTerm recreate default settings 
 
 If AI requests fail, check that the selected provider is available, the API key is saved in Settings, and your network can reach the provider. For Ollama, confirm that the Ollama server is running and that the configured base URL is correct.
 
-If session logs are missing, confirm that Auto Session Log is enabled before starting a new SSH or serial session. ExaTerm does not retroactively create logs for sessions that started while logging was disabled.
+If session logs are missing, confirm that Auto Session Log is enabled before starting a new SSH, Telnet, or serial session. ExaTerm does not retroactively create logs for sessions that started while logging was disabled.
 
 For manual configuration details, see:
 

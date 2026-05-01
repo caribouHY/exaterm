@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -7,46 +7,108 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { Encoding, TerminalConfig } from "../../types";
+import type { ConnectionType, Encoding, TerminalConfig } from "../../types";
+import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
 interface TerminalViewProps {
   sessionId: string | null;
-  connectionType: "ssh" | "serial";
+  connectionType: ConnectionType;
   isConnected: boolean;
   isActive: boolean;
   encoding: Encoding;
+  isLoggingActive: boolean;
   terminalConfig?: TerminalConfig;
   onOpenConnection: () => void;
   onTerminalData?: (data: string) => void;
 }
 
-export default function TerminalView({
-  sessionId,
-  connectionType,
-  isConnected,
-  isActive,
-  encoding,
-  terminalConfig,
-  onOpenConnection,
-  onTerminalData,
-}: TerminalViewProps) {
+export interface TerminalViewHandle {
+  insertText: (text: string) => void;
+}
+
+const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
+  {
+    sessionId,
+    connectionType,
+    isConnected,
+    isActive,
+    encoding,
+    isLoggingActive,
+    terminalConfig,
+    onOpenConnection,
+    onTerminalData,
+  },
+  ref
+) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const decoderRef = useRef(new TextDecoder(encoding));
   const isConnectedRef = useRef(isConnected);
+  const isLoggingActiveRef = useRef(isLoggingActive);
+  const logSanitizerRef = useRef(
+    createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
+  );
+
+  const connectionCommands: Record<
+    ConnectionType,
+    { write: string; dataEvent: string; errorEvent: string; resize: string | null }
+  > = {
+    ssh: {
+      write: "ssh_write",
+      dataEvent: "ssh://data",
+      errorEvent: "ssh://error",
+      resize: "ssh_resize",
+    },
+    serial: {
+      write: "serial_write",
+      dataEvent: "serial://data",
+      errorEvent: "serial://error",
+      resize: null,
+    },
+    telnet: {
+      write: "telnet_write",
+      dataEvent: "telnet://data",
+      errorEvent: "telnet://error",
+      resize: "telnet_resize",
+    },
+  };
 
   useEffect(() => {
     isConnectedRef.current = isConnected;
   }, [isConnected]);
 
+  useEffect(() => {
+    isLoggingActiveRef.current = isLoggingActive;
+  }, [isLoggingActive]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      insertText: (text: string) => {
+        if (!sessionId || !isConnectedRef.current) return;
+        const data = text.replace(/\r?\n+$/g, "");
+        if (!data) return;
+        const term = termRef.current;
+        if (!term) return;
+        term.paste(data);
+        term.focus();
+      },
+    }),
+    [sessionId]
+  );
+
   // Update decoder when encoding changes
   useEffect(() => {
     decoderRef.current = new TextDecoder(encoding);
   }, [encoding]);
+
+  useEffect(() => {
+    logSanitizerRef.current = createTerminalLogSanitizer(terminalConfig?.log_format ?? "display");
+  }, [terminalConfig?.log_format]);
 
   // Create the terminal once per session and keep it mounted after disconnect.
   useEffect(() => {
@@ -109,26 +171,26 @@ export default function TerminalView({
     fitRef.current = fitAddon;
 
     // Terminal input -> backend
-    const writeCmd = connectionType === "ssh" ? "ssh_write" : "serial_write";
+    const protocol = connectionCommands[connectionType];
     term.onData((data) => {
       if (!isConnectedRef.current) return;
-      invoke(writeCmd, { sessionId, data }).catch(console.error);
+      invoke(protocol.write, { sessionId, data }).catch(console.error);
     });
 
-    // 設定を読み込み、自動ログが有効な場合のみロギングを開始
-    const loggingEnabled = terminalConfig?.auto_session_log ?? false;
-
     // Backend data -> terminal
-    const eventPrefix = connectionType === "ssh" ? "ssh://data" : "serial://data";
-    const errorPrefix = connectionType === "ssh" ? "ssh://error" : "serial://error";
+    const eventPrefix = protocol.dataEvent;
+    const errorPrefix = protocol.errorEvent;
 
     const handleData = (event: { payload: number[] }) => {
       const data = new Uint8Array(event.payload);
       const text = decoderRef.current.decode(data, { stream: true });
       term.write(text);
       if (onTerminalData) onTerminalData(text);
-      if (loggingEnabled) {
-        invoke("logger_append", { sessionId, data: text }).catch(() => {});
+      if (isLoggingActiveRef.current) {
+        const logText = logSanitizerRef.current.push(text);
+        if (logText) {
+          invoke("logger_append", { sessionId, data: logText }).catch(() => {});
+        }
       }
     };
 
@@ -136,7 +198,7 @@ export default function TerminalView({
     const unlistenError = listen<number[]>(`${errorPrefix}/${sessionId}`, handleData);
 
     // Resize handling
-    const resizeCmd = connectionType === "ssh" ? "ssh_resize" : null;
+    const resizeCmd = protocol.resize;
     const handleResize = () => {
       fitAddon.fit();
       if (resizeCmd && sessionId && isConnectedRef.current) {
@@ -150,6 +212,12 @@ export default function TerminalView({
     return () => {
       unlistenData.then((fn) => fn());
       unlistenError.then((fn) => fn());
+      if (isLoggingActiveRef.current) {
+        const logText = logSanitizerRef.current.flush();
+        if (logText) {
+          invoke("logger_append", { sessionId, data: logText }).catch(() => {});
+        }
+      }
       resizeObserver.disconnect();
       term.dispose();
       termRef.current = null;
@@ -220,4 +288,6 @@ export default function TerminalView({
       <div ref={containerRef} style={{ height: "100%" }} />
     </div>
   );
-}
+});
+
+export default TerminalView;

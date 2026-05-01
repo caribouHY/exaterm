@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -9,6 +10,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use crate::config::{config_load, SshConfig};
 use crate::ssh_known_hosts::{
     endpoint_cache_key, inspect_host_key_with_path, known_hosts_path, write_trusted_host,
     HostKeyCheckResult, HostKeyCheckStatus,
@@ -267,11 +269,56 @@ fn map_connect_error(error: russh::Error, verifier: &HostKeyVerifier) -> String 
     format!("SSH接続エラー: {}", error)
 }
 
+fn append_missing<T: Copy + PartialEq>(items: &mut Vec<T>, item: T) {
+    if !items.contains(&item) {
+        items.push(item);
+    }
+}
+
+fn build_client_config(ssh_config: &SshConfig) -> russh::client::Config {
+    let mut config = russh::client::Config::default();
+    if !ssh_config.allow_legacy_algorithms {
+        return config;
+    }
+
+    let default_preferred = russh::Preferred::default();
+    let mut kex = default_preferred.kex.to_vec();
+    append_missing(&mut kex, russh::kex::DH_G1_SHA1);
+    append_missing(&mut kex, russh::kex::DH_G14_SHA1);
+
+    let mut cipher = default_preferred.cipher.to_vec();
+    append_missing(&mut cipher, russh::cipher::AES_128_CBC);
+    append_missing(&mut cipher, russh::cipher::AES_192_CBC);
+    append_missing(&mut cipher, russh::cipher::AES_256_CBC);
+    append_missing(&mut cipher, russh::cipher::TRIPLE_DES_CBC);
+
+    let mut mac = default_preferred.mac.to_vec();
+    append_missing(&mut mac, russh::mac::HMAC_SHA1);
+    append_missing(&mut mac, russh::mac::HMAC_SHA1_ETM);
+
+    let mut key = default_preferred.key.to_vec();
+    append_missing(&mut key, russh::keys::key::SSH_RSA);
+
+    config.preferred = russh::Preferred {
+        kex: Cow::Owned(kex),
+        key: Cow::Owned(key),
+        cipher: Cow::Owned(cipher),
+        mac: Cow::Owned(mac),
+        compression: default_preferred.compression,
+    };
+    config
+}
+
+fn load_client_config() -> Result<russh::client::Config, String> {
+    let app_config = config_load()?;
+    Ok(build_client_config(&app_config.ssh))
+}
+
 async fn run_host_key_probe(
     host: &str,
     port: u16,
 ) -> Result<(HostKeyCheckResult, PendingHostKey), String> {
-    let config = russh::client::Config::default();
+    let config = load_client_config()?;
     let verifier = HostKeyVerifier::probe(host.to_string(), port);
     let handler = ProbeClientHandler {
         host_verifier: verifier.clone(),
@@ -343,7 +390,7 @@ pub async fn ssh_connect(
     rows: u32,
 ) -> Result<SshConnectResult, String> {
     let session_id = Uuid::new_v4().to_string();
-    let config = russh::client::Config::default();
+    let config = load_client_config()?;
     let host_verifier = HostKeyVerifier::enforce(host.clone(), port);
     let handler = SshClientHandler {
         app: app.clone(),
@@ -467,6 +514,10 @@ mod tests {
 
     use super::*;
 
+    fn preferred_names<T: AsRef<str>>(items: &[T]) -> Vec<&str> {
+        items.iter().map(|item| item.as_ref()).collect()
+    }
+
     fn temp_known_hosts_path() -> PathBuf {
         let dir = std::env::temp_dir().join(format!("exaterm-ssh-verifier-{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
@@ -527,5 +578,50 @@ mod tests {
         );
 
         let _ = fs::remove_file(known_hosts_path);
+    }
+
+    #[test]
+    fn default_client_config_keeps_russh_defaults() {
+        let config = build_client_config(&SshConfig::default());
+        let default = russh::client::Config::default();
+
+        assert_eq!(
+            preferred_names(config.preferred.kex.as_ref()),
+            preferred_names(default.preferred.kex.as_ref())
+        );
+        assert_eq!(
+            preferred_names(config.preferred.cipher.as_ref()),
+            preferred_names(default.preferred.cipher.as_ref())
+        );
+        assert_eq!(
+            preferred_names(config.preferred.mac.as_ref()),
+            preferred_names(default.preferred.mac.as_ref())
+        );
+        assert_eq!(
+            preferred_names(config.preferred.key.as_ref()),
+            preferred_names(default.preferred.key.as_ref())
+        );
+    }
+
+    #[test]
+    fn legacy_client_config_appends_legacy_algorithms() {
+        let config = build_client_config(&SshConfig {
+            allow_legacy_algorithms: true,
+        });
+
+        let kex = preferred_names(config.preferred.kex.as_ref());
+        let cipher = preferred_names(config.preferred.cipher.as_ref());
+        let mac = preferred_names(config.preferred.mac.as_ref());
+        let key = preferred_names(config.preferred.key.as_ref());
+
+        assert!(kex.contains(&"diffie-hellman-group1-sha1"));
+        assert!(kex.contains(&"diffie-hellman-group14-sha1"));
+        assert!(cipher.contains(&"aes128-cbc"));
+        assert!(cipher.contains(&"aes192-cbc"));
+        assert!(cipher.contains(&"aes256-cbc"));
+        assert!(cipher.contains(&"3des-cbc"));
+        assert!(mac.contains(&"hmac-sha1"));
+        assert!(mac.contains(&"hmac-sha1-etm@openssh.com"));
+        assert!(key.contains(&"ssh-rsa"));
     }
 }

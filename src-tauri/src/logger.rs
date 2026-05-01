@@ -9,16 +9,24 @@ use tokio::sync::Mutex;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogSession {
     pub session_id: String,
-    pub connection_type: String, // "ssh" or "serial"
-    pub target: String,          // e.g. "user@host:22" or "COM3"
+    pub connection_type: String, // "ssh", "serial", or "telnet"
+    pub target: String,          // e.g. "user@host:22", "COM3", or "host:23"
     pub started_at: String,
     pub file_path: String,
+    #[serde(default = "default_log_mode")]
+    pub log_mode: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ActiveLogTargets {
+    auto: Option<LogSession>,
+    manual: Option<LogSession>,
 }
 
 pub struct LoggerState {
     log_dir: PathBuf,
     index_path: PathBuf,
-    sessions: Arc<Mutex<HashMap<String, LogSession>>>,
+    sessions: Arc<Mutex<HashMap<String, ActiveLogTargets>>>,
 }
 
 impl LoggerState {
@@ -35,6 +43,10 @@ impl LoggerState {
             sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
+}
+
+fn default_log_mode() -> String {
+    "auto".into()
 }
 
 fn read_log_index(index_path: &PathBuf) -> Result<Vec<LogSession>, String> {
@@ -64,7 +76,7 @@ fn upsert_log_session(index_path: &PathBuf, session: LogSession) -> Result<(), S
     let mut sessions = read_log_index(index_path)?;
     if let Some(existing) = sessions
         .iter_mut()
-        .find(|item| item.session_id == session.session_id)
+        .find(|item| item.session_id == session.session_id && item.log_mode == session.log_mode)
     {
         *existing = session;
     } else {
@@ -78,6 +90,97 @@ fn sort_sessions_desc(sessions: &mut [LogSession]) {
     sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
 }
 
+fn create_log_session(
+    log_dir: &PathBuf,
+    session_id: String,
+    connection_type: String,
+    target: String,
+    file_path: Option<String>,
+    log_mode: &str,
+) -> Result<LogSession, String> {
+    let now = Local::now();
+    let session_prefix = session_id.chars().take(8).collect::<String>();
+    let filename = format!("{}_{}.log", now.format("%Y%m%d_%H%M%S"), session_prefix);
+    let file_path = file_path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| log_dir.join(&filename));
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("ログディレクトリ作成エラー: {}", e))?;
+    }
+    let header = format!(
+        "# ExaTerm Log\n# Type: {}\n# Target: {}\n# Mode: {}\n# Started: {}\n\n",
+        connection_type,
+        target,
+        log_mode,
+        now.format("%Y-%m-%d %H:%M:%S")
+    );
+    fs::write(&file_path, &header).map_err(|e| format!("ログ作成エラー: {}", e))?;
+
+    Ok(LogSession {
+        session_id: session_id.clone(),
+        connection_type,
+        target,
+        started_at: now.to_rfc3339(),
+        file_path: file_path.to_string_lossy().to_string(),
+        log_mode: log_mode.into(),
+    })
+}
+
+fn append_to_log_sessions(sessions: &[LogSession], data: &str) -> Result<(), String> {
+    for session in sessions {
+        let mut file = fs::OpenOptions::new()
+            .append(true)
+            .open(&session.file_path)
+            .map_err(|e| format!("ログ書き込みエラー: {}", e))?;
+        use std::io::Write;
+        write!(file, "{}", data).map_err(|e| format!("ログ書き込みエラー: {}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn logger_start_auto(
+    state: tauri::State<'_, LoggerState>,
+    session_id: String,
+    connection_type: String,
+    target: String,
+) -> Result<String, String> {
+    let session = create_log_session(
+        &state.log_dir,
+        session_id.clone(),
+        connection_type,
+        target,
+        None,
+        "auto",
+    )?;
+    let mut sessions = state.sessions.lock().await;
+    sessions.entry(session_id).or_default().auto = Some(session.clone());
+    upsert_log_session(&state.index_path, session.clone())?;
+    Ok(session.file_path)
+}
+
+#[tauri::command]
+pub async fn logger_start_manual(
+    state: tauri::State<'_, LoggerState>,
+    session_id: String,
+    connection_type: String,
+    target: String,
+    file_path: String,
+) -> Result<String, String> {
+    let session = create_log_session(
+        &state.log_dir,
+        session_id.clone(),
+        connection_type,
+        target,
+        Some(file_path),
+        "manual",
+    )?;
+    let mut sessions = state.sessions.lock().await;
+    sessions.entry(session_id).or_default().manual = Some(session.clone());
+    upsert_log_session(&state.index_path, session.clone())?;
+    Ok(session.file_path)
+}
+
 #[tauri::command]
 pub async fn logger_start(
     state: tauri::State<'_, LoggerState>,
@@ -85,28 +188,34 @@ pub async fn logger_start(
     connection_type: String,
     target: String,
 ) -> Result<String, String> {
-    let now = Local::now();
-    let filename = format!("{}_{}.log", now.format("%Y%m%d_%H%M%S"), &session_id[..8]);
-    let file_path = state.log_dir.join(&filename);
-    let header = format!(
-        "# ExaTerm Log\n# Type: {}\n# Target: {}\n# Started: {}\n\n",
-        connection_type,
-        target,
-        now.format("%Y-%m-%d %H:%M:%S")
-    );
-    fs::write(&file_path, &header).map_err(|e| format!("ログ作成エラー: {}", e))?;
+    logger_start_auto(state, session_id, connection_type, target).await
+}
 
-    let session = LogSession {
-        session_id: session_id.clone(),
-        connection_type,
-        target,
-        started_at: now.to_rfc3339(),
-        file_path: file_path.to_string_lossy().to_string(),
-    };
+#[tauri::command]
+pub async fn logger_stop_manual(
+    state: tauri::State<'_, LoggerState>,
+    session_id: String,
+) -> Result<(), String> {
     let mut sessions = state.sessions.lock().await;
-    sessions.insert(session_id, session.clone());
-    upsert_log_session(&state.index_path, session.clone())?;
-    Ok(session.file_path)
+    if let Some(targets) = sessions.get_mut(&session_id) {
+        targets.manual = None;
+        if targets.auto.is_none() {
+            sessions.remove(&session_id);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn logger_is_manual_active(
+    state: tauri::State<'_, LoggerState>,
+    session_id: String,
+) -> Result<bool, String> {
+    let sessions = state.sessions.lock().await;
+    Ok(sessions
+        .get(&session_id)
+        .and_then(|targets| targets.manual.as_ref())
+        .is_some())
 }
 
 #[tauri::command]
@@ -115,15 +224,21 @@ pub async fn logger_append(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    let sessions = state.sessions.lock().await;
-    if let Some(session) = sessions.get(&session_id) {
-        let mut file = fs::OpenOptions::new()
-            .append(true)
-            .open(&session.file_path)
-            .map_err(|e| format!("ログ書き込みエラー: {}", e))?;
-        use std::io::Write;
-        write!(file, "{}", data).map_err(|e| format!("ログ書き込みエラー: {}", e))?;
-    }
+    let active_sessions = {
+        let sessions = state.sessions.lock().await;
+        sessions
+            .get(&session_id)
+            .map(|targets| {
+                targets
+                    .auto
+                    .iter()
+                    .chain(targets.manual.iter())
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
+    append_to_log_sessions(&active_sessions, &data)?;
     Ok(())
 }
 
@@ -158,6 +273,7 @@ mod tests {
             target: target.into(),
             started_at: started_at.into(),
             file_path: format!("C:\\logs\\{}.log", session_id),
+            log_mode: "auto".into(),
         }
     }
 
@@ -191,6 +307,7 @@ mod tests {
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].session_id, "session-1");
         assert_eq!(loaded[0].target, "user@host:22");
+        assert_eq!(loaded[0].log_mode, "auto");
         cleanup(&path);
     }
 
@@ -214,6 +331,52 @@ mod tests {
         assert_eq!(loaded[0].target, "new@host:22");
         assert_eq!(loaded[0].started_at, "2026-04-25T11:00:00+09:00");
         cleanup(&path);
+    }
+
+    #[test]
+    fn upsert_log_session_keeps_auto_and_manual_entries() {
+        let path = temp_index_path();
+        let auto = sample_session("session-1", "2026-04-25T10:00:00+09:00", "host");
+        let mut manual = sample_session("session-1", "2026-04-25T10:01:00+09:00", "host");
+        manual.log_mode = "manual".into();
+        manual.file_path = "C:\\manual\\session-1.log".into();
+
+        upsert_log_session(&path, auto).expect("auto upsert should write");
+        upsert_log_session(&path, manual).expect("manual upsert should write");
+        let loaded = read_log_index(&path).expect("index should read");
+
+        assert_eq!(loaded.len(), 2);
+        assert!(loaded.iter().any(|entry| entry.log_mode == "auto"));
+        assert!(loaded.iter().any(|entry| entry.log_mode == "manual"));
+        cleanup(&path);
+    }
+
+    #[test]
+    fn append_to_log_sessions_writes_to_all_targets() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let auto_path = dir.join("auto.log");
+        let manual_path = dir.join("manual.log");
+        fs::write(&auto_path, "auto\n").expect("auto file should be created");
+        fs::write(&manual_path, "manual\n").expect("manual file should be created");
+
+        let sessions = vec![
+            LogSession {
+                file_path: auto_path.to_string_lossy().to_string(),
+                ..sample_session("session-1", "2026-04-25T10:00:00+09:00", "host")
+            },
+            LogSession {
+                file_path: manual_path.to_string_lossy().to_string(),
+                log_mode: "manual".into(),
+                ..sample_session("session-1", "2026-04-25T10:00:00+09:00", "host")
+            },
+        ];
+
+        append_to_log_sessions(&sessions, "data\n").expect("append should write both logs");
+
+        assert_eq!(fs::read_to_string(&auto_path).unwrap(), "auto\ndata\n");
+        assert_eq!(fs::read_to_string(&manual_path).unwrap(), "manual\ndata\n");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

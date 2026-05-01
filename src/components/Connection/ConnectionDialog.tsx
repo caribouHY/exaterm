@@ -1,28 +1,47 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { X } from "lucide-react";
-import type { ConnectionType, HostKeyCheckResult, PortInfo } from "../../types";
+import type {
+  AppConfig,
+  ConnectionType,
+  HostKeyCheckResult,
+  PortInfo,
+  SavedConnection,
+} from "../../types";
 import { useTranslation } from "react-i18next";
 import "./ConnectionDialog.css";
 
 interface ConnectionDialogProps {
   onClose: () => void;
-  onConnect: (type: ConnectionType, sessionId: string, title: string) => void;
+  onConnect: (
+    type: ConnectionType,
+    sessionId: string,
+    title: string,
+    isAutoLogging: boolean
+  ) => void;
 }
 
 export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialogProps) {
   const { t } = useTranslation();
   const overlayMouseDownStartedRef = useRef(false);
+  const connectingRef = useRef(false);
   const [tab, setTab] = useState<ConnectionType>("ssh");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
   const [hostKeyCheck, setHostKeyCheck] = useState<HostKeyCheckResult | null>(null);
+  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [profileName, setProfileName] = useState("");
 
   // SSH fields
   const [host, setHost] = useState("192.168.1.1");
   const [port, setPort] = useState("22");
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
+
+  // Telnet fields
+  const [telnetHost, setTelnetHost] = useState("192.168.1.1");
+  const [telnetPort, setTelnetPort] = useState("23");
 
   // Serial fields
   const [ports, setPorts] = useState<PortInfo[]>([]);
@@ -31,6 +50,20 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   const [dataBits, setDataBits] = useState("8");
   const [parity, setParity] = useState("none");
   const [stopBits, setStopBits] = useState("1");
+
+  useEffect(() => {
+    connectingRef.current = connecting;
+  }, [connecting]);
+
+  const loadConfig = useCallback(async () => {
+    const loaded = await invoke<AppConfig>("config_load");
+    setConfig(loaded);
+    return loaded;
+  }, []);
+
+  useEffect(() => {
+    loadConfig().catch(() => {});
+  }, [loadConfig]);
 
   useEffect(() => {
     if (tab === "serial") {
@@ -43,12 +76,115 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     }
   }, [selectedPort, tab]);
 
+  const sshProfiles = (config?.saved_connections ?? []).filter(
+    (connection) => connection.connection_type === "ssh"
+  );
+
   const getAutoLogPreference = async () => {
     try {
-      const cfg = await invoke<{ terminal: { auto_session_log: boolean } }>("config_load");
+      const cfg = await invoke<AppConfig>("config_load");
       return cfg.terminal.auto_session_log;
     } catch {
       return false;
+    }
+  };
+
+  const getProfileDisplayName = (profile: SavedConnection) => {
+    return profile.id || t("connection.unnamed_profile");
+  };
+
+  const handleSelectProfile = (id: string) => {
+    setSelectedProfileId(id);
+    if (!id) {
+      setProfileName("");
+      return;
+    }
+
+    const profile = sshProfiles.find((entry) => entry.id === id);
+    if (!profile) return;
+
+    setProfileName(profile.id);
+    setHost(profile.host ?? "");
+    setPort(profile.port ? String(profile.port) : "22");
+    setUsername(profile.username ?? "");
+    setPassword("");
+  };
+
+  const handleSaveProfile = async () => {
+    setError("");
+    try {
+      const sshPort = Number.parseInt(port, 10);
+      if (Number.isNaN(sshPort)) {
+        throw new Error(t("connection.error"));
+      }
+
+      const loaded = config ?? (await loadConfig());
+      const trimmedHost = host.trim();
+      const trimmedUsername = username.trim();
+      const id = profileName.trim();
+      if (!id) {
+        throw new Error(t("connection.profile_name_required"));
+      }
+      const nextProfile: SavedConnection = {
+        id,
+        connection_type: "ssh",
+        host: trimmedHost,
+        port: sshPort,
+        username: trimmedUsername,
+      };
+      const existingConnections = loaded.saved_connections ?? [];
+      const duplicateProfile = existingConnections.some(
+        (entry) =>
+          entry.connection_type === "ssh" && entry.id === id && entry.id !== selectedProfileId
+      );
+      if (duplicateProfile) {
+        throw new Error(t("connection.profile_duplicate"));
+      }
+
+      const isUpdatingSelectedProfile = Boolean(selectedProfileId);
+      const nextConfig: AppConfig = {
+        ...loaded,
+        saved_connections: isUpdatingSelectedProfile
+          ? existingConnections.map((entry) =>
+              entry.connection_type === "ssh" && entry.id === selectedProfileId
+                ? nextProfile
+                : entry
+            )
+          : [...existingConnections, nextProfile],
+      };
+
+      await invoke("config_save", { config: nextConfig });
+      setConfig(nextConfig);
+      setSelectedProfileId(id);
+      setProfileName(nextProfile.id);
+    } catch (e: unknown) {
+      const message =
+        typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
+      setError(message);
+    }
+  };
+
+  const handleDeleteProfile = async () => {
+    if (!selectedProfileId) return;
+
+    setError("");
+    try {
+      const loaded = config ?? (await loadConfig());
+      const nextConfig: AppConfig = {
+        ...loaded,
+        saved_connections: (loaded.saved_connections ?? []).filter(
+          (entry) => entry.id !== selectedProfileId
+        ),
+      };
+
+      await invoke("config_save", { config: nextConfig });
+      setConfig(nextConfig);
+      setSelectedProfileId("");
+      setProfileName("");
+    } catch (e: unknown) {
+      const message =
+        typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
+      setError(message);
     }
   };
 
@@ -62,19 +198,20 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       rows: 30,
     });
     if (autoLog) {
-      await invoke("logger_start", {
+      await invoke("logger_start_auto", {
         sessionId: result.session_id,
         connectionType: "ssh",
         target: `${username}@${host}:${sshPort}`,
       });
     }
-    onConnect("ssh", result.session_id, `${username}@${host}`);
+    onConnect("ssh", result.session_id, `${username}@${host}`, autoLog);
   };
 
   const handleTrustAndConnect = async (replace: boolean) => {
-    if (!hostKeyCheck) return;
+    if (!hostKeyCheck || connectingRef.current) return;
 
     setError("");
+    connectingRef.current = true;
     setConnecting(true);
     try {
       await invoke("ssh_trust_host_key", {
@@ -89,12 +226,16 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
       setError(message);
+      connectingRef.current = false;
       setConnecting(false);
     }
   };
 
   const handleConnect = async () => {
+    if (connectingRef.current) return;
+
     setError("");
+    connectingRef.current = true;
     setConnecting(true);
     try {
       const autoLog = await getAutoLogPreference();
@@ -116,7 +257,31 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         }
 
         setHostKeyCheck(result);
+        connectingRef.current = false;
         setConnecting(false);
+        return;
+      }
+
+      if (tab === "telnet") {
+        const parsedTelnetPort = Number.parseInt(telnetPort, 10);
+        if (Number.isNaN(parsedTelnetPort)) {
+          throw new Error(t("connection.error"));
+        }
+
+        const sessionId = await invoke<string>("telnet_connect", {
+          host: telnetHost,
+          port: parsedTelnetPort,
+          cols: 120,
+          rows: 30,
+        });
+        if (autoLog) {
+          await invoke("logger_start_auto", {
+            sessionId,
+            connectionType: "telnet",
+            target: `${telnetHost}:${parsedTelnetPort}`,
+          });
+        }
+        onConnect("telnet", sessionId, `${telnetHost}:${parsedTelnetPort}`, autoLog);
         return;
       }
 
@@ -131,17 +296,18 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         },
       });
       if (autoLog) {
-        await invoke("logger_start", {
+        await invoke("logger_start_auto", {
           sessionId,
           connectionType: "serial",
           target: selectedPort,
         });
       }
-      onConnect("serial", sessionId, selectedPort);
+      onConnect("serial", sessionId, selectedPort, autoLog);
     } catch (e: unknown) {
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
       setError(message);
+      connectingRef.current = false;
       setConnecting(false);
     }
   };
@@ -161,6 +327,40 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     }
     overlayMouseDownStartedRef.current = false;
   };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (connecting) return;
+
+        if (hostKeyCheck) {
+          setHostKeyCheck(null);
+          return;
+        }
+
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) return;
+
+      event.preventDefault();
+      if (connecting) return;
+
+      if (hostKeyCheck) {
+        handleTrustAndConnect(hostKeyCheck.status === "mismatch");
+        return;
+      }
+
+      handleConnect();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [connecting, handleConnect, handleTrustAndConnect, hostKeyCheck, onClose]);
+
+  const shortcutText = t("connection.shortcut_ctrl_enter");
 
   return (
     <div
@@ -185,6 +385,12 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
               onClick={() => setTab("ssh")}
             >
               {t("connection.ssh")}
+            </button>
+            <button
+              className={`connection-dialog__tab ${tab === "telnet" ? "connection-dialog__tab--active" : ""}`}
+              onClick={() => setTab("telnet")}
+            >
+              {t("connection.telnet")}
             </button>
             <button
               className={`connection-dialog__tab ${tab === "serial" ? "connection-dialog__tab--active" : ""}`}
@@ -246,6 +452,37 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
             </div>
           ) : tab === "ssh" ? (
             <>
+              <div className="connection-dialog__profile">
+                <label className="label">{t("connection.profile")}</label>
+                <div className="connection-dialog__profile-row">
+                  <select
+                    className="select"
+                    value={selectedProfileId}
+                    onChange={(e) => handleSelectProfile(e.target.value)}
+                  >
+                    <option value="">{t("connection.profile_manual")}</option>
+                    {sshProfiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {getProfileDisplayName(profile)}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedProfileId && (
+                    <button className="btn btn-danger btn-sm" onClick={handleDeleteProfile}>
+                      {t("connection.profile_delete")}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="label">{t("connection.profile_name")}</label>
+                <input
+                  className="input"
+                  value={profileName}
+                  onChange={(e) => setProfileName(e.target.value)}
+                  placeholder={t("connection.profile_name_placeholder")}
+                />
+              </div>
               <div className="connection-dialog__row">
                 <div>
                   <label className="label">{t("connection.host")}</label>
@@ -283,6 +520,38 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                   onChange={(e) => setPassword(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleConnect()}
                 />
+              </div>
+              <div className="connection-dialog__profile-actions">
+                <button className="btn btn-ghost btn-sm" onClick={handleSaveProfile}>
+                  {selectedProfileId
+                    ? t("connection.profile_update")
+                    : t("connection.profile_save")}
+                </button>
+                <span>{t("connection.profile_password_notice")}</span>
+              </div>
+            </>
+          ) : tab === "telnet" ? (
+            <>
+              <div className="connection-dialog__row">
+                <div>
+                  <label className="label">{t("connection.host")}</label>
+                  <input
+                    className="input"
+                    value={telnetHost}
+                    onChange={(e) => setTelnetHost(e.target.value)}
+                    placeholder="192.168.1.1"
+                  />
+                </div>
+                <div style={{ maxWidth: 100 }}>
+                  <label className="label">{t("connection.port")}</label>
+                  <input
+                    className="input"
+                    type="number"
+                    value={telnetPort}
+                    onChange={(e) => setTelnetPort(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleConnect()}
+                  />
+                </div>
               </div>
             </>
           ) : (
@@ -394,7 +663,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
               >
                 {hostKeyCheck.status === "mismatch"
                   ? t("connection.host_key_replace_connect")
-                  : t("connection.host_key_trust_connect")}
+                  : t("connection.host_key_trust_connect")}{" "}
+                <span className="connection-dialog__shortcut">{shortcutText}</span>
               </button>
             </>
           ) : (
@@ -403,7 +673,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                 {t("connection.cancel")}
               </button>
               <button className="btn btn-primary" onClick={handleConnect}>
-                {t("connection.connect")}
+                {t("connection.connect")}{" "}
+                <span className="connection-dialog__shortcut">{shortcutText}</span>
               </button>
             </>
           )}
