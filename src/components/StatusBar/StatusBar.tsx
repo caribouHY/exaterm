@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { CircleDot, FileText } from "lucide-react";
+import packageJson from "../../../package.json";
 import type { TabInfo, Encoding } from "../../types";
 import "./StatusBar.css";
 
@@ -127,7 +128,7 @@ export default function StatusBar({
             )}
           </div>
         )}
-        <div className="statusbar__item">ExaTerm v0.1.0</div>
+        <div className="statusbar__item">ExaTerm v{packageJson.version}</div>
       </div>
     </div>
   );
