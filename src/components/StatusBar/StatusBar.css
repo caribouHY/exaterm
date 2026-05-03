@@ -3,10 +3,11 @@
   align-items: center;
   justify-content: space-between;
   height: var(--statusbar-height);
-  background: var(--accent-blue);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-secondary);
   padding: 0 10px;
   font-size: 11px;
-  color: #fff;
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
@@ -37,7 +38,8 @@
 }
 
 .statusbar__item--clickable:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-hover);
+  color: var(--text-primary);
   opacity: 1;
 }
 
@@ -62,7 +64,8 @@
 }
 
 .statusbar__log--manual {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--bg-active);
+  color: var(--text-primary);
   opacity: 1;
 }
 
@@ -117,10 +120,10 @@
 }
 
 .statusbar__dot--connected {
-  background: #fff;
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+  background: var(--status-connected);
+  box-shadow: 0 0 6px var(--status-connected);
 }
 
 .statusbar__dot--disconnected {
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--status-disconnected);
 }
