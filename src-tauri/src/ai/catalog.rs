@@ -16,6 +16,11 @@ pub fn fallback_models_for(provider: &AiProvider) -> Vec<AiModelInfo> {
             ("gemini-2.5-pro", "Gemini 2.5 Pro"),
             ("gemini-2.5-flash", "Gemini 2.5 Flash"),
         ],
+        AiProvider::OpenRouter => &[
+            ("openai/gpt-4o", "OpenAI GPT-4o"),
+            ("anthropic/claude-sonnet-4", "Anthropic Claude Sonnet 4"),
+            ("google/gemini-2.5-pro", "Google Gemini 2.5 Pro"),
+        ],
         AiProvider::Ollama => &[],
     };
 
@@ -33,6 +38,7 @@ pub fn fallback_cloud_models() -> Vec<AiModelInfo> {
         AiProvider::OpenAi,
         AiProvider::Anthropic,
         AiProvider::Gemini,
+        AiProvider::OpenRouter,
     ]
     .iter()
     .flat_map(fallback_models_for)
@@ -50,5 +56,12 @@ mod tests {
         assert!(models
             .iter()
             .any(|model| model.model_id == DEFAULT_AI_MODEL));
+    }
+
+    #[test]
+    fn fallback_catalog_contains_openrouter_models() {
+        let models = fallback_models_for(&AiProvider::OpenRouter);
+
+        assert!(models.iter().any(|model| model.model_id == "openai/gpt-4o"));
     }
 }

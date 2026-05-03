@@ -6,6 +6,7 @@ pub enum AiProvider {
     AzureOpenAi,
     Anthropic,
     Gemini,
+    OpenRouter,
     Ollama,
 }
 
@@ -16,6 +17,7 @@ impl AiProvider {
             AiProvider::AzureOpenAi => "AzureOpenAi",
             AiProvider::Anthropic => "Anthropic",
             AiProvider::Gemini => "Gemini",
+            AiProvider::OpenRouter => "OpenRouter",
             AiProvider::Ollama => "Ollama",
         }
     }
@@ -26,6 +28,7 @@ impl AiProvider {
             AiProvider::AzureOpenAi => "Azure OpenAI",
             AiProvider::Anthropic => "Anthropic",
             AiProvider::Gemini => "Gemini",
+            AiProvider::OpenRouter => "OpenRouter",
             AiProvider::Ollama => "Ollama",
         }
     }
@@ -50,4 +53,5 @@ pub struct AiSecretStatus {
     pub azure_openai: bool,
     pub anthropic: bool,
     pub gemini: bool,
+    pub openrouter: bool,
 }

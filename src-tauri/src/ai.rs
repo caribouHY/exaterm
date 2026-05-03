@@ -13,7 +13,7 @@ use debug_log::{append_chat_debug_log, ChatDebugLogInput, ChatDebugLogOutcome};
 use providers::{fetch_provider_models, send_chat_request};
 use secrets::{
     is_secret_present, load_provider_secret_optional, provider_secret_key, KEY_ANTHROPIC,
-    KEY_AZURE_OPENAI, KEY_GEMINI, KEY_OPENAI,
+    KEY_AZURE_OPENAI, KEY_GEMINI, KEY_OPENAI, KEY_OPENROUTER,
 };
 use std::time::Instant;
 
@@ -26,6 +26,7 @@ pub async fn ai_get_models() -> Result<Vec<AiModelInfo>, String> {
         AiProvider::OpenAi,
         AiProvider::Anthropic,
         AiProvider::Gemini,
+        AiProvider::OpenRouter,
     ] {
         let provider_models = match load_provider_secret_optional(&provider) {
             Ok(Some(api_key)) => {
@@ -99,6 +100,7 @@ pub fn ai_secret_status() -> Result<AiSecretStatus, String> {
         azure_openai: is_secret_present(KEY_AZURE_OPENAI)?,
         anthropic: is_secret_present(KEY_ANTHROPIC)?,
         gemini: is_secret_present(KEY_GEMINI)?,
+        openrouter: is_secret_present(KEY_OPENROUTER)?,
     })
 }
 

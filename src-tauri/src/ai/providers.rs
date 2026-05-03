@@ -12,6 +12,8 @@ const ANTHROPIC_MODELS_URL: &str = "https://api.anthropic.com/v1/models";
 const ANTHROPIC_MESSAGES_URL: &str = "https://api.anthropic.com/v1/messages";
 const GEMINI_MODELS_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 const GEMINI_GENERATE_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
+const OPENROUTER_MODELS_URL: &str = "https://openrouter.ai/api/v1/models";
+const OPENROUTER_CHAT_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 pub async fn fetch_provider_models(
@@ -49,6 +51,16 @@ pub async fn fetch_provider_models(
             let url = format!("{}?key={}", GEMINI_MODELS_URL, api_key);
             let resp = client
                 .get(&url)
+                .send()
+                .await
+                .map_err(|e| format_network_error(provider, language, &e))?;
+            response_json(resp, provider, language, "model list").await?
+        }
+        AiProvider::OpenRouter => {
+            let api_key = api_key.ok_or_else(|| missing_secret_message(provider, language))?;
+            let resp = client
+                .get(OPENROUTER_MODELS_URL)
+                .header("Authorization", format!("Bearer {}", api_key))
                 .send()
                 .await
                 .map_err(|e| format_network_error(provider, language, &e))?;
@@ -104,6 +116,9 @@ pub async fn send_chat_request(
         }
         AiProvider::Gemini => {
             send_gemini_chat(client, model, messages, system_prompt, language).await
+        }
+        AiProvider::OpenRouter => {
+            send_openrouter_chat(client, model, messages, system_prompt, language).await
         }
         AiProvider::Ollama => {
             send_ollama_chat(
@@ -254,6 +269,39 @@ async fn send_gemini_chat(
         .ok_or_else(|| malformed_chat_response_message(&provider, language, &body))
 }
 
+async fn send_openrouter_chat(
+    client: &reqwest::Client,
+    model: &str,
+    messages: &[ChatMessage],
+    system_prompt: &str,
+    language: &str,
+) -> Result<String, String> {
+    let provider = AiProvider::OpenRouter;
+    let api_key = load_provider_secret(&provider, language)?;
+    ensure_model_selected(model, language)?;
+
+    let mut payload_messages = vec![serde_json::json!({"role":"system","content":system_prompt})];
+    for message in messages {
+        payload_messages.push(serde_json::json!({"role":&message.role,"content":&message.content}));
+    }
+
+    let resp = client
+        .post(OPENROUTER_CHAT_URL)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("content-type", "application/json")
+        .header("X-OpenRouter-Title", "ExaTerm")
+        .json(&serde_json::json!({"model":model,"messages":payload_messages,"temperature":0.7}))
+        .send()
+        .await
+        .map_err(|e| format_network_error(&provider, language, &e))?;
+    let body = response_json(resp, &provider, language, "chat").await?;
+
+    body["choices"][0]["message"]["content"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| malformed_chat_response_message(&provider, language, &body))
+}
+
 async fn send_ollama_chat(
     client: &reqwest::Client,
     model: &str,
@@ -325,6 +373,16 @@ fn parse_models(provider: &AiProvider, body: &serde_json::Value) -> Vec<AiModelI
                 let id = normalize_gemini_model_id(raw_name);
                 let display = model["displayName"].as_str().unwrap_or(&id);
                 Some(model_info(provider, &id, display))
+            })
+            .collect(),
+        AiProvider::OpenRouter => body["data"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|model| {
+                let id = model["id"].as_str()?;
+                let display = model["name"].as_str().unwrap_or(id);
+                Some(model_info(provider, id, display))
             })
             .collect(),
         AiProvider::Ollama => body["models"]
@@ -468,6 +526,25 @@ mod tests {
 
         assert_eq!(models[0].model_id, "llama3.2:latest");
         assert_eq!(models[0].display_name, "llama3.2:latest");
+    }
+
+    #[test]
+    fn parses_openrouter_models() {
+        let body = serde_json::json!({
+            "data": [
+                {
+                    "id": "openai/gpt-4o",
+                    "name": "OpenAI: GPT-4o"
+                }
+            ]
+        });
+
+        let models = parse_models(&AiProvider::OpenRouter, &body);
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].provider, "OpenRouter");
+        assert_eq!(models[0].model_id, "openai/gpt-4o");
+        assert_eq!(models[0].display_name, "OpenAI: GPT-4o");
     }
 
     #[test]

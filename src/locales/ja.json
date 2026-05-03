@@ -12,6 +12,7 @@
   "settings.azure_openai_deployment": "Azure OpenAI モデルデプロイ名",
   "settings.anthropic_key": "Anthropic API キー",
   "settings.gemini_key": "Google Gemini API キー",
+  "settings.openrouter_key": "OpenRouter API キー",
   "settings.ollama_enabled": "Ollama を有効化",
   "settings.ollama_enabled_desc": "有効にすると、接続できるOllamaモデルをAIパネルに表示します",
   "settings.ollama_url": "Ollama ベース URL",

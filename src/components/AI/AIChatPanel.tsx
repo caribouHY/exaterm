@@ -1,20 +1,13 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ClipboardPaste, Send, Terminal, X } from "lucide-react";
-import type { AppConfig, ChatMessage, AiModelInfo } from "../../types";
+import type { AppConfig, ChatMessage, AiModelInfo, AiSecretStatus } from "../../types";
 import { useTranslation } from "react-i18next";
 import AIAssistantLogo from "./AIAssistantLogo";
 import "./AIChatPanel.css";
 
-type CloudProviderId = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini";
+type CloudProviderId = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini" | "OpenRouter";
 type ProviderId = CloudProviderId | "Ollama";
-
-interface AiSecretStatus {
-  openai: boolean;
-  azure_openai: boolean;
-  anthropic: boolean;
-  gemini: boolean;
-}
 
 interface AIChatPanelProps {
   onClose: () => void;
@@ -34,6 +27,7 @@ const PROVIDERS: Array<{ id: ProviderId; label: string; secretKey?: keyof AiSecr
   { id: "AzureOpenAi", label: "Azure OpenAI", secretKey: "azure_openai" },
   { id: "Anthropic", label: "Anthropic", secretKey: "anthropic" },
   { id: "Gemini", label: "Gemini", secretKey: "gemini" },
+  { id: "OpenRouter", label: "OpenRouter", secretKey: "openrouter" },
   { id: "Ollama", label: "Ollama" },
 ];
 
@@ -125,6 +119,7 @@ export default function AIChatPanel({
         azure_openai: false,
         anthropic: false,
         gemini: false,
+        openrouter: false,
       };
 
       try {

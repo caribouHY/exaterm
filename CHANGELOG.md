@@ -8,6 +8,7 @@
 - Added per-SSH-profile terminal display encoding defaults.
 - Added Telnet connection profiles.
 - Added a setting to include or omit session log headers.
+- Added OpenRouter as an AI provider.
 
 ### Changed
 

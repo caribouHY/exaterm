@@ -51,6 +51,14 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface AiSecretStatus {
+  openai: boolean;
+  azure_openai: boolean;
+  anthropic: boolean;
+  gemini: boolean;
+  openrouter: boolean;
+}
+
 export interface LogSession {
   session_id: string;
   connection_type: string;
