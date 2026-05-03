@@ -9,6 +9,7 @@ import type {
   HostKeyCheckResult,
   PortInfo,
   SavedConnection,
+  StartupCliRequest,
   SshAuthMethod,
   TerminalMode,
 } from "../../types";
@@ -21,6 +22,8 @@ import { useTranslation } from "react-i18next";
 import "./ConnectionDialog.css";
 
 interface ConnectionDialogProps {
+  startupRequest?: StartupCliRequest | null;
+  onStartupRequestHandled?: () => void;
   onClose: () => void;
   onConnect: (
     type: ConnectionType,
@@ -60,10 +63,16 @@ const normalizeSshAuthMethod = (authMethod: string | null | undefined): SshAuthM
   return authMethod === "public_key" ? "public_key" : "password";
 };
 
-export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialogProps) {
+export default function ConnectionDialog({
+  startupRequest,
+  onStartupRequestHandled,
+  onClose,
+  onConnect,
+}: ConnectionDialogProps) {
   const { t } = useTranslation();
   const overlayMouseDownStartedRef = useRef(false);
   const connectingRef = useRef(false);
+  const startupRequestHandledRef = useRef(false);
   const [tab, setTab] = useState<ConnectionType>("ssh");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
@@ -73,6 +82,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   const [selectedProfileIds, setSelectedProfileIds] = useState({ ssh: "", telnet: "" });
   const [sshProfileName, setSshProfileName] = useState("");
   const [telnetProfileName, setTelnetProfileName] = useState("");
+  const [pendingStartupConnect, setPendingStartupConnect] = useState(false);
 
   // SSH fields
   const [host, setHost] = useState("192.168.1.1");
@@ -143,6 +153,18 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     return profile.id || t("connection.unnamed_profile");
   };
 
+  const applySshProfile = useCallback((profile: SavedConnection, overridePort?: number | null) => {
+    setSelectedProfileIds((current) => ({ ...current, ssh: profile.id }));
+    setSshProfileName(profile.id);
+    setHost(profile.host ?? "");
+    setPort(String(overridePort ?? profile.port ?? 22));
+    setUsername(profile.username ?? "");
+    setAuthMethod(normalizeSshAuthMethod(profile.auth_method));
+    setPrivateKeyPath(profile.private_key_path ?? "");
+    setEncoding(normalizeEncoding(profile.encoding));
+    setSshTerminalMode(normalizeTerminalMode(profile.terminal_mode));
+  }, []);
+
   const handleSelectSshProfile = (id: string) => {
     setSelectedProfileIds((current) => ({ ...current, ssh: id }));
     if (!id) {
@@ -157,14 +179,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     const profile = sshProfiles.find((entry) => entry.id === id);
     if (!profile) return;
 
-    setSshProfileName(profile.id);
-    setHost(profile.host ?? "");
-    setPort(profile.port ? String(profile.port) : "22");
-    setUsername(profile.username ?? "");
-    setAuthMethod(normalizeSshAuthMethod(profile.auth_method));
-    setPrivateKeyPath(profile.private_key_path ?? "");
-    setEncoding(normalizeEncoding(profile.encoding));
-    setSshTerminalMode(normalizeTerminalMode(profile.terminal_mode));
+    applySshProfile(profile);
   };
 
   const handleSelectTelnetProfile = (id: string) => {
@@ -530,6 +545,57 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       setConnecting(false);
     }
   };
+
+  useEffect(() => {
+    if (!startupRequest || startupRequestHandledRef.current) return;
+    if (startupRequest.target_kind === "profile" && !config) return;
+
+    startupRequestHandledRef.current = true;
+    onStartupRequestHandled?.();
+    setTab("ssh");
+    setError("");
+
+    if (startupRequest.target_kind === "direct") {
+      setSelectedProfileIds((current) => ({ ...current, ssh: "" }));
+      setSshProfileName("");
+      setHost(startupRequest.host ?? "");
+      setUsername(startupRequest.username ?? "");
+      setPort(String(startupRequest.port ?? 22));
+      setAuthMethod("password");
+      setPrivateKeyPath("");
+      setEncoding("utf-8");
+      setSshTerminalMode(DEFAULT_TERMINAL_MODE);
+      if (!startupRequest.host || !startupRequest.username) {
+        setError(t("connection.error"));
+        return;
+      }
+      setPendingStartupConnect(true);
+      return;
+    }
+
+    const profileName = startupRequest.profile_name ?? "";
+    const profile = sshProfiles.find((entry) => entry.id === profileName);
+    if (!profile) {
+      setSelectedProfileIds((current) => ({ ...current, ssh: "" }));
+      setSshProfileName(profileName);
+      setError(t("connection.startup_profile_not_found", { profile: profileName }));
+      return;
+    }
+
+    applySshProfile(profile, startupRequest.port);
+    if (!profile.host || !profile.username) {
+      setError(t("connection.startup_profile_incomplete", { profile: profileName }));
+      return;
+    }
+
+    setPendingStartupConnect(true);
+  }, [applySshProfile, config, onStartupRequestHandled, sshProfiles, startupRequest, t]);
+
+  useEffect(() => {
+    if (!pendingStartupConnect) return;
+    setPendingStartupConnect(false);
+    handleConnect();
+  }, [handleConnect, pendingStartupConnect]);
 
   const hostKeyTitle =
     hostKeyCheck?.status === "mismatch"

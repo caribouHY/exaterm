@@ -125,6 +125,19 @@ export type ViewMode = "terminal" | "settings" | "logs";
 export type UtilityTabKind = "settings" | "logs";
 export type Encoding = "utf-8" | "shift-jis" | "euc-jp";
 
+export type StartupSshTargetKind = "direct" | "profile";
+
+export interface StartupSshRequest {
+  kind: "ssh";
+  target_kind: StartupSshTargetKind;
+  host?: string | null;
+  username?: string | null;
+  profile_name?: string | null;
+  port?: number | null;
+}
+
+export type StartupCliRequest = StartupSshRequest;
+
 export interface TabInfo {
   kind: "terminal";
   id: string;

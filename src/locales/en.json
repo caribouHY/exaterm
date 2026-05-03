@@ -66,6 +66,8 @@
   "connection.profile_duplicate": "A profile with this name already exists.",
   "connection.profile_name_required": "Enter a profile name.",
   "connection.profile_password_notice": "Credentials are not saved.",
+  "connection.startup_profile_not_found": "SSH profile \"{{profile}}\" was not found.",
+  "connection.startup_profile_incomplete": "SSH profile \"{{profile}}\" is missing a host or username.",
   "connection.unnamed_profile": "Unnamed profile",
   "connection.no_ports": "No ports found",
   "connection.baud_rate": "Baud Rate",

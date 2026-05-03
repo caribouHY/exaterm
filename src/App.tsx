@@ -18,6 +18,7 @@ import type {
   AppConfig,
   ChatMessage,
   TerminalMode,
+  StartupCliRequest,
 } from "./types";
 import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
@@ -49,6 +50,7 @@ export default function App() {
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiSelectedProvider, setAiSelectedProvider] = useState("");
   const [aiSelectedModel, setAiSelectedModel] = useState("");
+  const [startupCliRequest, setStartupCliRequest] = useState<StartupCliRequest | null>(null);
   const activeTerminalBuffer = useRef("");
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
@@ -359,6 +361,18 @@ export default function App() {
     refreshConfig();
   }, [refreshConfig]);
 
+  useEffect(() => {
+    invoke<StartupCliRequest | null>("startup_cli_request_get")
+      .then((request) => {
+        if (!request) return;
+        setStartupCliRequest(request);
+        setShowConnection(true);
+      })
+      .catch((error) => {
+        console.error("Failed to load startup CLI request:", error);
+      });
+  }, []);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -504,7 +518,12 @@ export default function App() {
         </div>
       </div>
       {showConnection && (
-        <ConnectionDialog onClose={() => setShowConnection(false)} onConnect={handleConnect} />
+        <ConnectionDialog
+          startupRequest={startupCliRequest}
+          onStartupRequestHandled={() => setStartupCliRequest(null)}
+          onClose={() => setShowConnection(false)}
+          onConnect={handleConnect}
+        />
       )}
     </div>
   );
