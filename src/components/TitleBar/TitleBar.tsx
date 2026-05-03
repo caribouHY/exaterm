@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ChevronDown, Menu, Minus, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ViewMode } from "../../types";
+import AIAssistantLogo from "../AI/AIAssistantLogo";
 import "./TitleBar.css";
 
 interface TitleBarProps {
@@ -91,9 +92,7 @@ export default function TitleBar({
 
         <div className="titlebar__menu" ref={menuRef}>
           <button
-            className={`titlebar__menu-trigger ${
-              isMenuOpen ? "titlebar__menu-trigger--open" : ""
-            }`}
+            className={`titlebar__menu-trigger ${isMenuOpen ? "titlebar__menu-trigger--open" : ""}`}
             onClick={() => setIsMenuOpen((current) => !current)}
             aria-expanded={isMenuOpen}
             aria-haspopup="menu"
@@ -108,11 +107,7 @@ export default function TitleBar({
               {menuItems.map((item) => {
                 if ("separator" in item) {
                   return (
-                    <div
-                      key={item.key}
-                      className="titlebar__menu-separator"
-                      role="separator"
-                    />
+                    <div key={item.key} className="titlebar__menu-separator" role="separator" />
                   );
                 }
 
@@ -135,12 +130,19 @@ export default function TitleBar({
             </div>
           )}
         </div>
-
       </div>
 
       <div className="titlebar__name">ExaTerm</div>
 
       <div className="titlebar__controls">
+        <button
+          className={`titlebar__ai-btn ${showAiPanel ? "titlebar__ai-btn--active" : ""}`}
+          onClick={onToggleAiPanel}
+          aria-label={t("titlebar.menu.ai_assistant")}
+          title={t("titlebar.menu.ai_assistant")}
+        >
+          <AIAssistantLogo size="sm" />
+        </button>
         <button
           className="titlebar__btn"
           onClick={() => appWindow.minimize()}

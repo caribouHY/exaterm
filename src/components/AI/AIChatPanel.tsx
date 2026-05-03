@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Bot, ClipboardPaste, Send, Terminal, X } from "lucide-react";
+import { ClipboardPaste, Send, Terminal, X } from "lucide-react";
 import type { AppConfig, ChatMessage, AiModelInfo } from "../../types";
 import { useTranslation } from "react-i18next";
+import AIAssistantLogo from "./AIAssistantLogo";
 import "./AIChatPanel.css";
 
 type CloudProviderId = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini";
@@ -289,7 +290,9 @@ export default function AIChatPanel({
   return (
     <div className="ai-panel">
       <div className="ai-panel__header">
-        <span className="ai-panel__title">{t("ai.title")}</span>
+        <div className="ai-panel__heading">
+          <span className="ai-panel__title">{t("ai.title")}</span>
+        </div>
         <button className="btn-icon" onClick={onClose}>
           <X size={14} />
         </button>
@@ -299,7 +302,7 @@ export default function AIChatPanel({
         {messages.length === 0 ? (
           <div className="ai-panel__welcome">
             <div className="ai-panel__welcome-icon">
-              <Bot size={24} color="#fff" />
+              <AIAssistantLogo size="lg" />
             </div>
             <div className="ai-panel__welcome-text">{t("ai.title")}</div>
           </div>

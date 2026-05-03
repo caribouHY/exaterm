@@ -144,6 +144,31 @@
   -webkit-app-region: no-drag;
 }
 
+.titlebar__ai-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 24px;
+  margin-right: 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.titlebar__ai-btn:hover,
+.titlebar__ai-btn--active {
+  background: var(--bg-hover);
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
+}
+
 .titlebar__btn {
   display: flex;
   align-items: center;

@@ -1,6 +1,7 @@
-import { Monitor, Wifi, Bot, FileText, Settings } from "lucide-react";
+import { Monitor, Wifi, FileText, Settings } from "lucide-react";
 import type { ViewMode } from "../../types";
 import { useTranslation } from "react-i18next";
+import AIAssistantLogo from "../AI/AIAssistantLogo";
 import "./Sidebar.css";
 
 interface SidebarProps {
@@ -42,7 +43,7 @@ export default function Sidebar({
           className={`sidebar__btn ${showAiPanel ? "sidebar__btn--active" : ""}`}
           onClick={onToggleAiPanel}
         >
-          <Bot size={20} />
+          <AIAssistantLogo size="md" />
           <span className="sidebar__tooltip">{t("sidebar.ai_assistant")}</span>
         </button>
 
