@@ -172,6 +172,7 @@ Internal SSH extension markers, such as strict key exchange and extension info m
 | `port`             | number or null | SSH or Telnet target port.                                                                                                                             |
 | `username`         | string or null | SSH username. Not used for Telnet profiles.                                                                                                            |
 | `encoding`         | string or null | Initial terminal display encoding for the profile. Supported values are `"utf-8"`, `"shift-jis"`, and `"euc-jp"`. Missing values default to `"utf-8"`. |
+| `terminal_mode`    | string or null | Initial terminal mode for the profile. Supported values are `"general"` and `"cisco_ios"`. Missing values default to `"general"`.                      |
 | `auth_method`      | string or null | SSH authentication method. Supported values are `"password"` and `"public_key"`. Missing values default to `"password"`. Not used for Telnet profiles. |
 | `private_key_path` | string or null | Private key file path used with SSH `"public_key"` authentication, such as an `id_ed25519` file. The file contents and passphrase are not stored.      |
 
@@ -186,7 +187,8 @@ Example:
   "username": "admin",
   "auth_method": "public_key",
   "private_key_path": "C:\\Users\\user\\.ssh\\id_ed25519",
-  "encoding": "shift-jis"
+  "encoding": "shift-jis",
+  "terminal_mode": "cisco_ios"
 }
 ```
 
@@ -198,7 +200,8 @@ Telnet example:
   "connection_type": "telnet",
   "host": "192.168.1.20",
   "port": 23,
-  "encoding": "euc-jp"
+  "encoding": "euc-jp",
+  "terminal_mode": "cisco_ios"
 }
 ```
 

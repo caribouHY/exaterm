@@ -1,13 +1,15 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
+import type { IDecoration, IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
-import type { ConnectionType, Encoding, TerminalConfig } from "../../types";
+import type { ConnectionType, Encoding, TerminalConfig, TerminalMode } from "../../types";
 import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
+import { DEFAULT_TERMINAL_MODE } from "../../utils/terminalModes";
 import appIcon from "../../../src-tauri/icons/icon.png";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
@@ -20,12 +22,21 @@ interface TerminalViewProps {
   encoding: Encoding;
   isLoggingActive: boolean;
   terminalConfig?: TerminalConfig;
+  terminalMode: TerminalMode;
   onOpenConnection: () => void;
   onTerminalData?: (data: string) => void;
 }
 
 export interface TerminalViewHandle {
   insertText: (text: string) => void;
+}
+
+interface PromptDecorationSet {
+  promptSignature: string;
+  commandSignature: string;
+  marker: IMarker;
+  promptDecoration: IDecoration;
+  commandDecoration?: IDecoration;
 }
 
 const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
@@ -37,6 +48,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     encoding,
     isLoggingActive,
     terminalConfig,
+    terminalMode,
     onOpenConnection,
     onTerminalData,
   },
@@ -49,9 +61,17 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const decoderRef = useRef(new TextDecoder(encoding));
   const isConnectedRef = useRef(isConnected);
   const isLoggingActiveRef = useRef(isLoggingActive);
+  const terminalModeRef = useRef(terminalMode);
+  const promptDecorationsRef = useRef<Map<number, PromptDecorationSet>>(new Map());
   const logSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
+
+  const ciscoIosPromptPattern = /^([\w+\-.:/\[\]]+)((?:\([^)]+\)){0,3})([>#]) ?(.*)$/;
+  const ciscoIosConfigPromptPattern = /^.+\(config(-.*)?\)#$/;
+  const terminalModeDecorators: Partial<Record<TerminalMode, (term: Terminal) => void>> = {
+    cisco_ios: (term) => decorateCiscoIosPrompt(term),
+  };
 
   const connectionCommands: Record<
     ConnectionType,
@@ -85,6 +105,115 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     isLoggingActiveRef.current = isLoggingActive;
   }, [isLoggingActive]);
 
+  const disposePromptDecorationSet = ({
+    commandDecoration,
+    promptDecoration,
+    marker,
+  }: PromptDecorationSet) => {
+    commandDecoration?.dispose();
+    promptDecoration.dispose();
+    marker.dispose();
+  };
+
+  const clearPromptDecorations = () => {
+    promptDecorationsRef.current.forEach(disposePromptDecorationSet);
+    promptDecorationsRef.current.clear();
+  };
+
+  const decorateCiscoIosPrompt = (term: Terminal) => {
+    const buffer = term.buffer.active;
+    if (buffer.type === "alternate") return;
+
+    const lineIndex = buffer.baseY + buffer.cursorY;
+    const line = buffer.getLine(lineIndex)?.translateToString(true) ?? "";
+    const trimmedLine = line.trimEnd();
+    const promptMatch = ciscoIosPromptPattern.exec(trimmedLine);
+    if (!promptMatch) return;
+
+    const hostname = promptMatch[1];
+    const configMode = promptMatch[2];
+    const terminator = promptMatch[3];
+    const commandText = promptMatch[4].trimEnd();
+    const promptText = `${hostname}${configMode}${terminator}`;
+    const isConfigPrompt = ciscoIosConfigPromptPattern.test(promptText);
+    const hostnameStart = trimmedLine.indexOf(hostname);
+    if (hostnameStart < 0 || hostname.length === 0) return;
+    const promptWidth = promptText.length;
+    if (promptWidth === 0) return;
+    const commandStart = hostnameStart + promptMatch[0].length - promptMatch[4].length;
+    const commandWidth = commandText.length;
+    const promptSignature = `${hostnameStart}:${promptWidth}:${isConfigPrompt}`;
+    const commandSignature = `${commandStart}:${commandText}`;
+    const existingDecorationSet = promptDecorationsRef.current.get(lineIndex);
+    if (existingDecorationSet?.promptSignature === promptSignature) {
+      if (existingDecorationSet.commandSignature === commandSignature) return;
+
+      existingDecorationSet.commandDecoration?.dispose();
+      existingDecorationSet.commandDecoration = undefined;
+      existingDecorationSet.commandSignature = commandSignature;
+
+      if (commandWidth > 0) {
+        existingDecorationSet.commandDecoration = term.registerDecoration({
+          marker: existingDecorationSet.marker,
+          x: commandStart,
+          width: commandWidth,
+          foregroundColor: "#a7f3d0",
+          layer: "top",
+        });
+      }
+      return;
+    }
+
+    if (existingDecorationSet) {
+      disposePromptDecorationSet(existingDecorationSet);
+      promptDecorationsRef.current.delete(lineIndex);
+    }
+
+    const marker = term.registerMarker(0);
+    if (!marker) return;
+
+    const promptDecoration = term.registerDecoration({
+      marker,
+      x: hostnameStart,
+      width: promptWidth,
+      foregroundColor: isConfigPrompt ? "#facc15" : "#7dd3fc",
+      backgroundColor: isConfigPrompt ? "#3a2f0a" : "#0f2f3f",
+      layer: "top",
+    });
+
+    if (!promptDecoration) {
+      marker.dispose();
+      return;
+    }
+
+    promptDecoration.onRender((element) => {
+      element.classList.add("terminal-view__cisco-hostname");
+      if (isConfigPrompt) {
+        element.classList.add("terminal-view__cisco-hostname--config");
+      }
+    });
+
+    let commandDecoration: IDecoration | undefined;
+    if (commandWidth > 0) {
+      commandDecoration = term.registerDecoration({
+        marker,
+        x: commandStart,
+        width: commandWidth,
+        foregroundColor: "#a7f3d0",
+        layer: "top",
+      });
+    }
+
+    promptDecoration.onDispose(() => promptDecorationsRef.current.delete(lineIndex));
+    promptDecorationsRef.current.set(lineIndex, {
+      promptSignature,
+      commandSignature,
+      marker,
+      promptDecoration,
+      commandDecoration,
+    });
+  };
+
   useImperativeHandle(
     ref,
     () => ({
@@ -109,6 +238,22 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   useEffect(() => {
     logSanitizerRef.current = createTerminalLogSanitizer(terminalConfig?.log_format ?? "display");
   }, [terminalConfig?.log_format]);
+
+  useEffect(() => {
+    terminalModeRef.current = terminalMode;
+    if (terminalMode === DEFAULT_TERMINAL_MODE) {
+      clearPromptDecorations();
+      return;
+    }
+    const decorator = terminalModeDecorators[terminalMode];
+    if (!decorator) {
+      clearPromptDecorations();
+      return;
+    }
+    if (termRef.current) {
+      decorator(termRef.current);
+    }
+  }, [terminalMode]);
 
   // Create the terminal once per session and keep it mounted after disconnect.
   useEffect(() => {
@@ -184,7 +329,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     const handleData = (event: { payload: number[] }) => {
       const data = new Uint8Array(event.payload);
       const text = decoderRef.current.decode(data, { stream: true });
-      term.write(text);
+      term.write(text, () => terminalModeDecorators[terminalModeRef.current]?.(term));
       if (onTerminalData) onTerminalData(text);
       if (isLoggingActiveRef.current) {
         const logText = logSanitizerRef.current.push(text);
@@ -219,6 +364,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         }
       }
       resizeObserver.disconnect();
+      clearPromptDecorations();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;

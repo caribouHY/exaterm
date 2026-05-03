@@ -3,7 +3,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { ClipboardPaste, Send, Terminal, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { AppConfig, ChatMessage, AiModelInfo, AiSecretStatus } from "../../types";
+import type {
+  AppConfig,
+  ChatMessage,
+  AiModelInfo,
+  AiSecretStatus,
+  TerminalMode,
+} from "../../types";
 import { useTranslation } from "react-i18next";
 import AIAssistantLogo from "./AIAssistantLogo";
 import "./AIChatPanel.css";
@@ -22,6 +28,7 @@ interface AIChatPanelProps {
   setSelectedModel: React.Dispatch<React.SetStateAction<string>>;
   onInsertCommand: (command: string) => void;
   canInsertCommand: boolean;
+  activeTerminalMode: TerminalMode;
 }
 
 const PROVIDERS: Array<{ id: ProviderId; label: string; secretKey?: keyof AiSecretStatus }> = [
@@ -106,6 +113,7 @@ export default function AIChatPanel({
   setSelectedModel,
   onInsertCommand,
   canInsertCommand,
+  activeTerminalMode,
 }: AIChatPanelProps) {
   const { t, i18n } = useTranslation();
   const [input, setInput] = useState("");
@@ -311,7 +319,7 @@ export default function AIChatPanel({
   };
 
   return (
-    <div className="ai-panel">
+    <div className="ai-panel" data-terminal-mode={activeTerminalMode}>
       <div className="ai-panel__header">
         <div className="ai-panel__heading">
           <span className="ai-panel__title">{t("ai.title")}</span>

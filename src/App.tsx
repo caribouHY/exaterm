@@ -17,7 +17,9 @@ import type {
   Encoding,
   AppConfig,
   ChatMessage,
+  TerminalMode,
 } from "./types";
+import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -75,7 +77,8 @@ export default function App() {
       sessionId: string,
       title: string,
       isAutoLogging: boolean,
-      encoding: Encoding = "utf-8"
+      encoding: Encoding = "utf-8",
+      terminalMode: TerminalMode = DEFAULT_TERMINAL_MODE
     ) => {
       const newTab: TabInfo = {
         id: sessionId,
@@ -85,6 +88,7 @@ export default function App() {
         sessionId,
         isConnected: true,
         encoding,
+        terminalMode,
         isAutoLogging,
         isManualLogging: false,
       };
@@ -245,6 +249,10 @@ export default function App() {
 
   const handleEncodingChange = useCallback((id: string, encoding: Encoding) => {
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, encoding } : t)));
+  }, []);
+
+  const handleTerminalModeChange = useCallback((id: string, terminalMode: TerminalMode) => {
+    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, terminalMode } : t)));
   }, []);
 
   const buildManualLogFileName = useCallback((tab: TabInfo) => {
@@ -422,6 +430,7 @@ export default function App() {
                     onTerminalData={() => {}}
                     encoding="utf-8"
                     terminalConfig={config?.terminal}
+                    terminalMode={DEFAULT_TERMINAL_MODE}
                   />
                 ) : (
                   tabs.map((tab) => (
@@ -442,6 +451,7 @@ export default function App() {
                       onOpenConnection={openConnection}
                       onTerminalData={(data) => handleTerminalData(tab.id, data)}
                       encoding={tab.encoding}
+                      terminalMode={tab.terminalMode}
                       terminalConfig={config?.terminal}
                     />
                   ))
@@ -471,6 +481,7 @@ export default function App() {
                     setSelectedModel={setAiSelectedModel}
                     onInsertCommand={handleInsertCommand}
                     canInsertCommand={Boolean(activeTab?.isConnected)}
+                    activeTerminalMode={activeTab?.terminalMode ?? DEFAULT_TERMINAL_MODE}
                   />
                 </div>
               </>
@@ -481,6 +492,9 @@ export default function App() {
             showConnectionStatus={activeView === "terminal"}
             onEncodingChange={(encoding) =>
               activeTab && handleEncodingChange(activeTab.id, encoding)
+            }
+            onTerminalModeChange={(terminalMode) =>
+              activeTab && handleTerminalModeChange(activeTab.id, terminalMode)
             }
             onStartManualLog={handleStartManualLog}
             onStopManualLog={handleStopManualLog}

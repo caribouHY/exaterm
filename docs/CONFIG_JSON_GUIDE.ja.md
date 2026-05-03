@@ -172,6 +172,7 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
 | `port`             | number または null | SSH または Telnet 接続先ポートです。                                                                                                                                |
 | `username`         | string または null | SSH ユーザー名です。Telnet プロファイルでは使用しません。                                                                                                           |
 | `encoding`         | string または null | このプロファイルで接続したときのターミナル表示文字コードです。指定できる値は `"utf-8"`、`"shift-jis"`、`"euc-jp"` です。未設定の場合は `"utf-8"` として扱われます。 |
+| `terminal_mode`    | string または null | このプロファイルで接続したときのターミナルモードです。指定できる値は `"general"` と `"cisco_ios"` です。未設定の場合は `"general"` として扱われます。               |
 | `auth_method`      | string または null | SSH 認証方式です。指定できる値は `"password"` と `"public_key"` です。未設定の場合は `"password"` として扱われます。Telnet プロファイルでは使用しません。           |
 | `private_key_path` | string または null | SSH の `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                        |
 
@@ -186,7 +187,8 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
   "username": "admin",
   "auth_method": "public_key",
   "private_key_path": "C:\\Users\\user\\.ssh\\id_ed25519",
-  "encoding": "shift-jis"
+  "encoding": "shift-jis",
+  "terminal_mode": "cisco_ios"
 }
 ```
 
@@ -198,7 +200,8 @@ Telnet の例:
   "connection_type": "telnet",
   "host": "192.168.1.20",
   "port": 23,
-  "encoding": "euc-jp"
+  "encoding": "euc-jp",
+  "terminal_mode": "cisco_ios"
 }
 ```
 

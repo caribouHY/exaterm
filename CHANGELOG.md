@@ -9,6 +9,7 @@
 - Added Telnet connection profiles.
 - Added a setting to include or omit session log headers.
 - Added OpenRouter as an AI provider.
+- Added terminal modes with General and Cisco IOS options.
 
 ### Changed
 

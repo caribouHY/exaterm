@@ -2,13 +2,15 @@ import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { CircleDot, FileText } from "lucide-react";
 import packageJson from "../../../package.json";
-import type { TabInfo, Encoding } from "../../types";
+import type { TabInfo, Encoding, TerminalMode } from "../../types";
+import { TERMINAL_MODE_OPTIONS } from "../../utils/terminalModes";
 import "./StatusBar.css";
 
 interface StatusBarProps {
   activeTab: TabInfo | null;
   showConnectionStatus: boolean;
   onEncodingChange: (encoding: Encoding) => void;
+  onTerminalModeChange: (terminalMode: TerminalMode) => void;
   onStartManualLog: () => void;
   onStopManualLog: () => void;
   manualLogBusy: boolean;
@@ -19,32 +21,44 @@ export default function StatusBar({
   activeTab,
   showConnectionStatus,
   onEncodingChange,
+  onTerminalModeChange,
   onStartManualLog,
   onStopManualLog,
   manualLogBusy,
   logStatusMessage,
 }: StatusBarProps) {
   const { t } = useTranslation();
-  const [showMenu, setShowMenu] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [openMenu, setOpenMenu] = useState<"encoding" | "terminalMode" | null>(null);
+  const encodingMenuRef = useRef<HTMLDivElement>(null);
+  const terminalModeMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowMenu(false);
+      const target = e.target as Node;
+      if (
+        encodingMenuRef.current?.contains(target) ||
+        terminalModeMenuRef.current?.contains(target)
+      ) {
+        return;
       }
+      setOpenMenu(null);
     };
-    if (showMenu) {
+    if (openMenu) {
       document.addEventListener("mousedown", handleClickOutside);
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showMenu]);
+  }, [openMenu]);
 
   const encodings: { label: string; value: Encoding }[] = [
     { label: "UTF-8", value: "utf-8" },
     { label: "Shift-JIS", value: "shift-jis" },
     { label: "EUC-JP", value: "euc-jp" },
   ];
+
+  const terminalModes = TERMINAL_MODE_OPTIONS.map((mode) => ({
+    label: t(mode.labelKey),
+    value: mode.value,
+  }));
 
   const getLogLabel = () => {
     if (logStatusMessage) return t(logStatusMessage);
@@ -106,15 +120,45 @@ export default function StatusBar({
           </button>
         )}
         {activeTab && (
-          <div className="statusbar__encoding-container" ref={menuRef}>
+          <div className="statusbar__menu-container" ref={terminalModeMenuRef}>
             <button
               className="statusbar__item statusbar__item--clickable"
-              onClick={() => setShowMenu(!showMenu)}
+              onClick={() => setOpenMenu(openMenu === "terminalMode" ? null : "terminalMode")}
+              title={t("connection.terminal_mode")}
+            >
+              {terminalModes.find((mode) => mode.value === activeTab.terminalMode)?.label ||
+                activeTab.terminalMode}
+            </button>
+            {openMenu === "terminalMode" && (
+              <div className="statusbar__menu">
+                {terminalModes.map((mode) => (
+                  <button
+                    key={mode.value}
+                    className={`statusbar__menu-item ${
+                      activeTab.terminalMode === mode.value ? "statusbar__menu-item--active" : ""
+                    }`}
+                    onClick={() => {
+                      onTerminalModeChange(mode.value);
+                      setOpenMenu(null);
+                    }}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {activeTab && (
+          <div className="statusbar__menu-container" ref={encodingMenuRef}>
+            <button
+              className="statusbar__item statusbar__item--clickable"
+              onClick={() => setOpenMenu(openMenu === "encoding" ? null : "encoding")}
             >
               {encodings.find((e) => e.value === activeTab.encoding)?.label ||
                 activeTab.encoding.toUpperCase()}
             </button>
-            {showMenu && (
+            {openMenu === "encoding" && (
               <div className="statusbar__menu">
                 {encodings.map((e) => (
                   <button
@@ -122,7 +166,7 @@ export default function StatusBar({
                     className={`statusbar__menu-item ${activeTab.encoding === e.value ? "statusbar__menu-item--active" : ""}`}
                     onClick={() => {
                       onEncodingChange(e.value);
-                      setShowMenu(false);
+                      setOpenMenu(null);
                     }}
                   >
                     {e.label}

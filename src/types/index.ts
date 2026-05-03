@@ -106,6 +106,8 @@ export interface SshConfig {
   allow_legacy_algorithms: boolean;
 }
 
+export type TerminalMode = "general" | "cisco_ios";
+
 export interface SavedConnection {
   id: string;
   connection_type: "ssh" | "telnet" | (string & {});
@@ -113,6 +115,7 @@ export interface SavedConnection {
   port?: number | null;
   username?: string | null;
   encoding?: Encoding | null;
+  terminal_mode?: TerminalMode | null;
   auth_method?: SshAuthMethod | null;
   private_key_path?: string | null;
 }
@@ -130,6 +133,7 @@ export interface TabInfo {
   sessionId?: string;
   isConnected: boolean;
   encoding: Encoding;
+  terminalMode: TerminalMode;
   isAutoLogging?: boolean;
   isManualLogging?: boolean;
   manualLogFilePath?: string;

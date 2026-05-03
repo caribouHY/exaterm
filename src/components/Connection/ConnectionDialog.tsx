@@ -10,7 +10,13 @@ import type {
   PortInfo,
   SavedConnection,
   SshAuthMethod,
+  TerminalMode,
 } from "../../types";
+import {
+  DEFAULT_TERMINAL_MODE,
+  normalizeTerminalMode,
+  TERMINAL_MODE_OPTIONS,
+} from "../../utils/terminalModes";
 import { useTranslation } from "react-i18next";
 import "./ConnectionDialog.css";
 
@@ -21,7 +27,8 @@ interface ConnectionDialogProps {
     sessionId: string,
     title: string,
     isAutoLogging: boolean,
-    encoding?: Encoding
+    encoding?: Encoding,
+    terminalMode?: TerminalMode
   ) => void;
 }
 
@@ -74,11 +81,13 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   const [authMethod, setAuthMethod] = useState<SshAuthMethod>("password");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [encoding, setEncoding] = useState<Encoding>("utf-8");
+  const [sshTerminalMode, setSshTerminalMode] = useState<TerminalMode>(DEFAULT_TERMINAL_MODE);
 
   // Telnet fields
   const [telnetHost, setTelnetHost] = useState("192.168.1.1");
   const [telnetPort, setTelnetPort] = useState("23");
   const [telnetEncoding, setTelnetEncoding] = useState<Encoding>("utf-8");
+  const [telnetTerminalMode, setTelnetTerminalMode] = useState<TerminalMode>(DEFAULT_TERMINAL_MODE);
 
   // Serial fields
   const [ports, setPorts] = useState<PortInfo[]>([]);
@@ -87,6 +96,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   const [dataBits, setDataBits] = useState("8");
   const [parity, setParity] = useState("none");
   const [stopBits, setStopBits] = useState("1");
+  const [serialTerminalMode, setSerialTerminalMode] = useState<TerminalMode>(DEFAULT_TERMINAL_MODE);
 
   useEffect(() => {
     connectingRef.current = connecting;
@@ -140,6 +150,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       setAuthMethod("password");
       setPrivateKeyPath("");
       setEncoding("utf-8");
+      setSshTerminalMode(DEFAULT_TERMINAL_MODE);
       return;
     }
 
@@ -153,6 +164,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     setAuthMethod(normalizeSshAuthMethod(profile.auth_method));
     setPrivateKeyPath(profile.private_key_path ?? "");
     setEncoding(normalizeEncoding(profile.encoding));
+    setSshTerminalMode(normalizeTerminalMode(profile.terminal_mode));
   };
 
   const handleSelectTelnetProfile = (id: string) => {
@@ -160,6 +172,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     if (!id) {
       setTelnetProfileName("");
       setTelnetEncoding("utf-8");
+      setTelnetTerminalMode(DEFAULT_TERMINAL_MODE);
       return;
     }
 
@@ -170,6 +183,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     setTelnetHost(profile.host ?? "");
     setTelnetPort(profile.port ? String(profile.port) : "23");
     setTelnetEncoding(normalizeEncoding(profile.encoding));
+    setTelnetTerminalMode(normalizeTerminalMode(profile.terminal_mode));
   };
 
   const handleSaveSshProfile = async () => {
@@ -196,6 +210,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         auth_method: authMethod,
         private_key_path: authMethod === "public_key" ? privateKeyPath.trim() : null,
         encoding,
+        terminal_mode: sshTerminalMode,
       };
       const existingConnections = loaded.saved_connections ?? [];
       const duplicateProfile = existingConnections.some(
@@ -250,6 +265,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         host: trimmedHost,
         port: parsedTelnetPort,
         encoding: telnetEncoding,
+        terminal_mode: telnetTerminalMode,
       };
       const existingConnections = loaded.saved_connections ?? [];
       const duplicateProfile = existingConnections.some(
@@ -306,8 +322,10 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         setSshProfileName("");
         setAuthMethod("password");
         setPrivateKeyPath("");
+        setSshTerminalMode(DEFAULT_TERMINAL_MODE);
       } else {
         setTelnetProfileName("");
+        setTelnetTerminalMode(DEFAULT_TERMINAL_MODE);
       }
     } catch (e: unknown) {
       const message =
@@ -367,7 +385,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         target: `${username}@${host}:${sshPort}`,
       });
     }
-    onConnect("ssh", result.session_id, `${username}@${host}`, autoLog, encoding);
+    onConnect("ssh", result.session_id, `${username}@${host}`, autoLog, encoding, sshTerminalMode);
   };
 
   const handleCredentialSubmit = async () => {
@@ -480,7 +498,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
           sessionId,
           `${telnetHost}:${parsedTelnetPort}`,
           autoLog,
-          telnetEncoding
+          telnetEncoding,
+          telnetTerminalMode
         );
         return;
       }
@@ -502,7 +521,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
           target: selectedPort,
         });
       }
-      onConnect("serial", sessionId, selectedPort, autoLog);
+      onConnect("serial", sessionId, selectedPort, autoLog, "utf-8", serialTerminalMode);
     } catch (e: unknown) {
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
@@ -866,6 +885,21 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="label">{t("connection.terminal_mode")}</label>
+                <select
+                  className="select"
+                  style={{ width: "100%" }}
+                  value={sshTerminalMode}
+                  onChange={(e) => setSshTerminalMode(normalizeTerminalMode(e.target.value))}
+                >
+                  {TERMINAL_MODE_OPTIONS.map((entry) => (
+                    <option key={entry.value} value={entry.value}>
+                      {t(entry.labelKey)}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="connection-dialog__profile-actions">
                 <button className="btn btn-ghost btn-sm" onClick={handleSaveSshProfile}>
                   {selectedProfileIds.ssh
@@ -943,6 +977,21 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                   {SSH_ENCODINGS.map((entry) => (
                     <option key={entry.value} value={entry.value}>
                       {entry.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label">{t("connection.terminal_mode")}</label>
+                <select
+                  className="select"
+                  style={{ width: "100%" }}
+                  value={telnetTerminalMode}
+                  onChange={(e) => setTelnetTerminalMode(normalizeTerminalMode(e.target.value))}
+                >
+                  {TERMINAL_MODE_OPTIONS.map((entry) => (
+                    <option key={entry.value} value={entry.value}>
+                      {t(entry.labelKey)}
                     </option>
                   ))}
                 </select>
@@ -1042,6 +1091,21 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                     <option value="2">2</option>
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className="label">{t("connection.terminal_mode")}</label>
+                <select
+                  className="select"
+                  style={{ width: "100%" }}
+                  value={serialTerminalMode}
+                  onChange={(e) => setSerialTerminalMode(normalizeTerminalMode(e.target.value))}
+                >
+                  {TERMINAL_MODE_OPTIONS.map((entry) => (
+                    <option key={entry.value} value={entry.value}>
+                      {t(entry.labelKey)}
+                    </option>
+                  ))}
+                </select>
               </div>
             </>
           )}
