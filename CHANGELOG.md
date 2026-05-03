@@ -14,6 +14,10 @@
 - Changed GUI layout.
 - Relaxed the minimum window size so ExaTerm is easier to arrange in small tiled layouts.
 
+### Fixed
+
+- Fixed the terminal scrollbar disappearing when the window height is reduced.
+
 ## v0.2.0
 
 ### Added

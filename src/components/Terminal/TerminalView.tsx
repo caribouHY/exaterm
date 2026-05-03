@@ -283,7 +283,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
   return (
     <div className={`terminal-view ${!isActive ? "terminal-view--hidden" : ""}`}>
-      <div ref={containerRef} style={{ height: "100%" }} />
+      <div ref={containerRef} className="terminal-view__terminal" />
     </div>
   );
 });
