@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ClipboardPaste, Send, Terminal, X } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { AppConfig, ChatMessage, AiModelInfo, AiSecretStatus } from "../../types";
 import { useTranslation } from "react-i18next";
 import AIAssistantLogo from "./AIAssistantLogo";
@@ -323,7 +325,15 @@ export default function AIChatPanel({
                 {segments.map((segment, segmentIndex) =>
                   segment.type === "text" ? (
                     <div className="ai-message__content" key={`${i}-${segmentIndex}`}>
-                      {segment.content}
+                      {msg.role === "assistant" ? (
+                        <div className="ai-markdown">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {segment.content}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        segment.content
+                      )}
                     </div>
                   ) : (
                     <div className="ai-command" key={`${i}-${segmentIndex}`}>

@@ -13,6 +13,7 @@
 ### Changed
 
 - Changed GUI layout.
+- Rendered AI assistant responses as Markdown.
 - Relaxed the minimum window size so ExaTerm is easier to arrange in small tiled layouts.
 
 ### Fixed
