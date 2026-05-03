@@ -26,6 +26,14 @@
   overflow: hidden;
 }
 
+.app__workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .app__terminal-area {
   display: flex;
   flex-direction: column;

@@ -100,9 +100,11 @@ export interface SavedConnection {
 
 export type ConnectionType = "ssh" | "serial" | "telnet";
 export type ViewMode = "terminal" | "settings" | "logs";
+export type UtilityTabKind = "settings" | "logs";
 export type Encoding = "utf-8" | "shift-jis" | "euc-jp";
 
 export interface TabInfo {
+  kind: "terminal";
   id: string;
   title: string;
   connectionType: ConnectionType;
@@ -113,3 +115,10 @@ export interface TabInfo {
   isManualLogging?: boolean;
   manualLogFilePath?: string;
 }
+
+export interface UtilityTabInfo {
+  kind: UtilityTabKind;
+  id: UtilityTabKind;
+}
+
+export type AppTabInfo = TabInfo | UtilityTabInfo;

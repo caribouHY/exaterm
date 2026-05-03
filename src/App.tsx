@@ -9,7 +9,16 @@ import AIChatPanel from "./components/AI/AIChatPanel";
 import StatusBar from "./components/StatusBar/StatusBar";
 import SettingsPanel from "./components/Settings/SettingsPanel";
 import LogViewer from "./components/Log/LogViewer";
-import type { TabInfo, ViewMode, ConnectionType, Encoding, AppConfig, ChatMessage } from "./types";
+import type {
+  AppTabInfo,
+  TabInfo,
+  ViewMode,
+  UtilityTabKind,
+  ConnectionType,
+  Encoding,
+  AppConfig,
+  ChatMessage,
+} from "./types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -17,11 +26,11 @@ import "./App.css";
 
 export default function App() {
   const [tabs, setTabs] = useState<TabInfo[]>([]);
+  const [utilityTabs, setUtilityTabs] = useState<UtilityTabKind[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [closingTabIds, setClosingTabIds] = useState<string[]>([]);
   const [showConnection, setShowConnection] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
-  const [activeView, setActiveView] = useState<ViewMode>("terminal");
   const [aiPanelWidth, setAiPanelWidth] = useState(340);
   const [isDragging, setIsDragging] = useState(false);
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -37,12 +46,26 @@ export default function App() {
   const activeTabIdRef = useRef<string | null>(null);
   const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
 
-  const activeTab = tabs.find((t) => t.id === activeTabId) || null;
+  const appTabs: AppTabInfo[] = [
+    ...tabs,
+    ...utilityTabs.map((kind) => ({
+      kind,
+      id: kind,
+    })),
+  ];
+  const activeAppTab = appTabs.find((tab) => tab.id === activeTabId) || null;
+  const activeTab =
+    activeAppTab?.kind === "terminal" ? tabs.find((t) => t.id === activeAppTab.id) || null : null;
+  const activeView: ViewMode =
+    activeAppTab?.kind === "settings" || activeAppTab?.kind === "logs"
+      ? activeAppTab.kind
+      : "terminal";
 
   const handleConnect = useCallback(
     (type: ConnectionType, sessionId: string, title: string, isAutoLogging: boolean) => {
       const newTab: TabInfo = {
         id: sessionId,
+        kind: "terminal",
         title,
         connectionType: type,
         sessionId,
@@ -54,9 +77,29 @@ export default function App() {
       setTabs((prev) => [...prev, newTab]);
       setActiveTabId(sessionId);
       setShowConnection(false);
-      setActiveView("terminal");
     },
     []
+  );
+
+  const openUtilityTab = useCallback((kind: UtilityTabKind) => {
+    setUtilityTabs((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
+    setActiveTabId(kind);
+  }, []);
+
+  const handleViewChange = useCallback(
+    (view: ViewMode) => {
+      if (view === "settings" || view === "logs") {
+        openUtilityTab(view);
+        return;
+      }
+
+      setActiveTabId((current) => {
+        const currentIsTerminal = tabsRef.current.some((tab) => tab.id === current);
+        if (currentIsTerminal) return current;
+        return tabsRef.current.length > 0 ? tabsRef.current[tabsRef.current.length - 1].id : null;
+      });
+    },
+    [openUtilityTab]
   );
 
   useEffect(() => {
@@ -95,10 +138,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (activeTabId && !tabs.some((tab) => tab.id === activeTabId)) {
-      setActiveTabId(tabs.length > 0 ? tabs[tabs.length - 1].id : null);
+    if (activeTabId && !appTabs.some((tab) => tab.id === activeTabId)) {
+      setActiveTabId(appTabs.length > 0 ? appTabs[appTabs.length - 1].id : null);
     }
-  }, [activeTabId, tabs]);
+  }, [activeTabId, appTabs]);
 
   const removeTabFromState = useCallback((id: string) => {
     terminalBuffers.current.delete(id);
@@ -159,6 +202,11 @@ export default function App() {
 
   const handleCloseTab = useCallback(
     async (id: string) => {
+      if (id === "settings" || id === "logs") {
+        setUtilityTabs((prev) => prev.filter((kind) => kind !== id));
+        return;
+      }
+
       await disconnectTab(id);
     },
     [disconnectTab]
@@ -267,14 +315,14 @@ export default function App() {
           setShowConnection(true);
         } else if (key === ",") {
           e.preventDefault();
-          setActiveView("settings");
+          openUtilityTab("settings");
         }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [openUtilityTab]);
 
   const refreshConfig = useCallback(async () => {
     try {
@@ -322,67 +370,71 @@ export default function App() {
       <TitleBar
         activeView={activeView}
         showAiPanel={showAiPanel}
-        onViewChange={setActiveView}
+        onViewChange={handleViewChange}
         onOpenConnection={openConnection}
         onToggleAiPanel={toggleAiPanel}
       />
       <div className="app__body">
         <Sidebar
           activeView={activeView}
-          onViewChange={setActiveView}
+          onViewChange={handleViewChange}
           showAiPanel={showAiPanel}
           onToggleAiPanel={toggleAiPanel}
           onOpenConnection={openConnection}
         />
         <div className="app__main">
           <div className="app__content">
-            <div className={`app__terminal-area ${activeView !== "terminal" ? "app__hidden" : ""}`}>
+            <div className="app__workspace">
               <TerminalTabs
-                tabs={tabs}
+                tabs={appTabs}
                 activeTabId={activeTabId}
                 closingTabIds={closingTabIds}
                 onSelectTab={setActiveTabId}
                 onCloseTab={handleCloseTab}
                 onAddTab={openConnection}
               />
-              {tabs.length === 0 ? (
-                <TerminalView
-                  sessionId={null}
-                  connectionType="ssh"
-                  isConnected={false}
-                  isActive={activeView === "terminal"}
-                  isLoggingActive={false}
-                  onOpenConnection={openConnection}
-                  onTerminalData={() => {}}
-                  encoding="utf-8"
-                  terminalConfig={config?.terminal}
-                />
-              ) : (
-                tabs.map((tab) => (
+              <div
+                className={`app__terminal-area ${activeView !== "terminal" ? "app__hidden" : ""}`}
+              >
+                {tabs.length === 0 ? (
                   <TerminalView
-                    key={tab.id}
-                    ref={(handle) => {
-                      if (handle) {
-                        terminalViewRefs.current.set(tab.id, handle);
-                      } else {
-                        terminalViewRefs.current.delete(tab.id);
-                      }
-                    }}
-                    sessionId={tab.sessionId || null}
-                    connectionType={tab.connectionType}
-                    isConnected={tab.isConnected}
-                    isActive={activeView === "terminal" && tab.id === activeTabId}
-                    isLoggingActive={Boolean(tab.isAutoLogging || tab.isManualLogging)}
+                    sessionId={null}
+                    connectionType="ssh"
+                    isConnected={false}
+                    isActive={activeView === "terminal"}
+                    isLoggingActive={false}
                     onOpenConnection={openConnection}
-                    onTerminalData={(data) => handleTerminalData(tab.id, data)}
-                    encoding={tab.encoding}
+                    onTerminalData={() => {}}
+                    encoding="utf-8"
                     terminalConfig={config?.terminal}
                   />
-                ))
-              )}
+                ) : (
+                  tabs.map((tab) => (
+                    <TerminalView
+                      key={tab.id}
+                      ref={(handle) => {
+                        if (handle) {
+                          terminalViewRefs.current.set(tab.id, handle);
+                        } else {
+                          terminalViewRefs.current.delete(tab.id);
+                        }
+                      }}
+                      sessionId={tab.sessionId || null}
+                      connectionType={tab.connectionType}
+                      isConnected={tab.isConnected}
+                      isActive={activeView === "terminal" && tab.id === activeTabId}
+                      isLoggingActive={Boolean(tab.isAutoLogging || tab.isManualLogging)}
+                      onOpenConnection={openConnection}
+                      onTerminalData={(data) => handleTerminalData(tab.id, data)}
+                      encoding={tab.encoding}
+                      terminalConfig={config?.terminal}
+                    />
+                  ))
+                )}
+              </div>
+              {activeView === "settings" && <SettingsPanel onSave={refreshConfig} />}
+              {activeView === "logs" && <LogViewer />}
             </div>
-            {activeView === "settings" && <SettingsPanel onSave={refreshConfig} />}
-            {activeView === "logs" && <LogViewer />}
             {showAiPanel && (
               <>
                 <div
