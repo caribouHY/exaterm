@@ -7,10 +7,13 @@ const USAGE: &str = "\
 Usage:
   exaterm.exe help
   exaterm.exe ssh [-p <port>] <target>
+  exaterm.exe telnet [-p <port>] <target>
 
 Targets:
-  user@hostname    Connect to an SSH host
-  profile-name     Connect using a saved SSH profile
+  ssh user@hostname    Connect to an SSH host
+  ssh profile-name     Connect using a saved SSH profile
+  telnet hostname      Connect to a Telnet host
+  telnet profile-name  Connect using a saved Telnet profile
 ";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +26,7 @@ pub enum CliAction {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StartupCliRequest {
     Ssh(StartupSshRequest),
+    Telnet(StartupTelnetRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -31,6 +35,12 @@ pub struct StartupSshRequest {
     pub host: Option<String>,
     pub username: Option<String>,
     pub profile_name: Option<String>,
+    pub port: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StartupTelnetRequest {
+    pub target: String,
     pub port: Option<u16>,
 }
 
@@ -89,46 +99,13 @@ where
             }
         }
         "ssh" => parse_ssh_args(&args[1..]),
+        "telnet" => parse_telnet_args(&args[1..]),
         command => Err(CliError::new(format!("Unknown command: {command}"))),
     }
 }
 
 fn parse_ssh_args(args: &[String]) -> Result<CliAction, CliError> {
-    if args.is_empty() {
-        return Err(CliError::new("Missing SSH target."));
-    }
-
-    let mut target: Option<&str> = None;
-    let mut port: Option<u16> = None;
-    let mut index = 0;
-
-    while index < args.len() {
-        let arg = args[index].as_str();
-        if arg == "-p" {
-            if port.is_some() {
-                return Err(CliError::new("SSH port was specified more than once."));
-            }
-            let raw_port = args
-                .get(index + 1)
-                .ok_or_else(|| CliError::new("Missing SSH port after -p."))?;
-            port = Some(parse_port(raw_port)?);
-            index += 2;
-            continue;
-        }
-
-        if target.is_some() {
-            return Err(CliError::new("Invalid SSH arguments."));
-        }
-        target = Some(arg);
-        index += 1;
-    }
-
-    let target = target
-        .ok_or_else(|| CliError::new("Missing SSH target."))?
-        .trim();
-    if target.is_empty() {
-        return Err(CliError::new("Missing SSH target."));
-    }
+    let (target, port) = parse_target_args(args, "SSH")?;
 
     let request = if let Some((username, host)) = target.split_once('@') {
         let username = username.trim();
@@ -159,12 +136,72 @@ fn parse_ssh_args(args: &[String]) -> Result<CliAction, CliError> {
     Ok(CliAction::RunApp(Some(StartupCliRequest::Ssh(request))))
 }
 
-fn parse_port(raw: &str) -> Result<u16, CliError> {
-    let port = raw
-        .parse::<u16>()
-        .map_err(|_| CliError::new("SSH port must be a number from 1 to 65535."))?;
+fn parse_telnet_args(args: &[String]) -> Result<CliAction, CliError> {
+    let (target, port) = parse_target_args(args, "Telnet")?;
+
+    Ok(CliAction::RunApp(Some(StartupCliRequest::Telnet(
+        StartupTelnetRequest {
+            target: target.to_string(),
+            port,
+        },
+    ))))
+}
+
+fn parse_target_args<'a>(
+    args: &'a [String],
+    command_label: &str,
+) -> Result<(&'a str, Option<u16>), CliError> {
+    if args.is_empty() {
+        return Err(CliError::new(format!("Missing {command_label} target.")));
+    }
+
+    let mut target: Option<&str> = None;
+    let mut port: Option<u16> = None;
+    let mut index = 0;
+
+    while index < args.len() {
+        let arg = args[index].as_str();
+        if arg == "-p" {
+            if port.is_some() {
+                return Err(CliError::new(format!(
+                    "{command_label} port was specified more than once."
+                )));
+            }
+            let raw_port = args
+                .get(index + 1)
+                .ok_or_else(|| CliError::new(format!("Missing {command_label} port after -p.")))?;
+            port = Some(parse_port(raw_port, command_label)?);
+            index += 2;
+            continue;
+        }
+
+        if target.is_some() {
+            return Err(CliError::new(format!("Invalid {command_label} arguments.")));
+        }
+        target = Some(arg);
+        index += 1;
+    }
+
+    let target = target
+        .ok_or_else(|| CliError::new(format!("Missing {command_label} target.")))?
+        .trim();
+    if target.is_empty() {
+        return Err(CliError::new(format!("Missing {command_label} target.")));
+    }
+
+    Ok((target, port))
+}
+
+fn parse_port(raw: &str, command_label: &str) -> Result<u16, CliError> {
+    let port = raw.parse::<u16>().map_err(|_| {
+        CliError::new(format!(
+            "{command_label} port must be a number from 1 to 65535."
+        ))
+    })?;
     if port == 0 {
-        return Err(CliError::new("SSH port must be a number from 1 to 65535."));
+        return Err(CliError::new(format!(
+            "{command_label} port must be a number from 1 to 65535."
+        )));
     }
     Ok(port)
 }
@@ -302,7 +339,7 @@ mod tests {
 
     #[test]
     fn unknown_command_is_error() {
-        assert!(parse(&["telnet", "example.com"]).is_err());
+        assert!(parse(&["ftp", "example.com"]).is_err());
     }
 
     #[test]
@@ -313,5 +350,63 @@ mod tests {
     #[test]
     fn duplicate_port_is_error() {
         assert!(parse(&["ssh", "-p", "22", "user@example.com", "-p", "2222"]).is_err());
+    }
+
+    #[test]
+    fn telnet_accepts_target_without_port() {
+        assert_eq!(
+            parse(&["telnet", "example.com"]).unwrap(),
+            CliAction::RunApp(Some(StartupCliRequest::Telnet(StartupTelnetRequest {
+                target: "example.com".into(),
+                port: None,
+            })))
+        );
+    }
+
+    #[test]
+    fn telnet_accepts_port_before_target() {
+        assert_eq!(
+            parse(&["telnet", "-p", "2323", "example.com"]).unwrap(),
+            CliAction::RunApp(Some(StartupCliRequest::Telnet(StartupTelnetRequest {
+                target: "example.com".into(),
+                port: Some(2323),
+            })))
+        );
+    }
+
+    #[test]
+    fn telnet_accepts_port_after_target() {
+        assert_eq!(
+            parse(&["telnet", "example.com", "-p", "2323"]).unwrap(),
+            CliAction::RunApp(Some(StartupCliRequest::Telnet(StartupTelnetRequest {
+                target: "example.com".into(),
+                port: Some(2323),
+            })))
+        );
+    }
+
+    #[test]
+    fn telnet_missing_port_is_error() {
+        assert!(parse(&["telnet", "example.com", "-p"]).is_err());
+    }
+
+    #[test]
+    fn telnet_invalid_port_is_error() {
+        assert!(parse(&["telnet", "-p", "abc", "example.com"]).is_err());
+    }
+
+    #[test]
+    fn telnet_out_of_range_port_is_error() {
+        assert!(parse(&["telnet", "example.com", "-p", "70000"]).is_err());
+    }
+
+    #[test]
+    fn telnet_duplicate_port_is_error() {
+        assert!(parse(&["telnet", "-p", "23", "example.com", "-p", "2323"]).is_err());
+    }
+
+    #[test]
+    fn telnet_extra_target_is_error() {
+        assert!(parse(&["telnet", "example.com", "extra"]).is_err());
     }
 }

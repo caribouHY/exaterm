@@ -136,7 +136,13 @@ export interface StartupSshRequest {
   port?: number | null;
 }
 
-export type StartupCliRequest = StartupSshRequest;
+export interface StartupTelnetRequest {
+  kind: "telnet";
+  target: string;
+  port?: number | null;
+}
+
+export type StartupCliRequest = StartupSshRequest | StartupTelnetRequest;
 
 export interface TabInfo {
   kind: "terminal";

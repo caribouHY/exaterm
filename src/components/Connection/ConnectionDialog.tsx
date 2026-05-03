@@ -165,6 +165,18 @@ export default function ConnectionDialog({
     setSshTerminalMode(normalizeTerminalMode(profile.terminal_mode));
   }, []);
 
+  const applyTelnetProfile = useCallback(
+    (profile: SavedConnection, overridePort?: number | null) => {
+      setSelectedProfileIds((current) => ({ ...current, telnet: profile.id }));
+      setTelnetProfileName(profile.id);
+      setTelnetHost(profile.host ?? "");
+      setTelnetPort(String(overridePort ?? profile.port ?? 23));
+      setTelnetEncoding(normalizeEncoding(profile.encoding));
+      setTelnetTerminalMode(normalizeTerminalMode(profile.terminal_mode));
+    },
+    []
+  );
+
   const handleSelectSshProfile = (id: string) => {
     setSelectedProfileIds((current) => ({ ...current, ssh: id }));
     if (!id) {
@@ -194,11 +206,7 @@ export default function ConnectionDialog({
     const profile = telnetProfiles.find((entry) => entry.id === id);
     if (!profile) return;
 
-    setTelnetProfileName(profile.id);
-    setTelnetHost(profile.host ?? "");
-    setTelnetPort(profile.port ? String(profile.port) : "23");
-    setTelnetEncoding(normalizeEncoding(profile.encoding));
-    setTelnetTerminalMode(normalizeTerminalMode(profile.terminal_mode));
+    applyTelnetProfile(profile);
   };
 
   const handleSaveSshProfile = async () => {
@@ -548,12 +556,42 @@ export default function ConnectionDialog({
 
   useEffect(() => {
     if (!startupRequest || startupRequestHandledRef.current) return;
-    if (startupRequest.target_kind === "profile" && !config) return;
+    if (startupRequest.kind === "ssh" && startupRequest.target_kind === "profile" && !config) {
+      return;
+    }
+    if (startupRequest.kind === "telnet" && !config) return;
 
     startupRequestHandledRef.current = true;
     onStartupRequestHandled?.();
-    setTab("ssh");
     setError("");
+
+    if (startupRequest.kind === "telnet") {
+      setTab("telnet");
+      const target = startupRequest.target.trim();
+      const profile = telnetProfiles.find((entry) => entry.id === target);
+      if (profile) {
+        applyTelnetProfile(profile, startupRequest.port);
+        if (!profile.host) {
+          setError(t("connection.startup_telnet_profile_incomplete", { profile: target }));
+          return;
+        }
+      } else {
+        setSelectedProfileIds((current) => ({ ...current, telnet: "" }));
+        setTelnetProfileName("");
+        setTelnetHost(target);
+        setTelnetPort(String(startupRequest.port ?? 23));
+        setTelnetEncoding("utf-8");
+        setTelnetTerminalMode(DEFAULT_TERMINAL_MODE);
+        if (!target) {
+          setError(t("connection.error"));
+          return;
+        }
+      }
+      setPendingStartupConnect(true);
+      return;
+    }
+
+    setTab("ssh");
 
     if (startupRequest.target_kind === "direct") {
       setSelectedProfileIds((current) => ({ ...current, ssh: "" }));
@@ -589,7 +627,16 @@ export default function ConnectionDialog({
     }
 
     setPendingStartupConnect(true);
-  }, [applySshProfile, config, onStartupRequestHandled, sshProfiles, startupRequest, t]);
+  }, [
+    applySshProfile,
+    applyTelnetProfile,
+    config,
+    onStartupRequestHandled,
+    sshProfiles,
+    startupRequest,
+    t,
+    telnetProfiles,
+  ]);
 
   useEffect(() => {
     if (!pendingStartupConnect) return;

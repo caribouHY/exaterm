@@ -10,7 +10,7 @@
 - Added a setting to include or omit session log headers.
 - Added OpenRouter as an AI provider.
 - Added terminal modes with General and Cisco IOS options.
-- Added command-line startup support for SSH targets and saved SSH profiles.
+- Added command-line startup support for SSH and Telnet.
 
 ### Changed
 

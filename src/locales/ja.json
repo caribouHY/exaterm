@@ -68,6 +68,7 @@
   "connection.profile_password_notice": "認証情報は保存されません。",
   "connection.startup_profile_not_found": "SSHプロファイル「{{profile}}」が見つかりません。",
   "connection.startup_profile_incomplete": "SSHプロファイル「{{profile}}」にホストまたはユーザー名が設定されていません。",
+  "connection.startup_telnet_profile_incomplete": "Telnetプロファイル「{{profile}}」にホストが設定されていません。",
   "connection.unnamed_profile": "名前なしプロファイル",
   "connection.no_ports": "ポートが見つかりません",
   "connection.baud_rate": "ボーレート",
