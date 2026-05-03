@@ -215,37 +215,63 @@ pub fn print_error(error: &CliError) {
 }
 
 #[cfg(all(windows, not(debug_assertions)))]
-fn attach_parent_console() {
+fn attach_parent_console() -> bool {
     const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
     extern "system" {
         fn AttachConsole(dwProcessId: u32) -> i32;
     }
 
+    unsafe { AttachConsole(ATTACH_PARENT_PROCESS) != 0 }
+}
+
+#[cfg(not(all(windows, not(debug_assertions))))]
+fn attach_parent_console() -> bool {
+    false
+}
+
+#[cfg(all(windows, not(debug_assertions)))]
+fn detach_console(attached: bool) {
+    if !attached {
+        return;
+    }
+
+    extern "system" {
+        fn FreeConsole() -> i32;
+    }
+
     unsafe {
-        AttachConsole(ATTACH_PARENT_PROCESS);
+        FreeConsole();
     }
 }
 
 #[cfg(not(all(windows, not(debug_assertions))))]
-fn attach_parent_console() {}
+fn detach_console(_attached: bool) {}
 
 fn write_to_console(message: &str, stderr: bool) {
-    attach_parent_console();
+    let attached = attach_parent_console();
 
     #[cfg(all(windows, not(debug_assertions)))]
     {
         let device = if stderr { "CONERR$" } else { "CONOUT$" };
         if let Ok(mut file) = std::fs::OpenOptions::new().write(true).open(device) {
             let _ = file.write_all(message.as_bytes());
+            let _ = file.flush();
+            detach_console(attached);
             return;
         }
     }
 
     if stderr {
-        let _ = io::stderr().write_all(message.as_bytes());
+        let mut stderr = io::stderr();
+        let _ = stderr.write_all(message.as_bytes());
+        let _ = stderr.flush();
     } else {
-        let _ = io::stdout().write_all(message.as_bytes());
+        let mut stdout = io::stdout();
+        let _ = stdout.write_all(message.as_bytes());
+        let _ = stdout.flush();
     }
+
+    detach_console(attached);
 }
 
 #[cfg(test)]

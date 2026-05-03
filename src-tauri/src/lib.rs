@@ -37,7 +37,7 @@ pub fn run() {
         Ok(CliAction::RunApp(request)) => request,
         Ok(CliAction::PrintHelp) => {
             cli::print_help();
-            return;
+            std::process::exit(0);
         }
         Err(error) => {
             cli::print_error(&error);
