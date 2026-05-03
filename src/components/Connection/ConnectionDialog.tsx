@@ -38,6 +38,13 @@ const SSH_AUTH_METHODS: { labelKey: string; value: SshAuthMethod }[] = [
 
 const PRIVATE_KEY_PLACEHOLDER = "C:\\Users\\user\\.ssh\\id_ed25519";
 
+interface SshCredentialPrompt {
+  port: number;
+  authMethod: SshAuthMethod;
+  value: string;
+  error: string;
+}
+
 const normalizeEncoding = (encoding: string | null | undefined): Encoding => {
   return SSH_ENCODINGS.some((entry) => entry.value === encoding) ? (encoding as Encoding) : "utf-8";
 };
@@ -54,6 +61,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
   const [hostKeyCheck, setHostKeyCheck] = useState<HostKeyCheckResult | null>(null);
+  const [credentialPrompt, setCredentialPrompt] = useState<SshCredentialPrompt | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [profileName, setProfileName] = useState("");
@@ -62,10 +70,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   const [host, setHost] = useState("192.168.1.1");
   const [port, setPort] = useState("22");
   const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("");
   const [authMethod, setAuthMethod] = useState<SshAuthMethod>("password");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
-  const [keyPassphrase, setKeyPassphrase] = useState("");
   const [encoding, setEncoding] = useState<Encoding>("utf-8");
 
   // Telnet fields
@@ -128,7 +134,6 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       setProfileName("");
       setAuthMethod("password");
       setPrivateKeyPath("");
-      setKeyPassphrase("");
       setEncoding("utf-8");
       return;
     }
@@ -140,10 +145,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     setHost(profile.host ?? "");
     setPort(profile.port ? String(profile.port) : "22");
     setUsername(profile.username ?? "");
-    setPassword("");
     setAuthMethod(normalizeSshAuthMethod(profile.auth_method));
     setPrivateKeyPath(profile.private_key_path ?? "");
-    setKeyPassphrase("");
     setEncoding(normalizeEncoding(profile.encoding));
   };
 
@@ -197,7 +200,6 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       setConfig(nextConfig);
       setSelectedProfileId(id);
       setProfileName(nextProfile.id);
-      setKeyPassphrase("");
     } catch (e: unknown) {
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
@@ -224,7 +226,6 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       setProfileName("");
       setAuthMethod("password");
       setPrivateKeyPath("");
-      setKeyPassphrase("");
     } catch (e: unknown) {
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
@@ -245,15 +246,34 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     }
   };
 
-  const performSshConnect = async (autoLog: boolean, sshPort: number) => {
+  const openCredentialPrompt = (sshPort: number) => {
+    setCredentialPrompt({
+      port: sshPort,
+      authMethod,
+      value: "",
+      error: "",
+    });
+  };
+
+  const closeCredentialPrompt = () => {
+    if (connectingRef.current) return;
+    setCredentialPrompt(null);
+  };
+
+  const performSshConnect = async (
+    autoLog: boolean,
+    sshPort: number,
+    credential: string,
+    promptAuthMethod: SshAuthMethod
+  ) => {
     const result = await invoke<{ session_id: string }>("ssh_connect", {
       host,
       port: sshPort,
       username,
-      password,
-      authMethod,
+      password: promptAuthMethod === "password" ? credential : "",
+      authMethod: promptAuthMethod,
       privateKeyPath,
-      keyPassphrase,
+      keyPassphrase: promptAuthMethod === "public_key" ? credential : "",
       cols: 120,
       rows: 30,
     });
@@ -265,6 +285,34 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       });
     }
     onConnect("ssh", result.session_id, `${username}@${host}`, autoLog, encoding);
+  };
+
+  const handleCredentialSubmit = async () => {
+    if (!credentialPrompt || connectingRef.current) return;
+
+    setCredentialPrompt({ ...credentialPrompt, error: "" });
+    connectingRef.current = true;
+    setConnecting(true);
+    try {
+      const autoLog = await getAutoLogPreference();
+      await performSshConnect(
+        autoLog,
+        credentialPrompt.port,
+        credentialPrompt.value,
+        credentialPrompt.authMethod
+      );
+      setCredentialPrompt(null);
+    } catch (e: unknown) {
+      const message =
+        typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
+      setCredentialPrompt({
+        ...credentialPrompt,
+        value: "",
+        error: message,
+      });
+      connectingRef.current = false;
+      setConnecting(false);
+    }
   };
 
   const handleTrustAndConnect = async (replace: boolean) => {
@@ -280,8 +328,9 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         replace,
       });
       setHostKeyCheck(null);
-      const autoLog = await getAutoLogPreference();
-      await performSshConnect(autoLog, hostKeyCheck.port);
+      openCredentialPrompt(hostKeyCheck.port);
+      connectingRef.current = false;
+      setConnecting(false);
     } catch (e: unknown) {
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
@@ -298,8 +347,6 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     connectingRef.current = true;
     setConnecting(true);
     try {
-      const autoLog = await getAutoLogPreference();
-
       if (tab === "ssh") {
         const sshPort = Number.parseInt(port, 10);
         if (Number.isNaN(sshPort)) {
@@ -312,7 +359,9 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         });
 
         if (result.status === "trusted") {
-          await performSshConnect(autoLog, sshPort);
+          openCredentialPrompt(sshPort);
+          connectingRef.current = false;
+          setConnecting(false);
           return;
         }
 
@@ -321,6 +370,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         setConnecting(false);
         return;
       }
+
+      const autoLog = await getAutoLogPreference();
 
       if (tab === "telnet") {
         const parsedTelnetPort = Number.parseInt(telnetPort, 10);
@@ -394,6 +445,11 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         event.preventDefault();
         if (connecting) return;
 
+        if (credentialPrompt) {
+          closeCredentialPrompt();
+          return;
+        }
+
         if (hostKeyCheck) {
           setHostKeyCheck(null);
           return;
@@ -408,6 +464,11 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       event.preventDefault();
       if (connecting) return;
 
+      if (credentialPrompt) {
+        handleCredentialSubmit();
+        return;
+      }
+
       if (hostKeyCheck) {
         handleTrustAndConnect(hostKeyCheck.status === "mismatch");
         return;
@@ -418,9 +479,97 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [connecting, handleConnect, handleTrustAndConnect, hostKeyCheck, onClose]);
+  }, [
+    connecting,
+    credentialPrompt,
+    handleConnect,
+    handleCredentialSubmit,
+    handleTrustAndConnect,
+    hostKeyCheck,
+    onClose,
+  ]);
 
   const shortcutText = t("connection.shortcut_ctrl_enter");
+  const credentialTitle =
+    credentialPrompt?.authMethod === "public_key"
+      ? t("connection.key_passphrase_prompt_title")
+      : t("connection.password_prompt_title");
+  const credentialLabel =
+    credentialPrompt?.authMethod === "public_key"
+      ? t("connection.key_passphrase")
+      : t("connection.password");
+  const credentialDescription =
+    credentialPrompt?.authMethod === "public_key"
+      ? t("connection.key_passphrase_prompt_desc")
+      : t("connection.password_prompt_desc");
+
+  if (credentialPrompt) {
+    return (
+      <div
+        className="connection-overlay"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) closeCredentialPrompt();
+        }}
+      >
+        <div className="connection-credential-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="connection-credential-modal__header">
+            <span className="connection-dialog__title">{credentialTitle}</span>
+            <button className="btn-icon" onClick={closeCredentialPrompt} disabled={connecting}>
+              <X size={16} />
+            </button>
+          </div>
+          <div className="connection-credential-modal__body">
+            <div className="connection-credential-modal__target">
+              {username}@{host}:{credentialPrompt.port}
+            </div>
+            <div className="connection-credential-modal__description">{credentialDescription}</div>
+            <div>
+              <label className="label">{credentialLabel}</label>
+              <input
+                className="input"
+                type="password"
+                autoFocus
+                value={credentialPrompt.value}
+                onChange={(e) =>
+                  setCredentialPrompt({
+                    ...credentialPrompt,
+                    value: e.target.value,
+                    error: "",
+                  })
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleCredentialSubmit();
+                  }
+                }}
+              />
+            </div>
+            {credentialPrompt.error && (
+              <div className="connection-dialog__error">{credentialPrompt.error}</div>
+            )}
+          </div>
+          <div className="connection-dialog__footer">
+            {connecting ? (
+              <div className="connection-dialog__connecting">
+                <div className="connection-dialog__spinner" />
+                {t("connection.connecting")}
+              </div>
+            ) : (
+              <>
+                <button className="btn btn-ghost" onClick={closeCredentialPrompt}>
+                  {t("connection.cancel")}
+                </button>
+                <button className="btn btn-primary" onClick={handleCredentialSubmit}>
+                  {t("connection.connect")}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -586,18 +735,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                   ))}
                 </select>
               </div>
-              {authMethod === "password" ? (
-                <div>
-                  <label className="label">{t("connection.password")}</label>
-                  <input
-                    className="input"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleConnect()}
-                  />
-                </div>
-              ) : (
+              {authMethod === "public_key" && (
                 <>
                   <div>
                     <label className="label">{t("connection.private_key_path")}</label>
@@ -618,16 +756,6 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                         {t("connection.select_file")}
                       </button>
                     </div>
-                  </div>
-                  <div>
-                    <label className="label">{t("connection.key_passphrase")}</label>
-                    <input
-                      className="input"
-                      type="password"
-                      value={keyPassphrase}
-                      onChange={(e) => setKeyPassphrase(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleConnect()}
-                    />
                   </div>
                 </>
               )}

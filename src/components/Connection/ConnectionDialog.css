@@ -212,3 +212,43 @@
   color: var(--accent-yellow);
   line-height: 1.5;
 }
+
+.connection-credential-modal {
+  width: min(360px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg);
+  animation: slideInUp 0.16s ease;
+}
+
+.connection-credential-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.connection-credential-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.connection-credential-modal__target {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connection-credential-modal__description {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
