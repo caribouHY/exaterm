@@ -40,7 +40,7 @@ pub struct ChatMessage {
     pub content: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AiModelInfo {
     pub provider: String,
     pub model_id: String,

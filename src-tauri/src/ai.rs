@@ -1,6 +1,7 @@
 mod catalog;
 mod debug_log;
 mod errors;
+mod model_cache;
 mod providers;
 mod secrets;
 mod types;
@@ -30,9 +31,28 @@ pub async fn ai_get_models() -> Result<Vec<AiModelInfo>, String> {
     ] {
         let provider_models = match load_provider_secret_optional(&provider) {
             Ok(Some(api_key)) => {
-                fetch_provider_models(&client, &provider, Some(&api_key), None, "en")
-                    .await
-                    .unwrap_or_else(|_| fallback_models_for(&provider))
+                if let Some(cached_models) = model_cache::cached_fresh_models_for(&provider) {
+                    cached_models
+                } else {
+                    match fetch_provider_models(&client, &provider, Some(&api_key), None, "en")
+                        .await
+                    {
+                        Ok(fetched_models) => {
+                            if let Err(e) =
+                                model_cache::store_models_for(&provider, &fetched_models)
+                            {
+                                log::warn!(
+                                    "Failed to store AI model cache for {}: {}",
+                                    provider.display_name(),
+                                    e
+                                );
+                            }
+                            fetched_models
+                        }
+                        Err(_) => model_cache::cached_any_models_for(&provider)
+                            .unwrap_or_else(|| fallback_models_for(&provider)),
+                    }
+                }
             }
             Ok(None) | Err(_) => fallback_models_for(&provider),
         };
