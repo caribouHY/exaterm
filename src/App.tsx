@@ -255,7 +255,8 @@ export default function App() {
     }
   }, [activeTab, showTemporaryLogStatus]);
 
-  const openConnection = () => setShowConnection(true);
+  const openConnection = useCallback(() => setShowConnection(true), []);
+  const toggleAiPanel = useCallback(() => setShowAiPanel((current) => !current), []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -318,13 +319,19 @@ export default function App() {
 
   return (
     <div className="app">
-      <TitleBar />
+      <TitleBar
+        activeView={activeView}
+        showAiPanel={showAiPanel}
+        onViewChange={setActiveView}
+        onOpenConnection={openConnection}
+        onToggleAiPanel={toggleAiPanel}
+      />
       <div className="app__body">
         <Sidebar
           activeView={activeView}
           onViewChange={setActiveView}
           showAiPanel={showAiPanel}
-          onToggleAiPanel={() => setShowAiPanel(!showAiPanel)}
+          onToggleAiPanel={toggleAiPanel}
           onOpenConnection={openConnection}
         />
         <div className="app__main">

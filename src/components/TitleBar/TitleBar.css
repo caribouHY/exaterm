@@ -11,12 +11,13 @@
   z-index: 100;
 }
 
-.titlebar__brand {
+.titlebar__left {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 12px;
-  -webkit-app-region: no-drag;
+  height: 100%;
+  min-width: 0;
+  padding-left: 12px;
 }
 
 .titlebar__logo {
@@ -33,18 +34,107 @@
 }
 
 .titlebar__name {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  letter-spacing: 0.5px;
-}
-
-.titlebar__center {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
   font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.titlebar__menu {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar__menu-trigger {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.titlebar__menu-trigger:hover,
+.titlebar__menu-trigger--open {
+  background: var(--bg-hover);
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.titlebar__menu-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 210px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: 1000;
+}
+
+.titlebar__menu-item {
+  width: 100%;
+  height: 32px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 0 9px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.titlebar__menu-item:hover,
+.titlebar__menu-item--active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.titlebar__menu-item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titlebar__menu-shortcut {
   color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.titlebar__menu-separator {
+  height: 1px;
+  margin: 4px 7px;
+  background: var(--border-secondary);
 }
 
 .titlebar__controls {
