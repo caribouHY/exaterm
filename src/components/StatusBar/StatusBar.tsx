@@ -7,6 +7,7 @@ import "./StatusBar.css";
 
 interface StatusBarProps {
   activeTab: TabInfo | null;
+  showConnectionStatus: boolean;
   onEncodingChange: (encoding: Encoding) => void;
   onStartManualLog: () => void;
   onStopManualLog: () => void;
@@ -16,6 +17,7 @@ interface StatusBarProps {
 
 export default function StatusBar({
   activeTab,
+  showConnectionStatus,
   onEncodingChange,
   onStartManualLog,
   onStopManualLog,
@@ -71,14 +73,16 @@ export default function StatusBar({
   return (
     <div className="statusbar">
       <div className="statusbar__left">
-        <div className="statusbar__item">
-          <span
-            className={`statusbar__dot ${activeTab?.isConnected ? "statusbar__dot--connected" : "statusbar__dot--disconnected"}`}
-          />
-          <span>
-            {activeTab?.isConnected ? t("statusbar.connected") : t("statusbar.disconnected")}
-          </span>
-        </div>
+        {showConnectionStatus && (
+          <div className="statusbar__item">
+            <span
+              className={`statusbar__dot ${activeTab?.isConnected ? "statusbar__dot--connected" : "statusbar__dot--disconnected"}`}
+            />
+            <span>
+              {activeTab?.isConnected ? t("statusbar.connected") : t("statusbar.disconnected")}
+            </span>
+          </div>
+        )}
         {activeTab && (
           <div className="statusbar__item">
             <span>{activeTab.connectionType.toUpperCase()}</span>

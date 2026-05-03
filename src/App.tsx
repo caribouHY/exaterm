@@ -460,6 +460,7 @@ export default function App() {
           </div>
           <StatusBar
             activeTab={activeTab}
+            showConnectionStatus={activeView === "terminal"}
             onEncodingChange={(encoding) =>
               activeTab && handleEncodingChange(activeTab.id, encoding)
             }
