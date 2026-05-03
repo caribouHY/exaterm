@@ -159,13 +159,14 @@ Internal SSH extension markers, such as strict key exchange and extension info m
 
 `saved_connections` is an array of saved SSH connection profiles. SSH profiles can be managed from the connection dialog. Telnet and serial profiles are not currently supported. Passwords are not stored in this section.
 
-| Parameter         | Type           | Description                                           |
-| ----------------- | -------------- | ----------------------------------------------------- |
-| `id`              | string         | Profile name and identifier.                          |
-| `connection_type` | string         | Connection type. Currently only `"ssh"` is supported. |
-| `host`            | string or null | SSH target host.                                      |
-| `port`            | number or null | SSH target port.                                      |
-| `username`        | string or null | SSH username.                                         |
+| Parameter         | Type           | Description                                                                                                                                            |
+| ----------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`              | string         | Profile name and identifier.                                                                                                                           |
+| `connection_type` | string         | Connection type. Currently only `"ssh"` is supported.                                                                                                  |
+| `host`            | string or null | SSH target host.                                                                                                                                       |
+| `port`            | number or null | SSH target port.                                                                                                                                       |
+| `username`        | string or null | SSH username.                                                                                                                                          |
+| `encoding`        | string or null | Initial terminal display encoding for the profile. Supported values are `"utf-8"`, `"shift-jis"`, and `"euc-jp"`. Missing values default to `"utf-8"`. |
 
 Example:
 
@@ -175,7 +176,8 @@ Example:
   "connection_type": "ssh",
   "host": "192.168.1.10",
   "port": 22,
-  "username": "admin"
+  "username": "admin",
+  "encoding": "shift-jis"
 }
 ```
 

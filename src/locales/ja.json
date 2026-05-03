@@ -41,6 +41,7 @@
   "connection.port": "ポート",
   "connection.username": "ユーザー名",
   "connection.password": "パスワード",
+  "connection.encoding": "文字コード",
   "connection.profile": "SSH プロファイル",
   "connection.profile_manual": "手動入力",
   "connection.profile_name": "プロファイル名",

@@ -61,7 +61,13 @@ export default function App() {
       : "terminal";
 
   const handleConnect = useCallback(
-    (type: ConnectionType, sessionId: string, title: string, isAutoLogging: boolean) => {
+    (
+      type: ConnectionType,
+      sessionId: string,
+      title: string,
+      isAutoLogging: boolean,
+      encoding: Encoding = "utf-8"
+    ) => {
       const newTab: TabInfo = {
         id: sessionId,
         kind: "terminal",
@@ -69,7 +75,7 @@ export default function App() {
         connectionType: type,
         sessionId,
         isConnected: true,
-        encoding: "utf-8",
+        encoding,
         isAutoLogging,
         isManualLogging: false,
       };

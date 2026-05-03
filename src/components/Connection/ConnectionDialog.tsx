@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import type {
   AppConfig,
   ConnectionType,
+  Encoding,
   HostKeyCheckResult,
   PortInfo,
   SavedConnection,
@@ -17,9 +18,20 @@ interface ConnectionDialogProps {
     type: ConnectionType,
     sessionId: string,
     title: string,
-    isAutoLogging: boolean
+    isAutoLogging: boolean,
+    encoding?: Encoding
   ) => void;
 }
+
+const SSH_ENCODINGS: { label: string; value: Encoding }[] = [
+  { label: "UTF-8", value: "utf-8" },
+  { label: "Shift-JIS", value: "shift-jis" },
+  { label: "EUC-JP", value: "euc-jp" },
+];
+
+const normalizeEncoding = (encoding: string | null | undefined): Encoding => {
+  return SSH_ENCODINGS.some((entry) => entry.value === encoding) ? (encoding as Encoding) : "utf-8";
+};
 
 export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialogProps) {
   const { t } = useTranslation();
@@ -38,6 +50,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   const [port, setPort] = useState("22");
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
+  const [encoding, setEncoding] = useState<Encoding>("utf-8");
 
   // Telnet fields
   const [telnetHost, setTelnetHost] = useState("192.168.1.1");
@@ -97,6 +110,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     setSelectedProfileId(id);
     if (!id) {
       setProfileName("");
+      setEncoding("utf-8");
       return;
     }
 
@@ -108,6 +122,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     setPort(profile.port ? String(profile.port) : "22");
     setUsername(profile.username ?? "");
     setPassword("");
+    setEncoding(normalizeEncoding(profile.encoding));
   };
 
   const handleSaveProfile = async () => {
@@ -131,6 +146,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         host: trimmedHost,
         port: sshPort,
         username: trimmedUsername,
+        encoding,
       };
       const existingConnections = loaded.saved_connections ?? [];
       const duplicateProfile = existingConnections.some(
@@ -204,7 +220,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         target: `${username}@${host}:${sshPort}`,
       });
     }
-    onConnect("ssh", result.session_id, `${username}@${host}`, autoLog);
+    onConnect("ssh", result.session_id, `${username}@${host}`, autoLog, encoding);
   };
 
   const handleTrustAndConnect = async (replace: boolean) => {
@@ -520,6 +536,21 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                   onChange={(e) => setPassword(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleConnect()}
                 />
+              </div>
+              <div>
+                <label className="label">{t("connection.encoding")}</label>
+                <select
+                  className="select"
+                  style={{ width: "100%" }}
+                  value={encoding}
+                  onChange={(e) => setEncoding(normalizeEncoding(e.target.value))}
+                >
+                  {SSH_ENCODINGS.map((entry) => (
+                    <option key={entry.value} value={entry.value}>
+                      {entry.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="connection-dialog__profile-actions">
                 <button className="btn btn-ghost btn-sm" onClick={handleSaveProfile}>

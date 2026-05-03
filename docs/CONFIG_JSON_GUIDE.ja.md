@@ -159,13 +159,14 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
 
 `saved_connections` は保存済み SSH 接続プロファイルを表す配列です。SSH プロファイルは接続ダイアログから管理できます。Telnet とシリアルのプロファイルは現状非対応です。パスワードはこのセクションには保存されません。
 
-| パラメータ        | 型                 | 説明                                              |
-| ----------------- | ------------------ | ------------------------------------------------- |
-| `id`              | string             | プロファイル名兼識別子です。                      |
-| `connection_type` | string             | 接続種別です。現状は `"ssh"` のみ対応しています。 |
-| `host`            | string または null | SSH 接続先ホストです。                            |
-| `port`            | number または null | SSH 接続先ポートです。                            |
-| `username`        | string または null | SSH ユーザー名です。                              |
+| パラメータ        | 型                 | 説明                                                                                                                                                                |
+| ----------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`              | string             | プロファイル名兼識別子です。                                                                                                                                        |
+| `connection_type` | string             | 接続種別です。現状は `"ssh"` のみ対応しています。                                                                                                                   |
+| `host`            | string または null | SSH 接続先ホストです。                                                                                                                                              |
+| `port`            | number または null | SSH 接続先ポートです。                                                                                                                                              |
+| `username`        | string または null | SSH ユーザー名です。                                                                                                                                                |
+| `encoding`        | string または null | このプロファイルで接続したときのターミナル表示文字コードです。指定できる値は `"utf-8"`、`"shift-jis"`、`"euc-jp"` です。未設定の場合は `"utf-8"` として扱われます。 |
 
 例:
 
@@ -175,7 +176,8 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
   "connection_type": "ssh",
   "host": "192.168.1.10",
   "port": 22,
-  "username": "admin"
+  "username": "admin",
+  "encoding": "shift-jis"
 }
 ```
 

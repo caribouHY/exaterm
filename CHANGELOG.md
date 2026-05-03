@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added per-SSH-profile terminal display encoding defaults.
+
 ### Changed
 
 - Changed GUI layout.

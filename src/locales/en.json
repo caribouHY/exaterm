@@ -41,6 +41,7 @@
   "connection.port": "Port",
   "connection.username": "Username",
   "connection.password": "Password",
+  "connection.encoding": "Encoding",
   "connection.profile": "SSH Profile",
   "connection.profile_manual": "Manual entry",
   "connection.profile_name": "Profile Name",

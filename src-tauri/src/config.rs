@@ -148,6 +148,8 @@ pub struct SavedConnection {
     pub port: Option<u16>,
     #[serde(default)]
     pub username: Option<String>,
+    #[serde(default)]
+    pub encoding: Option<String>,
 }
 
 impl Default for SavedConnection {
@@ -158,6 +160,7 @@ impl Default for SavedConnection {
             host: None,
             port: None,
             username: None,
+            encoding: None,
         }
     }
 }
@@ -268,5 +271,25 @@ mod tests {
         assert_eq!(cfg.terminal.log_format, "display");
         assert!(cfg.ssh.allow_legacy_algorithms);
         assert_eq!(cfg.saved_connections[0].id, "dev box");
+        assert_eq!(cfg.saved_connections[0].encoding, None);
+    }
+
+    #[test]
+    fn saved_connection_preserves_encoding() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "saved_connections": [{
+                    "id": "legacy-router",
+                    "connection_type": "ssh",
+                    "encoding": "shift-jis"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.saved_connections[0].encoding.as_deref(),
+            Some("shift-jis")
+        );
     }
 }

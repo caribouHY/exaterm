@@ -96,6 +96,7 @@ export interface SavedConnection {
   host?: string | null;
   port?: number | null;
   username?: string | null;
+  encoding?: Encoding | null;
 }
 
 export type ConnectionType = "ssh" | "serial" | "telnet";
