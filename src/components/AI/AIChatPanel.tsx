@@ -33,6 +33,13 @@ const PROVIDERS: Array<{ id: ProviderId; label: string; secretKey?: keyof AiSecr
   { id: "Ollama", label: "Ollama" },
 ];
 
+function assistantMessageLabel(message: ChatMessage) {
+  if (message.role !== "assistant" || !message.provider || !message.model_id) return "";
+
+  const provider = PROVIDERS.find((candidate) => candidate.id === message.provider);
+  return provider ? `${provider.label} ${message.model_id}` : "";
+}
+
 const COMMAND_BLOCK_LANGUAGES = new Set([
   "bash",
   "sh",
@@ -279,7 +286,15 @@ export default function AIChatPanel({
         ollamaBaseUrl: selectedProvider === "Ollama" ? ollamaBaseUrl : null,
         azureOpenAiEndpoint: selectedProvider === "AzureOpenAi" ? azureOpenAiEndpoint : null,
       });
-      setMessages((prev) => [...prev, { role: "assistant", content: response }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: response,
+          provider: selectedProvider,
+          model_id: selectedModel,
+        },
+      ]);
     } catch (e: any) {
       const detail = typeof e === "string" ? e : e.message || "Unknown error";
       setMessages((prev) => [
@@ -287,6 +302,8 @@ export default function AIChatPanel({
         {
           role: "assistant",
           content: `Error: ${detail}`,
+          provider: selectedProvider,
+          model_id: selectedModel,
         },
       ]);
     }
@@ -318,10 +335,11 @@ export default function AIChatPanel({
               msg.role === "assistant"
                 ? parseAssistantContent(msg.content)
                 : [{ type: "text" as const, content: msg.content }];
+            const roleLabel = assistantMessageLabel(msg);
 
             return (
               <div key={i} className={`ai-message ai-message--${msg.role}`}>
-                <span className="ai-message__role">{msg.role === "user" ? "You" : "AI"}</span>
+                {roleLabel && <span className="ai-message__role">{roleLabel}</span>}
                 {segments.map((segment, segmentIndex) =>
                   segment.type === "text" ? (
                     <div className="ai-message__content" key={`${i}-${segmentIndex}`}>

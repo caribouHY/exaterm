@@ -49,6 +49,8 @@ export interface AiModelInfo {
 export interface ChatMessage {
   role: string;
   content: string;
+  provider?: string;
+  model_id?: string;
 }
 
 export interface AiSecretStatus {
