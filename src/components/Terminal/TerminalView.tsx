@@ -5,10 +5,10 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ConnectionType, Encoding, TerminalConfig } from "../../types";
 import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
+import appIcon from "../../../src-tauri/icons/icon.png";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
@@ -256,9 +256,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     return (
       <div className={`terminal-view ${!isActive ? "terminal-view--hidden" : ""}`}>
         <div className="terminal-view__empty">
-          <div className="terminal-view__empty-icon">
-            <Monitor size={32} color="#fff" />
-          </div>
+          <img className="terminal-view__empty-icon" src={appIcon} alt="" aria-hidden="true" />
           <div className="terminal-view__empty-title">ExaTerm</div>
           <div className="terminal-view__empty-desc">{t("terminal.empty_desc")}</div>
           <button className="btn btn-primary" onClick={onOpenConnection}>

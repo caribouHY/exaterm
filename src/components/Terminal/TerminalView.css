@@ -37,11 +37,7 @@
   width: 64px;
   height: 64px;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.6;
+  object-fit: contain;
 }
 
 .terminal-view__empty-title {
