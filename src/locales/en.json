@@ -28,6 +28,8 @@
   "settings.log_format": "Log Format",
   "settings.log_format_display": "Screen Display",
   "settings.log_format_strip_controls": "Strip Control Characters",
+  "settings.include_log_header": "Include Log Header",
+  "settings.include_log_header_desc": "Adds session type, target, mode, and start time at the beginning of new log files",
   "settings.save": "Save",
   "settings.saved": "Saved",
   "settings.change": "Change",

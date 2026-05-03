@@ -101,6 +101,8 @@ pub struct TerminalConfig {
     pub auto_session_log: bool,
     #[serde(default = "default_terminal_log_format")]
     pub log_format: String,
+    #[serde(default = "default_terminal_include_log_header")]
+    pub include_log_header: bool,
 }
 
 impl Default for TerminalConfig {
@@ -112,6 +114,7 @@ impl Default for TerminalConfig {
             scrollback: default_terminal_scrollback(),
             auto_session_log: false,
             log_format: default_terminal_log_format(),
+            include_log_header: default_terminal_include_log_header(),
         }
     }
 }
@@ -134,6 +137,10 @@ fn default_terminal_scrollback() -> u32 {
 
 fn default_terminal_log_format() -> String {
     "display".into()
+}
+
+fn default_terminal_include_log_header() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -248,6 +255,7 @@ mod tests {
         assert_eq!(cfg.terminal.font_size, 14);
         assert_eq!(cfg.terminal.scrollback, 10000);
         assert_eq!(cfg.terminal.log_format, "display");
+        assert!(cfg.terminal.include_log_header);
         assert!(!cfg.ssh.allow_legacy_algorithms);
         assert!(cfg.saved_connections.is_empty());
     }
@@ -275,6 +283,7 @@ mod tests {
         assert_eq!(cfg.terminal.font_size, 14);
         assert!(cfg.terminal.auto_session_log);
         assert_eq!(cfg.terminal.log_format, "display");
+        assert!(cfg.terminal.include_log_header);
         assert!(cfg.ssh.allow_legacy_algorithms);
         assert_eq!(cfg.saved_connections[0].id, "dev box");
         assert_eq!(cfg.saved_connections[0].encoding, None);

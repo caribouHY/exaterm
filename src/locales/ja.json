@@ -28,6 +28,8 @@
   "settings.log_format": "ログ整形方式",
   "settings.log_format_display": "画面表示",
   "settings.log_format_strip_controls": "制御文字除去",
+  "settings.include_log_header": "ログヘッダを含める",
+  "settings.include_log_header_desc": "新しいログファイルの先頭に種別、接続先、モード、開始時刻を記録します",
   "settings.save": "保存",
   "settings.saved": "保存しました",
   "settings.change": "変更",

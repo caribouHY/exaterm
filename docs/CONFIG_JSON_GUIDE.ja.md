@@ -47,7 +47,8 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "cursor_style": "block",
     "scrollback": 10000,
     "auto_session_log": false,
-    "log_format": "display"
+    "log_format": "display",
+    "include_log_header": true
   },
   "ssh": {
     "allow_legacy_algorithms": false
@@ -104,14 +105,15 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 
 ## terminal
 
-| パラメータ                  | 型      | 既定値                                 | 説明                                                                                                                                                            |
-| --------------------------- | ------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `terminal.font_size`        | number  | `14`                                   | ターミナルのフォントサイズです。設定画面では `8` から `32` の範囲で指定できます。                                                                               |
-| `terminal.font_family`      | string  | `"Consolas, 'Courier New', monospace"` | ターミナルのフォントファミリーです。CSS の `font-family` と同じ形式で指定します。                                                                               |
-| `terminal.cursor_style`     | string  | `"block"`                              | ターミナルのカーソル形状です。現在の既定値はブロックカーソルです。手動編集時は xterm.js が受け付ける値を指定してください。例: `"block"`, `"underline"`, `"bar"` |
-| `terminal.scrollback`       | number  | `10000`                                | ターミナルのスクロールバック行数です。値を大きくすると過去ログを多く保持できますが、メモリ使用量が増える可能性があります。                                      |
-| `terminal.auto_session_log` | boolean | `false`                                | `true` にすると、SSH/シリアル/Telnet 接続のターミナル入出力を平文ログとして保存します。                                                                         |
-| `terminal.log_format`       | string  | `"display"`                            | セッションログの整形方式です。`"display"` は画面表示に近い内容、`"strip_controls"` は制御文字を除去した内容を保存します。                                       |
+| パラメータ                    | 型      | 既定値                                 | 説明                                                                                                                                                            |
+| ----------------------------- | ------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `terminal.font_size`          | number  | `14`                                   | ターミナルのフォントサイズです。設定画面では `8` から `32` の範囲で指定できます。                                                                               |
+| `terminal.font_family`        | string  | `"Consolas, 'Courier New', monospace"` | ターミナルのフォントファミリーです。CSS の `font-family` と同じ形式で指定します。                                                                               |
+| `terminal.cursor_style`       | string  | `"block"`                              | ターミナルのカーソル形状です。現在の既定値はブロックカーソルです。手動編集時は xterm.js が受け付ける値を指定してください。例: `"block"`, `"underline"`, `"bar"` |
+| `terminal.scrollback`         | number  | `10000`                                | ターミナルのスクロールバック行数です。値を大きくすると過去ログを多く保持できますが、メモリ使用量が増える可能性があります。                                      |
+| `terminal.auto_session_log`   | boolean | `false`                                | `true` にすると、SSH/シリアル/Telnet 接続のターミナル入出力を平文ログとして保存します。                                                                         |
+| `terminal.log_format`         | string  | `"display"`                            | セッションログの整形方式です。`"display"` は画面表示に近い内容、`"strip_controls"` は制御文字を除去した内容を保存します。                                       |
+| `terminal.include_log_header` | boolean | `true`                                 | `true` にすると、新しいセッションログの先頭に ExaTerm ヘッダとして種別、接続先、ログモード、開始時刻を記録します。                                              |
 
 ### セッションログの注意
 
@@ -131,6 +133,8 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 機密性の高い環境では、必要な場合のみ有効にしてください。
 
 `terminal.log_format` が `"display"` の場合、Backspace、カーソル左移動、行末消去などの一般的な行編集を反映してからログへ保存します。`"strip_controls"` の場合は制御シーケンスを除去しますが、編集途中の文字が残る場合があります。
+
+`terminal.include_log_header` が `false` の場合、新しい自動ログと手動ログは ExaTerm ヘッダを書かず、ターミナル内容から直接始まります。既存のログファイルは変更されません。
 
 ## ssh
 

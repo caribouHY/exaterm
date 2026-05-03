@@ -393,6 +393,20 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <option value="strip_controls">{t("settings.log_format_strip_controls")}</option>
           </select>
         </div>
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.include_log_header")}</span>
+            <small>{t("settings.include_log_header_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={config.terminal.include_log_header ?? true}
+              onChange={(e) => update("terminal.include_log_header", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
       </div>
 
       <div className="settings-actions">

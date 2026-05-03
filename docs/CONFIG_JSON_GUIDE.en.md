@@ -47,7 +47,8 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "cursor_style": "block",
     "scrollback": 10000,
     "auto_session_log": false,
-    "log_format": "display"
+    "log_format": "display",
+    "include_log_header": true
   },
   "ssh": {
     "allow_legacy_algorithms": false
@@ -104,14 +105,15 @@ Set `ai.debug_log_enabled` to `true` only when you need to troubleshoot AI chat 
 
 ## terminal
 
-| Parameter                   | Type    | Default                                | Description                                                                                                                                                  |
-| --------------------------- | ------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `terminal.font_size`        | number  | `14`                                   | Terminal font size. The Settings screen allows values from `8` to `32`.                                                                                      |
-| `terminal.font_family`      | string  | `"Consolas, 'Courier New', monospace"` | Terminal font family. Use the same format as CSS `font-family`.                                                                                              |
-| `terminal.cursor_style`     | string  | `"block"`                              | Terminal cursor shape. The default is a block cursor. When editing manually, use a value accepted by xterm.js, such as `"block"`, `"underline"`, or `"bar"`. |
-| `terminal.scrollback`       | number  | `10000`                                | Number of terminal scrollback lines. Larger values keep more history but may increase memory usage.                                                          |
-| `terminal.auto_session_log` | boolean | `false`                                | When set to `true`, SSH, serial, and Telnet terminal input/output is saved as plaintext logs.                                                                |
-| `terminal.log_format`       | string  | `"display"`                            | Session log formatting mode. `"display"` saves text closer to the terminal screen; `"strip_controls"` removes control sequences.                             |
+| Parameter                     | Type    | Default                                | Description                                                                                                                                                  |
+| ----------------------------- | ------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `terminal.font_size`          | number  | `14`                                   | Terminal font size. The Settings screen allows values from `8` to `32`.                                                                                      |
+| `terminal.font_family`        | string  | `"Consolas, 'Courier New', monospace"` | Terminal font family. Use the same format as CSS `font-family`.                                                                                              |
+| `terminal.cursor_style`       | string  | `"block"`                              | Terminal cursor shape. The default is a block cursor. When editing manually, use a value accepted by xterm.js, such as `"block"`, `"underline"`, or `"bar"`. |
+| `terminal.scrollback`         | number  | `10000`                                | Number of terminal scrollback lines. Larger values keep more history but may increase memory usage.                                                          |
+| `terminal.auto_session_log`   | boolean | `false`                                | When set to `true`, SSH, serial, and Telnet terminal input/output is saved as plaintext logs.                                                                |
+| `terminal.log_format`         | string  | `"display"`                            | Session log formatting mode. `"display"` saves text closer to the terminal screen; `"strip_controls"` removes control sequences.                             |
+| `terminal.include_log_header` | boolean | `true`                                 | When set to `true`, new session log files start with an ExaTerm header containing the connection type, target, log mode, and start time.                     |
 
 ### Session Log Notice
 
@@ -131,6 +133,8 @@ Logs are usually stored here:
 In sensitive environments, enable session logging only when necessary.
 
 When `terminal.log_format` is `"display"`, common line edits such as Backspace, cursor-left, and erase-to-end-of-line are applied before text is saved. When it is `"strip_controls"`, control sequences are removed, but partially edited text may remain.
+
+When `terminal.include_log_header` is `false`, new auto and manual session logs start directly with terminal content instead of the ExaTerm header. Existing log files are not changed.
 
 ## ssh
 

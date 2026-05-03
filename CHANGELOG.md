@@ -6,6 +6,7 @@
 
 - Added SSH public key authentication.
 - Added per-SSH-profile terminal display encoding defaults.
+- Added a setting to include or omit session log headers.
 
 ### Changed
 

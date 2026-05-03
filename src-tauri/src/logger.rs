@@ -97,6 +97,7 @@ fn create_log_session(
     target: String,
     file_path: Option<String>,
     log_mode: &str,
+    include_header: bool,
 ) -> Result<LogSession, String> {
     let now = Local::now();
     let session_prefix = session_id.chars().take(8).collect::<String>();
@@ -107,14 +108,18 @@ fn create_log_session(
     if let Some(parent) = file_path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("ログディレクトリ作成エラー: {}", e))?;
     }
-    let header = format!(
-        "# ExaTerm Log\n# Type: {}\n# Target: {}\n# Mode: {}\n# Started: {}\n\n",
-        connection_type,
-        target,
-        log_mode,
-        now.format("%Y-%m-%d %H:%M:%S")
-    );
-    fs::write(&file_path, &header).map_err(|e| format!("ログ作成エラー: {}", e))?;
+    if include_header {
+        let header = format!(
+            "# ExaTerm Log\n# Type: {}\n# Target: {}\n# Mode: {}\n# Started: {}\n\n",
+            connection_type,
+            target,
+            log_mode,
+            now.format("%Y-%m-%d %H:%M:%S")
+        );
+        fs::write(&file_path, &header).map_err(|e| format!("ログ作成エラー: {}", e))?;
+    } else {
+        fs::write(&file_path, "").map_err(|e| format!("ログ作成エラー: {}", e))?;
+    }
 
     Ok(LogSession {
         session_id: session_id.clone(),
@@ -145,6 +150,9 @@ pub async fn logger_start_auto(
     connection_type: String,
     target: String,
 ) -> Result<String, String> {
+    let include_header = crate::config::config_read()
+        .map(|cfg| cfg.terminal.include_log_header)
+        .unwrap_or(true);
     let session = create_log_session(
         &state.log_dir,
         session_id.clone(),
@@ -152,6 +160,7 @@ pub async fn logger_start_auto(
         target,
         None,
         "auto",
+        include_header,
     )?;
     let mut sessions = state.sessions.lock().await;
     sessions.entry(session_id).or_default().auto = Some(session.clone());
@@ -167,6 +176,9 @@ pub async fn logger_start_manual(
     target: String,
     file_path: String,
 ) -> Result<String, String> {
+    let include_header = crate::config::config_read()
+        .map(|cfg| cfg.terminal.include_log_header)
+        .unwrap_or(true);
     let session = create_log_session(
         &state.log_dir,
         session_id.clone(),
@@ -174,6 +186,7 @@ pub async fn logger_start_manual(
         target,
         Some(file_path),
         "manual",
+        include_header,
     )?;
     let mut sessions = state.sessions.lock().await;
     sessions.entry(session_id).or_default().manual = Some(session.clone());
@@ -376,6 +389,51 @@ mod tests {
 
         assert_eq!(fs::read_to_string(&auto_path).unwrap(), "auto\ndata\n");
         assert_eq!(fs::read_to_string(&manual_path).unwrap(), "manual\ndata\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_log_session_writes_header_when_enabled() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+
+        let session = create_log_session(
+            &dir,
+            "session-1".into(),
+            "ssh".into(),
+            "user@host:22".into(),
+            None,
+            "auto",
+            true,
+        )
+        .expect("log session should be created");
+        let data = fs::read_to_string(&session.file_path).expect("log should read");
+
+        assert!(data.starts_with("# ExaTerm Log\n"));
+        assert!(data.contains("# Type: ssh\n"));
+        assert!(data.contains("# Target: user@host:22\n"));
+        assert!(data.contains("# Mode: auto\n"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_log_session_skips_header_when_disabled() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+
+        let session = create_log_session(
+            &dir,
+            "session-1".into(),
+            "ssh".into(),
+            "user@host:22".into(),
+            None,
+            "auto",
+            false,
+        )
+        .expect("log session should be created");
+        let data = fs::read_to_string(&session.file_path).expect("log should read");
+
+        assert_eq!(data, "");
         let _ = fs::remove_dir_all(&dir);
     }
 

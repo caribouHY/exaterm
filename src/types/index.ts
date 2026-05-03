@@ -87,6 +87,7 @@ export interface TerminalConfig {
   scrollback: number;
   auto_session_log: boolean;
   log_format: LogFormat;
+  include_log_header: boolean;
 }
 
 export type LogFormat = "display" | "strip_controls";
