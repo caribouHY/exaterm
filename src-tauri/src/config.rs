@@ -311,6 +311,29 @@ mod tests {
     }
 
     #[test]
+    fn saved_connection_preserves_telnet_profile_fields() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "saved_connections": [{
+                    "id": "legacy-telnet",
+                    "connection_type": "telnet",
+                    "host": "192.168.1.10",
+                    "port": 23,
+                    "encoding": "euc-jp"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        let profile = &cfg.saved_connections[0];
+        assert_eq!(profile.id, "legacy-telnet");
+        assert_eq!(profile.connection_type, "telnet");
+        assert_eq!(profile.host.as_deref(), Some("192.168.1.10"));
+        assert_eq!(profile.port, Some(23));
+        assert_eq!(profile.encoding.as_deref(), Some("euc-jp"));
+    }
+
+    #[test]
     fn saved_connection_preserves_public_key_auth_path() {
         let cfg: AppConfig = serde_json::from_str(
             r#"{

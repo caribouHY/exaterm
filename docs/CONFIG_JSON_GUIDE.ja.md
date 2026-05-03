@@ -66,7 +66,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | `ai`                | object | 下記参照 | AI アシスタント関連の設定です。                                                                                      |
 | `terminal`          | object | 下記参照 | ターミナル表示とログ関連の設定です。                                                                                 |
 | `ssh`               | object | 下記参照 | SSH 接続の互換性設定です。                                                                                           |
-| `saved_connections` | array  | `[]`     | 保存済み SSH 接続プロファイルです。SSH プロファイルは接続ダイアログから作成、選択、削除できます。                    |
+| `saved_connections` | array  | `[]`     | 保存済み SSH/Telnet 接続プロファイルです。プロファイルは接続ダイアログから作成、選択、削除できます。                 |
 
 ## ai
 
@@ -161,18 +161,18 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
 
 ## saved_connections
 
-`saved_connections` は保存済み SSH 接続プロファイルを表す配列です。SSH プロファイルは接続ダイアログから管理できます。Telnet とシリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズはこのセクションには保存されません。
+`saved_connections` は保存済み SSH/Telnet 接続プロファイルを表す配列です。プロファイルは接続ダイアログから管理できます。シリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズ、その他の認証情報はこのセクションには保存されません。
 
 | パラメータ         | 型                 | 説明                                                                                                                                                                |
 | ------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`               | string             | プロファイル名兼識別子です。                                                                                                                                        |
-| `connection_type`  | string             | 接続種別です。現状は `"ssh"` のみ対応しています。                                                                                                                   |
-| `host`             | string または null | SSH 接続先ホストです。                                                                                                                                              |
-| `port`             | number または null | SSH 接続先ポートです。                                                                                                                                              |
-| `username`         | string または null | SSH ユーザー名です。                                                                                                                                                |
+| `connection_type`  | string             | 接続種別です。プロファイルで対応している値は `"ssh"` と `"telnet"` です。                                                                                           |
+| `host`             | string または null | SSH または Telnet 接続先ホストです。                                                                                                                                |
+| `port`             | number または null | SSH または Telnet 接続先ポートです。                                                                                                                                |
+| `username`         | string または null | SSH ユーザー名です。Telnet プロファイルでは使用しません。                                                                                                           |
 | `encoding`         | string または null | このプロファイルで接続したときのターミナル表示文字コードです。指定できる値は `"utf-8"`、`"shift-jis"`、`"euc-jp"` です。未設定の場合は `"utf-8"` として扱われます。 |
-| `auth_method`      | string または null | SSH 認証方式です。指定できる値は `"password"` と `"public_key"` です。未設定の場合は `"password"` として扱われます。                                                |
-| `private_key_path` | string または null | `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                               |
+| `auth_method`      | string または null | SSH 認証方式です。指定できる値は `"password"` と `"public_key"` です。未設定の場合は `"password"` として扱われます。Telnet プロファイルでは使用しません。           |
+| `private_key_path` | string または null | SSH の `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                        |
 
 例:
 
@@ -186,6 +186,18 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
   "auth_method": "public_key",
   "private_key_path": "C:\\Users\\user\\.ssh\\id_ed25519",
   "encoding": "shift-jis"
+}
+```
+
+Telnet の例:
+
+```json
+{
+  "id": "legacy-router",
+  "connection_type": "telnet",
+  "host": "192.168.1.20",
+  "port": 23,
+  "encoding": "euc-jp"
 }
 ```
 

@@ -98,7 +98,7 @@ export interface SshConfig {
 
 export interface SavedConnection {
   id: string;
-  connection_type: "ssh" | (string & {});
+  connection_type: "ssh" | "telnet" | (string & {});
   host?: string | null;
   port?: number | null;
   username?: string | null;

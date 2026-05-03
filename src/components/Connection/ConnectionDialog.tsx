@@ -63,8 +63,9 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   const [hostKeyCheck, setHostKeyCheck] = useState<HostKeyCheckResult | null>(null);
   const [credentialPrompt, setCredentialPrompt] = useState<SshCredentialPrompt | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [selectedProfileId, setSelectedProfileId] = useState("");
-  const [profileName, setProfileName] = useState("");
+  const [selectedProfileIds, setSelectedProfileIds] = useState({ ssh: "", telnet: "" });
+  const [sshProfileName, setSshProfileName] = useState("");
+  const [telnetProfileName, setTelnetProfileName] = useState("");
 
   // SSH fields
   const [host, setHost] = useState("192.168.1.1");
@@ -77,6 +78,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   // Telnet fields
   const [telnetHost, setTelnetHost] = useState("192.168.1.1");
   const [telnetPort, setTelnetPort] = useState("23");
+  const [telnetEncoding, setTelnetEncoding] = useState<Encoding>("utf-8");
 
   // Serial fields
   const [ports, setPorts] = useState<PortInfo[]>([]);
@@ -114,6 +116,9 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   const sshProfiles = (config?.saved_connections ?? []).filter(
     (connection) => connection.connection_type === "ssh"
   );
+  const telnetProfiles = (config?.saved_connections ?? []).filter(
+    (connection) => connection.connection_type === "telnet"
+  );
 
   const getAutoLogPreference = async () => {
     try {
@@ -128,10 +133,10 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     return profile.id || t("connection.unnamed_profile");
   };
 
-  const handleSelectProfile = (id: string) => {
-    setSelectedProfileId(id);
+  const handleSelectSshProfile = (id: string) => {
+    setSelectedProfileIds((current) => ({ ...current, ssh: id }));
     if (!id) {
-      setProfileName("");
+      setSshProfileName("");
       setAuthMethod("password");
       setPrivateKeyPath("");
       setEncoding("utf-8");
@@ -141,7 +146,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     const profile = sshProfiles.find((entry) => entry.id === id);
     if (!profile) return;
 
-    setProfileName(profile.id);
+    setSshProfileName(profile.id);
     setHost(profile.host ?? "");
     setPort(profile.port ? String(profile.port) : "22");
     setUsername(profile.username ?? "");
@@ -150,7 +155,24 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     setEncoding(normalizeEncoding(profile.encoding));
   };
 
-  const handleSaveProfile = async () => {
+  const handleSelectTelnetProfile = (id: string) => {
+    setSelectedProfileIds((current) => ({ ...current, telnet: id }));
+    if (!id) {
+      setTelnetProfileName("");
+      setTelnetEncoding("utf-8");
+      return;
+    }
+
+    const profile = telnetProfiles.find((entry) => entry.id === id);
+    if (!profile) return;
+
+    setTelnetProfileName(profile.id);
+    setTelnetHost(profile.host ?? "");
+    setTelnetPort(profile.port ? String(profile.port) : "23");
+    setTelnetEncoding(normalizeEncoding(profile.encoding));
+  };
+
+  const handleSaveSshProfile = async () => {
     setError("");
     try {
       const sshPort = Number.parseInt(port, 10);
@@ -161,7 +183,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       const loaded = config ?? (await loadConfig());
       const trimmedHost = host.trim();
       const trimmedUsername = username.trim();
-      const id = profileName.trim();
+      const id = sshProfileName.trim();
       if (!id) {
         throw new Error(t("connection.profile_name_required"));
       }
@@ -178,18 +200,18 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       const existingConnections = loaded.saved_connections ?? [];
       const duplicateProfile = existingConnections.some(
         (entry) =>
-          entry.connection_type === "ssh" && entry.id === id && entry.id !== selectedProfileId
+          entry.connection_type === "ssh" && entry.id === id && entry.id !== selectedProfileIds.ssh
       );
       if (duplicateProfile) {
         throw new Error(t("connection.profile_duplicate"));
       }
 
-      const isUpdatingSelectedProfile = Boolean(selectedProfileId);
+      const isUpdatingSelectedProfile = Boolean(selectedProfileIds.ssh);
       const nextConfig: AppConfig = {
         ...loaded,
         saved_connections: isUpdatingSelectedProfile
           ? existingConnections.map((entry) =>
-              entry.connection_type === "ssh" && entry.id === selectedProfileId
+              entry.connection_type === "ssh" && entry.id === selectedProfileIds.ssh
                 ? nextProfile
                 : entry
             )
@@ -198,8 +220,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
 
       await invoke("config_save", { config: nextConfig });
       setConfig(nextConfig);
-      setSelectedProfileId(id);
-      setProfileName(nextProfile.id);
+      setSelectedProfileIds((current) => ({ ...current, ssh: id }));
+      setSshProfileName(nextProfile.id);
     } catch (e: unknown) {
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
@@ -207,7 +229,64 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     }
   };
 
-  const handleDeleteProfile = async () => {
+  const handleSaveTelnetProfile = async () => {
+    setError("");
+    try {
+      const parsedTelnetPort = Number.parseInt(telnetPort, 10);
+      if (Number.isNaN(parsedTelnetPort)) {
+        throw new Error(t("connection.error"));
+      }
+
+      const loaded = config ?? (await loadConfig());
+      const trimmedHost = telnetHost.trim();
+      const id = telnetProfileName.trim();
+      if (!id) {
+        throw new Error(t("connection.profile_name_required"));
+      }
+
+      const nextProfile: SavedConnection = {
+        id,
+        connection_type: "telnet",
+        host: trimmedHost,
+        port: parsedTelnetPort,
+        encoding: telnetEncoding,
+      };
+      const existingConnections = loaded.saved_connections ?? [];
+      const duplicateProfile = existingConnections.some(
+        (entry) =>
+          entry.connection_type === "telnet" &&
+          entry.id === id &&
+          entry.id !== selectedProfileIds.telnet
+      );
+      if (duplicateProfile) {
+        throw new Error(t("connection.profile_duplicate"));
+      }
+
+      const isUpdatingSelectedProfile = Boolean(selectedProfileIds.telnet);
+      const nextConfig: AppConfig = {
+        ...loaded,
+        saved_connections: isUpdatingSelectedProfile
+          ? existingConnections.map((entry) =>
+              entry.connection_type === "telnet" && entry.id === selectedProfileIds.telnet
+                ? nextProfile
+                : entry
+            )
+          : [...existingConnections, nextProfile],
+      };
+
+      await invoke("config_save", { config: nextConfig });
+      setConfig(nextConfig);
+      setSelectedProfileIds((current) => ({ ...current, telnet: id }));
+      setTelnetProfileName(nextProfile.id);
+    } catch (e: unknown) {
+      const message =
+        typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
+      setError(message);
+    }
+  };
+
+  const handleDeleteProfile = async (connectionType: "ssh" | "telnet") => {
+    const selectedProfileId = selectedProfileIds[connectionType];
     if (!selectedProfileId) return;
 
     setError("");
@@ -216,16 +295,20 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       const nextConfig: AppConfig = {
         ...loaded,
         saved_connections: (loaded.saved_connections ?? []).filter(
-          (entry) => entry.id !== selectedProfileId
+          (entry) => entry.connection_type !== connectionType || entry.id !== selectedProfileId
         ),
       };
 
       await invoke("config_save", { config: nextConfig });
       setConfig(nextConfig);
-      setSelectedProfileId("");
-      setProfileName("");
-      setAuthMethod("password");
-      setPrivateKeyPath("");
+      setSelectedProfileIds((current) => ({ ...current, [connectionType]: "" }));
+      if (connectionType === "ssh") {
+        setSshProfileName("");
+        setAuthMethod("password");
+        setPrivateKeyPath("");
+      } else {
+        setTelnetProfileName("");
+      }
     } catch (e: unknown) {
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
@@ -392,7 +475,13 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
             target: `${telnetHost}:${parsedTelnetPort}`,
           });
         }
-        onConnect("telnet", sessionId, `${telnetHost}:${parsedTelnetPort}`, autoLog);
+        onConnect(
+          "telnet",
+          sessionId,
+          `${telnetHost}:${parsedTelnetPort}`,
+          autoLog,
+          telnetEncoding
+        );
         return;
       }
 
@@ -666,8 +755,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                 <div className="connection-dialog__profile-row">
                   <select
                     className="select"
-                    value={selectedProfileId}
-                    onChange={(e) => handleSelectProfile(e.target.value)}
+                    value={selectedProfileIds.ssh}
+                    onChange={(e) => handleSelectSshProfile(e.target.value)}
                   >
                     <option value="">{t("connection.profile_manual")}</option>
                     {sshProfiles.map((profile) => (
@@ -676,8 +765,11 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                       </option>
                     ))}
                   </select>
-                  {selectedProfileId && (
-                    <button className="btn btn-danger btn-sm" onClick={handleDeleteProfile}>
+                  {selectedProfileIds.ssh && (
+                    <button
+                      className="btn btn-danger btn-sm"
+                      onClick={() => handleDeleteProfile("ssh")}
+                    >
                       {t("connection.profile_delete")}
                     </button>
                   )}
@@ -687,8 +779,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                 <label className="label">{t("connection.profile_name")}</label>
                 <input
                   className="input"
-                  value={profileName}
-                  onChange={(e) => setProfileName(e.target.value)}
+                  value={sshProfileName}
+                  onChange={(e) => setSshProfileName(e.target.value)}
                   placeholder={t("connection.profile_name_placeholder")}
                 />
               </div>
@@ -775,8 +867,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                 </select>
               </div>
               <div className="connection-dialog__profile-actions">
-                <button className="btn btn-ghost btn-sm" onClick={handleSaveProfile}>
-                  {selectedProfileId
+                <button className="btn btn-ghost btn-sm" onClick={handleSaveSshProfile}>
+                  {selectedProfileIds.ssh
                     ? t("connection.profile_update")
                     : t("connection.profile_save")}
                 </button>
@@ -785,6 +877,40 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
             </>
           ) : tab === "telnet" ? (
             <>
+              <div className="connection-dialog__profile">
+                <label className="label">{t("connection.profile")}</label>
+                <div className="connection-dialog__profile-row">
+                  <select
+                    className="select"
+                    value={selectedProfileIds.telnet}
+                    onChange={(e) => handleSelectTelnetProfile(e.target.value)}
+                  >
+                    <option value="">{t("connection.profile_manual")}</option>
+                    {telnetProfiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {getProfileDisplayName(profile)}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedProfileIds.telnet && (
+                    <button
+                      className="btn btn-danger btn-sm"
+                      onClick={() => handleDeleteProfile("telnet")}
+                    >
+                      {t("connection.profile_delete")}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="label">{t("connection.profile_name")}</label>
+                <input
+                  className="input"
+                  value={telnetProfileName}
+                  onChange={(e) => setTelnetProfileName(e.target.value)}
+                  placeholder={t("connection.profile_name_placeholder")}
+                />
+              </div>
               <div className="connection-dialog__row">
                 <div>
                   <label className="label">{t("connection.host")}</label>
@@ -805,6 +931,29 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                     onKeyDown={(e) => e.key === "Enter" && handleConnect()}
                   />
                 </div>
+              </div>
+              <div>
+                <label className="label">{t("connection.encoding")}</label>
+                <select
+                  className="select"
+                  style={{ width: "100%" }}
+                  value={telnetEncoding}
+                  onChange={(e) => setTelnetEncoding(normalizeEncoding(e.target.value))}
+                >
+                  {SSH_ENCODINGS.map((entry) => (
+                    <option key={entry.value} value={entry.value}>
+                      {entry.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="connection-dialog__profile-actions">
+                <button className="btn btn-ghost btn-sm" onClick={handleSaveTelnetProfile}>
+                  {selectedProfileIds.telnet
+                    ? t("connection.profile_update")
+                    : t("connection.profile_save")}
+                </button>
+                <span>{t("connection.profile_password_notice")}</span>
               </div>
             </>
           ) : (

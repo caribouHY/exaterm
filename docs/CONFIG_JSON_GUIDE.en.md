@@ -66,7 +66,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | `ai`                | object | See below | AI assistant settings.                                                                                                                     |
 | `terminal`          | object | See below | Terminal display and logging settings.                                                                                                     |
 | `ssh`               | object | See below | SSH connection compatibility settings.                                                                                                     |
-| `saved_connections` | array  | `[]`      | Saved SSH connection profiles. SSH profiles can be created, selected, and deleted from the connection dialog.                              |
+| `saved_connections` | array  | `[]`      | Saved SSH and Telnet connection profiles. Profiles can be created, selected, and deleted from the connection dialog.                       |
 
 ## ai
 
@@ -161,18 +161,18 @@ Internal SSH extension markers, such as strict key exchange and extension info m
 
 ## saved_connections
 
-`saved_connections` is an array of saved SSH connection profiles. SSH profiles can be managed from the connection dialog. Telnet and serial profiles are not currently supported. Passwords, private key contents, and key passphrases are not stored in this section.
+`saved_connections` is an array of saved SSH and Telnet connection profiles. Profiles can be managed from the connection dialog. Serial profiles are not currently supported. Passwords, private key contents, key passphrases, and other credentials are not stored in this section.
 
 | Parameter          | Type           | Description                                                                                                                                            |
 | ------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `id`               | string         | Profile name and identifier.                                                                                                                           |
-| `connection_type`  | string         | Connection type. Currently only `"ssh"` is supported.                                                                                                  |
-| `host`             | string or null | SSH target host.                                                                                                                                       |
-| `port`             | number or null | SSH target port.                                                                                                                                       |
-| `username`         | string or null | SSH username.                                                                                                                                          |
+| `connection_type`  | string         | Connection type. Supported profile values are `"ssh"` and `"telnet"`.                                                                                  |
+| `host`             | string or null | SSH or Telnet target host.                                                                                                                             |
+| `port`             | number or null | SSH or Telnet target port.                                                                                                                             |
+| `username`         | string or null | SSH username. Not used for Telnet profiles.                                                                                                            |
 | `encoding`         | string or null | Initial terminal display encoding for the profile. Supported values are `"utf-8"`, `"shift-jis"`, and `"euc-jp"`. Missing values default to `"utf-8"`. |
-| `auth_method`      | string or null | SSH authentication method. Supported values are `"password"` and `"public_key"`. Missing values default to `"password"`.                               |
-| `private_key_path` | string or null | Private key file path used with `"public_key"` authentication, such as an `id_ed25519` file. The file contents and passphrase are not stored.          |
+| `auth_method`      | string or null | SSH authentication method. Supported values are `"password"` and `"public_key"`. Missing values default to `"password"`. Not used for Telnet profiles. |
+| `private_key_path` | string or null | Private key file path used with SSH `"public_key"` authentication, such as an `id_ed25519` file. The file contents and passphrase are not stored.      |
 
 Example:
 
@@ -186,6 +186,18 @@ Example:
   "auth_method": "public_key",
   "private_key_path": "C:\\Users\\user\\.ssh\\id_ed25519",
   "encoding": "shift-jis"
+}
+```
+
+Telnet example:
+
+```json
+{
+  "id": "legacy-router",
+  "connection_type": "telnet",
+  "host": "192.168.1.20",
+  "port": 23,
+  "encoding": "euc-jp"
 }
 ```
 
