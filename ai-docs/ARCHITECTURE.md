@@ -23,7 +23,7 @@ The app is currently planned and documented around a Windows desktop beta.
 - `src/components/Settings/` owns config editing and AI API key save/clear UI.
 - `src/components/AI/` owns model/provider selection and chat calls.
 - `src/components/Log/` owns session log listing.
-- `src/components/Sidebar/`, `TitleBar/`, and `StatusBar/` own navigation and shell controls.
+- `src/components/TitleBar/`, `Terminal/TerminalTabs`, and `StatusBar/` own navigation and shell controls.
 
 Avoid changes that remount terminal views or drop active tab state unless the task explicitly requires that behavior.
 

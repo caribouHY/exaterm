@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import TitleBar from "./components/TitleBar/TitleBar";
-import Sidebar from "./components/Sidebar/Sidebar";
 import TerminalTabs from "./components/Terminal/TerminalTabs";
 import TerminalView from "./components/Terminal/TerminalView";
 import type { TerminalViewHandle } from "./components/Terminal/TerminalView";
@@ -375,13 +374,6 @@ export default function App() {
         onToggleAiPanel={toggleAiPanel}
       />
       <div className="app__body">
-        <Sidebar
-          activeView={activeView}
-          onViewChange={handleViewChange}
-          showAiPanel={showAiPanel}
-          onToggleAiPanel={toggleAiPanel}
-          onOpenConnection={openConnection}
-        />
         <div className="app__main">
           <div className="app__content">
             <div className="app__workspace">

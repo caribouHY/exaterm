@@ -275,7 +275,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
             </div>
             <div className="terminal-view__shortcut">
               <span className="terminal-view__key">Ctrl+,</span>
-              <span>{t("sidebar.settings")}</span>
+              <span>{t("titlebar.menu.settings")}</span>
             </div>
           </div>
         </div>
