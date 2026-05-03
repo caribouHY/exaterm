@@ -39,6 +39,12 @@ interface PromptDecorationSet {
   commandDecoration?: IDecoration;
 }
 
+interface LineDecorationSet {
+  signature: string;
+  marker: IMarker;
+  decoration: IDecoration;
+}
+
 const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
   {
     sessionId,
@@ -63,14 +69,36 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const isLoggingActiveRef = useRef(isLoggingActive);
   const terminalModeRef = useRef(terminalMode);
   const promptDecorationsRef = useRef<Map<number, PromptDecorationSet>>(new Map());
+  const errorDecorationsRef = useRef<Map<number, LineDecorationSet>>(new Map());
   const logSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
 
   const ciscoIosPromptPattern = /^([\w+\-.:/\[\]]+)((?:\([^)]+\)){0,3})([>#]) ?(.*)$/;
   const ciscoIosConfigPromptPattern = /^.+\(config(-.*)?\)#$/;
+  const ciscoIosErrorPatterns = [
+    /ERROR:/i,
+    /% ?Bad secret/,
+    /(?:^|%) Bad passwords/,
+    /invalid input/i,
+    /(?:incomplete|ambiguous) command/i,
+    /connection timed out/i,
+    /[^\r\n]+ not found/,
+    /'[^']+' +returned error code: ?\d+/,
+    /Bad mask/i,
+    /% ?\S+ ?overlaps with ?\S+/i,
+    /% ?\S+ ?Error: ?\s+/i,
+    /% ?\S+ ?Informational: ?\s+/i,
+    /Command authorization failed/,
+    /Command Rejected(\s*\([^)]*\))?\s*: ?\s+/i,
+    /% General session commands not allowed under the address family/i,
+    /% BGP: Error initializing topology/i,
+    /%SNMP agent not enabled/i,
+    /% Invalid/i,
+    /%You must disable VTPv1 and VTPv2 or switch to VTPv3 before configuring a VLAN name longer than 32 characters/i,
+  ];
   const terminalModeDecorators: Partial<Record<TerminalMode, (term: Terminal) => void>> = {
-    cisco_ios: (term) => decorateCiscoIosPrompt(term),
+    cisco_ios: (term) => decorateCiscoIosTerminal(term),
   };
 
   const connectionCommands: Record<
@@ -115,9 +143,67 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     marker.dispose();
   };
 
-  const clearPromptDecorations = () => {
+  const disposeLineDecorationSet = ({ decoration, marker }: LineDecorationSet) => {
+    decoration.dispose();
+    marker.dispose();
+  };
+
+  const clearModeDecorations = () => {
     promptDecorationsRef.current.forEach(disposePromptDecorationSet);
     promptDecorationsRef.current.clear();
+    errorDecorationsRef.current.forEach(disposeLineDecorationSet);
+    errorDecorationsRef.current.clear();
+  };
+
+  const decorateCiscoIosTerminal = (term: Terminal) => {
+    decorateCiscoIosPrompt(term);
+    decorateCiscoIosErrors(term);
+  };
+
+  const decorateCiscoIosErrors = (term: Terminal) => {
+    const buffer = term.buffer.active;
+    if (buffer.type === "alternate") return;
+
+    const cursorLineIndex = buffer.baseY + buffer.cursorY;
+    const firstLineIndex = Math.max(0, cursorLineIndex - 80);
+
+    for (let lineIndex = firstLineIndex; lineIndex <= cursorLineIndex; lineIndex += 1) {
+      const line = buffer.getLine(lineIndex)?.translateToString(true) ?? "";
+      const trimmedLine = line.trimEnd();
+      if (!trimmedLine || ciscoIosPromptPattern.test(trimmedLine)) continue;
+      if (!ciscoIosErrorPatterns.some((pattern) => pattern.test(trimmedLine))) continue;
+
+      const decorationStart = Math.max(0, trimmedLine.search(/\S/));
+      const decorationWidth = trimmedLine.length - decorationStart;
+      if (decorationWidth <= 0) continue;
+
+      const signature = `${decorationStart}:${decorationWidth}:${trimmedLine}`;
+      const existingDecorationSet = errorDecorationsRef.current.get(lineIndex);
+      if (existingDecorationSet?.signature === signature) continue;
+      if (existingDecorationSet) {
+        disposeLineDecorationSet(existingDecorationSet);
+        errorDecorationsRef.current.delete(lineIndex);
+      }
+
+      const marker = term.registerMarker(lineIndex - cursorLineIndex);
+      if (!marker) continue;
+
+      const decoration = term.registerDecoration({
+        marker,
+        x: decorationStart,
+        width: decorationWidth,
+        foregroundColor: "#f87171",
+        layer: "top",
+      });
+
+      if (!decoration) {
+        marker.dispose();
+        continue;
+      }
+
+      decoration.onDispose(() => errorDecorationsRef.current.delete(lineIndex));
+      errorDecorationsRef.current.set(lineIndex, { signature, marker, decoration });
+    }
   };
 
   const decorateCiscoIosPrompt = (term: Terminal) => {
@@ -157,7 +243,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           marker: existingDecorationSet.marker,
           x: commandStart,
           width: commandWidth,
-          foregroundColor: "#a7f3d0",
+          foregroundColor: "#6ee7b7",
           layer: "top",
         });
       }
@@ -199,7 +285,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         marker,
         x: commandStart,
         width: commandWidth,
-        foregroundColor: "#a7f3d0",
+        foregroundColor: "#6ee7b7",
         layer: "top",
       });
     }
@@ -242,12 +328,12 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   useEffect(() => {
     terminalModeRef.current = terminalMode;
     if (terminalMode === DEFAULT_TERMINAL_MODE) {
-      clearPromptDecorations();
+      clearModeDecorations();
       return;
     }
     const decorator = terminalModeDecorators[terminalMode];
     if (!decorator) {
-      clearPromptDecorations();
+      clearModeDecorations();
       return;
     }
     if (termRef.current) {
@@ -364,7 +450,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         }
       }
       resizeObserver.disconnect();
-      clearPromptDecorations();
+      clearModeDecorations();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
