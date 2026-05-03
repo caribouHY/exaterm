@@ -23,6 +23,15 @@ import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import "./App.css";
 
+const AI_PANEL_DEFAULT_WIDTH = 340;
+const AI_PANEL_MIN_WIDTH = 200;
+const AI_PANEL_VIEWPORT_MARGIN = 40;
+
+function clampAiPanelWidth(width: number, viewportWidth: number) {
+  const maxWidth = Math.max(AI_PANEL_MIN_WIDTH, viewportWidth - AI_PANEL_VIEWPORT_MARGIN);
+  return Math.min(Math.max(width, AI_PANEL_MIN_WIDTH), maxWidth);
+}
+
 export default function App() {
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [utilityTabs, setUtilityTabs] = useState<UtilityTabKind[]>([]);
@@ -30,7 +39,7 @@ export default function App() {
   const [closingTabIds, setClosingTabIds] = useState<string[]>([]);
   const [showConnection, setShowConnection] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
-  const [aiPanelWidth, setAiPanelWidth] = useState(340);
+  const [aiPanelWidth, setAiPanelWidth] = useState(AI_PANEL_DEFAULT_WIDTH);
   const [isDragging, setIsDragging] = useState(false);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [manualLogBusyTabId, setManualLogBusyTabId] = useState<string | null>(null);
@@ -348,14 +357,22 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const handleResize = () => {
+      setAiPanelWidth((width) => clampAiPanelWidth(width, window.innerWidth));
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
     if (!isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       // AI panel is on the right, so width is (window width - mouse X)
       const newWidth = window.innerWidth - e.clientX;
-      if (newWidth > 200 && newWidth < window.innerWidth * 0.8) {
-        setAiPanelWidth(newWidth);
-      }
+      setAiPanelWidth(clampAiPanelWidth(newWidth, window.innerWidth));
     };
 
     const handleMouseUp = () => {
@@ -439,7 +456,10 @@ export default function App() {
                   className={`app__resizer ${isDragging ? "app__resizer--dragging" : ""}`}
                   onMouseDown={handleMouseDown}
                 />
-                <div style={{ width: aiPanelWidth, flexShrink: 0 }}>
+                <div
+                  className="app__ai-panel"
+                  style={{ width: clampAiPanelWidth(aiPanelWidth, window.innerWidth) }}
+                >
                   <AIChatPanel
                     onClose={() => setShowAiPanel(false)}
                     terminalBuffer={activeTerminalBuffer}

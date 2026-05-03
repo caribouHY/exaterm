@@ -59,3 +59,9 @@
 .app__resizer--dragging {
   background: var(--accent-blue);
 }
+
+.app__ai-panel {
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: calc(100vw - 40px);
+}

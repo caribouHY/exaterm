@@ -9,6 +9,7 @@
 ### Changed
 
 - Changed GUI layout.
+- Relaxed the minimum window size so ExaTerm is easier to arrange in small tiled layouts.
 
 ## v0.2.0
 
