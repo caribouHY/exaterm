@@ -233,27 +233,82 @@
 }
 
 .ai-panel__context-btn {
-  display: flex;
+  position: relative;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
   color: var(--accent-green);
   background: rgba(78, 201, 176, 0.08);
   border: 1px solid rgba(78, 201, 176, 0.2);
   border-radius: var(--radius-sm);
-  padding: 3px 8px;
+  padding: 0;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
   align-self: flex-start;
 }
 
-.ai-panel__context-btn:hover {
+.ai-panel__context-btn:hover,
+.ai-panel__context-btn:focus-visible {
   background: rgba(78, 201, 176, 0.15);
+}
+
+.ai-panel__context-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.ai-panel__context-btn::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 10;
+  width: max-content;
+  max-width: 220px;
+  padding: 5px 8px;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(2px);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.ai-panel__context-btn:hover::after,
+.ai-panel__context-btn:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .ai-panel__context-btn--active {
   background: rgba(78, 201, 176, 0.2);
   border-color: var(--accent-green);
+}
+
+.ai-panel__context-btn--active::before {
+  content: "";
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 6px;
+  height: 6px;
+  background: var(--accent-green);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--bg-surface);
 }
 
 .ai-panel__input-row {

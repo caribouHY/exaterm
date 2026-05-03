@@ -393,9 +393,11 @@ export default function AIChatPanel({
           <button
             className={`ai-panel__context-btn ${useContext ? "ai-panel__context-btn--active" : ""}`}
             onClick={() => setUseContext(!useContext)}
+            aria-label={t("ai.context")}
+            aria-pressed={useContext}
+            data-tooltip={useContext ? t("ai.context_tooltip_on") : t("ai.context_tooltip_off")}
           >
-            <Terminal size={12} />
-            {useContext ? `${t("ai.context")} ✓` : t("ai.context")}
+            <Terminal size={14} />
           </button>
 
           <div className="ai-panel__provider">

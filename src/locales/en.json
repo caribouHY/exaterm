@@ -98,6 +98,8 @@
   "ai.title": "AI Assistant",
   "ai.placeholder": "Type a message...",
   "ai.context": "Terminal Context",
+  "ai.context_tooltip_on": "Terminal context is included",
+  "ai.context_tooltip_off": "Include terminal context",
   "ai.command_suggestions": "Command suggestions",
   "ai.insert_command": "Insert into terminal",
   "ai.insert_command_disabled": "No connected active terminal is available",
