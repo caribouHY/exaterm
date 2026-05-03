@@ -112,6 +112,7 @@ export default function AIChatPanel({
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState("http://localhost:11434");
   const [azureOpenAiEndpoint, setAzureOpenAiEndpoint] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -229,6 +230,14 @@ export default function AIChatPanel({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    const inputElement = inputRef.current;
+    if (!inputElement) return;
+
+    inputElement.style.height = "auto";
+    inputElement.style.height = `${inputElement.scrollHeight}px`;
+  }, [input]);
 
   const providerModels = models.filter((m) => m.provider === selectedProvider);
   const visibleProviders = useMemo(
@@ -368,6 +377,7 @@ export default function AIChatPanel({
       <div className="ai-panel__input-area">
         <div className="ai-panel__input-row">
           <textarea
+            ref={inputRef}
             className="ai-panel__input"
             value={input}
             onChange={(e) => setInput(e.target.value)}

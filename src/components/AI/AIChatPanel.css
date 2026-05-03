@@ -336,7 +336,8 @@
   outline: none;
   resize: none;
   min-height: 36px;
-  max-height: 120px;
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 .ai-panel__input:focus {
