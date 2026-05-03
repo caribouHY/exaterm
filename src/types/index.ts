@@ -7,9 +7,14 @@ export interface SshConnectParams {
   port: number;
   username: string;
   password: string;
+  auth_method?: SshAuthMethod | null;
+  private_key_path?: string | null;
+  key_passphrase?: string | null;
   cols: number;
   rows: number;
 }
+
+export type SshAuthMethod = "password" | "public_key";
 
 export type HostKeyCheckStatus = "trusted" | "unknown" | "mismatch";
 
@@ -97,6 +102,8 @@ export interface SavedConnection {
   port?: number | null;
   username?: string | null;
   encoding?: Encoding | null;
+  auth_method?: SshAuthMethod | null;
+  private_key_path?: string | null;
 }
 
 export type ConnectionType = "ssh" | "serial" | "telnet";

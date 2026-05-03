@@ -100,6 +100,20 @@
   align-items: center;
 }
 
+.connection-dialog__file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.connection-dialog__file-row .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
 .connection-dialog__profile-actions {
   display: flex;
   align-items: center;

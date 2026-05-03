@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added SSH public key authentication.
 - Added per-SSH-profile terminal display encoding defaults.
 
 ### Changed

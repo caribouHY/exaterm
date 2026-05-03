@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { X } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { FolderOpen, X } from "lucide-react";
 import type {
   AppConfig,
   ConnectionType,
@@ -8,6 +9,7 @@ import type {
   HostKeyCheckResult,
   PortInfo,
   SavedConnection,
+  SshAuthMethod,
 } from "../../types";
 import { useTranslation } from "react-i18next";
 import "./ConnectionDialog.css";
@@ -29,8 +31,19 @@ const SSH_ENCODINGS: { label: string; value: Encoding }[] = [
   { label: "EUC-JP", value: "euc-jp" },
 ];
 
+const SSH_AUTH_METHODS: { labelKey: string; value: SshAuthMethod }[] = [
+  { labelKey: "connection.auth_password", value: "password" },
+  { labelKey: "connection.auth_public_key", value: "public_key" },
+];
+
+const PRIVATE_KEY_PLACEHOLDER = "C:\\Users\\user\\.ssh\\id_ed25519";
+
 const normalizeEncoding = (encoding: string | null | undefined): Encoding => {
   return SSH_ENCODINGS.some((entry) => entry.value === encoding) ? (encoding as Encoding) : "utf-8";
+};
+
+const normalizeSshAuthMethod = (authMethod: string | null | undefined): SshAuthMethod => {
+  return authMethod === "public_key" ? "public_key" : "password";
 };
 
 export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialogProps) {
@@ -50,6 +63,9 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
   const [port, setPort] = useState("22");
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
+  const [authMethod, setAuthMethod] = useState<SshAuthMethod>("password");
+  const [privateKeyPath, setPrivateKeyPath] = useState("");
+  const [keyPassphrase, setKeyPassphrase] = useState("");
   const [encoding, setEncoding] = useState<Encoding>("utf-8");
 
   // Telnet fields
@@ -110,6 +126,9 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     setSelectedProfileId(id);
     if (!id) {
       setProfileName("");
+      setAuthMethod("password");
+      setPrivateKeyPath("");
+      setKeyPassphrase("");
       setEncoding("utf-8");
       return;
     }
@@ -122,6 +141,9 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
     setPort(profile.port ? String(profile.port) : "22");
     setUsername(profile.username ?? "");
     setPassword("");
+    setAuthMethod(normalizeSshAuthMethod(profile.auth_method));
+    setPrivateKeyPath(profile.private_key_path ?? "");
+    setKeyPassphrase("");
     setEncoding(normalizeEncoding(profile.encoding));
   };
 
@@ -146,6 +168,8 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
         host: trimmedHost,
         port: sshPort,
         username: trimmedUsername,
+        auth_method: authMethod,
+        private_key_path: authMethod === "public_key" ? privateKeyPath.trim() : null,
         encoding,
       };
       const existingConnections = loaded.saved_connections ?? [];
@@ -173,6 +197,7 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       setConfig(nextConfig);
       setSelectedProfileId(id);
       setProfileName(nextProfile.id);
+      setKeyPassphrase("");
     } catch (e: unknown) {
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
@@ -197,10 +222,26 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       setConfig(nextConfig);
       setSelectedProfileId("");
       setProfileName("");
+      setAuthMethod("password");
+      setPrivateKeyPath("");
+      setKeyPassphrase("");
     } catch (e: unknown) {
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
       setError(message);
+    }
+  };
+
+  const selectSshAuthFile = async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+      });
+      if (!selected || Array.isArray(selected)) return;
+
+      setPrivateKeyPath(selected);
+    } catch {
+      // Dialog cancellation and platform errors should not disturb the form.
     }
   };
 
@@ -210,6 +251,9 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
       port: sshPort,
       username,
       password,
+      authMethod,
+      privateKeyPath,
+      keyPassphrase,
       cols: 120,
       rows: 30,
     });
@@ -528,15 +572,65 @@ export default function ConnectionDialog({ onClose, onConnect }: ConnectionDialo
                 />
               </div>
               <div>
-                <label className="label">{t("connection.password")}</label>
-                <input
-                  className="input"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleConnect()}
-                />
+                <label className="label">{t("connection.auth_method")}</label>
+                <select
+                  className="select"
+                  style={{ width: "100%" }}
+                  value={authMethod}
+                  onChange={(e) => setAuthMethod(normalizeSshAuthMethod(e.target.value))}
+                >
+                  {SSH_AUTH_METHODS.map((entry) => (
+                    <option key={entry.value} value={entry.value}>
+                      {t(entry.labelKey)}
+                    </option>
+                  ))}
+                </select>
               </div>
+              {authMethod === "password" ? (
+                <div>
+                  <label className="label">{t("connection.password")}</label>
+                  <input
+                    className="input"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleConnect()}
+                  />
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="label">{t("connection.private_key_path")}</label>
+                    <div className="connection-dialog__file-row">
+                      <input
+                        className="input"
+                        value={privateKeyPath}
+                        onChange={(e) => setPrivateKeyPath(e.target.value)}
+                        placeholder={PRIVATE_KEY_PLACEHOLDER}
+                      />
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        type="button"
+                        onClick={selectSshAuthFile}
+                        title={t("connection.select_file")}
+                      >
+                        <FolderOpen size={14} />
+                        {t("connection.select_file")}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="label">{t("connection.key_passphrase")}</label>
+                    <input
+                      className="input"
+                      type="password"
+                      value={keyPassphrase}
+                      onChange={(e) => setKeyPassphrase(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleConnect()}
+                    />
+                  </div>
+                </>
+              )}
               <div>
                 <label className="label">{t("connection.encoding")}</label>
                 <select

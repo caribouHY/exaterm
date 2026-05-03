@@ -157,16 +157,18 @@ Internal SSH extension markers, such as strict key exchange and extension info m
 
 ## saved_connections
 
-`saved_connections` is an array of saved SSH connection profiles. SSH profiles can be managed from the connection dialog. Telnet and serial profiles are not currently supported. Passwords are not stored in this section.
+`saved_connections` is an array of saved SSH connection profiles. SSH profiles can be managed from the connection dialog. Telnet and serial profiles are not currently supported. Passwords, private key contents, and key passphrases are not stored in this section.
 
-| Parameter         | Type           | Description                                                                                                                                            |
-| ----------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`              | string         | Profile name and identifier.                                                                                                                           |
-| `connection_type` | string         | Connection type. Currently only `"ssh"` is supported.                                                                                                  |
-| `host`            | string or null | SSH target host.                                                                                                                                       |
-| `port`            | number or null | SSH target port.                                                                                                                                       |
-| `username`        | string or null | SSH username.                                                                                                                                          |
-| `encoding`        | string or null | Initial terminal display encoding for the profile. Supported values are `"utf-8"`, `"shift-jis"`, and `"euc-jp"`. Missing values default to `"utf-8"`. |
+| Parameter          | Type           | Description                                                                                                                                            |
+| ------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`               | string         | Profile name and identifier.                                                                                                                           |
+| `connection_type`  | string         | Connection type. Currently only `"ssh"` is supported.                                                                                                  |
+| `host`             | string or null | SSH target host.                                                                                                                                       |
+| `port`             | number or null | SSH target port.                                                                                                                                       |
+| `username`         | string or null | SSH username.                                                                                                                                          |
+| `encoding`         | string or null | Initial terminal display encoding for the profile. Supported values are `"utf-8"`, `"shift-jis"`, and `"euc-jp"`. Missing values default to `"utf-8"`. |
+| `auth_method`      | string or null | SSH authentication method. Supported values are `"password"` and `"public_key"`. Missing values default to `"password"`.                               |
+| `private_key_path` | string or null | Private key file path used with `"public_key"` authentication, such as an `id_ed25519` file. The file contents and passphrase are not stored.          |
 
 Example:
 
@@ -177,6 +179,8 @@ Example:
   "host": "192.168.1.10",
   "port": 22,
   "username": "admin",
+  "auth_method": "public_key",
+  "private_key_path": "C:\\Users\\user\\.ssh\\id_ed25519",
   "encoding": "shift-jis"
 }
 ```

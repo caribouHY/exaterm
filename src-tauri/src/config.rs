@@ -150,6 +150,10 @@ pub struct SavedConnection {
     pub username: Option<String>,
     #[serde(default)]
     pub encoding: Option<String>,
+    #[serde(default)]
+    pub auth_method: Option<String>,
+    #[serde(default)]
+    pub private_key_path: Option<String>,
 }
 
 impl Default for SavedConnection {
@@ -161,6 +165,8 @@ impl Default for SavedConnection {
             port: None,
             username: None,
             encoding: None,
+            auth_method: None,
+            private_key_path: None,
         }
     }
 }
@@ -272,6 +278,8 @@ mod tests {
         assert!(cfg.ssh.allow_legacy_algorithms);
         assert_eq!(cfg.saved_connections[0].id, "dev box");
         assert_eq!(cfg.saved_connections[0].encoding, None);
+        assert_eq!(cfg.saved_connections[0].auth_method, None);
+        assert_eq!(cfg.saved_connections[0].private_key_path, None);
     }
 
     #[test]
@@ -290,6 +298,30 @@ mod tests {
         assert_eq!(
             cfg.saved_connections[0].encoding.as_deref(),
             Some("shift-jis")
+        );
+    }
+
+    #[test]
+    fn saved_connection_preserves_public_key_auth_path() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "saved_connections": [{
+                    "id": "key-router",
+                    "connection_type": "ssh",
+                    "auth_method": "public_key",
+                    "private_key_path": "C:\\Users\\me\\.ssh\\id_ed25519"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.saved_connections[0].auth_method.as_deref(),
+            Some("public_key")
+        );
+        assert_eq!(
+            cfg.saved_connections[0].private_key_path.as_deref(),
+            Some("C:\\Users\\me\\.ssh\\id_ed25519")
         );
     }
 }
