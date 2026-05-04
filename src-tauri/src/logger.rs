@@ -1,6 +1,6 @@
 use chrono::Local;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
@@ -89,6 +89,128 @@ fn upsert_log_session(index_path: &PathBuf, session: LogSession) -> Result<(), S
 
 fn sort_sessions_desc(sessions: &mut [LogSession]) {
     sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct LogBulkDeleteResult {
+    pub removed_history_count: usize,
+    pub removed_auto_file_count: usize,
+    pub skipped_active_count: usize,
+    pub skipped_manual_file_count: usize,
+    pub skipped_missing_file_count: usize,
+    pub skipped_unsafe_path_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ActiveLogKey {
+    session_id: String,
+    log_mode: String,
+}
+
+enum AutoLogFileDeleteResult {
+    Removed,
+    Missing,
+    UnsafePath,
+}
+
+fn is_session_active(session: &LogSession, active_keys: &HashSet<ActiveLogKey>) -> bool {
+    active_keys.contains(&ActiveLogKey {
+        session_id: session.session_id.clone(),
+        log_mode: session.log_mode.clone(),
+    })
+}
+
+fn active_log_keys(targets: &HashMap<String, ActiveLogTargets>) -> HashSet<ActiveLogKey> {
+    let mut active = HashSet::new();
+    for (session_id, targets) in targets {
+        if targets.auto.is_some() {
+            active.insert(ActiveLogKey {
+                session_id: session_id.clone(),
+                log_mode: "auto".into(),
+            });
+        }
+        if targets.manual.is_some() {
+            active.insert(ActiveLogKey {
+                session_id: session_id.clone(),
+                log_mode: "manual".into(),
+            });
+        }
+    }
+    active
+}
+
+fn delete_auto_log_file(
+    log_dir: &PathBuf,
+    file_path: &str,
+) -> Result<AutoLogFileDeleteResult, String> {
+    let log_dir =
+        fs::canonicalize(log_dir).map_err(|e| format!("ログディレクトリ確認エラー: {}", e))?;
+    let file_path = PathBuf::from(file_path);
+
+    if file_path.exists() {
+        let canonical_file =
+            fs::canonicalize(&file_path).map_err(|e| format!("ログファイル確認エラー: {}", e))?;
+        if !canonical_file.starts_with(&log_dir) {
+            return Ok(AutoLogFileDeleteResult::UnsafePath);
+        }
+        fs::remove_file(&canonical_file).map_err(|e| format!("ログファイル削除エラー: {}", e))?;
+        return Ok(AutoLogFileDeleteResult::Removed);
+    }
+
+    if let Some(parent) = file_path.parent() {
+        if let Ok(canonical_parent) = fs::canonicalize(parent) {
+            if canonical_parent.starts_with(&log_dir) {
+                return Ok(AutoLogFileDeleteResult::Missing);
+            }
+        }
+    }
+
+    Ok(AutoLogFileDeleteResult::UnsafePath)
+}
+
+fn bulk_delete_log_sessions(
+    index_path: &PathBuf,
+    log_dir: &PathBuf,
+    active_keys: &HashSet<ActiveLogKey>,
+    delete_auto_files: bool,
+) -> Result<LogBulkDeleteResult, String> {
+    let sessions = read_log_index(index_path)?;
+    let mut kept = Vec::new();
+    let mut result = LogBulkDeleteResult::default();
+
+    for session in sessions {
+        if is_session_active(&session, active_keys) {
+            result.skipped_active_count += 1;
+            kept.push(session);
+            continue;
+        }
+
+        match session.log_mode.as_str() {
+            "auto" => {
+                result.removed_history_count += 1;
+                if delete_auto_files {
+                    match delete_auto_log_file(log_dir, &session.file_path)? {
+                        AutoLogFileDeleteResult::Removed => result.removed_auto_file_count += 1,
+                        AutoLogFileDeleteResult::Missing => result.skipped_missing_file_count += 1,
+                        AutoLogFileDeleteResult::UnsafePath => {
+                            result.skipped_unsafe_path_count += 1
+                        }
+                    }
+                }
+            }
+            "manual" => {
+                result.removed_history_count += 1;
+                if delete_auto_files {
+                    result.skipped_manual_file_count += 1;
+                }
+            }
+            _ => kept.push(session),
+        }
+    }
+
+    sort_sessions_desc(&mut kept);
+    write_log_index(index_path, &kept)?;
+    Ok(result)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -373,6 +495,23 @@ pub async fn logger_get_sessions(
 }
 
 #[tauri::command]
+pub async fn logger_bulk_delete_sessions(
+    state: tauri::State<'_, LoggerState>,
+    delete_auto_files: bool,
+) -> Result<LogBulkDeleteResult, String> {
+    let active_keys = {
+        let sessions = state.sessions.lock().await;
+        active_log_keys(&sessions)
+    };
+    bulk_delete_log_sessions(
+        &state.index_path,
+        &state.log_dir,
+        &active_keys,
+        delete_auto_files,
+    )
+}
+
+#[tauri::command]
 pub fn logger_get_log_dir(state: tauri::State<'_, LoggerState>) -> String {
     state.log_dir.to_string_lossy().to_string()
 }
@@ -403,6 +542,10 @@ mod tests {
         if let Some(parent) = path.parent() {
             let _ = fs::remove_dir_all(parent);
         }
+    }
+
+    fn empty_active_keys() -> HashSet<ActiveLogKey> {
+        HashSet::new()
     }
 
     #[test]
@@ -678,5 +821,171 @@ mod tests {
         assert_eq!(loaded[1].session_id, "middle");
         assert_eq!(loaded[2].session_id, "older");
         cleanup(&path);
+    }
+
+    #[test]
+    fn bulk_delete_removes_inactive_auto_and_manual_history() {
+        let path = temp_index_path();
+        let log_dir = path.parent().unwrap().to_path_buf();
+        let auto = sample_session("auto-1", "2026-04-25T10:00:00+09:00", "host");
+        let mut manual = sample_session("manual-1", "2026-04-25T11:00:00+09:00", "host");
+        manual.log_mode = "manual".into();
+
+        write_log_index(&path, &[auto, manual]).expect("index should write");
+        let result = bulk_delete_log_sessions(&path, &log_dir, &empty_active_keys(), false)
+            .expect("bulk delete should succeed");
+        let loaded = read_log_index(&path).expect("index should read");
+
+        assert_eq!(result.removed_history_count, 2);
+        assert!(loaded.is_empty());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn bulk_delete_history_only_leaves_files() {
+        let path = temp_index_path();
+        let log_dir = path.parent().unwrap().to_path_buf();
+        fs::create_dir_all(&log_dir).expect("log dir should be created");
+        let auto_path = log_dir.join("auto.log");
+        let manual_path = log_dir.join("manual.log");
+        fs::write(&auto_path, "auto").expect("auto file should be created");
+        fs::write(&manual_path, "manual").expect("manual file should be created");
+        let auto = LogSession {
+            file_path: auto_path.to_string_lossy().to_string(),
+            ..sample_session("auto-1", "2026-04-25T10:00:00+09:00", "host")
+        };
+        let manual = LogSession {
+            file_path: manual_path.to_string_lossy().to_string(),
+            log_mode: "manual".into(),
+            ..sample_session("manual-1", "2026-04-25T11:00:00+09:00", "host")
+        };
+
+        write_log_index(&path, &[auto, manual]).expect("index should write");
+        let result = bulk_delete_log_sessions(&path, &log_dir, &empty_active_keys(), false)
+            .expect("bulk delete should succeed");
+
+        assert_eq!(result.removed_history_count, 2);
+        assert!(auto_path.exists());
+        assert!(manual_path.exists());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn bulk_delete_with_files_removes_only_auto_files() {
+        let path = temp_index_path();
+        let log_dir = path.parent().unwrap().to_path_buf();
+        fs::create_dir_all(&log_dir).expect("log dir should be created");
+        let auto_path = log_dir.join("auto.log");
+        let manual_path = log_dir.join("manual.log");
+        fs::write(&auto_path, "auto").expect("auto file should be created");
+        fs::write(&manual_path, "manual").expect("manual file should be created");
+        let auto = LogSession {
+            file_path: auto_path.to_string_lossy().to_string(),
+            ..sample_session("auto-1", "2026-04-25T10:00:00+09:00", "host")
+        };
+        let manual = LogSession {
+            file_path: manual_path.to_string_lossy().to_string(),
+            log_mode: "manual".into(),
+            ..sample_session("manual-1", "2026-04-25T11:00:00+09:00", "host")
+        };
+
+        write_log_index(&path, &[auto, manual]).expect("index should write");
+        let result = bulk_delete_log_sessions(&path, &log_dir, &empty_active_keys(), true)
+            .expect("bulk delete should succeed");
+
+        assert_eq!(result.removed_history_count, 2);
+        assert_eq!(result.removed_auto_file_count, 1);
+        assert_eq!(result.skipped_manual_file_count, 1);
+        assert!(!auto_path.exists());
+        assert!(manual_path.exists());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn bulk_delete_keeps_active_logs() {
+        let path = temp_index_path();
+        let log_dir = path.parent().unwrap().to_path_buf();
+        fs::create_dir_all(&log_dir).expect("log dir should be created");
+        let auto_path = log_dir.join("auto.log");
+        let manual_path = log_dir.join("manual.log");
+        fs::write(&auto_path, "auto").expect("auto file should be created");
+        fs::write(&manual_path, "manual").expect("manual file should be created");
+        let auto = LogSession {
+            file_path: auto_path.to_string_lossy().to_string(),
+            ..sample_session("active", "2026-04-25T10:00:00+09:00", "host")
+        };
+        let manual = LogSession {
+            file_path: manual_path.to_string_lossy().to_string(),
+            log_mode: "manual".into(),
+            ..sample_session("active", "2026-04-25T11:00:00+09:00", "host")
+        };
+        let active = HashSet::from([
+            ActiveLogKey {
+                session_id: "active".into(),
+                log_mode: "auto".into(),
+            },
+            ActiveLogKey {
+                session_id: "active".into(),
+                log_mode: "manual".into(),
+            },
+        ]);
+
+        write_log_index(&path, &[auto, manual]).expect("index should write");
+        let result = bulk_delete_log_sessions(&path, &log_dir, &active, true)
+            .expect("bulk delete should succeed");
+        let loaded = read_log_index(&path).expect("index should read");
+
+        assert_eq!(result.removed_history_count, 0);
+        assert_eq!(result.skipped_active_count, 2);
+        assert_eq!(loaded.len(), 2);
+        assert!(auto_path.exists());
+        assert!(manual_path.exists());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn bulk_delete_counts_missing_auto_file_as_skipped() {
+        let path = temp_index_path();
+        let log_dir = path.parent().unwrap().to_path_buf();
+        fs::create_dir_all(&log_dir).expect("log dir should be created");
+        let auto_path = log_dir.join("missing.log");
+        let auto = LogSession {
+            file_path: auto_path.to_string_lossy().to_string(),
+            ..sample_session("auto-1", "2026-04-25T10:00:00+09:00", "host")
+        };
+
+        write_log_index(&path, &[auto]).expect("index should write");
+        let result = bulk_delete_log_sessions(&path, &log_dir, &empty_active_keys(), true)
+            .expect("bulk delete should succeed");
+
+        assert_eq!(result.removed_history_count, 1);
+        assert_eq!(result.skipped_missing_file_count, 1);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn bulk_delete_skips_auto_file_outside_log_dir() {
+        let path = temp_index_path();
+        let log_dir = path.parent().unwrap().to_path_buf();
+        fs::create_dir_all(&log_dir).expect("log dir should be created");
+        let outside_dir =
+            std::env::temp_dir().join(format!("exaterm_logger_outside_{}", Uuid::new_v4()));
+        fs::create_dir_all(&outside_dir).expect("outside dir should be created");
+        let outside_path = outside_dir.join("auto.log");
+        fs::write(&outside_path, "auto").expect("outside file should be created");
+        let auto = LogSession {
+            file_path: outside_path.to_string_lossy().to_string(),
+            ..sample_session("auto-1", "2026-04-25T10:00:00+09:00", "host")
+        };
+
+        write_log_index(&path, &[auto]).expect("index should write");
+        let result = bulk_delete_log_sessions(&path, &log_dir, &empty_active_keys(), true)
+            .expect("bulk delete should succeed");
+
+        assert_eq!(result.removed_history_count, 1);
+        assert_eq!(result.skipped_unsafe_path_count, 1);
+        assert!(outside_path.exists());
+        cleanup(&path);
+        let _ = fs::remove_dir_all(outside_dir);
     }
 }

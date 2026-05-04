@@ -12,10 +12,61 @@
   margin-bottom: 6px;
 }
 
+.log-viewer__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
 .log-viewer__subtitle {
   font-size: 12px;
   color: var(--text-secondary);
-  margin-bottom: 20px;
+}
+
+.log-viewer__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.log-viewer__delete-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(244, 71, 71, 0.45);
+  border-radius: 4px;
+  background: rgba(244, 71, 71, 0.12);
+  color: #f48771;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.log-viewer__delete-button:hover:not(:disabled) {
+  background: rgba(244, 71, 71, 0.2);
+  color: #ffb3a8;
+}
+
+.log-viewer__delete-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.log-viewer__status {
+  padding: 8px 10px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border-secondary);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  font-size: 12px;
 }
 
 .log-viewer__empty {
@@ -88,4 +139,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .log-viewer__header {
+    flex-direction: column;
+  }
+
+  .log-viewer__actions,
+  .log-viewer__delete-button {
+    width: 100%;
+  }
+
+  .log-viewer__delete-button {
+    flex: 1;
+  }
 }

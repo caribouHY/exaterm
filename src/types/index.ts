@@ -70,6 +70,15 @@ export interface LogSession {
   log_mode: "auto" | "manual";
 }
 
+export interface LogBulkDeleteResult {
+  removed_history_count: number;
+  removed_auto_file_count: number;
+  skipped_active_count: number;
+  skipped_manual_file_count: number;
+  skipped_missing_file_count: number;
+  skipped_unsafe_path_count: number;
+}
+
 export type ManualLogWriteMode = "overwrite" | "append";
 
 export interface AppConfig {
