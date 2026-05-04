@@ -19,6 +19,7 @@ import type {
   ChatMessage,
   TerminalMode,
   StartupCliRequest,
+  ManualLogWriteMode,
 } from "./types";
 import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
@@ -278,43 +279,47 @@ export default function App() {
     window.setTimeout(() => setLogStatusMessage(""), 3000);
   }, []);
 
-  const handleStartManualLog = useCallback(async () => {
-    if (!activeTab?.sessionId || !activeTab.isConnected || activeTab.isManualLogging) return;
+  const handleStartManualLog = useCallback(
+    async (writeMode: ManualLogWriteMode) => {
+      if (!activeTab?.sessionId || !activeTab.isConnected || activeTab.isManualLogging) return;
 
-    setManualLogBusyTabId(activeTab.id);
-    try {
-      const selectedPath = await save({
-        title: "Save ExaTerm Log",
-        defaultPath: buildManualLogFileName(activeTab),
-        filters: [{ name: "Log", extensions: ["log", "txt"] }],
-      });
-      if (!selectedPath) return;
+      setManualLogBusyTabId(activeTab.id);
+      try {
+        const selectedPath = await save({
+          title: "Save ExaTerm Log",
+          defaultPath: buildManualLogFileName(activeTab),
+          filters: [{ name: "Log", extensions: ["log", "txt"] }],
+        });
+        if (!selectedPath) return;
 
-      const filePath = await invoke<string>("logger_start_manual", {
-        sessionId: activeTab.sessionId,
-        connectionType: activeTab.connectionType,
-        target: activeTab.title,
-        filePath: selectedPath,
-      });
-      setTabs((prev) =>
-        prev.map((tab) =>
-          tab.id === activeTab.id
-            ? {
-                ...tab,
-                isManualLogging: true,
-                isLoggingPaused: false,
-                manualLogFilePath: filePath,
-              }
-            : tab
-        )
-      );
-    } catch (error) {
-      console.error("Failed to start manual log:", error);
-      showTemporaryLogStatus("statusbar.log_start_failed");
-    } finally {
-      setManualLogBusyTabId(null);
-    }
-  }, [activeTab, buildManualLogFileName, showTemporaryLogStatus]);
+        const filePath = await invoke<string>("logger_start_manual", {
+          sessionId: activeTab.sessionId,
+          connectionType: activeTab.connectionType,
+          target: activeTab.title,
+          filePath: selectedPath,
+          writeMode,
+        });
+        setTabs((prev) =>
+          prev.map((tab) =>
+            tab.id === activeTab.id
+              ? {
+                  ...tab,
+                  isManualLogging: true,
+                  isLoggingPaused: false,
+                  manualLogFilePath: filePath,
+                }
+              : tab
+          )
+        );
+      } catch (error) {
+        console.error("Failed to start manual log:", error);
+        showTemporaryLogStatus("statusbar.log_start_failed");
+      } finally {
+        setManualLogBusyTabId(null);
+      }
+    },
+    [activeTab, buildManualLogFileName, showTemporaryLogStatus]
+  );
 
   const handleStopManualLog = useCallback(async () => {
     if (!activeTab?.sessionId || !activeTab.isManualLogging) return;

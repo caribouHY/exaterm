@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { CircleDot, FileText, Pause, Play } from "lucide-react";
+import { CircleDot, FilePlus, FileText, Pause, Play } from "lucide-react";
 import packageJson from "../../../package.json";
-import type { TabInfo, Encoding, TerminalMode } from "../../types";
+import type { TabInfo, Encoding, TerminalMode, ManualLogWriteMode } from "../../types";
 import { TERMINAL_MODE_OPTIONS } from "../../utils/terminalModes";
 import "./StatusBar.css";
 
@@ -11,7 +11,7 @@ interface StatusBarProps {
   showConnectionStatus: boolean;
   onEncodingChange: (encoding: Encoding) => void;
   onTerminalModeChange: (terminalMode: TerminalMode) => void;
-  onStartManualLog: () => void;
+  onStartManualLog: (writeMode: ManualLogWriteMode) => void;
   onStopManualLog: () => void;
   onSetLoggingPaused: (paused: boolean) => void;
   manualLogBusy: boolean;
@@ -130,12 +130,23 @@ export default function StatusBar({
                   className="statusbar__menu-item"
                   disabled={!activeTab.isConnected || activeTab.isManualLogging}
                   onClick={() => {
-                    onStartManualLog();
+                    onStartManualLog("overwrite");
                     setOpenMenu(null);
                   }}
                 >
                   <FileText size={12} />
-                  <span>{t("statusbar.log_start_manual")}</span>
+                  <span>{t("statusbar.log_start_manual_overwrite")}</span>
+                </button>
+                <button
+                  className="statusbar__menu-item"
+                  disabled={!activeTab.isConnected || activeTab.isManualLogging}
+                  onClick={() => {
+                    onStartManualLog("append");
+                    setOpenMenu(null);
+                  }}
+                >
+                  <FilePlus size={12} />
+                  <span>{t("statusbar.log_start_manual_append")}</span>
                 </button>
                 <button
                   className="statusbar__menu-item"

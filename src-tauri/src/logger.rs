@@ -2,6 +2,7 @@ use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -90,6 +91,77 @@ fn sort_sessions_desc(sessions: &mut [LogSession]) {
     sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LogWriteMode {
+    Overwrite,
+    Append,
+}
+
+impl LogWriteMode {
+    fn from_optional_str(value: Option<&str>) -> Result<Self, String> {
+        match value.unwrap_or("overwrite") {
+            "overwrite" => Ok(Self::Overwrite),
+            "append" => Ok(Self::Append),
+            other => Err(format!("不明なログ書き込みモード: {}", other)),
+        }
+    }
+}
+
+fn write_log_start_header(
+    file_path: &PathBuf,
+    connection_type: &str,
+    target: &str,
+    log_mode: &str,
+    include_header: bool,
+    write_mode: LogWriteMode,
+    started_at: &str,
+) -> Result<(), String> {
+    match write_mode {
+        LogWriteMode::Overwrite => {
+            if include_header {
+                let header = format!(
+                    "# ExaTerm Log\n# Type: {}\n# Target: {}\n# Mode: {}\n# Started: {}\n\n",
+                    connection_type, target, log_mode, started_at
+                );
+                fs::write(file_path, &header).map_err(|e| format!("ログ作成エラー: {}", e))?;
+            } else {
+                fs::write(file_path, "").map_err(|e| format!("ログ作成エラー: {}", e))?;
+            }
+        }
+        LogWriteMode::Append => {
+            let mut file = fs::OpenOptions::new()
+                .create(true)
+                .read(true)
+                .append(true)
+                .open(file_path)
+                .map_err(|e| format!("ログ作成エラー: {}", e))?;
+
+            if include_header {
+                if file
+                    .metadata()
+                    .map_err(|e| format!("ログ作成エラー: {}", e))?
+                    .len()
+                    > 0
+                {
+                    file.seek(SeekFrom::End(-1))
+                        .map_err(|e| format!("ログ作成エラー: {}", e))?;
+                    let mut last_byte = [0_u8; 1];
+                    file.read_exact(&mut last_byte)
+                        .map_err(|e| format!("ログ作成エラー: {}", e))?;
+                    if last_byte[0] != b'\n' {
+                        writeln!(file).map_err(|e| format!("ログ作成エラー: {}", e))?;
+                    }
+                }
+
+                let header = format!("# ExaTerm Log Append\n# Started: {}\n\n", started_at);
+                write!(file, "{}", header).map_err(|e| format!("ログ作成エラー: {}", e))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn create_log_session(
     log_dir: &PathBuf,
     session_id: String,
@@ -98,8 +170,10 @@ fn create_log_session(
     file_path: Option<String>,
     log_mode: &str,
     include_header: bool,
+    write_mode: LogWriteMode,
 ) -> Result<LogSession, String> {
     let now = Local::now();
+    let started_at = now.format("%Y-%m-%d %H:%M:%S").to_string();
     let session_prefix = session_id.chars().take(8).collect::<String>();
     let filename = format!("{}_{}.log", now.format("%Y%m%d_%H%M%S"), session_prefix);
     let file_path = file_path
@@ -108,18 +182,15 @@ fn create_log_session(
     if let Some(parent) = file_path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("ログディレクトリ作成エラー: {}", e))?;
     }
-    if include_header {
-        let header = format!(
-            "# ExaTerm Log\n# Type: {}\n# Target: {}\n# Mode: {}\n# Started: {}\n\n",
-            connection_type,
-            target,
-            log_mode,
-            now.format("%Y-%m-%d %H:%M:%S")
-        );
-        fs::write(&file_path, &header).map_err(|e| format!("ログ作成エラー: {}", e))?;
-    } else {
-        fs::write(&file_path, "").map_err(|e| format!("ログ作成エラー: {}", e))?;
-    }
+    write_log_start_header(
+        &file_path,
+        &connection_type,
+        &target,
+        log_mode,
+        include_header,
+        write_mode,
+        &started_at,
+    )?;
 
     Ok(LogSession {
         session_id: session_id.clone(),
@@ -180,6 +251,7 @@ pub async fn logger_start_auto(
         None,
         "auto",
         include_header,
+        LogWriteMode::Overwrite,
     )?;
     let mut sessions = state.sessions.lock().await;
     sessions.entry(session_id).or_default().auto = Some(session.clone());
@@ -194,10 +266,12 @@ pub async fn logger_start_manual(
     connection_type: String,
     target: String,
     file_path: String,
+    write_mode: Option<String>,
 ) -> Result<String, String> {
     let include_header = crate::config::config_read()
         .map(|cfg| cfg.terminal.include_log_header)
         .unwrap_or(true);
+    let write_mode = LogWriteMode::from_optional_str(write_mode.as_deref())?;
     let session = create_log_session(
         &state.log_dir,
         session_id.clone(),
@@ -206,6 +280,7 @@ pub async fn logger_start_manual(
         Some(file_path),
         "manual",
         include_header,
+        write_mode,
     )?;
     let mut sessions = state.sessions.lock().await;
     sessions.entry(session_id).or_default().manual = Some(session.clone());
@@ -476,6 +551,7 @@ mod tests {
             None,
             "auto",
             true,
+            LogWriteMode::Overwrite,
         )
         .expect("log session should be created");
         let data = fs::read_to_string(&session.file_path).expect("log should read");
@@ -500,11 +576,89 @@ mod tests {
             None,
             "auto",
             false,
+            LogWriteMode::Overwrite,
         )
         .expect("log session should be created");
         let data = fs::read_to_string(&session.file_path).expect("log should read");
 
         assert_eq!(data, "");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_log_session_overwrite_replaces_existing_file() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let path = dir.join("manual.log");
+        fs::write(&path, "existing content\n").expect("manual file should be created");
+
+        let session = create_log_session(
+            &dir,
+            "session-1".into(),
+            "ssh".into(),
+            "user@host:22".into(),
+            Some(path.to_string_lossy().to_string()),
+            "manual",
+            true,
+            LogWriteMode::Overwrite,
+        )
+        .expect("log session should be created");
+        let data = fs::read_to_string(&session.file_path).expect("log should read");
+
+        assert!(data.starts_with("# ExaTerm Log\n"));
+        assert!(data.contains("# Mode: manual\n"));
+        assert!(!data.contains("existing content"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_log_session_appends_header_to_existing_file() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let path = dir.join("manual.log");
+        fs::write(&path, "existing content").expect("manual file should be created");
+
+        let session = create_log_session(
+            &dir,
+            "session-1".into(),
+            "ssh".into(),
+            "user@host:22".into(),
+            Some(path.to_string_lossy().to_string()),
+            "manual",
+            true,
+            LogWriteMode::Append,
+        )
+        .expect("log session should be created");
+        let data = fs::read_to_string(&session.file_path).expect("log should read");
+
+        assert!(data.starts_with("existing content\n# ExaTerm Log Append\n"));
+        assert!(data.contains("# Started: "));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_log_session_append_skips_header_when_disabled() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let path = dir.join("manual.log");
+        fs::write(&path, "existing content\n").expect("manual file should be created");
+
+        let session = create_log_session(
+            &dir,
+            "session-1".into(),
+            "ssh".into(),
+            "user@host:22".into(),
+            Some(path.to_string_lossy().to_string()),
+            "manual",
+            false,
+            LogWriteMode::Append,
+        )
+        .expect("log session should be created");
+        append_to_log_sessions(&[session.clone()], "new content\n")
+            .expect("manual append should write");
+        let data = fs::read_to_string(&session.file_path).expect("log should read");
+
+        assert_eq!(data, "existing content\nnew content\n");
         let _ = fs::remove_dir_all(&dir);
     }
 
