@@ -15,6 +15,7 @@ ExaTerm is a Windows-focused Tauri v2 desktop app with:
 
 Read `ai-docs/ARCHITECTURE.md` before changing behavior across frontend/backend boundaries.
 Use `ai-docs/CHANGE_CHECKLIST.md` before and after non-trivial code changes.
+Read `docs/DEVELOPMENT_GUIDE.en.md` before code changes or Git operations, especially branch creation, staging, committing, pushing, or opening pull requests.
 
 ## Non-Negotiable Rules
 
