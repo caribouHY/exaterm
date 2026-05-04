@@ -86,6 +86,7 @@ pub fn run() {
             logger::logger_stop_manual,
             logger::logger_is_manual_active,
             logger::logger_append,
+            logger::logger_append_to_mode,
             logger::logger_get_sessions,
             logger::logger_get_log_dir,
             // Config

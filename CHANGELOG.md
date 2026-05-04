@@ -23,6 +23,7 @@
 
 ### Fixed
 
+- Fixed manual screen-display logs so stopping the log saves the final unterminated line.
 - Fixed the terminal scrollbar disappearing when the window height is reduced.
 
 ## v0.2.0

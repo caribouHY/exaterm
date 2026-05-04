@@ -143,6 +143,25 @@ fn append_to_log_sessions(sessions: &[LogSession], data: &str) -> Result<(), Str
     Ok(())
 }
 
+fn log_sessions_for_mode(
+    targets: Option<&ActiveLogTargets>,
+    log_mode: &str,
+) -> Result<Vec<LogSession>, String> {
+    match log_mode {
+        "auto" => Ok(targets
+            .and_then(|targets| targets.auto.as_ref())
+            .cloned()
+            .into_iter()
+            .collect()),
+        "manual" => Ok(targets
+            .and_then(|targets| targets.manual.as_ref())
+            .cloned()
+            .into_iter()
+            .collect()),
+        _ => Err(format!("不明なログモード: {}", log_mode)),
+    }
+}
+
 #[tauri::command]
 pub async fn logger_start_auto(
     state: tauri::State<'_, LoggerState>,
@@ -250,6 +269,21 @@ pub async fn logger_append(
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default()
+    };
+    append_to_log_sessions(&active_sessions, &data)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn logger_append_to_mode(
+    state: tauri::State<'_, LoggerState>,
+    session_id: String,
+    log_mode: String,
+    data: String,
+) -> Result<(), String> {
+    let active_sessions = {
+        let sessions = state.sessions.lock().await;
+        log_sessions_for_mode(sessions.get(&session_id), &log_mode)?
     };
     append_to_log_sessions(&active_sessions, &data)?;
     Ok(())
@@ -390,6 +424,43 @@ mod tests {
         assert_eq!(fs::read_to_string(&auto_path).unwrap(), "auto\ndata\n");
         assert_eq!(fs::read_to_string(&manual_path).unwrap(), "manual\ndata\n");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn log_sessions_for_mode_selects_only_requested_target() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let auto_path = dir.join("auto.log");
+        let manual_path = dir.join("manual.log");
+        fs::write(&auto_path, "auto\n").expect("auto file should be created");
+        fs::write(&manual_path, "manual\n").expect("manual file should be created");
+
+        let targets = ActiveLogTargets {
+            auto: Some(LogSession {
+                file_path: auto_path.to_string_lossy().to_string(),
+                ..sample_session("session-1", "2026-04-25T10:00:00+09:00", "host")
+            }),
+            manual: Some(LogSession {
+                file_path: manual_path.to_string_lossy().to_string(),
+                log_mode: "manual".into(),
+                ..sample_session("session-1", "2026-04-25T10:00:00+09:00", "host")
+            }),
+        };
+
+        let sessions =
+            log_sessions_for_mode(Some(&targets), "manual").expect("manual mode should select");
+        append_to_log_sessions(&sessions, "data\n").expect("manual append should write");
+
+        assert_eq!(fs::read_to_string(&auto_path).unwrap(), "auto\n");
+        assert_eq!(fs::read_to_string(&manual_path).unwrap(), "manual\ndata\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn log_sessions_for_mode_rejects_unknown_mode() {
+        let error = log_sessions_for_mode(None, "unknown").expect_err("unknown mode should fail");
+
+        assert!(error.contains("不明なログモード"));
     }
 
     #[test]
