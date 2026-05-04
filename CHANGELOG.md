@@ -11,6 +11,7 @@
 - Added OpenRouter as an AI provider.
 - Added terminal modes with General and Cisco IOS options.
 - Added command-line startup support for SSH and Telnet.
+- Added pause and resume controls for active session logging.
 
 ### Changed
 

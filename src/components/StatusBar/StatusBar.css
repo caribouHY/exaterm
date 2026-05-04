@@ -69,6 +69,11 @@
   opacity: 1;
 }
 
+.statusbar__log--paused {
+  color: var(--accent-yellow);
+  opacity: 1;
+}
+
 .statusbar__menu-container {
   position: relative;
   height: 100%;
@@ -92,7 +97,14 @@
   overflow: hidden;
 }
 
+.statusbar__menu--log {
+  min-width: 160px;
+}
+
 .statusbar__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 12px;
   text-align: left;
   background: transparent;
@@ -106,6 +118,16 @@
 .statusbar__menu-item:hover {
   background: #37373d;
   color: #fff;
+}
+
+.statusbar__menu-item:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.statusbar__menu-item:disabled:hover {
+  background: transparent;
+  color: #ccc;
 }
 
 .statusbar__menu-item--active {

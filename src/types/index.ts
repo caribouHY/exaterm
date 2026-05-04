@@ -155,6 +155,7 @@ export interface TabInfo {
   terminalMode: TerminalMode;
   isAutoLogging?: boolean;
   isManualLogging?: boolean;
+  isLoggingPaused?: boolean;
   manualLogFilePath?: string;
 }
 
