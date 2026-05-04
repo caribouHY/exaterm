@@ -3,10 +3,14 @@ name: CI
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  checks:
-    name: Format, build, and test
+  format:
+    name: Format check
     runs-on: windows-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -29,9 +33,57 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
+  frontend-build:
+    name: Frontend build
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
       - name: Build frontend
         run: npm run build
+
+  rust-test:
+    name: Rust tests
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
 
       - name: Run Rust tests
         run: cargo test
         working-directory: src-tauri
+
+  checks:
+    name: Format, build, and test
+    runs-on: windows-latest
+    timeout-minutes: 5
+    needs:
+      - format
+      - frontend-build
+      - rust-test
+
+    steps:
+      - name: Report success
+        run: echo "All CI checks passed."
