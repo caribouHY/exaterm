@@ -93,6 +93,7 @@ export default function App() {
         terminalMode,
         isAutoLogging,
         isManualLogging: false,
+        isLoggingPaused: false,
       };
       setTabs((prev) => [...prev, newTab]);
       setActiveTabId(sessionId);
@@ -317,7 +318,15 @@ export default function App() {
     try {
       await invoke("logger_stop_manual", { sessionId: activeTab.sessionId });
       setTabs((prev) =>
-        prev.map((tab) => (tab.id === activeTab.id ? { ...tab, isManualLogging: false } : tab))
+        prev.map((tab) =>
+          tab.id === activeTab.id
+            ? {
+                ...tab,
+                isManualLogging: false,
+                isLoggingPaused: tab.isAutoLogging ? tab.isLoggingPaused : false,
+              }
+            : tab
+        )
       );
     } catch (error) {
       console.error("Failed to stop manual log:", error);
@@ -326,6 +335,15 @@ export default function App() {
       setManualLogBusyTabId(null);
     }
   }, [activeTab, showTemporaryLogStatus]);
+
+  const handleToggleLoggingPaused = useCallback(() => {
+    if (!activeTab?.isConnected || !(activeTab.isAutoLogging || activeTab.isManualLogging)) return;
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === activeTab.id ? { ...tab, isLoggingPaused: !tab.isLoggingPaused } : tab
+      )
+    );
+  }, [activeTab]);
 
   const openConnection = useCallback(() => setShowConnection(true), []);
   const toggleAiPanel = useCallback(() => setShowAiPanel((current) => !current), []);
@@ -440,6 +458,7 @@ export default function App() {
                     isConnected={false}
                     isActive={activeView === "terminal"}
                     isLoggingActive={false}
+                    isLoggingPaused={false}
                     onOpenConnection={openConnection}
                     onTerminalData={() => {}}
                     encoding="utf-8"
@@ -462,6 +481,7 @@ export default function App() {
                       isConnected={tab.isConnected}
                       isActive={activeView === "terminal" && tab.id === activeTabId}
                       isLoggingActive={Boolean(tab.isAutoLogging || tab.isManualLogging)}
+                      isLoggingPaused={Boolean(tab.isLoggingPaused)}
                       onOpenConnection={openConnection}
                       onTerminalData={(data) => handleTerminalData(tab.id, data)}
                       encoding={tab.encoding}
@@ -512,6 +532,7 @@ export default function App() {
             }
             onStartManualLog={handleStartManualLog}
             onStopManualLog={handleStopManualLog}
+            onToggleLoggingPaused={handleToggleLoggingPaused}
             manualLogBusy={Boolean(activeTab && manualLogBusyTabId === activeTab.id)}
             logStatusMessage={logStatusMessage}
           />

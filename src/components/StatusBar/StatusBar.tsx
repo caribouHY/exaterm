@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { CircleDot, FileText } from "lucide-react";
+import { CircleDot, FileText, Pause, Play } from "lucide-react";
 import packageJson from "../../../package.json";
 import type { TabInfo, Encoding, TerminalMode } from "../../types";
 import { TERMINAL_MODE_OPTIONS } from "../../utils/terminalModes";
@@ -13,6 +13,7 @@ interface StatusBarProps {
   onTerminalModeChange: (terminalMode: TerminalMode) => void;
   onStartManualLog: () => void;
   onStopManualLog: () => void;
+  onToggleLoggingPaused: () => void;
   manualLogBusy: boolean;
   logStatusMessage: string;
 }
@@ -24,6 +25,7 @@ export default function StatusBar({
   onTerminalModeChange,
   onStartManualLog,
   onStopManualLog,
+  onToggleLoggingPaused,
   manualLogBusy,
   logStatusMessage,
 }: StatusBarProps) {
@@ -63,6 +65,7 @@ export default function StatusBar({
   const getLogLabel = () => {
     if (logStatusMessage) return t(logStatusMessage);
     if (!activeTab?.isConnected) return t("statusbar.log_unavailable");
+    if (activeTab.isLoggingPaused) return t("statusbar.log_paused");
     if (activeTab.isAutoLogging && activeTab.isManualLogging) {
       return t("statusbar.log_auto_manual");
     }
@@ -80,9 +83,13 @@ export default function StatusBar({
     onStartManualLog();
   };
 
+  const hasActiveLog = Boolean(activeTab?.isAutoLogging || activeTab?.isManualLogging);
   const logTitle = activeTab?.isManualLogging
     ? activeTab.manualLogFilePath || t("statusbar.log_stop")
     : t("statusbar.log_manual_title");
+  const pauseTitle = activeTab?.isLoggingPaused
+    ? t("statusbar.log_resume_title")
+    : t("statusbar.log_pause_title");
 
   return (
     <div className="statusbar">
@@ -107,17 +114,38 @@ export default function StatusBar({
       </div>
       <div className="statusbar__right">
         {activeTab && (
-          <button
-            className={`statusbar__item statusbar__item--clickable statusbar__log ${
-              activeTab.isManualLogging ? "statusbar__log--manual" : ""
+          <div
+            className={`statusbar__log-group ${
+              activeTab.isLoggingPaused ? "statusbar__log-group--paused" : ""
             }`}
-            onClick={handleLogClick}
-            disabled={!activeTab.isConnected || manualLogBusy}
-            title={logTitle}
           >
-            {activeTab.isManualLogging ? <CircleDot size={12} /> : <FileText size={12} />}
-            <span>{manualLogBusy ? t("statusbar.log_busy") : getLogLabel()}</span>
-          </button>
+            <button
+              className={`statusbar__log statusbar__log-action ${
+                activeTab.isManualLogging ? "statusbar__log-action--manual" : ""
+              } ${activeTab.isLoggingPaused ? "statusbar__log-action--paused" : ""}`}
+              onClick={handleLogClick}
+              disabled={!activeTab.isConnected || manualLogBusy}
+              title={logTitle}
+            >
+              {activeTab.isManualLogging ? <CircleDot size={12} /> : <FileText size={12} />}
+              <span>{manualLogBusy ? t("statusbar.log_busy") : getLogLabel()}</span>
+            </button>
+            {hasActiveLog && (
+              <button
+                className={`statusbar__log-toggle ${
+                  activeTab.isLoggingPaused ? "statusbar__log-toggle--paused" : ""
+                }`}
+                onClick={onToggleLoggingPaused}
+                disabled={!activeTab.isConnected}
+                title={pauseTitle}
+              >
+                {activeTab.isLoggingPaused ? <Play size={12} /> : <Pause size={12} />}
+                <span>
+                  {activeTab.isLoggingPaused ? t("statusbar.log_resume") : t("statusbar.log_pause")}
+                </span>
+              </button>
+            )}
+          </div>
         )}
         {activeTab && (
           <div className="statusbar__menu-container" ref={terminalModeMenuRef}>

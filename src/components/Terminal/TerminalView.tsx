@@ -21,6 +21,7 @@ interface TerminalViewProps {
   isActive: boolean;
   encoding: Encoding;
   isLoggingActive: boolean;
+  isLoggingPaused: boolean;
   terminalConfig?: TerminalConfig;
   terminalMode: TerminalMode;
   onOpenConnection: () => void;
@@ -53,6 +54,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     isActive,
     encoding,
     isLoggingActive,
+    isLoggingPaused,
     terminalConfig,
     terminalMode,
     onOpenConnection,
@@ -67,6 +69,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const decoderRef = useRef(new TextDecoder(encoding));
   const isConnectedRef = useRef(isConnected);
   const isLoggingActiveRef = useRef(isLoggingActive);
+  const isLoggingPausedRef = useRef(isLoggingPaused);
   const terminalModeRef = useRef(terminalMode);
   const promptDecorationsRef = useRef<Map<number, PromptDecorationSet>>(new Map());
   const errorDecorationsRef = useRef<Map<number, LineDecorationSet>>(new Map());
@@ -130,8 +133,24 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   }, [isConnected]);
 
   useEffect(() => {
+    if (isLoggingActiveRef.current && !isLoggingActive && sessionId) {
+      const logText = logSanitizerRef.current.flush();
+      if (logText) {
+        invoke("logger_append", { sessionId, data: logText }).catch(() => {});
+      }
+    }
     isLoggingActiveRef.current = isLoggingActive;
-  }, [isLoggingActive]);
+  }, [isLoggingActive, sessionId]);
+
+  useEffect(() => {
+    if (isLoggingActiveRef.current && !isLoggingPausedRef.current && isLoggingPaused && sessionId) {
+      const logText = logSanitizerRef.current.flush();
+      if (logText) {
+        invoke("logger_append", { sessionId, data: logText }).catch(() => {});
+      }
+    }
+    isLoggingPausedRef.current = isLoggingPaused;
+  }, [isLoggingPaused, sessionId]);
 
   const disposePromptDecorationSet = ({
     commandDecoration,
@@ -417,7 +436,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       const text = decoderRef.current.decode(data, { stream: true });
       term.write(text, () => terminalModeDecorators[terminalModeRef.current]?.(term));
       if (onTerminalData) onTerminalData(text);
-      if (isLoggingActiveRef.current) {
+      if (isLoggingActiveRef.current && !isLoggingPausedRef.current) {
         const logText = logSanitizerRef.current.push(text);
         if (logText) {
           invoke("logger_append", { sessionId, data: logText }).catch(() => {});
@@ -443,7 +462,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     return () => {
       unlistenData.then((fn) => fn());
       unlistenError.then((fn) => fn());
-      if (isLoggingActiveRef.current) {
+      if (isLoggingActiveRef.current && !isLoggingPausedRef.current) {
         const logText = logSanitizerRef.current.flush();
         if (logText) {
           invoke("logger_append", { sessionId, data: logText }).catch(() => {});

@@ -52,20 +52,95 @@
   background: transparent;
 }
 
-.statusbar__log {
+.statusbar__log-group {
+  display: inline-flex;
+  align-items: center;
   min-width: 0;
-  max-width: 180px;
+  max-width: 260px;
+  height: 18px;
+  overflow: hidden;
+  background: var(--bg-highlight);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
 }
 
-.statusbar__log span {
+.statusbar__log-group--paused {
+  border-color: rgba(220, 220, 170, 0.32);
+  background: rgba(220, 220, 170, 0.06);
+}
+
+.statusbar__log,
+.statusbar__log-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.statusbar__log {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 180px;
+  gap: 5px;
+  padding: 0 8px;
+}
+
+.statusbar__log-toggle {
+  width: 32px;
+  flex: 0 0 32px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.statusbar__log span,
+.statusbar__log-toggle span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.statusbar__log--manual {
-  background: var(--bg-active);
+.statusbar__log-toggle span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.statusbar__log:hover,
+.statusbar__log-toggle:hover {
+  background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.statusbar__log:disabled,
+.statusbar__log-toggle:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.statusbar__log:disabled:hover,
+.statusbar__log-toggle:disabled:hover {
+  background: transparent;
+  color: inherit;
+}
+
+.statusbar__log-action--manual {
+  color: var(--text-primary);
+}
+
+.statusbar__log-action--paused,
+.statusbar__log-toggle--paused {
+  color: var(--accent-yellow);
   opacity: 1;
 }
 
