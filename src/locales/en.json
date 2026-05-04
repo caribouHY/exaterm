@@ -108,6 +108,8 @@
   "statusbar.log_manual_title": "Start manual log",
   "statusbar.log_menu_title": "Log actions",
   "statusbar.log_start_manual": "Start manual log",
+  "statusbar.log_start_manual_overwrite": "Start manual log (new/overwrite)",
+  "statusbar.log_start_manual_append": "Append to manual log",
   "statusbar.log_stop_manual": "Stop manual log",
   "statusbar.log_pause": "Pause logging",
   "statusbar.log_resume": "Resume logging",

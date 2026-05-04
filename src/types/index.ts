@@ -70,6 +70,8 @@ export interface LogSession {
   log_mode: "auto" | "manual";
 }
 
+export type ManualLogWriteMode = "overwrite" | "append";
+
 export interface AppConfig {
   config_version: number;
   language: string;

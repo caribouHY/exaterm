@@ -108,6 +108,8 @@
   "statusbar.log_manual_title": "手動ログを開始",
   "statusbar.log_menu_title": "ログ操作",
   "statusbar.log_start_manual": "手動ログを開始",
+  "statusbar.log_start_manual_overwrite": "手動ログを開始（新規/上書き）",
+  "statusbar.log_start_manual_append": "手動ログへ追記",
   "statusbar.log_stop_manual": "手動ログを停止",
   "statusbar.log_pause": "ログを一時停止",
   "statusbar.log_resume": "ログを再開",
