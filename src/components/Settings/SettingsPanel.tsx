@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Check } from "lucide-react";
-import type { AppConfig } from "../../types";
+import type { AppConfig, AiSecretStatus } from "../../types";
 import { useTranslation } from "react-i18next";
 import "./SettingsPanel.css";
 
@@ -9,19 +9,10 @@ interface SettingsPanelProps {
   onSave?: () => void;
 }
 
-interface AiSecretStatus {
-  openai: boolean;
-  azure_openai: boolean;
-  anthropic: boolean;
-  gemini: boolean;
-}
+type SecretKey = "openai" | "azure_openai" | "anthropic" | "gemini" | "openrouter";
+type SecretProvider = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini" | "OpenRouter";
 
-interface SecretEdits {
-  openai: string;
-  azure_openai: string;
-  anthropic: string;
-  gemini: string;
-}
+type SecretEdits = Record<SecretKey, string>;
 
 const MASKED_VALUE = "••••••••";
 
@@ -30,6 +21,7 @@ const EMPTY_SECRET_STATUS: AiSecretStatus = {
   azure_openai: false,
   anthropic: false,
   gemini: false,
+  openrouter: false,
 };
 
 const EMPTY_SECRET_EDITS: SecretEdits = {
@@ -37,6 +29,7 @@ const EMPTY_SECRET_EDITS: SecretEdits = {
   azure_openai: "",
   anthropic: "",
   gemini: "",
+  openrouter: "",
 };
 
 export default function SettingsPanel({ onSave }: SettingsPanelProps) {
@@ -51,6 +44,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     azure_openai: false,
     anthropic: false,
     gemini: false,
+    openrouter: false,
   });
 
   const refreshSecretStatus = async () => {
@@ -94,9 +88,21 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       if (secretEdits.gemini.trim()) {
         await invoke("ai_secret_set", { provider: "Gemini", value: secretEdits.gemini.trim() });
       }
+      if (secretEdits.openrouter.trim()) {
+        await invoke("ai_secret_set", {
+          provider: "OpenRouter",
+          value: secretEdits.openrouter.trim(),
+        });
+      }
 
       setSecretEdits(EMPTY_SECRET_EDITS);
-      setSecretEditMode({ openai: false, azure_openai: false, anthropic: false, gemini: false });
+      setSecretEditMode({
+        openai: false,
+        azure_openai: false,
+        anthropic: false,
+        gemini: false,
+        openrouter: false,
+      });
       await refreshSecretStatus();
 
       if (config.language !== i18n.language) {
@@ -127,10 +133,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     setConfig(newConfig);
   };
 
-  const clearSecret = async (
-    provider: "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini",
-    key: "openai" | "azure_openai" | "anthropic" | "gemini"
-  ) => {
+  const clearSecret = async (provider: SecretProvider, key: SecretKey) => {
     try {
       await invoke("ai_secret_clear", { provider });
       setSecretEdits((prev) => ({ ...prev, [key]: "" }));
@@ -141,19 +144,19 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     }
   };
 
-  const beginEditSecret = (key: "openai" | "azure_openai" | "anthropic" | "gemini") => {
+  const beginEditSecret = (key: SecretKey) => {
     setSecretEditMode((prev) => ({ ...prev, [key]: true }));
     setSecretEdits((prev) => ({ ...prev, [key]: "" }));
   };
 
-  const cancelEditSecret = (key: "openai" | "azure_openai" | "anthropic" | "gemini") => {
+  const cancelEditSecret = (key: SecretKey) => {
     setSecretEditMode((prev) => ({ ...prev, [key]: false }));
     setSecretEdits((prev) => ({ ...prev, [key]: "" }));
   };
 
   const renderSecretField = (
-    key: "openai" | "azure_openai" | "anthropic" | "gemini",
-    provider: "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini",
+    key: SecretKey,
+    provider: SecretProvider,
     label: string,
     placeholder: string
   ) => {
@@ -240,6 +243,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               <option value="AzureOpenAi">Azure OpenAI</option>
               <option value="Anthropic">Anthropic</option>
               <option value="Gemini">Google Gemini</option>
+              <option value="OpenRouter">OpenRouter</option>
               <option value="Ollama">Ollama</option>
             </select>
           </div>
@@ -249,6 +253,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         {renderSecretField("azure_openai", "AzureOpenAi", t("settings.azure_openai_key"), "...")}
         {renderSecretField("anthropic", "Anthropic", t("settings.anthropic_key"), "sk-ant-...")}
         {renderSecretField("gemini", "Gemini", t("settings.gemini_key"), "AIza...")}
+        {renderSecretField("openrouter", "OpenRouter", t("settings.openrouter_key"), "sk-or-...")}
 
         <div className="settings-toggle-row">
           <div className="settings-toggle-label">
@@ -392,6 +397,20 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <option value="display">{t("settings.log_format_display")}</option>
             <option value="strip_controls">{t("settings.log_format_strip_controls")}</option>
           </select>
+        </div>
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.include_log_header")}</span>
+            <small>{t("settings.include_log_header_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={config.terminal.include_log_header ?? true}
+              onChange={(e) => update("terminal.include_log_header", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
         </div>
       </div>
 

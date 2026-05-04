@@ -1,7 +1,8 @@
 use chrono::Local;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -90,6 +91,199 @@ fn sort_sessions_desc(sessions: &mut [LogSession]) {
     sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct LogBulkDeleteResult {
+    pub removed_history_count: usize,
+    pub removed_auto_file_count: usize,
+    pub skipped_active_count: usize,
+    pub skipped_manual_file_count: usize,
+    pub skipped_missing_file_count: usize,
+    pub skipped_unsafe_path_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ActiveLogKey {
+    session_id: String,
+    log_mode: String,
+}
+
+enum AutoLogFileDeleteResult {
+    Removed,
+    Missing,
+    UnsafePath,
+}
+
+fn is_session_active(session: &LogSession, active_keys: &HashSet<ActiveLogKey>) -> bool {
+    active_keys.contains(&ActiveLogKey {
+        session_id: session.session_id.clone(),
+        log_mode: session.log_mode.clone(),
+    })
+}
+
+fn active_log_keys(targets: &HashMap<String, ActiveLogTargets>) -> HashSet<ActiveLogKey> {
+    let mut active = HashSet::new();
+    for (session_id, targets) in targets {
+        if targets.auto.is_some() {
+            active.insert(ActiveLogKey {
+                session_id: session_id.clone(),
+                log_mode: "auto".into(),
+            });
+        }
+        if targets.manual.is_some() {
+            active.insert(ActiveLogKey {
+                session_id: session_id.clone(),
+                log_mode: "manual".into(),
+            });
+        }
+    }
+    active
+}
+
+fn delete_auto_log_file(
+    log_dir: &PathBuf,
+    file_path: &str,
+) -> Result<AutoLogFileDeleteResult, String> {
+    let log_dir =
+        fs::canonicalize(log_dir).map_err(|e| format!("ログディレクトリ確認エラー: {}", e))?;
+    let file_path = PathBuf::from(file_path);
+
+    if file_path.exists() {
+        let canonical_file =
+            fs::canonicalize(&file_path).map_err(|e| format!("ログファイル確認エラー: {}", e))?;
+        if !canonical_file.starts_with(&log_dir) {
+            return Ok(AutoLogFileDeleteResult::UnsafePath);
+        }
+        fs::remove_file(&canonical_file).map_err(|e| format!("ログファイル削除エラー: {}", e))?;
+        return Ok(AutoLogFileDeleteResult::Removed);
+    }
+
+    if let Some(parent) = file_path.parent() {
+        if let Ok(canonical_parent) = fs::canonicalize(parent) {
+            if canonical_parent.starts_with(&log_dir) {
+                return Ok(AutoLogFileDeleteResult::Missing);
+            }
+        }
+    }
+
+    Ok(AutoLogFileDeleteResult::UnsafePath)
+}
+
+fn bulk_delete_log_sessions(
+    index_path: &PathBuf,
+    log_dir: &PathBuf,
+    active_keys: &HashSet<ActiveLogKey>,
+    delete_auto_files: bool,
+) -> Result<LogBulkDeleteResult, String> {
+    let sessions = read_log_index(index_path)?;
+    let mut kept = Vec::new();
+    let mut result = LogBulkDeleteResult::default();
+
+    for session in sessions {
+        if is_session_active(&session, active_keys) {
+            result.skipped_active_count += 1;
+            kept.push(session);
+            continue;
+        }
+
+        match session.log_mode.as_str() {
+            "auto" => {
+                result.removed_history_count += 1;
+                if delete_auto_files {
+                    match delete_auto_log_file(log_dir, &session.file_path)? {
+                        AutoLogFileDeleteResult::Removed => result.removed_auto_file_count += 1,
+                        AutoLogFileDeleteResult::Missing => result.skipped_missing_file_count += 1,
+                        AutoLogFileDeleteResult::UnsafePath => {
+                            result.skipped_unsafe_path_count += 1
+                        }
+                    }
+                }
+            }
+            "manual" => {
+                result.removed_history_count += 1;
+                if delete_auto_files {
+                    result.skipped_manual_file_count += 1;
+                }
+            }
+            _ => kept.push(session),
+        }
+    }
+
+    sort_sessions_desc(&mut kept);
+    write_log_index(index_path, &kept)?;
+    Ok(result)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LogWriteMode {
+    Overwrite,
+    Append,
+}
+
+impl LogWriteMode {
+    fn from_optional_str(value: Option<&str>) -> Result<Self, String> {
+        match value.unwrap_or("overwrite") {
+            "overwrite" => Ok(Self::Overwrite),
+            "append" => Ok(Self::Append),
+            other => Err(format!("不明なログ書き込みモード: {}", other)),
+        }
+    }
+}
+
+fn write_log_start_header(
+    file_path: &PathBuf,
+    connection_type: &str,
+    target: &str,
+    log_mode: &str,
+    include_header: bool,
+    write_mode: LogWriteMode,
+    started_at: &str,
+) -> Result<(), String> {
+    match write_mode {
+        LogWriteMode::Overwrite => {
+            if include_header {
+                let header = format!(
+                    "# ExaTerm Log\n# Type: {}\n# Target: {}\n# Mode: {}\n# Started: {}\n\n",
+                    connection_type, target, log_mode, started_at
+                );
+                fs::write(file_path, &header).map_err(|e| format!("ログ作成エラー: {}", e))?;
+            } else {
+                fs::write(file_path, "").map_err(|e| format!("ログ作成エラー: {}", e))?;
+            }
+        }
+        LogWriteMode::Append => {
+            let mut file = fs::OpenOptions::new()
+                .create(true)
+                .read(true)
+                .append(true)
+                .open(file_path)
+                .map_err(|e| format!("ログ作成エラー: {}", e))?;
+
+            if include_header {
+                if file
+                    .metadata()
+                    .map_err(|e| format!("ログ作成エラー: {}", e))?
+                    .len()
+                    > 0
+                {
+                    file.seek(SeekFrom::End(-1))
+                        .map_err(|e| format!("ログ作成エラー: {}", e))?;
+                    let mut last_byte = [0_u8; 1];
+                    file.read_exact(&mut last_byte)
+                        .map_err(|e| format!("ログ作成エラー: {}", e))?;
+                    if last_byte[0] != b'\n' {
+                        writeln!(file).map_err(|e| format!("ログ作成エラー: {}", e))?;
+                    }
+                }
+
+                let header = format!("# ExaTerm Log Append\n# Started: {}\n\n", started_at);
+                write!(file, "{}", header).map_err(|e| format!("ログ作成エラー: {}", e))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn create_log_session(
     log_dir: &PathBuf,
     session_id: String,
@@ -97,8 +291,11 @@ fn create_log_session(
     target: String,
     file_path: Option<String>,
     log_mode: &str,
+    include_header: bool,
+    write_mode: LogWriteMode,
 ) -> Result<LogSession, String> {
     let now = Local::now();
+    let started_at = now.format("%Y-%m-%d %H:%M:%S").to_string();
     let session_prefix = session_id.chars().take(8).collect::<String>();
     let filename = format!("{}_{}.log", now.format("%Y%m%d_%H%M%S"), session_prefix);
     let file_path = file_path
@@ -107,14 +304,15 @@ fn create_log_session(
     if let Some(parent) = file_path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("ログディレクトリ作成エラー: {}", e))?;
     }
-    let header = format!(
-        "# ExaTerm Log\n# Type: {}\n# Target: {}\n# Mode: {}\n# Started: {}\n\n",
-        connection_type,
-        target,
+    write_log_start_header(
+        &file_path,
+        &connection_type,
+        &target,
         log_mode,
-        now.format("%Y-%m-%d %H:%M:%S")
-    );
-    fs::write(&file_path, &header).map_err(|e| format!("ログ作成エラー: {}", e))?;
+        include_header,
+        write_mode,
+        &started_at,
+    )?;
 
     Ok(LogSession {
         session_id: session_id.clone(),
@@ -138,6 +336,25 @@ fn append_to_log_sessions(sessions: &[LogSession], data: &str) -> Result<(), Str
     Ok(())
 }
 
+fn log_sessions_for_mode(
+    targets: Option<&ActiveLogTargets>,
+    log_mode: &str,
+) -> Result<Vec<LogSession>, String> {
+    match log_mode {
+        "auto" => Ok(targets
+            .and_then(|targets| targets.auto.as_ref())
+            .cloned()
+            .into_iter()
+            .collect()),
+        "manual" => Ok(targets
+            .and_then(|targets| targets.manual.as_ref())
+            .cloned()
+            .into_iter()
+            .collect()),
+        _ => Err(format!("不明なログモード: {}", log_mode)),
+    }
+}
+
 #[tauri::command]
 pub async fn logger_start_auto(
     state: tauri::State<'_, LoggerState>,
@@ -145,6 +362,9 @@ pub async fn logger_start_auto(
     connection_type: String,
     target: String,
 ) -> Result<String, String> {
+    let include_header = crate::config::config_read()
+        .map(|cfg| cfg.terminal.include_log_header)
+        .unwrap_or(true);
     let session = create_log_session(
         &state.log_dir,
         session_id.clone(),
@@ -152,6 +372,8 @@ pub async fn logger_start_auto(
         target,
         None,
         "auto",
+        include_header,
+        LogWriteMode::Overwrite,
     )?;
     let mut sessions = state.sessions.lock().await;
     sessions.entry(session_id).or_default().auto = Some(session.clone());
@@ -166,7 +388,12 @@ pub async fn logger_start_manual(
     connection_type: String,
     target: String,
     file_path: String,
+    write_mode: Option<String>,
 ) -> Result<String, String> {
+    let include_header = crate::config::config_read()
+        .map(|cfg| cfg.terminal.include_log_header)
+        .unwrap_or(true);
+    let write_mode = LogWriteMode::from_optional_str(write_mode.as_deref())?;
     let session = create_log_session(
         &state.log_dir,
         session_id.clone(),
@@ -174,6 +401,8 @@ pub async fn logger_start_manual(
         target,
         Some(file_path),
         "manual",
+        include_header,
+        write_mode,
     )?;
     let mut sessions = state.sessions.lock().await;
     sessions.entry(session_id).or_default().manual = Some(session.clone());
@@ -243,11 +472,43 @@ pub async fn logger_append(
 }
 
 #[tauri::command]
+pub async fn logger_append_to_mode(
+    state: tauri::State<'_, LoggerState>,
+    session_id: String,
+    log_mode: String,
+    data: String,
+) -> Result<(), String> {
+    let active_sessions = {
+        let sessions = state.sessions.lock().await;
+        log_sessions_for_mode(sessions.get(&session_id), &log_mode)?
+    };
+    append_to_log_sessions(&active_sessions, &data)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn logger_get_sessions(
     state: tauri::State<'_, LoggerState>,
 ) -> Result<Vec<LogSession>, String> {
     let _sessions = state.sessions.lock().await;
     read_log_index(&state.index_path)
+}
+
+#[tauri::command]
+pub async fn logger_bulk_delete_sessions(
+    state: tauri::State<'_, LoggerState>,
+    delete_auto_files: bool,
+) -> Result<LogBulkDeleteResult, String> {
+    let active_keys = {
+        let sessions = state.sessions.lock().await;
+        active_log_keys(&sessions)
+    };
+    bulk_delete_log_sessions(
+        &state.index_path,
+        &state.log_dir,
+        &active_keys,
+        delete_auto_files,
+    )
 }
 
 #[tauri::command]
@@ -281,6 +542,10 @@ mod tests {
         if let Some(parent) = path.parent() {
             let _ = fs::remove_dir_all(parent);
         }
+    }
+
+    fn empty_active_keys() -> HashSet<ActiveLogKey> {
+        HashSet::new()
     }
 
     #[test]
@@ -380,6 +645,167 @@ mod tests {
     }
 
     #[test]
+    fn log_sessions_for_mode_selects_only_requested_target() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let auto_path = dir.join("auto.log");
+        let manual_path = dir.join("manual.log");
+        fs::write(&auto_path, "auto\n").expect("auto file should be created");
+        fs::write(&manual_path, "manual\n").expect("manual file should be created");
+
+        let targets = ActiveLogTargets {
+            auto: Some(LogSession {
+                file_path: auto_path.to_string_lossy().to_string(),
+                ..sample_session("session-1", "2026-04-25T10:00:00+09:00", "host")
+            }),
+            manual: Some(LogSession {
+                file_path: manual_path.to_string_lossy().to_string(),
+                log_mode: "manual".into(),
+                ..sample_session("session-1", "2026-04-25T10:00:00+09:00", "host")
+            }),
+        };
+
+        let sessions =
+            log_sessions_for_mode(Some(&targets), "manual").expect("manual mode should select");
+        append_to_log_sessions(&sessions, "data\n").expect("manual append should write");
+
+        assert_eq!(fs::read_to_string(&auto_path).unwrap(), "auto\n");
+        assert_eq!(fs::read_to_string(&manual_path).unwrap(), "manual\ndata\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn log_sessions_for_mode_rejects_unknown_mode() {
+        let error = log_sessions_for_mode(None, "unknown").expect_err("unknown mode should fail");
+
+        assert!(error.contains("不明なログモード"));
+    }
+
+    #[test]
+    fn create_log_session_writes_header_when_enabled() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+
+        let session = create_log_session(
+            &dir,
+            "session-1".into(),
+            "ssh".into(),
+            "user@host:22".into(),
+            None,
+            "auto",
+            true,
+            LogWriteMode::Overwrite,
+        )
+        .expect("log session should be created");
+        let data = fs::read_to_string(&session.file_path).expect("log should read");
+
+        assert!(data.starts_with("# ExaTerm Log\n"));
+        assert!(data.contains("# Type: ssh\n"));
+        assert!(data.contains("# Target: user@host:22\n"));
+        assert!(data.contains("# Mode: auto\n"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_log_session_skips_header_when_disabled() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+
+        let session = create_log_session(
+            &dir,
+            "session-1".into(),
+            "ssh".into(),
+            "user@host:22".into(),
+            None,
+            "auto",
+            false,
+            LogWriteMode::Overwrite,
+        )
+        .expect("log session should be created");
+        let data = fs::read_to_string(&session.file_path).expect("log should read");
+
+        assert_eq!(data, "");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_log_session_overwrite_replaces_existing_file() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let path = dir.join("manual.log");
+        fs::write(&path, "existing content\n").expect("manual file should be created");
+
+        let session = create_log_session(
+            &dir,
+            "session-1".into(),
+            "ssh".into(),
+            "user@host:22".into(),
+            Some(path.to_string_lossy().to_string()),
+            "manual",
+            true,
+            LogWriteMode::Overwrite,
+        )
+        .expect("log session should be created");
+        let data = fs::read_to_string(&session.file_path).expect("log should read");
+
+        assert!(data.starts_with("# ExaTerm Log\n"));
+        assert!(data.contains("# Mode: manual\n"));
+        assert!(!data.contains("existing content"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_log_session_appends_header_to_existing_file() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let path = dir.join("manual.log");
+        fs::write(&path, "existing content").expect("manual file should be created");
+
+        let session = create_log_session(
+            &dir,
+            "session-1".into(),
+            "ssh".into(),
+            "user@host:22".into(),
+            Some(path.to_string_lossy().to_string()),
+            "manual",
+            true,
+            LogWriteMode::Append,
+        )
+        .expect("log session should be created");
+        let data = fs::read_to_string(&session.file_path).expect("log should read");
+
+        assert!(data.starts_with("existing content\n# ExaTerm Log Append\n"));
+        assert!(data.contains("# Started: "));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn create_log_session_append_skips_header_when_disabled() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let path = dir.join("manual.log");
+        fs::write(&path, "existing content\n").expect("manual file should be created");
+
+        let session = create_log_session(
+            &dir,
+            "session-1".into(),
+            "ssh".into(),
+            "user@host:22".into(),
+            Some(path.to_string_lossy().to_string()),
+            "manual",
+            false,
+            LogWriteMode::Append,
+        )
+        .expect("log session should be created");
+        append_to_log_sessions(&[session.clone()], "new content\n")
+            .expect("manual append should write");
+        let data = fs::read_to_string(&session.file_path).expect("log should read");
+
+        assert_eq!(data, "existing content\nnew content\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn read_log_index_sorts_sessions_by_started_at_desc() {
         let path = temp_index_path();
         let sessions = vec![
@@ -395,5 +821,171 @@ mod tests {
         assert_eq!(loaded[1].session_id, "middle");
         assert_eq!(loaded[2].session_id, "older");
         cleanup(&path);
+    }
+
+    #[test]
+    fn bulk_delete_removes_inactive_auto_and_manual_history() {
+        let path = temp_index_path();
+        let log_dir = path.parent().unwrap().to_path_buf();
+        let auto = sample_session("auto-1", "2026-04-25T10:00:00+09:00", "host");
+        let mut manual = sample_session("manual-1", "2026-04-25T11:00:00+09:00", "host");
+        manual.log_mode = "manual".into();
+
+        write_log_index(&path, &[auto, manual]).expect("index should write");
+        let result = bulk_delete_log_sessions(&path, &log_dir, &empty_active_keys(), false)
+            .expect("bulk delete should succeed");
+        let loaded = read_log_index(&path).expect("index should read");
+
+        assert_eq!(result.removed_history_count, 2);
+        assert!(loaded.is_empty());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn bulk_delete_history_only_leaves_files() {
+        let path = temp_index_path();
+        let log_dir = path.parent().unwrap().to_path_buf();
+        fs::create_dir_all(&log_dir).expect("log dir should be created");
+        let auto_path = log_dir.join("auto.log");
+        let manual_path = log_dir.join("manual.log");
+        fs::write(&auto_path, "auto").expect("auto file should be created");
+        fs::write(&manual_path, "manual").expect("manual file should be created");
+        let auto = LogSession {
+            file_path: auto_path.to_string_lossy().to_string(),
+            ..sample_session("auto-1", "2026-04-25T10:00:00+09:00", "host")
+        };
+        let manual = LogSession {
+            file_path: manual_path.to_string_lossy().to_string(),
+            log_mode: "manual".into(),
+            ..sample_session("manual-1", "2026-04-25T11:00:00+09:00", "host")
+        };
+
+        write_log_index(&path, &[auto, manual]).expect("index should write");
+        let result = bulk_delete_log_sessions(&path, &log_dir, &empty_active_keys(), false)
+            .expect("bulk delete should succeed");
+
+        assert_eq!(result.removed_history_count, 2);
+        assert!(auto_path.exists());
+        assert!(manual_path.exists());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn bulk_delete_with_files_removes_only_auto_files() {
+        let path = temp_index_path();
+        let log_dir = path.parent().unwrap().to_path_buf();
+        fs::create_dir_all(&log_dir).expect("log dir should be created");
+        let auto_path = log_dir.join("auto.log");
+        let manual_path = log_dir.join("manual.log");
+        fs::write(&auto_path, "auto").expect("auto file should be created");
+        fs::write(&manual_path, "manual").expect("manual file should be created");
+        let auto = LogSession {
+            file_path: auto_path.to_string_lossy().to_string(),
+            ..sample_session("auto-1", "2026-04-25T10:00:00+09:00", "host")
+        };
+        let manual = LogSession {
+            file_path: manual_path.to_string_lossy().to_string(),
+            log_mode: "manual".into(),
+            ..sample_session("manual-1", "2026-04-25T11:00:00+09:00", "host")
+        };
+
+        write_log_index(&path, &[auto, manual]).expect("index should write");
+        let result = bulk_delete_log_sessions(&path, &log_dir, &empty_active_keys(), true)
+            .expect("bulk delete should succeed");
+
+        assert_eq!(result.removed_history_count, 2);
+        assert_eq!(result.removed_auto_file_count, 1);
+        assert_eq!(result.skipped_manual_file_count, 1);
+        assert!(!auto_path.exists());
+        assert!(manual_path.exists());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn bulk_delete_keeps_active_logs() {
+        let path = temp_index_path();
+        let log_dir = path.parent().unwrap().to_path_buf();
+        fs::create_dir_all(&log_dir).expect("log dir should be created");
+        let auto_path = log_dir.join("auto.log");
+        let manual_path = log_dir.join("manual.log");
+        fs::write(&auto_path, "auto").expect("auto file should be created");
+        fs::write(&manual_path, "manual").expect("manual file should be created");
+        let auto = LogSession {
+            file_path: auto_path.to_string_lossy().to_string(),
+            ..sample_session("active", "2026-04-25T10:00:00+09:00", "host")
+        };
+        let manual = LogSession {
+            file_path: manual_path.to_string_lossy().to_string(),
+            log_mode: "manual".into(),
+            ..sample_session("active", "2026-04-25T11:00:00+09:00", "host")
+        };
+        let active = HashSet::from([
+            ActiveLogKey {
+                session_id: "active".into(),
+                log_mode: "auto".into(),
+            },
+            ActiveLogKey {
+                session_id: "active".into(),
+                log_mode: "manual".into(),
+            },
+        ]);
+
+        write_log_index(&path, &[auto, manual]).expect("index should write");
+        let result = bulk_delete_log_sessions(&path, &log_dir, &active, true)
+            .expect("bulk delete should succeed");
+        let loaded = read_log_index(&path).expect("index should read");
+
+        assert_eq!(result.removed_history_count, 0);
+        assert_eq!(result.skipped_active_count, 2);
+        assert_eq!(loaded.len(), 2);
+        assert!(auto_path.exists());
+        assert!(manual_path.exists());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn bulk_delete_counts_missing_auto_file_as_skipped() {
+        let path = temp_index_path();
+        let log_dir = path.parent().unwrap().to_path_buf();
+        fs::create_dir_all(&log_dir).expect("log dir should be created");
+        let auto_path = log_dir.join("missing.log");
+        let auto = LogSession {
+            file_path: auto_path.to_string_lossy().to_string(),
+            ..sample_session("auto-1", "2026-04-25T10:00:00+09:00", "host")
+        };
+
+        write_log_index(&path, &[auto]).expect("index should write");
+        let result = bulk_delete_log_sessions(&path, &log_dir, &empty_active_keys(), true)
+            .expect("bulk delete should succeed");
+
+        assert_eq!(result.removed_history_count, 1);
+        assert_eq!(result.skipped_missing_file_count, 1);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn bulk_delete_skips_auto_file_outside_log_dir() {
+        let path = temp_index_path();
+        let log_dir = path.parent().unwrap().to_path_buf();
+        fs::create_dir_all(&log_dir).expect("log dir should be created");
+        let outside_dir =
+            std::env::temp_dir().join(format!("exaterm_logger_outside_{}", Uuid::new_v4()));
+        fs::create_dir_all(&outside_dir).expect("outside dir should be created");
+        let outside_path = outside_dir.join("auto.log");
+        fs::write(&outside_path, "auto").expect("outside file should be created");
+        let auto = LogSession {
+            file_path: outside_path.to_string_lossy().to_string(),
+            ..sample_session("auto-1", "2026-04-25T10:00:00+09:00", "host")
+        };
+
+        write_log_index(&path, &[auto]).expect("index should write");
+        let result = bulk_delete_log_sessions(&path, &log_dir, &empty_active_keys(), true)
+            .expect("bulk delete should succeed");
+
+        assert_eq!(result.removed_history_count, 1);
+        assert_eq!(result.skipped_unsafe_path_count, 1);
+        assert!(outside_path.exists());
+        cleanup(&path);
+        let _ = fs::remove_dir_all(outside_dir);
     }
 }

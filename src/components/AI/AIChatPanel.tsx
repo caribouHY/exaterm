@@ -1,19 +1,21 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Bot, ClipboardPaste, Send, Terminal, X } from "lucide-react";
-import type { AppConfig, ChatMessage, AiModelInfo } from "../../types";
+import { ClipboardPaste, Send, Terminal, X } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type {
+  AppConfig,
+  ChatMessage,
+  AiModelInfo,
+  AiSecretStatus,
+  TerminalMode,
+} from "../../types";
 import { useTranslation } from "react-i18next";
+import AIAssistantLogo from "./AIAssistantLogo";
 import "./AIChatPanel.css";
 
-type CloudProviderId = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini";
+type CloudProviderId = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini" | "OpenRouter";
 type ProviderId = CloudProviderId | "Ollama";
-
-interface AiSecretStatus {
-  openai: boolean;
-  azure_openai: boolean;
-  anthropic: boolean;
-  gemini: boolean;
-}
 
 interface AIChatPanelProps {
   onClose: () => void;
@@ -26,6 +28,7 @@ interface AIChatPanelProps {
   setSelectedModel: React.Dispatch<React.SetStateAction<string>>;
   onInsertCommand: (command: string) => void;
   canInsertCommand: boolean;
+  activeTerminalMode: TerminalMode;
 }
 
 const PROVIDERS: Array<{ id: ProviderId; label: string; secretKey?: keyof AiSecretStatus }> = [
@@ -33,8 +36,16 @@ const PROVIDERS: Array<{ id: ProviderId; label: string; secretKey?: keyof AiSecr
   { id: "AzureOpenAi", label: "Azure OpenAI", secretKey: "azure_openai" },
   { id: "Anthropic", label: "Anthropic", secretKey: "anthropic" },
   { id: "Gemini", label: "Gemini", secretKey: "gemini" },
+  { id: "OpenRouter", label: "OpenRouter", secretKey: "openrouter" },
   { id: "Ollama", label: "Ollama" },
 ];
+
+function assistantMessageLabel(message: ChatMessage) {
+  if (message.role !== "assistant" || !message.provider || !message.model_id) return "";
+
+  const provider = PROVIDERS.find((candidate) => candidate.id === message.provider);
+  return provider ? `${provider.label} ${message.model_id}` : "";
+}
 
 const COMMAND_BLOCK_LANGUAGES = new Set([
   "bash",
@@ -102,6 +113,7 @@ export default function AIChatPanel({
   setSelectedModel,
   onInsertCommand,
   canInsertCommand,
+  activeTerminalMode,
 }: AIChatPanelProps) {
   const { t, i18n } = useTranslation();
   const [input, setInput] = useState("");
@@ -111,6 +123,7 @@ export default function AIChatPanel({
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState("http://localhost:11434");
   const [azureOpenAiEndpoint, setAzureOpenAiEndpoint] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,6 +136,7 @@ export default function AIChatPanel({
         azure_openai: false,
         anthropic: false,
         gemini: false,
+        openrouter: false,
       };
 
       try {
@@ -229,6 +243,14 @@ export default function AIChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    const inputElement = inputRef.current;
+    if (!inputElement) return;
+
+    inputElement.style.height = "auto";
+    inputElement.style.height = `${inputElement.scrollHeight}px`;
+  }, [input]);
+
   const providerModels = models.filter((m) => m.provider === selectedProvider);
   const visibleProviders = useMemo(
     () => PROVIDERS.filter((provider) => models.some((model) => model.provider === provider.id)),
@@ -272,7 +294,15 @@ export default function AIChatPanel({
         ollamaBaseUrl: selectedProvider === "Ollama" ? ollamaBaseUrl : null,
         azureOpenAiEndpoint: selectedProvider === "AzureOpenAi" ? azureOpenAiEndpoint : null,
       });
-      setMessages((prev) => [...prev, { role: "assistant", content: response }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: response,
+          provider: selectedProvider,
+          model_id: selectedModel,
+        },
+      ]);
     } catch (e: any) {
       const detail = typeof e === "string" ? e : e.message || "Unknown error";
       setMessages((prev) => [
@@ -280,6 +310,8 @@ export default function AIChatPanel({
         {
           role: "assistant",
           content: `Error: ${detail}`,
+          provider: selectedProvider,
+          model_id: selectedModel,
         },
       ]);
     }
@@ -287,9 +319,11 @@ export default function AIChatPanel({
   };
 
   return (
-    <div className="ai-panel">
+    <div className="ai-panel" data-terminal-mode={activeTerminalMode}>
       <div className="ai-panel__header">
-        <span className="ai-panel__title">{t("ai.title")}</span>
+        <div className="ai-panel__heading">
+          <span className="ai-panel__title">{t("ai.title")}</span>
+        </div>
         <button className="btn-icon" onClick={onClose}>
           <X size={14} />
         </button>
@@ -299,7 +333,7 @@ export default function AIChatPanel({
         {messages.length === 0 ? (
           <div className="ai-panel__welcome">
             <div className="ai-panel__welcome-icon">
-              <Bot size={24} color="#fff" />
+              <AIAssistantLogo size="lg" />
             </div>
             <div className="ai-panel__welcome-text">{t("ai.title")}</div>
           </div>
@@ -309,14 +343,23 @@ export default function AIChatPanel({
               msg.role === "assistant"
                 ? parseAssistantContent(msg.content)
                 : [{ type: "text" as const, content: msg.content }];
+            const roleLabel = assistantMessageLabel(msg);
 
             return (
               <div key={i} className={`ai-message ai-message--${msg.role}`}>
-                <span className="ai-message__role">{msg.role === "user" ? "You" : "AI"}</span>
+                {roleLabel && <span className="ai-message__role">{roleLabel}</span>}
                 {segments.map((segment, segmentIndex) =>
                   segment.type === "text" ? (
                     <div className="ai-message__content" key={`${i}-${segmentIndex}`}>
-                      {segment.content}
+                      {msg.role === "assistant" ? (
+                        <div className="ai-markdown">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {segment.content}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        segment.content
+                      )}
                     </div>
                   ) : (
                     <div className="ai-command" key={`${i}-${segmentIndex}`}>
@@ -365,6 +408,7 @@ export default function AIChatPanel({
       <div className="ai-panel__input-area">
         <div className="ai-panel__input-row">
           <textarea
+            ref={inputRef}
             className="ai-panel__input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -390,9 +434,11 @@ export default function AIChatPanel({
           <button
             className={`ai-panel__context-btn ${useContext ? "ai-panel__context-btn--active" : ""}`}
             onClick={() => setUseContext(!useContext)}
+            aria-label={t("ai.context")}
+            aria-pressed={useContext}
+            data-tooltip={useContext ? t("ai.context_tooltip_on") : t("ai.context_tooltip_off")}
           >
-            <Terminal size={12} />
-            {useContext ? `${t("ai.context")} ✓` : t("ai.context")}
+            <Terminal size={14} />
           </button>
 
           <div className="ai-panel__provider">

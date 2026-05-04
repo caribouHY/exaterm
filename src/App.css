@@ -9,6 +9,7 @@
 .app__body {
   display: flex;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -18,11 +19,22 @@
   flex: 1;
   overflow: hidden;
   min-width: 0;
+  min-height: 0;
 }
 
 .app__content {
   display: flex;
   flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app__workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -31,6 +43,7 @@
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  min-height: 0;
 }
 
 .app__hidden {
@@ -50,4 +63,10 @@
 .app__resizer:hover,
 .app__resizer--dragging {
   background: var(--accent-blue);
+}
+
+.app__ai-panel {
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: calc(100vw - 40px);
 }

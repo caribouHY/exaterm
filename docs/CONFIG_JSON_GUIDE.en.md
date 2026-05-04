@@ -47,7 +47,8 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "cursor_style": "block",
     "scrollback": 10000,
     "auto_session_log": false,
-    "log_format": "display"
+    "log_format": "display",
+    "include_log_header": true
   },
   "ssh": {
     "allow_legacy_algorithms": false
@@ -65,7 +66,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | `ai`                | object | See below | AI assistant settings.                                                                                                                     |
 | `terminal`          | object | See below | Terminal display and logging settings.                                                                                                     |
 | `ssh`               | object | See below | SSH connection compatibility settings.                                                                                                     |
-| `saved_connections` | array  | `[]`      | Saved SSH connection profiles. SSH profiles can be created, selected, and deleted from the connection dialog.                              |
+| `saved_connections` | array  | `[]`      | Saved SSH and Telnet connection profiles. Profiles can be created, selected, and deleted from the connection dialog.                       |
 
 ## ai
 
@@ -76,13 +77,13 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | `ai.azure_openai_deployment` | string  | `""`                       | The Azure OpenAI model deployment name. With the v1 API, this value is sent as the `model` field.                                                                                                                                      |
 | `ai.ollama_enabled`          | boolean | `false`                    | When set to `true`, Ollama models are shown in the AI panel. To use Ollama, a local or configured Ollama server must be running.                                                                                                       |
 | `ai.ollama_base_url`         | string  | `"http://localhost:11434"` | The base URL for the Ollama API. For a standard local setup, use `"http://localhost:11434"`. If this is an empty string, the UI treats it as the default URL.                                                                          |
-| `ai.default_provider`        | string  | `"OpenAi"`                 | The provider selected by default in the AI panel. Supported values are `"OpenAi"`, `"AzureOpenAi"`, `"Anthropic"`, `"Gemini"`, and `"Ollama"`.                                                                                         |
+| `ai.default_provider`        | string  | `"OpenAi"`                 | The provider selected by default in the AI panel. Supported values are `"OpenAi"`, `"AzureOpenAi"`, `"Anthropic"`, `"Gemini"`, `"OpenRouter"`, and `"Ollama"`.                                                                         |
 | `ai.default_model`           | string  | `"gpt-4o"`                 | The model ID selected by default in the AI panel. This is not currently editable from the Settings screen, so edit it manually if needed. If the saved model is not available, ExaTerm automatically falls back to an available model. |
 | `ai.debug_log_enabled`       | boolean | `false`                    | When set to `true`, AI chat requests and responses are saved as JSON Lines debug logs under `%AppData%\ExaTerm\ai-debug`.                                                                                                              |
 
 ### AI API Keys
 
-API keys for OpenAI, Azure OpenAI, Anthropic, and Google Gemini are not stored in `config.json`. Keys registered from the Settings screen are stored in the operating system credential store.
+API keys for OpenAI, Azure OpenAI, Anthropic, Google Gemini, and OpenRouter are not stored in `config.json`. Keys registered from the Settings screen are stored in the operating system credential store.
 
 Enter the full Azure OpenAI chat completions URL and model deployment name. ExaTerm uses the endpoint URL exactly as entered and does not append a path or `api-version` value.
 
@@ -100,18 +101,20 @@ Set `ai.debug_log_enabled` to `true` only when you need to troubleshoot AI chat 
 | Azure OpenAI | Your Azure model deployment name, such as `my-gpt4o`    |
 | Anthropic    | `claude-sonnet-4-20250514`, `claude-3-5-haiku-20241022` |
 | Gemini       | `gemini-2.5-pro`, `gemini-2.5-flash`                    |
+| OpenRouter   | `openai/gpt-4o`, `anthropic/claude-sonnet-4`            |
 | Ollama       | Model names installed in your local Ollama instance     |
 
 ## terminal
 
-| Parameter                   | Type    | Default                                | Description                                                                                                                                                  |
-| --------------------------- | ------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `terminal.font_size`        | number  | `14`                                   | Terminal font size. The Settings screen allows values from `8` to `32`.                                                                                      |
-| `terminal.font_family`      | string  | `"Consolas, 'Courier New', monospace"` | Terminal font family. Use the same format as CSS `font-family`.                                                                                              |
-| `terminal.cursor_style`     | string  | `"block"`                              | Terminal cursor shape. The default is a block cursor. When editing manually, use a value accepted by xterm.js, such as `"block"`, `"underline"`, or `"bar"`. |
-| `terminal.scrollback`       | number  | `10000`                                | Number of terminal scrollback lines. Larger values keep more history but may increase memory usage.                                                          |
-| `terminal.auto_session_log` | boolean | `false`                                | When set to `true`, SSH, serial, and Telnet terminal input/output is saved as plaintext logs.                                                                |
-| `terminal.log_format`       | string  | `"display"`                            | Session log formatting mode. `"display"` saves text closer to the terminal screen; `"strip_controls"` removes control sequences.                             |
+| Parameter                     | Type    | Default                                | Description                                                                                                                                                  |
+| ----------------------------- | ------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `terminal.font_size`          | number  | `14`                                   | Terminal font size. The Settings screen allows values from `8` to `32`.                                                                                      |
+| `terminal.font_family`        | string  | `"Consolas, 'Courier New', monospace"` | Terminal font family. Use the same format as CSS `font-family`.                                                                                              |
+| `terminal.cursor_style`       | string  | `"block"`                              | Terminal cursor shape. The default is a block cursor. When editing manually, use a value accepted by xterm.js, such as `"block"`, `"underline"`, or `"bar"`. |
+| `terminal.scrollback`         | number  | `10000`                                | Number of terminal scrollback lines. Larger values keep more history but may increase memory usage.                                                          |
+| `terminal.auto_session_log`   | boolean | `false`                                | When set to `true`, SSH, serial, and Telnet terminal input/output is saved as plaintext logs.                                                                |
+| `terminal.log_format`         | string  | `"display"`                            | Session log formatting mode. `"display"` saves text closer to the terminal screen; `"strip_controls"` removes control sequences.                             |
+| `terminal.include_log_header` | boolean | `true`                                 | When set to `true`, new session log files start with an ExaTerm header containing the connection type, target, log mode, and start time.                     |
 
 ### Session Log Notice
 
@@ -131,6 +134,8 @@ Logs are usually stored here:
 In sensitive environments, enable session logging only when necessary.
 
 When `terminal.log_format` is `"display"`, common line edits such as Backspace, cursor-left, and erase-to-end-of-line are applied before text is saved. When it is `"strip_controls"`, control sequences are removed, but partially edited text may remain.
+
+When `terminal.include_log_header` is `false`, new auto and manual session logs start directly with terminal content instead of the ExaTerm header. Existing log files are not changed.
 
 ## ssh
 
@@ -157,15 +162,19 @@ Internal SSH extension markers, such as strict key exchange and extension info m
 
 ## saved_connections
 
-`saved_connections` is an array of saved SSH connection profiles. SSH profiles can be managed from the connection dialog. Telnet and serial profiles are not currently supported. Passwords are not stored in this section.
+`saved_connections` is an array of saved SSH and Telnet connection profiles. Profiles can be managed from the connection dialog. Serial profiles are not currently supported. Passwords, private key contents, key passphrases, and other credentials are not stored in this section.
 
-| Parameter         | Type           | Description                                           |
-| ----------------- | -------------- | ----------------------------------------------------- |
-| `id`              | string         | Profile name and identifier.                          |
-| `connection_type` | string         | Connection type. Currently only `"ssh"` is supported. |
-| `host`            | string or null | SSH target host.                                      |
-| `port`            | number or null | SSH target port.                                      |
-| `username`        | string or null | SSH username.                                         |
+| Parameter          | Type           | Description                                                                                                                                            |
+| ------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`               | string         | Profile name and identifier.                                                                                                                           |
+| `connection_type`  | string         | Connection type. Supported profile values are `"ssh"` and `"telnet"`.                                                                                  |
+| `host`             | string or null | SSH or Telnet target host.                                                                                                                             |
+| `port`             | number or null | SSH or Telnet target port.                                                                                                                             |
+| `username`         | string or null | SSH username. Not used for Telnet profiles.                                                                                                            |
+| `encoding`         | string or null | Initial terminal display encoding for the profile. Supported values are `"utf-8"`, `"shift-jis"`, and `"euc-jp"`. Missing values default to `"utf-8"`. |
+| `terminal_mode`    | string or null | Initial terminal mode for the profile. Supported values are `"general"` and `"cisco_ios"`. Missing values default to `"general"`.                      |
+| `auth_method`      | string or null | SSH authentication method. Supported values are `"password"` and `"public_key"`. Missing values default to `"password"`. Not used for Telnet profiles. |
+| `private_key_path` | string or null | Private key file path used with SSH `"public_key"` authentication, such as an `id_ed25519` file. The file contents and passphrase are not stored.      |
 
 Example:
 
@@ -175,7 +184,24 @@ Example:
   "connection_type": "ssh",
   "host": "192.168.1.10",
   "port": 22,
-  "username": "admin"
+  "username": "admin",
+  "auth_method": "public_key",
+  "private_key_path": "C:\\Users\\user\\.ssh\\id_ed25519",
+  "encoding": "shift-jis",
+  "terminal_mode": "cisco_ios"
+}
+```
+
+Telnet example:
+
+```json
+{
+  "id": "legacy-router",
+  "connection_type": "telnet",
+  "host": "192.168.1.20",
+  "port": 23,
+  "encoding": "euc-jp",
+  "terminal_mode": "cisco_ios"
 }
 ```
 
@@ -216,6 +242,18 @@ Set `default_model` to a model name installed in Ollama.
 
 Save the Azure OpenAI API key from the Settings screen. ExaTerm sends requests to the configured endpoint URL without modifying it.
 
+### Use OpenRouter
+
+```json
+"ai": {
+  "default_provider": "OpenRouter",
+  "default_model": "openai/gpt-4o",
+  "debug_log_enabled": false
+}
+```
+
+Save the OpenRouter API key from the Settings screen. ExaTerm fetches available models from OpenRouter and falls back to representative model IDs if the model list cannot be loaded.
+
 ### Disable Session Logs
 
 ```json
@@ -238,11 +276,11 @@ Use this only for older devices that cannot negotiate with the default SSH algor
 
 ## Troubleshooting
 
-| Symptom                              | Action                                                                                                                                                                                                                        |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ExaTerm cannot load settings         | Check the JSON syntax, especially extra commas, quotation marks, and braces.                                                                                                                                                  |
-| Changes are not reflected            | Restart ExaTerm or save the settings again from the Settings screen.                                                                                                                                                          |
-| An AI provider does not appear       | Cloud providers require API keys. For Azure OpenAI, also check `azure_openai_enabled`, `azure_openai_endpoint`, and `azure_openai_deployment`. For Ollama, check `ollama_enabled` and make sure the Ollama server is running. |
-| An older SSH device will not connect | If the error indicates no common SSH algorithm, set `ssh.allow_legacy_algorithms` to `true`, then try connecting again. Disable it again when it is no longer needed.                                                         |
-| Text is hard to read                 | Adjust `terminal.font_size` or `terminal.font_family`.                                                                                                                                                                        |
-| You do not want logs to be saved     | Set `terminal.auto_session_log` to `false`. If logs were already created, delete them from `%AppData%\ExaTerm\logs` as needed.                                                                                                |
+| Symptom                              | Action                                                                                                                                                                                                                                                                                   |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ExaTerm cannot load settings         | Check the JSON syntax, especially extra commas, quotation marks, and braces.                                                                                                                                                                                                             |
+| Changes are not reflected            | Restart ExaTerm or save the settings again from the Settings screen.                                                                                                                                                                                                                     |
+| An AI provider does not appear       | Cloud providers require API keys. For Azure OpenAI, also check `azure_openai_enabled`, `azure_openai_endpoint`, and `azure_openai_deployment`. For OpenRouter, save the OpenRouter API key from Settings. For Ollama, check `ollama_enabled` and make sure the Ollama server is running. |
+| An older SSH device will not connect | If the error indicates no common SSH algorithm, set `ssh.allow_legacy_algorithms` to `true`, then try connecting again. Disable it again when it is no longer needed.                                                                                                                    |
+| Text is hard to read                 | Adjust `terminal.font_size` or `terminal.font_family`.                                                                                                                                                                                                                                   |
+| You do not want logs to be saved     | Set `terminal.auto_session_log` to `false`. If logs were already created, delete them from `%AppData%\ExaTerm\logs` as needed.                                                                                                                                                           |

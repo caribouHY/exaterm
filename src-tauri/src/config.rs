@@ -101,6 +101,8 @@ pub struct TerminalConfig {
     pub auto_session_log: bool,
     #[serde(default = "default_terminal_log_format")]
     pub log_format: String,
+    #[serde(default = "default_terminal_include_log_header")]
+    pub include_log_header: bool,
 }
 
 impl Default for TerminalConfig {
@@ -112,6 +114,7 @@ impl Default for TerminalConfig {
             scrollback: default_terminal_scrollback(),
             auto_session_log: false,
             log_format: default_terminal_log_format(),
+            include_log_header: default_terminal_include_log_header(),
         }
     }
 }
@@ -136,6 +139,10 @@ fn default_terminal_log_format() -> String {
     "display".into()
 }
 
+fn default_terminal_include_log_header() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedConnection {
     #[serde(default)]
@@ -148,6 +155,14 @@ pub struct SavedConnection {
     pub port: Option<u16>,
     #[serde(default)]
     pub username: Option<String>,
+    #[serde(default)]
+    pub encoding: Option<String>,
+    #[serde(default)]
+    pub terminal_mode: Option<String>,
+    #[serde(default)]
+    pub auth_method: Option<String>,
+    #[serde(default)]
+    pub private_key_path: Option<String>,
 }
 
 impl Default for SavedConnection {
@@ -158,6 +173,10 @@ impl Default for SavedConnection {
             host: None,
             port: None,
             username: None,
+            encoding: None,
+            terminal_mode: None,
+            auth_method: None,
+            private_key_path: None,
         }
     }
 }
@@ -239,6 +258,7 @@ mod tests {
         assert_eq!(cfg.terminal.font_size, 14);
         assert_eq!(cfg.terminal.scrollback, 10000);
         assert_eq!(cfg.terminal.log_format, "display");
+        assert!(cfg.terminal.include_log_header);
         assert!(!cfg.ssh.allow_legacy_algorithms);
         assert!(cfg.saved_connections.is_empty());
     }
@@ -266,7 +286,97 @@ mod tests {
         assert_eq!(cfg.terminal.font_size, 14);
         assert!(cfg.terminal.auto_session_log);
         assert_eq!(cfg.terminal.log_format, "display");
+        assert!(cfg.terminal.include_log_header);
         assert!(cfg.ssh.allow_legacy_algorithms);
         assert_eq!(cfg.saved_connections[0].id, "dev box");
+        assert_eq!(cfg.saved_connections[0].encoding, None);
+        assert_eq!(cfg.saved_connections[0].terminal_mode, None);
+        assert_eq!(cfg.saved_connections[0].auth_method, None);
+        assert_eq!(cfg.saved_connections[0].private_key_path, None);
+    }
+
+    #[test]
+    fn saved_connection_preserves_encoding() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "saved_connections": [{
+                    "id": "legacy-router",
+                    "connection_type": "ssh",
+                    "encoding": "shift-jis"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.saved_connections[0].encoding.as_deref(),
+            Some("shift-jis")
+        );
+    }
+
+    #[test]
+    fn saved_connection_preserves_terminal_mode() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "saved_connections": [{
+                    "id": "ios-router",
+                    "connection_type": "ssh",
+                    "terminal_mode": "cisco_ios"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.saved_connections[0].terminal_mode.as_deref(),
+            Some("cisco_ios")
+        );
+    }
+
+    #[test]
+    fn saved_connection_preserves_telnet_profile_fields() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "saved_connections": [{
+                    "id": "legacy-telnet",
+                    "connection_type": "telnet",
+                    "host": "192.168.1.10",
+                    "port": 23,
+                    "encoding": "euc-jp"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        let profile = &cfg.saved_connections[0];
+        assert_eq!(profile.id, "legacy-telnet");
+        assert_eq!(profile.connection_type, "telnet");
+        assert_eq!(profile.host.as_deref(), Some("192.168.1.10"));
+        assert_eq!(profile.port, Some(23));
+        assert_eq!(profile.encoding.as_deref(), Some("euc-jp"));
+    }
+
+    #[test]
+    fn saved_connection_preserves_public_key_auth_path() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "saved_connections": [{
+                    "id": "key-router",
+                    "connection_type": "ssh",
+                    "auth_method": "public_key",
+                    "private_key_path": "C:\\Users\\me\\.ssh\\id_ed25519"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.saved_connections[0].auth_method.as_deref(),
+            Some("public_key")
+        );
+        assert_eq!(
+            cfg.saved_connections[0].private_key_path.as_deref(),
+            Some("C:\\Users\\me\\.ssh\\id_ed25519")
+        );
     }
 }

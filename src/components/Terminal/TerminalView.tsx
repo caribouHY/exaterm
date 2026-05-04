@@ -1,14 +1,16 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
+import type { IDecoration, IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { ConnectionType, Encoding, TerminalConfig } from "../../types";
+import type { ConnectionType, Encoding, TerminalConfig, TerminalMode } from "../../types";
 import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
+import { DEFAULT_TERMINAL_MODE } from "../../utils/terminalModes";
+import appIcon from "../../../src-tauri/icons/icon.png";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
@@ -18,14 +20,32 @@ interface TerminalViewProps {
   isConnected: boolean;
   isActive: boolean;
   encoding: Encoding;
-  isLoggingActive: boolean;
+  isAutoLogging: boolean;
+  isManualLogging: boolean;
+  isLoggingPaused: boolean;
   terminalConfig?: TerminalConfig;
+  terminalMode: TerminalMode;
   onOpenConnection: () => void;
   onTerminalData?: (data: string) => void;
 }
 
 export interface TerminalViewHandle {
   insertText: (text: string) => void;
+  flushManualLogBuffer: () => Promise<void>;
+}
+
+interface PromptDecorationSet {
+  promptSignature: string;
+  commandSignature: string;
+  marker: IMarker;
+  promptDecoration: IDecoration;
+  commandDecoration?: IDecoration;
+}
+
+interface LineDecorationSet {
+  signature: string;
+  marker: IMarker;
+  decoration: IDecoration;
 }
 
 const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
@@ -35,8 +55,11 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     isConnected,
     isActive,
     encoding,
-    isLoggingActive,
+    isAutoLogging,
+    isManualLogging,
+    isLoggingPaused,
     terminalConfig,
+    terminalMode,
     onOpenConnection,
     onTerminalData,
   },
@@ -48,10 +71,45 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const fitRef = useRef<FitAddon | null>(null);
   const decoderRef = useRef(new TextDecoder(encoding));
   const isConnectedRef = useRef(isConnected);
-  const isLoggingActiveRef = useRef(isLoggingActive);
-  const logSanitizerRef = useRef(
+  const isAutoLoggingRef = useRef(isAutoLogging);
+  const isManualLoggingRef = useRef(isManualLogging);
+  const isLoggingPausedRef = useRef(isLoggingPaused);
+  const terminalModeRef = useRef(terminalMode);
+  const promptDecorationsRef = useRef<Map<number, PromptDecorationSet>>(new Map());
+  const errorDecorationsRef = useRef<Map<number, LineDecorationSet>>(new Map());
+  const autoLogSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
+  const manualLogSanitizerRef = useRef(
+    createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
+  );
+
+  const ciscoIosPromptPattern = /^([\w+\-.:/\[\]]+)((?:\([^)]+\)){0,3})([>#]) ?(.*)$/;
+  const ciscoIosConfigPromptPattern = /^.+\(config(-.*)?\)#$/;
+  const ciscoIosErrorPatterns = [
+    /ERROR:/i,
+    /% ?Bad secret/,
+    /(?:^|%) Bad passwords/,
+    /invalid input/i,
+    /(?:incomplete|ambiguous) command/i,
+    /connection timed out/i,
+    /[^\r\n]+ not found/,
+    /'[^']+' +returned error code: ?\d+/,
+    /Bad mask/i,
+    /% ?\S+ ?overlaps with ?\S+/i,
+    /% ?\S+ ?Error: ?\s+/i,
+    /% ?\S+ ?Informational: ?\s+/i,
+    /Command authorization failed/,
+    /Command Rejected(\s*\([^)]*\))?\s*: ?\s+/i,
+    /% General session commands not allowed under the address family/i,
+    /% BGP: Error initializing topology/i,
+    /%SNMP agent not enabled/i,
+    /% Invalid/i,
+    /%You must disable VTPv1 and VTPv2 or switch to VTPv3 before configuring a VLAN name longer than 32 characters/i,
+  ];
+  const terminalModeDecorators: Partial<Record<TerminalMode, (term: Terminal) => void>> = {
+    cisco_ios: (term) => decorateCiscoIosTerminal(term),
+  };
 
   const connectionCommands: Record<
     ConnectionType,
@@ -82,8 +140,201 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   }, [isConnected]);
 
   useEffect(() => {
-    isLoggingActiveRef.current = isLoggingActive;
-  }, [isLoggingActive]);
+    isAutoLoggingRef.current = isAutoLogging;
+  }, [isAutoLogging]);
+
+  useEffect(() => {
+    isManualLoggingRef.current = isManualLogging;
+  }, [isManualLogging]);
+
+  useEffect(() => {
+    if (isLoggingPaused && !isLoggingPausedRef.current && sessionId) {
+      if (isAutoLoggingRef.current) {
+        const logText = autoLogSanitizerRef.current.flush();
+        if (logText) {
+          invoke("logger_append_to_mode", { sessionId, logMode: "auto", data: logText }).catch(
+            () => {}
+          );
+        }
+      }
+      if (isManualLoggingRef.current) {
+        const logText = manualLogSanitizerRef.current.flush();
+        if (logText) {
+          invoke("logger_append_to_mode", { sessionId, logMode: "manual", data: logText }).catch(
+            () => {}
+          );
+        }
+      }
+    }
+    isLoggingPausedRef.current = isLoggingPaused;
+  }, [isLoggingPaused, sessionId]);
+
+  const disposePromptDecorationSet = ({
+    commandDecoration,
+    promptDecoration,
+    marker,
+  }: PromptDecorationSet) => {
+    commandDecoration?.dispose();
+    promptDecoration.dispose();
+    marker.dispose();
+  };
+
+  const disposeLineDecorationSet = ({ decoration, marker }: LineDecorationSet) => {
+    decoration.dispose();
+    marker.dispose();
+  };
+
+  const clearModeDecorations = () => {
+    promptDecorationsRef.current.forEach(disposePromptDecorationSet);
+    promptDecorationsRef.current.clear();
+    errorDecorationsRef.current.forEach(disposeLineDecorationSet);
+    errorDecorationsRef.current.clear();
+  };
+
+  const decorateCiscoIosTerminal = (term: Terminal) => {
+    decorateCiscoIosPrompt(term);
+    decorateCiscoIosErrors(term);
+  };
+
+  const decorateCiscoIosErrors = (term: Terminal) => {
+    const buffer = term.buffer.active;
+    if (buffer.type === "alternate") return;
+
+    const cursorLineIndex = buffer.baseY + buffer.cursorY;
+    const firstLineIndex = Math.max(0, cursorLineIndex - 80);
+
+    for (let lineIndex = firstLineIndex; lineIndex <= cursorLineIndex; lineIndex += 1) {
+      const line = buffer.getLine(lineIndex)?.translateToString(true) ?? "";
+      const trimmedLine = line.trimEnd();
+      if (!trimmedLine || ciscoIosPromptPattern.test(trimmedLine)) continue;
+      if (!ciscoIosErrorPatterns.some((pattern) => pattern.test(trimmedLine))) continue;
+
+      const decorationStart = Math.max(0, trimmedLine.search(/\S/));
+      const decorationWidth = trimmedLine.length - decorationStart;
+      if (decorationWidth <= 0) continue;
+
+      const signature = `${decorationStart}:${decorationWidth}:${trimmedLine}`;
+      const existingDecorationSet = errorDecorationsRef.current.get(lineIndex);
+      if (existingDecorationSet?.signature === signature) continue;
+      if (existingDecorationSet) {
+        disposeLineDecorationSet(existingDecorationSet);
+        errorDecorationsRef.current.delete(lineIndex);
+      }
+
+      const marker = term.registerMarker(lineIndex - cursorLineIndex);
+      if (!marker) continue;
+
+      const decoration = term.registerDecoration({
+        marker,
+        x: decorationStart,
+        width: decorationWidth,
+        foregroundColor: "#f87171",
+        layer: "top",
+      });
+
+      if (!decoration) {
+        marker.dispose();
+        continue;
+      }
+
+      decoration.onDispose(() => errorDecorationsRef.current.delete(lineIndex));
+      errorDecorationsRef.current.set(lineIndex, { signature, marker, decoration });
+    }
+  };
+
+  const decorateCiscoIosPrompt = (term: Terminal) => {
+    const buffer = term.buffer.active;
+    if (buffer.type === "alternate") return;
+
+    const lineIndex = buffer.baseY + buffer.cursorY;
+    const line = buffer.getLine(lineIndex)?.translateToString(true) ?? "";
+    const trimmedLine = line.trimEnd();
+    const promptMatch = ciscoIosPromptPattern.exec(trimmedLine);
+    if (!promptMatch) return;
+
+    const hostname = promptMatch[1];
+    const configMode = promptMatch[2];
+    const terminator = promptMatch[3];
+    const commandText = promptMatch[4].trimEnd();
+    const promptText = `${hostname}${configMode}${terminator}`;
+    const isConfigPrompt = ciscoIosConfigPromptPattern.test(promptText);
+    const hostnameStart = trimmedLine.indexOf(hostname);
+    if (hostnameStart < 0 || hostname.length === 0) return;
+    const promptWidth = promptText.length;
+    if (promptWidth === 0) return;
+    const commandStart = hostnameStart + promptMatch[0].length - promptMatch[4].length;
+    const commandWidth = commandText.length;
+    const promptSignature = `${hostnameStart}:${promptWidth}:${isConfigPrompt}`;
+    const commandSignature = `${commandStart}:${commandText}`;
+    const existingDecorationSet = promptDecorationsRef.current.get(lineIndex);
+    if (existingDecorationSet?.promptSignature === promptSignature) {
+      if (existingDecorationSet.commandSignature === commandSignature) return;
+
+      existingDecorationSet.commandDecoration?.dispose();
+      existingDecorationSet.commandDecoration = undefined;
+      existingDecorationSet.commandSignature = commandSignature;
+
+      if (commandWidth > 0) {
+        existingDecorationSet.commandDecoration = term.registerDecoration({
+          marker: existingDecorationSet.marker,
+          x: commandStart,
+          width: commandWidth,
+          foregroundColor: "#6ee7b7",
+          layer: "top",
+        });
+      }
+      return;
+    }
+
+    if (existingDecorationSet) {
+      disposePromptDecorationSet(existingDecorationSet);
+      promptDecorationsRef.current.delete(lineIndex);
+    }
+
+    const marker = term.registerMarker(0);
+    if (!marker) return;
+
+    const promptDecoration = term.registerDecoration({
+      marker,
+      x: hostnameStart,
+      width: promptWidth,
+      foregroundColor: isConfigPrompt ? "#facc15" : "#7dd3fc",
+      backgroundColor: isConfigPrompt ? "#3a2f0a" : "#0f2f3f",
+      layer: "top",
+    });
+
+    if (!promptDecoration) {
+      marker.dispose();
+      return;
+    }
+
+    promptDecoration.onRender((element) => {
+      element.classList.add("terminal-view__cisco-hostname");
+      if (isConfigPrompt) {
+        element.classList.add("terminal-view__cisco-hostname--config");
+      }
+    });
+
+    let commandDecoration: IDecoration | undefined;
+    if (commandWidth > 0) {
+      commandDecoration = term.registerDecoration({
+        marker,
+        x: commandStart,
+        width: commandWidth,
+        foregroundColor: "#6ee7b7",
+        layer: "top",
+      });
+    }
+
+    promptDecoration.onDispose(() => promptDecorationsRef.current.delete(lineIndex));
+    promptDecorationsRef.current.set(lineIndex, {
+      promptSignature,
+      commandSignature,
+      marker,
+      promptDecoration,
+      commandDecoration,
+    });
+  };
 
   useImperativeHandle(
     ref,
@@ -97,6 +348,16 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         term.paste(data);
         term.focus();
       },
+      flushManualLogBuffer: async () => {
+        if (!sessionId) return;
+        const logText = manualLogSanitizerRef.current.flush();
+        if (!logText) return;
+        await invoke("logger_append_to_mode", {
+          sessionId,
+          logMode: "manual",
+          data: logText,
+        });
+      },
     }),
     [sessionId]
   );
@@ -107,8 +368,29 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   }, [encoding]);
 
   useEffect(() => {
-    logSanitizerRef.current = createTerminalLogSanitizer(terminalConfig?.log_format ?? "display");
+    autoLogSanitizerRef.current = createTerminalLogSanitizer(
+      terminalConfig?.log_format ?? "display"
+    );
+    manualLogSanitizerRef.current = createTerminalLogSanitizer(
+      terminalConfig?.log_format ?? "display"
+    );
   }, [terminalConfig?.log_format]);
+
+  useEffect(() => {
+    terminalModeRef.current = terminalMode;
+    if (terminalMode === DEFAULT_TERMINAL_MODE) {
+      clearModeDecorations();
+      return;
+    }
+    const decorator = terminalModeDecorators[terminalMode];
+    if (!decorator) {
+      clearModeDecorations();
+      return;
+    }
+    if (termRef.current) {
+      decorator(termRef.current);
+    }
+  }, [terminalMode]);
 
   // Create the terminal once per session and keep it mounted after disconnect.
   useEffect(() => {
@@ -184,12 +466,22 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     const handleData = (event: { payload: number[] }) => {
       const data = new Uint8Array(event.payload);
       const text = decoderRef.current.decode(data, { stream: true });
-      term.write(text);
+      term.write(text, () => terminalModeDecorators[terminalModeRef.current]?.(term));
       if (onTerminalData) onTerminalData(text);
-      if (isLoggingActiveRef.current) {
-        const logText = logSanitizerRef.current.push(text);
+      if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
+        const logText = autoLogSanitizerRef.current.push(text);
         if (logText) {
-          invoke("logger_append", { sessionId, data: logText }).catch(() => {});
+          invoke("logger_append_to_mode", { sessionId, logMode: "auto", data: logText }).catch(
+            () => {}
+          );
+        }
+      }
+      if (isManualLoggingRef.current && !isLoggingPausedRef.current) {
+        const logText = manualLogSanitizerRef.current.push(text);
+        if (logText) {
+          invoke("logger_append_to_mode", { sessionId, logMode: "manual", data: logText }).catch(
+            () => {}
+          );
         }
       }
     };
@@ -212,13 +504,24 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     return () => {
       unlistenData.then((fn) => fn());
       unlistenError.then((fn) => fn());
-      if (isLoggingActiveRef.current) {
-        const logText = logSanitizerRef.current.flush();
+      if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
+        const logText = autoLogSanitizerRef.current.flush();
         if (logText) {
-          invoke("logger_append", { sessionId, data: logText }).catch(() => {});
+          invoke("logger_append_to_mode", { sessionId, logMode: "auto", data: logText }).catch(
+            () => {}
+          );
+        }
+      }
+      if (isManualLoggingRef.current && !isLoggingPausedRef.current) {
+        const logText = manualLogSanitizerRef.current.flush();
+        if (logText) {
+          invoke("logger_append_to_mode", { sessionId, logMode: "manual", data: logText }).catch(
+            () => {}
+          );
         }
       }
       resizeObserver.disconnect();
+      clearModeDecorations();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -256,9 +559,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     return (
       <div className={`terminal-view ${!isActive ? "terminal-view--hidden" : ""}`}>
         <div className="terminal-view__empty">
-          <div className="terminal-view__empty-icon">
-            <Monitor size={32} color="#fff" />
-          </div>
+          <img className="terminal-view__empty-icon" src={appIcon} alt="" aria-hidden="true" />
           <div className="terminal-view__empty-title">ExaTerm</div>
           <div className="terminal-view__empty-desc">{t("terminal.empty_desc")}</div>
           <button className="btn btn-primary" onClick={onOpenConnection}>
@@ -275,7 +576,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
             </div>
             <div className="terminal-view__shortcut">
               <span className="terminal-view__key">Ctrl+,</span>
-              <span>{t("sidebar.settings")}</span>
+              <span>{t("titlebar.menu.settings")}</span>
             </div>
           </div>
         </div>
@@ -285,7 +586,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
   return (
     <div className={`terminal-view ${!isActive ? "terminal-view--hidden" : ""}`}>
-      <div ref={containerRef} style={{ height: "100%" }} />
+      <div ref={containerRef} className="terminal-view__terminal" />
     </div>
   );
 });

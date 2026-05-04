@@ -6,14 +6,14 @@ Use this checklist when preparing a new ExaTerm release version.
 
 - Update the app version in:
   - `package.json`
-  - `package-lock.json`
+  - `pnpm-lock.yaml`
   - `src-tauri/tauri.conf.json`
   - `src-tauri/Cargo.toml`
   - the `name = "exaterm"` package entry in `src-tauri/Cargo.lock`
 - Do not update unrelated dependency versions in lockfiles just because they match the old app version.
 - Keep UI version displays derived from a single source when possible. The status bar currently reads `package.json` through `src/components/StatusBar/StatusBar.tsx`.
 - Search for stale hardcoded app version text before finishing, replacing the placeholders with the old and new release versions:
-  - `rg "ExaTerm v|<old-version>|<new-version>" src package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml`
+  - `rg "ExaTerm v|<old-version>|<new-version>" src package.json pnpm-lock.yaml src-tauri/tauri.conf.json src-tauri/Cargo.toml`
 
 ## Changelog
 
@@ -24,11 +24,11 @@ Use this checklist when preparing a new ExaTerm release version.
 
 ## Validation
 
-- Run `npm run format:check` before opening or updating the release PR. Editor format-on-save is not enough because CI also checks Markdown, JSON, and files that may not have been saved through the editor.
-- Run `npm run build` for frontend and TypeScript validation.
+- Run `pnpm run format:check` before opening or updating the release PR. Editor format-on-save is not enough because CI also checks Markdown, JSON, and files that may not have been saved through the editor.
+- Run `pnpm run build` for frontend and TypeScript validation.
 - Run `cargo test` from `src-tauri/` or use `cargo test --manifest-path src-tauri/Cargo.toml`.
 - Run `git status --short` and confirm only intended release-preparation files changed.
-- Use `npm run tauri -- build --debug` only when installer/runtime integration or distributable bundle validation is part of the task.
+- Use `pnpm run tauri build --debug` only when installer/runtime integration or distributable bundle validation is part of the task.
 
 ## Out of Scope Unless Requested
 

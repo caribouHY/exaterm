@@ -47,7 +47,8 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "cursor_style": "block",
     "scrollback": 10000,
     "auto_session_log": false,
-    "log_format": "display"
+    "log_format": "display",
+    "include_log_header": true
   },
   "ssh": {
     "allow_legacy_algorithms": false
@@ -65,7 +66,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | `ai`                | object | 下記参照 | AI アシスタント関連の設定です。                                                                                      |
 | `terminal`          | object | 下記参照 | ターミナル表示とログ関連の設定です。                                                                                 |
 | `ssh`               | object | 下記参照 | SSH 接続の互換性設定です。                                                                                           |
-| `saved_connections` | array  | `[]`     | 保存済み SSH 接続プロファイルです。SSH プロファイルは接続ダイアログから作成、選択、削除できます。                    |
+| `saved_connections` | array  | `[]`     | 保存済み SSH/Telnet 接続プロファイルです。プロファイルは接続ダイアログから作成、選択、削除できます。                 |
 
 ## ai
 
@@ -76,13 +77,13 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | `ai.azure_openai_deployment` | string  | `""`                       | Azure OpenAI のモデルデプロイ名です。v1 API では、この値を `model` フィールドとして送信します。                                                                                                                                    |
 | `ai.ollama_enabled`          | boolean | `false`                    | `true` にすると、Ollama のモデルを AI パネルに表示します。Ollama を使用するには、ローカルまたは指定 URL の Ollama サーバーが起動している必要があります。                                                                           |
 | `ai.ollama_base_url`         | string  | `"http://localhost:11434"` | Ollama API のベース URL です。ローカル環境の標準設定では `"http://localhost:11434"` を使用します。空文字の場合、画面上では既定 URL として扱われます。                                                                              |
-| `ai.default_provider`        | string  | `"OpenAi"`                 | AI パネルで優先的に選択されるプロバイダです。使用可能な値は `"OpenAi"`, `"AzureOpenAi"`, `"Anthropic"`, `"Gemini"`, `"Ollama"` です。                                                                                              |
+| `ai.default_provider`        | string  | `"OpenAi"`                 | AI パネルで優先的に選択されるプロバイダです。使用可能な値は `"OpenAi"`, `"AzureOpenAi"`, `"Anthropic"`, `"Gemini"`, `"OpenRouter"`, `"Ollama"` です。                                                                              |
 | `ai.default_model`           | string  | `"gpt-4o"`                 | AI パネルで優先的に選択されるモデル ID です。設定画面からは現在直接編集できないため、必要な場合は手動で編集します。保存したモデルが利用できない場合は、利用可能なモデルへ自動的にフォールバックします。                            |
 | `ai.debug_log_enabled`       | boolean | `false`                    | `true` にすると、AI チャットのリクエストと応答を JSON Lines 形式のデバッグログとして `%AppData%\ExaTerm\ai-debug` に保存します。                                                                                                   |
 
 ### AI API キーについて
 
-OpenAI、Azure OpenAI、Anthropic、Google Gemini の API キーは `config.json` には保存されません。設定画面で登録したキーは、OS の資格情報ストアに保存されます。
+OpenAI、Azure OpenAI、Anthropic、Google Gemini、OpenRouter の API キーは `config.json` には保存されません。設定画面で登録したキーは、OS の資格情報ストアに保存されます。
 
 Azure OpenAI の chat completions URL 全体とモデルデプロイ名を設定してください。ExaTerm は Endpoint URL を入力どおりに使用し、パスや `api-version` は自動付与しません。
 
@@ -100,18 +101,20 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 | Azure OpenAI | Azure のモデルデプロイ名。例: `my-gpt4o`                |
 | Anthropic    | `claude-sonnet-4-20250514`, `claude-3-5-haiku-20241022` |
 | Gemini       | `gemini-2.5-pro`, `gemini-2.5-flash`                    |
+| OpenRouter   | `openai/gpt-4o`, `anthropic/claude-sonnet-4`            |
 | Ollama       | ローカルの Ollama にインストール済みのモデル名          |
 
 ## terminal
 
-| パラメータ                  | 型      | 既定値                                 | 説明                                                                                                                                                            |
-| --------------------------- | ------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `terminal.font_size`        | number  | `14`                                   | ターミナルのフォントサイズです。設定画面では `8` から `32` の範囲で指定できます。                                                                               |
-| `terminal.font_family`      | string  | `"Consolas, 'Courier New', monospace"` | ターミナルのフォントファミリーです。CSS の `font-family` と同じ形式で指定します。                                                                               |
-| `terminal.cursor_style`     | string  | `"block"`                              | ターミナルのカーソル形状です。現在の既定値はブロックカーソルです。手動編集時は xterm.js が受け付ける値を指定してください。例: `"block"`, `"underline"`, `"bar"` |
-| `terminal.scrollback`       | number  | `10000`                                | ターミナルのスクロールバック行数です。値を大きくすると過去ログを多く保持できますが、メモリ使用量が増える可能性があります。                                      |
-| `terminal.auto_session_log` | boolean | `false`                                | `true` にすると、SSH/シリアル/Telnet 接続のターミナル入出力を平文ログとして保存します。                                                                         |
-| `terminal.log_format`       | string  | `"display"`                            | セッションログの整形方式です。`"display"` は画面表示に近い内容、`"strip_controls"` は制御文字を除去した内容を保存します。                                       |
+| パラメータ                    | 型      | 既定値                                 | 説明                                                                                                                                                            |
+| ----------------------------- | ------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `terminal.font_size`          | number  | `14`                                   | ターミナルのフォントサイズです。設定画面では `8` から `32` の範囲で指定できます。                                                                               |
+| `terminal.font_family`        | string  | `"Consolas, 'Courier New', monospace"` | ターミナルのフォントファミリーです。CSS の `font-family` と同じ形式で指定します。                                                                               |
+| `terminal.cursor_style`       | string  | `"block"`                              | ターミナルのカーソル形状です。現在の既定値はブロックカーソルです。手動編集時は xterm.js が受け付ける値を指定してください。例: `"block"`, `"underline"`, `"bar"` |
+| `terminal.scrollback`         | number  | `10000`                                | ターミナルのスクロールバック行数です。値を大きくすると過去ログを多く保持できますが、メモリ使用量が増える可能性があります。                                      |
+| `terminal.auto_session_log`   | boolean | `false`                                | `true` にすると、SSH/シリアル/Telnet 接続のターミナル入出力を平文ログとして保存します。                                                                         |
+| `terminal.log_format`         | string  | `"display"`                            | セッションログの整形方式です。`"display"` は画面表示に近い内容、`"strip_controls"` は制御文字を除去した内容を保存します。                                       |
+| `terminal.include_log_header` | boolean | `true`                                 | `true` にすると、新しいセッションログの先頭に ExaTerm ヘッダとして種別、接続先、ログモード、開始時刻を記録します。                                              |
 
 ### セッションログの注意
 
@@ -131,6 +134,8 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 機密性の高い環境では、必要な場合のみ有効にしてください。
 
 `terminal.log_format` が `"display"` の場合、Backspace、カーソル左移動、行末消去などの一般的な行編集を反映してからログへ保存します。`"strip_controls"` の場合は制御シーケンスを除去しますが、編集途中の文字が残る場合があります。
+
+`terminal.include_log_header` が `false` の場合、新しい自動ログと手動ログは ExaTerm ヘッダを書かず、ターミナル内容から直接始まります。既存のログファイルは変更されません。
 
 ## ssh
 
@@ -157,15 +162,19 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
 
 ## saved_connections
 
-`saved_connections` は保存済み SSH 接続プロファイルを表す配列です。SSH プロファイルは接続ダイアログから管理できます。Telnet とシリアルのプロファイルは現状非対応です。パスワードはこのセクションには保存されません。
+`saved_connections` は保存済み SSH/Telnet 接続プロファイルを表す配列です。プロファイルは接続ダイアログから管理できます。シリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズ、その他の認証情報はこのセクションには保存されません。
 
-| パラメータ        | 型                 | 説明                                              |
-| ----------------- | ------------------ | ------------------------------------------------- |
-| `id`              | string             | プロファイル名兼識別子です。                      |
-| `connection_type` | string             | 接続種別です。現状は `"ssh"` のみ対応しています。 |
-| `host`            | string または null | SSH 接続先ホストです。                            |
-| `port`            | number または null | SSH 接続先ポートです。                            |
-| `username`        | string または null | SSH ユーザー名です。                              |
+| パラメータ         | 型                 | 説明                                                                                                                                                                |
+| ------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`               | string             | プロファイル名兼識別子です。                                                                                                                                        |
+| `connection_type`  | string             | 接続種別です。プロファイルで対応している値は `"ssh"` と `"telnet"` です。                                                                                           |
+| `host`             | string または null | SSH または Telnet 接続先ホストです。                                                                                                                                |
+| `port`             | number または null | SSH または Telnet 接続先ポートです。                                                                                                                                |
+| `username`         | string または null | SSH ユーザー名です。Telnet プロファイルでは使用しません。                                                                                                           |
+| `encoding`         | string または null | このプロファイルで接続したときのターミナル表示文字コードです。指定できる値は `"utf-8"`、`"shift-jis"`、`"euc-jp"` です。未設定の場合は `"utf-8"` として扱われます。 |
+| `terminal_mode`    | string または null | このプロファイルで接続したときのターミナルモードです。指定できる値は `"general"` と `"cisco_ios"` です。未設定の場合は `"general"` として扱われます。               |
+| `auth_method`      | string または null | SSH 認証方式です。指定できる値は `"password"` と `"public_key"` です。未設定の場合は `"password"` として扱われます。Telnet プロファイルでは使用しません。           |
+| `private_key_path` | string または null | SSH の `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                        |
 
 例:
 
@@ -175,7 +184,24 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
   "connection_type": "ssh",
   "host": "192.168.1.10",
   "port": 22,
-  "username": "admin"
+  "username": "admin",
+  "auth_method": "public_key",
+  "private_key_path": "C:\\Users\\user\\.ssh\\id_ed25519",
+  "encoding": "shift-jis",
+  "terminal_mode": "cisco_ios"
+}
+```
+
+Telnet の例:
+
+```json
+{
+  "id": "legacy-router",
+  "connection_type": "telnet",
+  "host": "192.168.1.20",
+  "port": 23,
+  "encoding": "euc-jp",
+  "terminal_mode": "cisco_ios"
 }
 ```
 
@@ -216,6 +242,18 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
 
 Azure OpenAI API キーは設定画面から保存してください。ExaTerm は設定された Endpoint URL に、変更を加えずリクエストを送信します。
 
+### OpenRouter を使用する
+
+```json
+"ai": {
+  "default_provider": "OpenRouter",
+  "default_model": "openai/gpt-4o",
+  "debug_log_enabled": false
+}
+```
+
+OpenRouter API キーは設定画面から保存してください。ExaTerm は OpenRouter から利用可能なモデル一覧を取得し、一覧を読み込めない場合は代表的なモデル ID にフォールバックします。
+
 ### セッションログを無効にする
 
 ```json
@@ -238,11 +276,11 @@ Azure OpenAI API キーは設定画面から保存してください。ExaTerm �
 
 ## トラブルシューティング
 
-| 症状                         | 対処                                                                                                                                                                                                                                      |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ExaTerm が設定を読み込めない | JSON の構文を確認してください。特に余分なカンマ、引用符、波括弧の不足を確認します。                                                                                                                                                       |
-| 設定を変更しても反映されない | ExaTerm を再起動するか、設定画面で保存し直してください。                                                                                                                                                                                  |
-| AI プロバイダが表示されない  | クラウド系プロバイダは API キー登録が必要です。Azure OpenAI は `azure_openai_enabled`、`azure_openai_endpoint`、`azure_openai_deployment` も確認してください。Ollama は `ollama_enabled` と Ollama サーバーの起動状態を確認してください。 |
-| 古い SSH 機器に接続できない  | 共通の SSH アルゴリズムがないことを示すエラーの場合は、`ssh.allow_legacy_algorithms` を `true` にして再接続してください。不要になったら無効に戻してください。                                                                             |
-| 文字が見づらい               | `terminal.font_size` または `terminal.font_family` を調整してください。                                                                                                                                                                   |
-| ログを残したくない           | `terminal.auto_session_log` を `false` にしてください。既に作成済みのログは必要に応じて `%AppData%\ExaTerm\logs` から削除してください。                                                                                                   |
+| 症状                         | 対処                                                                                                                                                                                                                                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ExaTerm が設定を読み込めない | JSON の構文を確認してください。特に余分なカンマ、引用符、波括弧の不足を確認します。                                                                                                                                                                                                                      |
+| 設定を変更しても反映されない | ExaTerm を再起動するか、設定画面で保存し直してください。                                                                                                                                                                                                                                                 |
+| AI プロバイダが表示されない  | クラウド系プロバイダは API キー登録が必要です。Azure OpenAI は `azure_openai_enabled`、`azure_openai_endpoint`、`azure_openai_deployment` も確認してください。OpenRouter は設定画面で OpenRouter API キーを保存してください。Ollama は `ollama_enabled` と Ollama サーバーの起動状態を確認してください。 |
+| 古い SSH 機器に接続できない  | 共通の SSH アルゴリズムがないことを示すエラーの場合は、`ssh.allow_legacy_algorithms` を `true` にして再接続してください。不要になったら無効に戻してください。                                                                                                                                            |
+| 文字が見づらい               | `terminal.font_size` または `terminal.font_family` を調整してください。                                                                                                                                                                                                                                  |
+| ログを残したくない           | `terminal.auto_session_log` を `false` にしてください。既に作成済みのログは必要に応じて `%AppData%\ExaTerm\logs` から削除してください。                                                                                                                                                                  |

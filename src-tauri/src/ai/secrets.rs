@@ -8,6 +8,7 @@ pub const KEY_OPENAI: &str = "openai_api_key";
 pub const KEY_AZURE_OPENAI: &str = "azure_openai_api_key";
 pub const KEY_ANTHROPIC: &str = "anthropic_api_key";
 pub const KEY_GEMINI: &str = "gemini_api_key";
+pub const KEY_OPENROUTER: &str = "openrouter_api_key";
 
 fn keyring_entry(key_name: &str) -> Result<Entry, String> {
     Entry::new(KEYRING_SERVICE, key_name).map_err(|e| e.to_string())
@@ -19,6 +20,7 @@ pub fn provider_secret_key(provider: &str) -> Option<&'static str> {
         "AzureOpenAi" => Some(KEY_AZURE_OPENAI),
         "Anthropic" => Some(KEY_ANTHROPIC),
         "Gemini" => Some(KEY_GEMINI),
+        "OpenRouter" => Some(KEY_OPENROUTER),
         _ => None,
     }
 }
@@ -38,6 +40,7 @@ fn secret_key_for_provider(provider: &AiProvider) -> Option<&'static str> {
         AiProvider::AzureOpenAi => Some(KEY_AZURE_OPENAI),
         AiProvider::Anthropic => Some(KEY_ANTHROPIC),
         AiProvider::Gemini => Some(KEY_GEMINI),
+        AiProvider::OpenRouter => Some(KEY_OPENROUTER),
         AiProvider::Ollama => None,
     }
 }
@@ -91,6 +94,15 @@ mod tests {
         assert_eq!(
             secret_key_for_provider(&AiProvider::AzureOpenAi),
             Some(KEY_AZURE_OPENAI)
+        );
+    }
+
+    #[test]
+    fn maps_openrouter_to_credential_key() {
+        assert_eq!(provider_secret_key("OpenRouter"), Some(KEY_OPENROUTER));
+        assert_eq!(
+            secret_key_for_provider(&AiProvider::OpenRouter),
+            Some(KEY_OPENROUTER)
         );
     }
 }

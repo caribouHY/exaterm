@@ -1,10 +1,12 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use russh::*;
-use russh_keys::key::PublicKey;
+use russh_keys::decode_secret_key;
+use russh_keys::key::{KeyPair, PublicKey};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
@@ -241,6 +243,190 @@ pub struct SshConnectResult {
     pub session_id: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SshAuthRequest {
+    Password {
+        password: String,
+    },
+    PublicKey {
+        private_key_path: String,
+        key_passphrase: Option<String>,
+    },
+}
+
+fn build_auth_request(
+    auth_method: Option<String>,
+    password: String,
+    private_key_path: Option<String>,
+    key_passphrase: Option<String>,
+) -> Result<SshAuthRequest, String> {
+    let method = auth_method
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("password");
+
+    match method {
+        "password" => Ok(SshAuthRequest::Password { password }),
+        "public_key" => {
+            let private_key_path = private_key_path.unwrap_or_default().trim().to_string();
+            if private_key_path.is_empty() {
+                return Err("SSH公開鍵認証エラー: 秘密鍵ファイルを指定してください".to_string());
+            }
+
+            let key_passphrase = key_passphrase
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
+
+            Ok(SshAuthRequest::PublicKey {
+                private_key_path,
+                key_passphrase,
+            })
+        }
+        _ => Err("SSH認証方式が不正です".to_string()),
+    }
+}
+
+fn expand_percent_env_vars(path: &str) -> String {
+    let mut expanded = String::new();
+    let mut rest = path;
+
+    while let Some(start) = rest.find('%') {
+        expanded.push_str(&rest[..start]);
+        let after_start = &rest[start + 1..];
+        if let Some(end) = after_start.find('%') {
+            let name = &after_start[..end];
+            if let Ok(value) = std::env::var(name) {
+                expanded.push_str(&value);
+            } else {
+                expanded.push('%');
+                expanded.push_str(name);
+                expanded.push('%');
+            }
+            rest = &after_start[end + 1..];
+        } else {
+            expanded.push_str(&rest[start..]);
+            return expanded;
+        }
+    }
+
+    expanded.push_str(rest);
+    expanded
+}
+
+fn normalize_auth_path(path: &str) -> PathBuf {
+    let trimmed = path.trim().trim_matches('"').trim_matches('\'');
+    let expanded = expand_percent_env_vars(trimmed);
+
+    if let Some(rest) = expanded
+        .strip_prefix("~/")
+        .or_else(|| expanded.strip_prefix("~\\"))
+    {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
+        }
+    }
+
+    PathBuf::from(expanded)
+}
+
+fn private_key_format_hint(secret: &str) -> Result<(), String> {
+    let first_line = secret.lines().find(|line| !line.trim().is_empty());
+
+    match first_line.map(str::trim) {
+        Some(line) if line.starts_with("ssh-") => Err(
+            "秘密鍵ファイルではなく公開鍵ファイルが指定されています。秘密鍵本体を指定してください"
+                .to_string(),
+        ),
+        Some(line) if line.starts_with("PuTTY-User-Key-File-") => Err(
+            "PuTTY形式(.ppk)の秘密鍵は直接読み込めません。OpenSSH形式の秘密鍵に変換してください"
+                .to_string(),
+        ),
+        Some(line)
+            if line.starts_with("-----BEGIN ")
+                && line.contains("PUBLIC KEY")
+                && !line.contains("PRIVATE KEY") =>
+        {
+            Err(
+                "秘密鍵ファイルではなく公開鍵ファイルが指定されています。秘密鍵本体を指定してください"
+                    .to_string(),
+            )
+        }
+        Some(line)
+            if line == "-----BEGIN OPENSSH PRIVATE KEY-----"
+                || line == "-----BEGIN RSA PRIVATE KEY-----"
+                || line == "-----BEGIN ENCRYPTED PRIVATE KEY-----"
+                || line == "-----BEGIN PRIVATE KEY-----" =>
+        {
+            Ok(())
+        }
+        _ => Err(
+            "OpenSSH/PEM形式の秘密鍵ファイルを指定してください。公開鍵ファイルは秘密鍵として使用できません"
+                .to_string(),
+        ),
+    }
+}
+
+fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<KeyPair, String> {
+    let path = normalize_auth_path(path);
+    let secret = fs::read_to_string(&path).map_err(|error| {
+        format!(
+            "秘密鍵ファイルを開けません: {} ({})",
+            path.to_string_lossy(),
+            error
+        )
+    })?;
+
+    private_key_format_hint(&secret)?;
+    decode_secret_key(&secret, passphrase).map_err(|error| match error {
+        russh_keys::Error::KeyIsEncrypted => {
+            "秘密鍵はパスフレーズで暗号化されています。鍵パスフレーズを入力してください".to_string()
+        }
+        russh_keys::Error::CouldNotReadKey => {
+            "秘密鍵を読み込めません。鍵形式、パスフレーズ、またはファイル内容を確認してください"
+                .to_string()
+        }
+        other => format!("秘密鍵を読み込めません: {}", other),
+    })
+}
+
+async fn authenticate_ssh(
+    handle: &mut russh::client::Handle<SshClientHandler>,
+    username: &str,
+    auth: SshAuthRequest,
+) -> Result<(), String> {
+    let (auth_result, failure_message) = match auth {
+        SshAuthRequest::Password { password } => (
+            handle
+                .authenticate_password(username, &password)
+                .await
+                .map_err(|e| format!("SSH認証エラー: {}", e))?,
+            "SSH認証失敗: ユーザー名またはパスワードが正しくありません",
+        ),
+        SshAuthRequest::PublicKey {
+            private_key_path,
+            key_passphrase,
+        } => {
+            let key = load_private_key_for_auth(&private_key_path, key_passphrase.as_deref())
+                .map_err(|e| format!("SSH公開鍵認証エラー: {}", e))?;
+
+            (
+                handle
+                    .authenticate_publickey(username, Arc::new(key))
+                    .await
+                    .map_err(|e| format!("SSH公開鍵認証エラー: {}", e))?,
+                "SSH公開鍵認証失敗: ユーザー名、秘密鍵、公開鍵の登録状態、またはパスフレーズを確認してください",
+            )
+        }
+    };
+
+    if !auth_result {
+        return Err(failure_message.to_string());
+    }
+
+    Ok(())
+}
+
 fn host_key_error_message(result: &HostKeyCheckResult) -> String {
     match result.status {
         HostKeyCheckStatus::Unknown => format!(
@@ -386,10 +572,14 @@ pub async fn ssh_connect(
     port: u16,
     username: String,
     password: String,
+    auth_method: Option<String>,
+    private_key_path: Option<String>,
+    key_passphrase: Option<String>,
     cols: u32,
     rows: u32,
 ) -> Result<SshConnectResult, String> {
     let session_id = Uuid::new_v4().to_string();
+    let auth = build_auth_request(auth_method, password, private_key_path, key_passphrase)?;
     let config = load_client_config()?;
     let host_verifier = HostKeyVerifier::enforce(host.clone(), port);
     let handler = SshClientHandler {
@@ -403,14 +593,7 @@ pub async fn ssh_connect(
         .await
         .map_err(|error| map_connect_error(error, &host_verifier))?;
 
-    let auth_result = handle
-        .authenticate_password(&username, &password)
-        .await
-        .map_err(|e| format!("SSH認証エラー: {}", e))?;
-
-    if !auth_result {
-        return Err("SSH認証失敗: ユーザー名またはパスワードが正しくありません".to_string());
-    }
+    authenticate_ssh(&mut handle, &username, auth).await?;
 
     let channel = handle
         .channel_open_session()
@@ -623,5 +806,73 @@ mod tests {
         assert!(mac.contains(&"hmac-sha1"));
         assert!(mac.contains(&"hmac-sha1-etm@openssh.com"));
         assert!(key.contains(&"ssh-rsa"));
+    }
+
+    #[test]
+    fn auth_request_defaults_to_password() {
+        let request = build_auth_request(None, "secret".to_string(), None, None).unwrap();
+
+        assert_eq!(
+            request,
+            SshAuthRequest::Password {
+                password: "secret".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn public_key_auth_requires_private_key_path() {
+        let error = build_auth_request(
+            Some("public_key".to_string()),
+            String::new(),
+            Some("  ".to_string()),
+            None,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("秘密鍵ファイル"));
+    }
+
+    #[test]
+    fn public_key_auth_trims_path_and_empty_passphrase() {
+        let request = build_auth_request(
+            Some("public_key".to_string()),
+            String::new(),
+            Some(" C:\\Users\\me\\.ssh\\id_ed25519 ".to_string()),
+            Some("  ".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            SshAuthRequest::PublicKey {
+                private_key_path: "C:\\Users\\me\\.ssh\\id_ed25519".to_string(),
+                key_passphrase: None,
+            }
+        );
+    }
+
+    #[test]
+    fn auth_path_strips_quotes() {
+        assert_eq!(
+            normalize_auth_path("\"C:\\Users\\me\\.ssh\\id_ed25519\""),
+            PathBuf::from("C:\\Users\\me\\.ssh\\id_ed25519")
+        );
+    }
+
+    #[test]
+    fn private_key_hint_rejects_public_key_files() {
+        let error =
+            private_key_format_hint("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEexample user@example\n")
+                .unwrap_err();
+
+        assert!(error.contains("公開鍵ファイル"));
+    }
+
+    #[test]
+    fn private_key_hint_rejects_putty_keys() {
+        let error = private_key_format_hint("PuTTY-User-Key-File-3: ssh-ed25519\n").unwrap_err();
+
+        assert!(error.contains("PuTTY形式"));
     }
 }

@@ -7,9 +7,14 @@ export interface SshConnectParams {
   port: number;
   username: string;
   password: string;
+  auth_method?: SshAuthMethod | null;
+  private_key_path?: string | null;
+  key_passphrase?: string | null;
   cols: number;
   rows: number;
 }
+
+export type SshAuthMethod = "password" | "public_key";
 
 export type HostKeyCheckStatus = "trusted" | "unknown" | "mismatch";
 
@@ -44,6 +49,16 @@ export interface AiModelInfo {
 export interface ChatMessage {
   role: string;
   content: string;
+  provider?: string;
+  model_id?: string;
+}
+
+export interface AiSecretStatus {
+  openai: boolean;
+  azure_openai: boolean;
+  anthropic: boolean;
+  gemini: boolean;
+  openrouter: boolean;
 }
 
 export interface LogSession {
@@ -54,6 +69,17 @@ export interface LogSession {
   file_path: string;
   log_mode: "auto" | "manual";
 }
+
+export interface LogBulkDeleteResult {
+  removed_history_count: number;
+  removed_auto_file_count: number;
+  skipped_active_count: number;
+  skipped_manual_file_count: number;
+  skipped_missing_file_count: number;
+  skipped_unsafe_path_count: number;
+}
+
+export type ManualLogWriteMode = "overwrite" | "append";
 
 export interface AppConfig {
   config_version: number;
@@ -82,6 +108,7 @@ export interface TerminalConfig {
   scrollback: number;
   auto_session_log: boolean;
   log_format: LogFormat;
+  include_log_header: boolean;
 }
 
 export type LogFormat = "display" | "strip_controls";
@@ -90,26 +117,62 @@ export interface SshConfig {
   allow_legacy_algorithms: boolean;
 }
 
+export type TerminalMode = "general" | "cisco_ios";
+
 export interface SavedConnection {
   id: string;
-  connection_type: "ssh" | (string & {});
+  connection_type: "ssh" | "telnet" | (string & {});
   host?: string | null;
   port?: number | null;
   username?: string | null;
+  encoding?: Encoding | null;
+  terminal_mode?: TerminalMode | null;
+  auth_method?: SshAuthMethod | null;
+  private_key_path?: string | null;
 }
 
 export type ConnectionType = "ssh" | "serial" | "telnet";
 export type ViewMode = "terminal" | "settings" | "logs";
+export type UtilityTabKind = "settings" | "logs";
 export type Encoding = "utf-8" | "shift-jis" | "euc-jp";
 
+export type StartupSshTargetKind = "direct" | "profile";
+
+export interface StartupSshRequest {
+  kind: "ssh";
+  target_kind: StartupSshTargetKind;
+  host?: string | null;
+  username?: string | null;
+  profile_name?: string | null;
+  port?: number | null;
+}
+
+export interface StartupTelnetRequest {
+  kind: "telnet";
+  target: string;
+  port?: number | null;
+}
+
+export type StartupCliRequest = StartupSshRequest | StartupTelnetRequest;
+
 export interface TabInfo {
+  kind: "terminal";
   id: string;
   title: string;
   connectionType: ConnectionType;
   sessionId?: string;
   isConnected: boolean;
   encoding: Encoding;
+  terminalMode: TerminalMode;
   isAutoLogging?: boolean;
   isManualLogging?: boolean;
+  isLoggingPaused?: boolean;
   manualLogFilePath?: string;
 }
+
+export interface UtilityTabInfo {
+  kind: UtilityTabKind;
+  id: UtilityTabKind;
+}
+
+export type AppTabInfo = TabInfo | UtilityTabInfo;

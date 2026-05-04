@@ -14,14 +14,17 @@
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
   width: 440px;
   max-height: 80vh;
-  overflow-y: auto;
+  overflow: hidden;
   animation: slideInUp 0.2s ease;
 }
 
 .connection-dialog__header {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px;
@@ -36,6 +39,7 @@
 
 .connection-dialog__tabs {
   display: flex;
+  flex-shrink: 0;
   gap: 0;
   padding: 0 18px;
   border-bottom: 1px solid var(--border-secondary);
@@ -76,6 +80,8 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .connection-dialog__row {
@@ -100,6 +106,20 @@
   align-items: center;
 }
 
+.connection-dialog__file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.connection-dialog__file-row .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
 .connection-dialog__profile-actions {
   display: flex;
   align-items: center;
@@ -114,6 +134,7 @@
 
 .connection-dialog__footer {
   display: flex;
+  flex-shrink: 0;
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 18px;
@@ -197,4 +218,44 @@
   background: rgba(204, 167, 0, 0.08);
   color: var(--accent-yellow);
   line-height: 1.5;
+}
+
+.connection-credential-modal {
+  width: min(360px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg);
+  animation: slideInUp 0.16s ease;
+}
+
+.connection-credential-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.connection-credential-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.connection-credential-modal__target {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connection-credential-modal__description {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
 }

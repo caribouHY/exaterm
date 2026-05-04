@@ -15,6 +15,7 @@ ExaTerm is a Windows-focused Tauri v2 desktop app with:
 
 Read `ai-docs/ARCHITECTURE.md` before changing behavior across frontend/backend boundaries.
 Use `ai-docs/CHANGE_CHECKLIST.md` before and after non-trivial code changes.
+Read `docs/DEVELOPMENT_GUIDE.en.md` before code changes or Git operations, especially branch creation, staging, committing, pushing, or opening pull requests.
 
 ## Non-Negotiable Rules
 
@@ -37,8 +38,8 @@ Use `ai-docs/CHANGE_CHECKLIST.md` before and after non-trivial code changes.
 
 Use the smallest validation set that fits the change:
 
-- Frontend and TypeScript checks: `npm run build`
+- Frontend and TypeScript checks: `pnpm run build`
 - Rust unit tests: `cargo test`
-- Tauri debug bundle smoke check, when installer/runtime integration matters: `npm run tauri -- build --debug`
+- Tauri debug bundle smoke check, when installer/runtime integration matters: `pnpm run tauri build --debug`
 
 Documentation-only changes do not require a full application build, but links and referenced paths should still be checked.
