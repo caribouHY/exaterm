@@ -88,6 +88,7 @@ pub fn run() {
             logger::logger_append,
             logger::logger_append_to_mode,
             logger::logger_get_sessions,
+            logger::logger_bulk_delete_sessions,
             logger::logger_get_log_dir,
             // Config
             config::config_load,

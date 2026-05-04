@@ -13,6 +13,7 @@
 - Added command-line startup support for SSH and Telnet.
 - Added pause and resume controls for active session logging.
 - Added an append option when starting manual session logs.
+- Added bulk deletion for session log history, with an option to remove auto log files.
 
 ### Changed
 
