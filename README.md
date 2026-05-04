@@ -94,28 +94,34 @@ For manual configuration details, see:
 Developer setup requires Rust and Node.js.
 
 1. Clone the repository.
-2. Install dependencies:
+2. Install pnpm:
 
 ```powershell
-npm install
+npm install -g pnpm@10.33.2
 ```
 
-3. Start the Tauri development app:
+3. Install dependencies:
 
 ```powershell
-npm run tauri -- dev
+pnpm install
 ```
 
-4. Build the frontend:
+4. Start the Tauri development app:
 
 ```powershell
-npm run build
+pnpm run tauri dev
 ```
 
-5. Build the Windows MSI package:
+5. Build the frontend:
 
 ```powershell
-npm run tauri -- build
+pnpm run build
+```
+
+6. Build the Windows MSI package:
+
+```powershell
+pnpm run tauri build
 ```
 
 ## License

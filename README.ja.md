@@ -94,28 +94,34 @@ AIリクエストが失敗する場合は、選択中のプロバイダーが利
 開発者向けセットアップにはRustとNode.jsが必要です。
 
 1. リポジトリをクローンします。
-2. 依存関係をインストールします。
+2. pnpmをインストールします。
 
 ```powershell
-npm install
+npm install -g pnpm@10.33.2
 ```
 
-3. Tauri開発版アプリを起動します。
+3. 依存関係をインストールします。
 
 ```powershell
-npm run tauri -- dev
+pnpm install
 ```
 
-4. フロントエンドをビルドします。
+4. Tauri開発版アプリを起動します。
 
 ```powershell
-npm run build
+pnpm run tauri dev
 ```
 
-5. Windows向けMSIパッケージをビルドします。
+5. フロントエンドをビルドします。
 
 ```powershell
-npm run tauri -- build
+pnpm run build
+```
+
+6. Windows向けMSIパッケージをビルドします。
+
+```powershell
+pnpm run tauri build
 ```
 
 ## ライセンス
