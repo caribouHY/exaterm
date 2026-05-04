@@ -321,6 +321,7 @@ export default function App() {
 
     setManualLogBusyTabId(activeTab.id);
     try {
+      await terminalViewRefs.current.get(activeTab.id)?.flushManualLogBuffer();
       await invoke("logger_stop_manual", { sessionId: activeTab.sessionId });
       setTabs((prev) =>
         prev.map((tab) =>
@@ -464,7 +465,8 @@ export default function App() {
                     connectionType="ssh"
                     isConnected={false}
                     isActive={activeView === "terminal"}
-                    isLoggingActive={false}
+                    isAutoLogging={false}
+                    isManualLogging={false}
                     isLoggingPaused={false}
                     onOpenConnection={openConnection}
                     onTerminalData={() => {}}
@@ -487,7 +489,8 @@ export default function App() {
                       connectionType={tab.connectionType}
                       isConnected={tab.isConnected}
                       isActive={activeView === "terminal" && tab.id === activeTabId}
-                      isLoggingActive={Boolean(tab.isAutoLogging || tab.isManualLogging)}
+                      isAutoLogging={Boolean(tab.isAutoLogging)}
+                      isManualLogging={Boolean(tab.isManualLogging)}
                       isLoggingPaused={Boolean(tab.isLoggingPaused)}
                       onOpenConnection={openConnection}
                       onTerminalData={(data) => handleTerminalData(tab.id, data)}
