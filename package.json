@@ -2,23 +2,24 @@
   "name": "exaterm",
   "private": true,
   "version": "0.2.0",
+  "packageManager": "pnpm@10.33.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "format": "npm run format:frontend && npm run format:rust",
-    "format:check": "npm run format:frontend:check && npm run format:rust:check",
+    "format": "pnpm run format:frontend && pnpm run format:rust",
+    "format:check": "pnpm run format:frontend:check && pnpm run format:rust:check",
     "format:frontend": "prettier --write \"src/**/*.{ts,tsx,css,json}\" \"*.{html,json,ts}\" \".github/**/*.yml\" \".vscode/*.json\" \"ai-docs/**/*.md\" \"docs/**/*.md\" \"src-tauri/*.json\"",
     "format:frontend:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\" \"*.{html,json,ts}\" \".github/**/*.yml\" \".vscode/*.json\" \"ai-docs/**/*.md\" \"docs/**/*.md\" \"src-tauri/*.json\"",
     "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml",
     "format:rust:check": "cargo fmt --manifest-path src-tauri/Cargo.toml --check"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "^2",
-    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/api": "2.10.1",
+    "@tauri-apps/plugin-dialog": "2.7.0",
+    "@tauri-apps/plugin-opener": "2.5.3",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-web-links": "^0.12.0",
@@ -32,7 +33,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "2.10.1",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",

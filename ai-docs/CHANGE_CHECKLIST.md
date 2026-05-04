@@ -28,16 +28,16 @@ Use this checklist before and after code changes. It is intentionally short and 
 
 ## After Changing Code
 
-- Format the changed area before validation, using `npm run format` or the narrower formatter command when appropriate.
-- Do not rely on editor format-on-save as the only formatting gate. Before opening or updating a PR, run `npm run format:check` so Markdown, JSON, and files not saved in the editor are checked the same way CI checks them.
+- Format the changed area before validation, using `pnpm run format` or the narrower formatter command when appropriate.
+- Do not rely on editor format-on-save as the only formatting gate. Before opening or updating a PR, run `pnpm run format:check` so Markdown, JSON, and files not saved in the editor are checked the same way CI checks them.
 - Confirm AI-facing implementation notes stayed in `ai-docs/` or `AGENTS.md`, not in `docs/`.
 - Confirm user-facing documentation stayed in `docs/`.
 - Confirm Markdown links and referenced paths exist.
 - Confirm active terminal tabs would not be remounted or cleared by the change.
 - Confirm log and secret handling still match the privacy model.
 - Run the smallest relevant validation set:
-  - `npm run build` for frontend and TypeScript changes.
+  - `pnpm run build` for frontend and TypeScript changes.
   - `cargo test` for Rust backend changes.
-  - `npm run tauri -- build --debug` for installer/runtime integration changes.
+  - `pnpm run tauri build --debug` for installer/runtime integration changes.
 
 Documentation-only changes do not require a full application build.

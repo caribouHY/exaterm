@@ -4,10 +4,16 @@ This guide covers the common local development checks for ExaTerm.
 
 ## Setup
 
-Install Rust and Node.js, then install frontend dependencies from the repository root:
+Install Rust and Node.js, then install pnpm:
 
 ```powershell
-npm install
+npm install -g pnpm@10.33.2
+```
+
+Install frontend dependencies from the repository root:
+
+```powershell
+pnpm install
 ```
 
 ## Formatting
@@ -15,13 +21,13 @@ npm install
 Format React, TypeScript, CSS, JSON, Markdown, YAML, and Rust files:
 
 ```powershell
-npm run format
+pnpm run format
 ```
 
 Check formatting without changing files:
 
 ```powershell
-npm run format:check
+pnpm run format:check
 ```
 
 Frontend formatting is handled by Prettier. Rust formatting is handled by rustfmt through Cargo.
@@ -31,7 +37,7 @@ Frontend formatting is handled by Prettier. Rust formatting is handled by rustfm
 Build the frontend:
 
 ```powershell
-npm run build
+pnpm run build
 ```
 
 Run Rust tests:

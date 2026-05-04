@@ -23,6 +23,7 @@
 - Enabled selecting and copying text from AI chat messages.
 - Cached cloud AI model lists to reduce repeated provider API requests.
 - Split pull request CI checks and added Rust caching to reduce GitHub Actions wait time.
+- Migrated frontend package management from npm to pnpm.
 
 ### Fixed
 

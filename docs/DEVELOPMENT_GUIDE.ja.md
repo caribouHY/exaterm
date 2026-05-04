@@ -4,10 +4,16 @@
 
 ## セットアップ
 
-Rust と Node.js をインストールし、リポジトリルートでフロントエンド依存関係をインストールします。
+Rust と Node.js をインストールしてから、pnpm をインストールします。
 
 ```powershell
-npm install
+npm install -g pnpm@10.33.2
+```
+
+リポジトリルートでフロントエンド依存関係をインストールします。
+
+```powershell
+pnpm install
 ```
 
 ## フォーマット
@@ -15,13 +21,13 @@ npm install
 React、TypeScript、CSS、JSON、Markdown、YAML、Rust ファイルを整形します。
 
 ```powershell
-npm run format
+pnpm run format
 ```
 
 ファイルを書き換えずに整形状態だけ確認します。
 
 ```powershell
-npm run format:check
+pnpm run format:check
 ```
 
 フロントエンド側の整形は Prettier、Rust 側の整形は Cargo 経由の rustfmt で行います。
@@ -31,7 +37,7 @@ npm run format:check
 フロントエンドをビルドします。
 
 ```powershell
-npm run build
+pnpm run build
 ```
 
 Rust のテストを実行します。
