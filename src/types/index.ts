@@ -85,9 +85,16 @@ export interface AppConfig {
   config_version: number;
   language: string;
   ai: AiConfig;
+  mcp: McpConfig;
   terminal: TerminalConfig;
   ssh: SshConfig;
   saved_connections: SavedConnection[];
+}
+
+export interface McpConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
 }
 
 export interface AiConfig {

@@ -41,6 +41,11 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "default_model": "gpt-4o",
     "debug_log_enabled": false
   },
+  "mcp": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 8765
+  },
   "terminal": {
     "font_size": 14,
     "font_family": "Consolas, 'Courier New', monospace",
@@ -64,6 +69,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | `config_version`    | number | `1`      | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。 |
 | `language`          | string | `"en"`   | 画面表示言語です。`"en"` は英語、`"ja"` は日本語です。                                                               |
 | `ai`                | object | 下記参照 | AI アシスタント関連の設定です。                                                                                      |
+| `mcp`               | object | 下記参照 | 外部 AI エージェントからターミナルを制御するためのローカル MCP サーバー設定です。                                    |
 | `terminal`          | object | 下記参照 | ターミナル表示とログ関連の設定です。                                                                                 |
 | `ssh`               | object | 下記参照 | SSH 接続の互換性設定です。                                                                                           |
 | `saved_connections` | array  | `[]`     | 保存済み SSH/Telnet 接続プロファイルです。プロファイルは接続ダイアログから作成、選択、削除できます。                 |
@@ -103,6 +109,24 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 | Gemini       | `gemini-2.5-pro`, `gemini-2.5-flash`                    |
 | OpenRouter   | `openai/gpt-4o`, `anthropic/claude-sonnet-4`            |
 | Ollama       | ローカルの Ollama にインストール済みのモデル名          |
+
+## mcp
+
+| パラメータ    | 型      | 既定値        | 説明                                                                                                                                                                        |
+| ------------- | ------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mcp.enabled` | boolean | `false`       | `true` にすると、外部 AI エージェント向けにローカル MCP Streamable HTTP エンドポイント `/mcp` を起動します。ExaTerm 上でユーザーが開いたターミナルセッションだけを公開します。 |
+| `mcp.host`    | string  | `"127.0.0.1"` | MCP サーバーの待ち受けアドレスです。他の端末からターミナル制御を受け付けるリスクを理解している場合を除き、ループバックアドレスのままにしてください。                       |
+| `mcp.port`    | number  | `8765`        | MCP サーバーの TCP ポートです。ポートが使用中の場合、MCP サーバーの起動に失敗しますが、ExaTerm 本体は起動を続けます。                                                       |
+
+### MCP ツール
+
+MCP が有効な場合、外部クライアントは次のツールを呼び出せます。
+
+- `list_terminal_sessions`: ユーザーが ExaTerm で開いたターミナルセッションを一覧表示します。
+- `read_terminal_output`: セッションの直近出力を読み取ります。
+- `send_terminal_input`: 接続中のセッションへテキストを送信します。
+
+MCP サーバーは新規接続の作成、保存済み認証情報の読み取り、API キーの公開、ログファイルの直接読み取りを行いません。ただしターミナル出力自体に機密情報が含まれる可能性があるため、信頼できるローカルクライアントに対してのみ有効化してください。
 
 ## terminal
 

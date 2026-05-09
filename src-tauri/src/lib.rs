@@ -2,17 +2,21 @@ mod ai;
 mod cli;
 mod config;
 mod logger;
+mod mcp;
 mod serial;
 mod ssh;
 mod ssh_known_hosts;
 mod telnet;
+mod terminal_control;
 
 use cli::{CliAction, StartupCliRequest};
 use logger::LoggerState;
+use mcp::{spawn_mcp_server, McpRuntime};
 use serial::SerialState;
 use ssh::SshState;
 use std::sync::Mutex;
 use telnet::TelnetState;
+use terminal_control::TerminalControlState;
 
 pub struct StartupCliState {
     request: Mutex<Option<StartupCliRequest>>,
@@ -45,14 +49,40 @@ pub fn run() {
         }
     };
 
+    let ssh_state = SshState::new();
+    let serial_state = SerialState::new();
+    let telnet_state = TelnetState::new();
+    let terminal_control_state = TerminalControlState::new();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(StartupCliState::new(startup_cli_request))
-        .manage(SshState::new())
-        .manage(SerialState::new())
-        .manage(TelnetState::new())
+        .manage(ssh_state.clone())
+        .manage(serial_state.clone())
+        .manage(telnet_state.clone())
+        .manage(terminal_control_state.clone())
         .manage(LoggerState::new())
+        .setup(move |_app| {
+            match config::config_load() {
+                Ok(cfg) if cfg.mcp.enabled => {
+                    spawn_mcp_server(McpRuntime {
+                        config: cfg.mcp,
+                        terminals: terminal_control_state.clone(),
+                        ssh: ssh_state.clone(),
+                        serial: serial_state.clone(),
+                        telnet: telnet_state.clone(),
+                    });
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    log::warn!(
+                        "MCP server not started because config could not be loaded: {error}"
+                    );
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // SSH
             startup_cli_request_get,

@@ -41,6 +41,11 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "default_model": "gpt-4o",
     "debug_log_enabled": false
   },
+  "mcp": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 8765
+  },
   "terminal": {
     "font_size": 14,
     "font_family": "Consolas, 'Courier New', monospace",
@@ -64,6 +69,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | `config_version`    | number | `1`       | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version. |
 | `language`          | string | `"en"`    | Display language. Use `"en"` for English or `"ja"` for Japanese.                                                                           |
 | `ai`                | object | See below | AI assistant settings.                                                                                                                     |
+| `mcp`               | object | See below | Local MCP server settings for external AI agent terminal control.                                                                          |
 | `terminal`          | object | See below | Terminal display and logging settings.                                                                                                     |
 | `ssh`               | object | See below | SSH connection compatibility settings.                                                                                                     |
 | `saved_connections` | array  | `[]`      | Saved SSH and Telnet connection profiles. Profiles can be created, selected, and deleted from the connection dialog.                       |
@@ -103,6 +109,24 @@ Set `ai.debug_log_enabled` to `true` only when you need to troubleshoot AI chat 
 | Gemini       | `gemini-2.5-pro`, `gemini-2.5-flash`                    |
 | OpenRouter   | `openai/gpt-4o`, `anthropic/claude-sonnet-4`            |
 | Ollama       | Model names installed in your local Ollama instance     |
+
+## mcp
+
+| Parameter     | Type    | Default       | Description                                                                                                                                                                        |
+| ------------- | ------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mcp.enabled` | boolean | `false`       | When set to `true`, ExaTerm starts a local MCP Streamable HTTP endpoint at `/mcp` for external AI agents. The server exposes only terminal sessions opened by the user in ExaTerm. |
+| `mcp.host`    | string  | `"127.0.0.1"` | Bind address for the MCP server. Keep this on a loopback address unless you fully understand the security impact of exposing terminal control to another machine.                  |
+| `mcp.port`    | number  | `8765`        | TCP port for the MCP server. If the port is already in use, the MCP server fails to start and the rest of ExaTerm continues running.                                               |
+
+### MCP Tools
+
+When MCP is enabled, external clients can call these tools:
+
+- `list_terminal_sessions`: lists ExaTerm terminal sessions opened by the user.
+- `read_terminal_output`: reads recent output from a session.
+- `send_terminal_input`: sends text to a connected session.
+
+The MCP server does not create new connections, read saved credentials, expose API keys, or read log files directly. Terminal output can still contain sensitive information, so enable MCP only for trusted local clients.
 
 ## terminal
 
