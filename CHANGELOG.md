@@ -4,23 +4,26 @@
 
 ### Added
 
-- Added SSH public key authentication.
+- Added drag-and-drop tab reordering.
+
+## v0.3.0
+
+### Added
+
+- Added SSH public key authentication, including private key path handling for saved SSH profiles.
 - Added per-SSH-profile terminal display encoding defaults.
-- Added Telnet connection profiles.
-- Added a setting to include or omit session log headers.
+- Added Telnet connection profiles and command-line startup support for SSH and Telnet.
+- Added terminal modes, including a Cisco IOS mode with decorated error messages.
 - Added OpenRouter as an AI provider.
-- Added terminal modes with General and Cisco IOS options.
-- Added command-line startup support for SSH and Telnet.
 - Added pause and resume controls for active session logging.
-- Added an append option when starting manual session logs.
+- Added manual log append mode and a setting to include or omit session log headers.
 - Added bulk deletion for session log history, with an option to remove auto log files.
 
 ### Changed
 
-- Changed GUI layout.
-- Rendered AI assistant responses as Markdown.
+- Reworked the GUI layout around the title menu bar, terminal tabs, unified settings/log tabs, and compact status areas.
+- Rendered AI assistant responses as Markdown and enabled selecting and copying text from AI chat messages.
 - Relaxed the minimum window size so ExaTerm is easier to arrange in small tiled layouts.
-- Enabled selecting and copying text from AI chat messages.
 - Cached cloud AI model lists to reduce repeated provider API requests.
 - Split pull request CI checks and added Rust caching to reduce GitHub Actions wait time.
 - Migrated frontend package management from npm to pnpm.

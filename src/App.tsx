@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import TitleBar from "./components/TitleBar/TitleBar";
 import TerminalTabs from "./components/Terminal/TerminalTabs";
 import TerminalView from "./components/Terminal/TerminalView";
@@ -39,6 +39,7 @@ function clampAiPanelWidth(width: number, viewportWidth: number) {
 export default function App() {
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [utilityTabs, setUtilityTabs] = useState<UtilityTabKind[]>([]);
+  const [appTabOrder, setAppTabOrder] = useState<string[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [closingTabIds, setClosingTabIds] = useState<string[]>([]);
   const [showConnection, setShowConnection] = useState(false);
@@ -59,13 +60,28 @@ export default function App() {
   const activeTabIdRef = useRef<string | null>(null);
   const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
 
-  const appTabs: AppTabInfo[] = [
-    ...tabs,
-    ...utilityTabs.map((kind) => ({
-      kind,
-      id: kind,
-    })),
-  ];
+  const unorderedAppTabs: AppTabInfo[] = useMemo(
+    () => [
+      ...tabs,
+      ...utilityTabs.map((kind) => ({
+        kind,
+        id: kind,
+      })),
+    ],
+    [tabs, utilityTabs]
+  );
+  const appTabs: AppTabInfo[] = useMemo(() => {
+    const appTabById = new Map(unorderedAppTabs.map((tab) => [tab.id, tab]));
+    const orderedTabIds = new Set(appTabOrder);
+
+    return [
+      ...appTabOrder.flatMap((id) => {
+        const tab = appTabById.get(id);
+        return tab ? [tab] : [];
+      }),
+      ...unorderedAppTabs.filter((tab) => !orderedTabIds.has(tab.id)),
+    ];
+  }, [appTabOrder, unorderedAppTabs]);
   const activeAppTab = appTabs.find((tab) => tab.id === activeTabId) || null;
   const activeTab =
     activeAppTab?.kind === "terminal" ? tabs.find((t) => t.id === activeAppTab.id) || null : null;
@@ -97,6 +113,7 @@ export default function App() {
         isLoggingPaused: false,
       };
       setTabs((prev) => [...prev, newTab]);
+      setAppTabOrder((prev) => (prev.includes(sessionId) ? prev : [...prev, sessionId]));
       setActiveTabId(sessionId);
       setShowConnection(false);
     },
@@ -105,8 +122,36 @@ export default function App() {
 
   const openUtilityTab = useCallback((kind: UtilityTabKind) => {
     setUtilityTabs((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
+    setAppTabOrder((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
     setActiveTabId(kind);
   }, []);
+
+  const handleReorderTab = useCallback(
+    (sourceId: string, targetId: string, position: "before" | "after") => {
+      if (sourceId === targetId) return;
+
+      const visibleIds = appTabs.map((tab) => tab.id);
+      setAppTabOrder((prev) => {
+        const normalizedOrder = [
+          ...prev.filter((id) => visibleIds.includes(id)),
+          ...visibleIds.filter((id) => !prev.includes(id)),
+        ];
+        if (!normalizedOrder.includes(sourceId) || !normalizedOrder.includes(targetId)) {
+          return normalizedOrder;
+        }
+
+        const withoutSource = normalizedOrder.filter((id) => id !== sourceId);
+        const targetIndex = withoutSource.indexOf(targetId);
+        const insertIndex = position === "before" ? targetIndex : targetIndex + 1;
+        return [
+          ...withoutSource.slice(0, insertIndex),
+          sourceId,
+          ...withoutSource.slice(insertIndex),
+        ];
+      });
+    },
+    [appTabs]
+  );
 
   const handleViewChange = useCallback(
     (view: ViewMode) => {
@@ -171,6 +216,7 @@ export default function App() {
       activeTerminalBuffer.current = "";
     }
     setTabs((prev) => prev.filter((tab) => tab.id !== id));
+    setAppTabOrder((prev) => prev.filter((tabId) => tabId !== id));
   }, []);
 
   const disconnectTab = useCallback(
@@ -226,6 +272,7 @@ export default function App() {
     async (id: string) => {
       if (id === "settings" || id === "logs") {
         setUtilityTabs((prev) => prev.filter((kind) => kind !== id));
+        setAppTabOrder((prev) => prev.filter((tabId) => tabId !== id));
         return;
       }
 
@@ -460,6 +507,7 @@ export default function App() {
                 onSelectTab={setActiveTabId}
                 onCloseTab={handleCloseTab}
                 onAddTab={openConnection}
+                onReorderTab={handleReorderTab}
               />
               <div
                 className={`app__terminal-area ${activeView !== "terminal" ? "app__hidden" : ""}`}

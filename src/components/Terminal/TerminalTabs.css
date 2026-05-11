@@ -21,15 +21,24 @@
   background: transparent;
   border: none;
   border-right: 1px solid var(--border-secondary);
+  box-sizing: border-box;
   color: var(--text-secondary);
   font-family: var(--font-ui);
   font-size: 12px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
+  cursor: grab;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
   white-space: nowrap;
   min-width: 120px;
   max-width: 200px;
   position: relative;
+  touch-action: none;
+}
+
+.terminal-tab:active {
+  cursor: grabbing;
 }
 
 .terminal-tab:hover {
@@ -37,9 +46,38 @@
   color: var(--text-primary);
 }
 
+.terminal-tab:disabled {
+  cursor: default;
+}
+
 .terminal-tab--active {
   background: var(--bg-base);
   color: var(--text-primary);
+}
+
+.terminal-tab--dragging {
+  opacity: 0.55;
+}
+
+.terminal-tab--drop-before::before,
+.terminal-tab--drop-after::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 999px;
+  background: #d7d7d7;
+  box-shadow: 0 0 6px rgba(215, 215, 215, 0.65);
+  z-index: 2;
+}
+
+.terminal-tab--drop-before::before {
+  left: 0;
+}
+
+.terminal-tab--drop-after::before {
+  right: 0;
 }
 
 .terminal-tab--active::after {
@@ -83,7 +121,9 @@
   height: 18px;
   border-radius: var(--radius-sm);
   opacity: 0;
-  transition: all var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    opacity var(--transition-fast);
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -104,6 +144,29 @@
   text-overflow: ellipsis;
 }
 
+.terminal-tab-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: calc(var(--tab-height) - 4px);
+  min-width: 120px;
+  max-width: 200px;
+  padding: 0 12px;
+  border: 1px solid var(--border-primary);
+  box-sizing: border-box;
+  background: rgba(37, 37, 38, 0.92);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  opacity: 0.82;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 1000;
+}
+
 .terminal-tabs__add {
   display: flex;
   align-items: center;
@@ -114,7 +177,9 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
   flex-shrink: 0;
 }
 
