@@ -521,6 +521,7 @@ export default function App() {
                 >
                   <AIChatPanel
                     onClose={() => setShowAiPanel(false)}
+                    config={config}
                     terminalBuffer={activeTerminalBuffer}
                     messages={aiMessages}
                     setMessages={setAiMessages}

@@ -6,6 +6,11 @@
 
 - Added a local MCP server that lets external AI clients list terminal sessions, read recent terminal output, and send input to connected sessions.
 
+### Fixed
+
+- Fixed Azure OpenAI chat requests so saved endpoint settings stay in sync with the AI panel and are used as a backend fallback when sending.
+- Fixed AI chat history so UI-only provider error messages are not resent as conversation context.
+
 ## v0.3.0
 
 ### Added
