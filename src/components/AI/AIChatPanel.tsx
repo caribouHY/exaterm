@@ -19,6 +19,7 @@ type ProviderId = CloudProviderId | "Ollama";
 
 interface AIChatPanelProps {
   onClose: () => void;
+  config: AppConfig | null;
   terminalBuffer: React.MutableRefObject<string>;
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -104,6 +105,7 @@ function parseAssistantContent(content: string): AssistantContentSegment[] {
 
 export default function AIChatPanel({
   onClose,
+  config,
   terminalBuffer,
   messages,
   setMessages,
@@ -130,7 +132,7 @@ export default function AIChatPanel({
 
     const loadAiSettings = async () => {
       let cloudModels: AiModelInfo[] = [];
-      let cfg: AppConfig | null = null;
+      let cfg = config;
       let secretStatus: AiSecretStatus = {
         openai: false,
         azure_openai: false,
@@ -151,10 +153,12 @@ export default function AIChatPanel({
         console.error("AI models fetch failed:", e);
       }
 
-      try {
-        cfg = await invoke<AppConfig>("config_load");
-      } catch (e) {
-        console.error("Config load failed:", e);
+      if (!cfg) {
+        try {
+          cfg = await invoke<AppConfig>("config_load");
+        } catch (e) {
+          console.error("Config load failed:", e);
+        }
       }
 
       const ollamaUrl = cfg?.ai?.ollama_base_url || "http://localhost:11434";
@@ -237,7 +241,7 @@ export default function AIChatPanel({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [config]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
