@@ -171,6 +171,7 @@ struct ReadTerminalOutputArgs {
     /// Session ID returned by list_terminal_sessions.
     session_id: String,
     /// Maximum number of recent characters to return.
+    #[schemars(range(min = 1, max = MAX_READ_CHARS))]
     max_chars: Option<usize>,
 }
 
@@ -472,5 +473,15 @@ mod tests {
                 "send_terminal_input"
             ]
         );
+
+        let read_tool = tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "read_terminal_output")
+            .unwrap();
+        let max_chars_schema = &read_tool["inputSchema"]["properties"]["max_chars"];
+        assert_eq!(max_chars_schema["minimum"], 1);
+        assert_eq!(max_chars_schema["maximum"], MAX_READ_CHARS);
     }
 }
