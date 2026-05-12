@@ -156,26 +156,12 @@ pub async fn ai_chat(
 ) -> Result<String, String> {
     let client = reqwest::Client::new();
     let system_prompt = build_system_prompt(&terminal_context, &language);
-    let config = crate::config::config_read()
-        .map_err(|e| {
-            log::warn!("Failed to load config for AI settings: {}", e);
-            e
-        })
-        .ok();
-    let debug_log_enabled = config
-        .as_ref()
+    let debug_log_enabled = crate::config::config_read()
         .map(|cfg| cfg.ai.debug_log_enabled)
-        .unwrap_or(false);
-    let effective_azure_openai_endpoint = if matches!(provider, AiProvider::AzureOpenAi) {
-        effective_azure_openai_endpoint(
-            azure_openai_endpoint.as_deref(),
-            config
-                .as_ref()
-                .map(|cfg| cfg.ai.azure_openai_endpoint.as_str()),
-        )
-    } else {
-        azure_openai_endpoint
-    };
+        .unwrap_or_else(|e| {
+            log::warn!("Failed to load config for AI debug logging: {}", e);
+            false
+        });
     let started = Instant::now();
 
     let result = send_chat_request(
@@ -186,7 +172,7 @@ pub async fn ai_chat(
         &system_prompt,
         &language,
         ollama_base_url.as_deref(),
-        effective_azure_openai_endpoint.as_deref(),
+        azure_openai_endpoint.as_deref(),
     )
     .await;
 
@@ -210,16 +196,6 @@ pub async fn ai_chat(
     }
 
     result
-}
-
-fn effective_azure_openai_endpoint(
-    requested_endpoint: Option<&str>,
-    configured_endpoint: Option<&str>,
-) -> Option<String> {
-    requested_endpoint
-        .filter(|endpoint| !endpoint.trim().is_empty())
-        .or_else(|| configured_endpoint.filter(|endpoint| !endpoint.trim().is_empty()))
-        .map(|endpoint| endpoint.trim().to_string())
 }
 
 #[cfg(test)]
@@ -261,31 +237,5 @@ mod tests {
 
         assert!(prompt.contains("fenced code block labeled bash, sh, powershell"));
         assert!(prompt.contains("do not imply that commands execute automatically"));
-    }
-
-    #[test]
-    fn azure_openai_endpoint_uses_requested_value_first() {
-        let endpoint = effective_azure_openai_endpoint(
-            Some(" https://request.example/openai/v1/chat/completions "),
-            Some("https://config.example/openai/v1/chat/completions"),
-        );
-
-        assert_eq!(
-            endpoint.as_deref(),
-            Some("https://request.example/openai/v1/chat/completions")
-        );
-    }
-
-    #[test]
-    fn azure_openai_endpoint_falls_back_to_config() {
-        let endpoint = effective_azure_openai_endpoint(
-            Some("   "),
-            Some(" https://config.example/openai/v1/chat/completions "),
-        );
-
-        assert_eq!(
-            endpoint.as_deref(),
-            Some("https://config.example/openai/v1/chat/completions")
-        );
     }
 }
