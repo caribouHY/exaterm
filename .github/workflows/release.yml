@@ -41,5 +41,5 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "ExaTerm ${{ github.ref_name }}"
           releaseDraft: true
-          releasePrerelease: false
+          prerelease: false
           args: --bundles msi,nsis
