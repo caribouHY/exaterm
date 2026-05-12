@@ -17,6 +17,7 @@ use crate::ssh_known_hosts::{
     endpoint_cache_key, inspect_host_key_with_path, known_hosts_path, write_trusted_host,
     HostKeyCheckResult, HostKeyCheckStatus,
 };
+use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 
 /// SSH session state shared across async tasks
 struct SshSession {
@@ -30,6 +31,7 @@ struct PendingHostKey {
 }
 
 /// Global SSH session store
+#[derive(Clone)]
 pub struct SshState {
     sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
     pending_host_keys: Arc<Mutex<HashMap<String, PendingHostKey>>>,
@@ -149,6 +151,7 @@ struct SshClientHandler {
     session_id: String,
     sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
     host_verifier: HostKeyVerifier,
+    terminals: TerminalControlState,
 }
 
 struct ProbeClientHandler {
@@ -184,6 +187,7 @@ impl russh::client::Handler for SshClientHandler {
         data: &[u8],
         _session: &mut russh::client::Session,
     ) -> Result<(), Self::Error> {
+        self.terminals.append_output(&self.session_id, data).await;
         let _ = self
             .app
             .emit(&format!("ssh://data/{}", self.session_id), data.to_vec());
@@ -197,6 +201,7 @@ impl russh::client::Handler for SshClientHandler {
         data: &[u8],
         _session: &mut russh::client::Session,
     ) -> Result<(), Self::Error> {
+        self.terminals.append_output(&self.session_id, data).await;
         let _ = self
             .app
             .emit(&format!("ssh://error/{}", self.session_id), data.to_vec());
@@ -233,6 +238,7 @@ impl SshClientHandler {
             .remove(&self.session_id)
             .is_some();
         if was_connected {
+            self.terminals.mark_disconnected(&self.session_id).await;
             let _ = self.app.emit("ssh://disconnected", &self.session_id);
         }
     }
@@ -568,6 +574,7 @@ pub async fn ssh_trust_host_key(
 pub async fn ssh_connect(
     app: AppHandle,
     state: tauri::State<'_, SshState>,
+    terminals: tauri::State<'_, TerminalControlState>,
     host: String,
     port: u16,
     username: String,
@@ -587,6 +594,7 @@ pub async fn ssh_connect(
         session_id: session_id.clone(),
         sessions: state.sessions.clone(),
         host_verifier: host_verifier.clone(),
+        terminals: terminals.inner().clone(),
     };
 
     let mut handle = russh::client::connect(Arc::new(config), (host.as_str(), port), handler)
@@ -618,6 +626,14 @@ pub async fn ssh_connect(
         .await
         .insert(session_id.clone(), Arc::new(Mutex::new(session)));
 
+    terminals
+        .register_session(
+            session_id.clone(),
+            TerminalProtocol::Ssh,
+            format!("{}:{}", host, port),
+        )
+        .await;
+
     let _ = app.emit("ssh://connected", &session_id);
 
     Ok(SshConnectResult { session_id })
@@ -630,9 +646,13 @@ pub async fn ssh_write(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
+    write_data(&state, &session_id, data).await
+}
+
+pub async fn write_data(state: &SshState, session_id: &str, data: String) -> Result<(), String> {
     let sessions = state.sessions.lock().await;
     let session = sessions
-        .get(&session_id)
+        .get(session_id)
         .ok_or("セッションが見つかりません")?
         .clone();
 
@@ -675,6 +695,7 @@ pub async fn ssh_resize(
 pub async fn ssh_disconnect(
     app: AppHandle,
     state: tauri::State<'_, SshState>,
+    terminals: tauri::State<'_, TerminalControlState>,
     session_id: String,
 ) -> Result<(), String> {
     let session = state.sessions.lock().await.remove(&session_id);
@@ -687,6 +708,7 @@ pub async fn ssh_disconnect(
             .disconnect(Disconnect::ByApplication, "User disconnected", "en")
             .await;
     }
+    terminals.mark_disconnected(&session_id).await;
     let _ = app.emit("ssh://disconnected", &session_id);
     Ok(())
 }

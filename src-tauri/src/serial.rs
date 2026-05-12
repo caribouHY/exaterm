@@ -8,6 +8,8 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+
 const SERIAL_IO_TIMEOUT: Duration = Duration::from_millis(1);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,6 +44,7 @@ struct SerialSession {
     writer: mpsc::Sender<Vec<u8>>,
 }
 
+#[derive(Clone)]
 pub struct SerialState {
     sessions: Arc<Mutex<HashMap<String, SerialSession>>>,
 }
@@ -110,6 +113,7 @@ pub fn serial_list_ports() -> Result<Vec<PortInfo>, String> {
 pub async fn serial_connect(
     app: AppHandle,
     state: tauri::State<'_, SerialState>,
+    terminals: tauri::State<'_, TerminalControlState>,
     port: String,
     config: SerialConfig,
 ) -> Result<String, String> {
@@ -155,6 +159,15 @@ pub async fn serial_connect(
     let sid = session_id.clone();
     let app_clone = app.clone();
     let run_flag = running.clone();
+    let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    let output_terminals = terminals.inner().clone();
+    let output_sid = session_id.clone();
+    tokio::spawn(async move {
+        while let Some(data) = output_rx.recv().await {
+            output_terminals.append_output(&output_sid, &data).await;
+        }
+    });
+
     tokio::task::spawn_blocking(move || {
         let mut port = serial_port;
         let mut buf = [0u8; 4096];
@@ -164,7 +177,9 @@ pub async fn serial_connect(
             }
             match port.read(&mut buf) {
                 Ok(n) if n > 0 => {
-                    let _ = app_clone.emit(&format!("serial://data/{}", sid), buf[..n].to_vec());
+                    let data = buf[..n].to_vec();
+                    let _ = output_tx.send(data.clone());
+                    let _ = app_clone.emit(&format!("serial://data/{}", sid), data);
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
                 Err(e) => {
@@ -176,6 +191,10 @@ pub async fn serial_connect(
         }
     });
 
+    terminals
+        .register_session(session_id.clone(), TerminalProtocol::Serial, port)
+        .await;
+
     let _ = app.emit("serial://connected", &session_id);
     Ok(session_id)
 }
@@ -186,10 +205,14 @@ pub async fn serial_write(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
+    write_data(&state, &session_id, data).await
+}
+
+pub async fn write_data(state: &SerialState, session_id: &str, data: String) -> Result<(), String> {
     let writer = {
         let sessions = state.sessions.lock().await;
         sessions
-            .get(&session_id)
+            .get(session_id)
             .ok_or("セッションが見つかりません")?
             .writer
             .clone()
@@ -204,12 +227,14 @@ pub async fn serial_write(
 pub async fn serial_disconnect(
     app: AppHandle,
     state: tauri::State<'_, SerialState>,
+    terminals: tauri::State<'_, TerminalControlState>,
     session_id: String,
 ) -> Result<(), String> {
     let mut sessions = state.sessions.lock().await;
     if let Some(session) = sessions.remove(&session_id) {
         session.running.store(false, Ordering::SeqCst);
     }
+    terminals.mark_disconnected(&session_id).await;
     let _ = app.emit("serial://disconnected", &session_id);
     Ok(())
 }
