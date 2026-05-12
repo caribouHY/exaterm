@@ -71,6 +71,13 @@
   font-size: 12px;
 }
 
+.settings-help {
+  margin: 6px 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 /* ── トグルスイッチ ── */
 .settings-toggle-row {
   display: flex;
