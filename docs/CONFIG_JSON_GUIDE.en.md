@@ -126,6 +126,8 @@ When MCP is enabled, external clients can call these tools:
 - `read_terminal_output`: reads recent output from a session.
 - `send_terminal_input`: sends text to a connected session.
 
+MCP clients should call the Streamable HTTP endpoint with a normal `Host` header and an `Accept` header that includes both `application/json` and `text/event-stream`.
+
 The MCP server does not create new connections, read saved credentials, expose API keys, or read log files directly. Terminal output can still contain sensitive information, so enable MCP only for trusted local clients.
 
 ## terminal

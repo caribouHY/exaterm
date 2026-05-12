@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added a local MCP server that lets external AI clients list terminal sessions, read recent terminal output, and send input to connected sessions.
+
 ## v0.3.0
 
 ### Added
