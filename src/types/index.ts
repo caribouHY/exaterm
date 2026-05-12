@@ -51,6 +51,7 @@ export interface ChatMessage {
   content: string;
   provider?: string;
   model_id?: string;
+  is_error?: boolean;
 }
 
 export interface AiSecretStatus {
