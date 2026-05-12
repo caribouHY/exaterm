@@ -323,9 +323,7 @@ fn initialize_result() -> Value {
     json!({
         "protocolVersion": MCP_PROTOCOL_VERSION,
         "capabilities": {
-            "tools": {
-                "listChanged": true
-            }
+            "tools": {}
         },
         "serverInfo": {
             "name": "exaterm",
@@ -493,9 +491,13 @@ fn origin_is_allowed(headers: &HashMap<String, String>) -> bool {
         .split('/')
         .next()
         .unwrap_or(origin_without_scheme);
-    let host = authority.split(':').next().unwrap_or(authority);
+    let host = if let Some(rest) = authority.strip_prefix('[') {
+        rest.split(']').next().unwrap_or(rest)
+    } else {
+        authority.split(':').next().unwrap_or(authority)
+    };
 
-    matches!(host, "127.0.0.1" | "localhost" | "[::1]")
+    matches!(host, "127.0.0.1" | "localhost" | "::1")
 }
 
 fn find_header_end(buffer: &[u8]) -> Option<usize> {
@@ -517,6 +519,9 @@ mod tests {
 
         headers.insert("origin".into(), "http://localhost.evil.test".into());
         assert!(!origin_is_allowed(&headers));
+
+        headers.insert("origin".into(), "http://[::1]:8765".into());
+        assert!(origin_is_allowed(&headers));
     }
 
     #[test]

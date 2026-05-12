@@ -159,7 +159,15 @@ pub async fn serial_connect(
     let sid = session_id.clone();
     let app_clone = app.clone();
     let run_flag = running.clone();
-    let read_terminals = terminals.inner().clone();
+    let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    let output_terminals = terminals.inner().clone();
+    let output_sid = session_id.clone();
+    tokio::spawn(async move {
+        while let Some(data) = output_rx.recv().await {
+            output_terminals.append_output(&output_sid, &data).await;
+        }
+    });
+
     tokio::task::spawn_blocking(move || {
         let mut port = serial_port;
         let mut buf = [0u8; 4096];
@@ -169,13 +177,9 @@ pub async fn serial_connect(
             }
             match port.read(&mut buf) {
                 Ok(n) if n > 0 => {
-                    let terminals = read_terminals.clone();
-                    let output_sid = sid.clone();
                     let data = buf[..n].to_vec();
-                    tauri::async_runtime::spawn(async move {
-                        terminals.append_output(&output_sid, &data).await;
-                    });
-                    let _ = app_clone.emit(&format!("serial://data/{}", sid), buf[..n].to_vec());
+                    let _ = output_tx.send(data.clone());
+                    let _ = app_clone.emit(&format!("serial://data/{}", sid), data);
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
                 Err(e) => {
