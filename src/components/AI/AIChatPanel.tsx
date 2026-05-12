@@ -103,6 +103,12 @@ function parseAssistantContent(content: string): AssistantContentSegment[] {
   return segments;
 }
 
+function providerMessagesFor(messages: ChatMessage[]): ChatMessage[] {
+  return messages
+    .filter((message) => !message.is_error)
+    .map(({ role, content }) => ({ role, content }));
+}
+
 export default function AIChatPanel({
   onClose,
   config,
@@ -284,6 +290,7 @@ export default function AIChatPanel({
     if (!input.trim() || loading || !selectedModel) return;
     const userMsg: ChatMessage = { role: "user", content: input.trim() };
     const newMessages = [...messages, userMsg];
+    const providerMessages = providerMessagesFor(newMessages);
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
@@ -292,7 +299,7 @@ export default function AIChatPanel({
       const response = await invoke<string>("ai_chat", {
         provider: selectedProvider,
         model: selectedModel,
-        messages: newMessages,
+        messages: providerMessages,
         terminalContext: useContext ? terminalBuffer.current : null,
         language: i18n.language,
         ollamaBaseUrl: selectedProvider === "Ollama" ? ollamaBaseUrl : null,
@@ -316,6 +323,7 @@ export default function AIChatPanel({
           content: `Error: ${detail}`,
           provider: selectedProvider,
           model_id: selectedModel,
+          is_error: true,
         },
       ]);
     }
