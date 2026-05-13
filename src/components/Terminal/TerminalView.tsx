@@ -75,6 +75,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const isManualLoggingRef = useRef(isManualLogging);
   const isLoggingPausedRef = useRef(isLoggingPaused);
   const terminalModeRef = useRef(terminalMode);
+  const decorationFrameRef = useRef<number | null>(null);
   const promptDecorationsRef = useRef<Map<number, PromptDecorationSet>>(new Map());
   const errorDecorationsRef = useRef<Map<number, LineDecorationSet>>(new Map());
   const autoLogSanitizerRef = useRef(
@@ -109,6 +110,22 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   ];
   const terminalModeDecorators: Partial<Record<TerminalMode, (term: Terminal) => void>> = {
     cisco_ios: (term) => decorateCiscoIosTerminal(term),
+  };
+
+  const cancelScheduledDecoration = () => {
+    if (decorationFrameRef.current === null) return;
+    window.cancelAnimationFrame(decorationFrameRef.current);
+    decorationFrameRef.current = null;
+  };
+
+  const scheduleTerminalModeDecoration = (term: Terminal) => {
+    if (terminalModeRef.current === DEFAULT_TERMINAL_MODE) return;
+    if (decorationFrameRef.current !== null) return;
+
+    decorationFrameRef.current = window.requestAnimationFrame(() => {
+      decorationFrameRef.current = null;
+      terminalModeDecorators[terminalModeRef.current]?.(term);
+    });
   };
 
   const connectionCommands: Record<
@@ -378,6 +395,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
   useEffect(() => {
     terminalModeRef.current = terminalMode;
+    cancelScheduledDecoration();
     if (terminalMode === DEFAULT_TERMINAL_MODE) {
       clearModeDecorations();
       return;
@@ -466,7 +484,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     const handleData = (event: { payload: number[] }) => {
       const data = new Uint8Array(event.payload);
       const text = decoderRef.current.decode(data, { stream: true });
-      term.write(text, () => terminalModeDecorators[terminalModeRef.current]?.(term));
+      term.write(text, () => scheduleTerminalModeDecoration(term));
       if (onTerminalData) onTerminalData(text);
       if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
         const logText = autoLogSanitizerRef.current.push(text);
@@ -521,6 +539,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         }
       }
       resizeObserver.disconnect();
+      cancelScheduledDecoration();
       clearModeDecorations();
       term.dispose();
       termRef.current = null;
