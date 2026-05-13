@@ -123,8 +123,15 @@ Set `ai.debug_log_enabled` to `true` only when you need to troubleshoot AI chat 
 When MCP is enabled, external clients can call these tools:
 
 - `list_terminal_sessions`: lists ExaTerm terminal sessions opened by the user.
-- `read_terminal_output`: reads recent output from a session.
+- `read_terminal_output`: reads recent output from a session. The result includes a `cursor` that can be used for the next delta read.
+- `read_terminal_output_delta`: reads only the output written after the specified `cursor`.
+- `wait_terminal_output`: waits until new output is written or a specified substring appears.
 - `send_terminal_input`: sends text to a connected session.
+- `run_terminal_command`: sends a command to a connected session, waits for output, and returns the output delta.
+
+Output-reading tools return `start_cursor`, `cursor`, and `truncated`. Pass `cursor` to `read_terminal_output_delta` or `wait_terminal_output` to continue reading from the same point. If older output has been trimmed from the internal buffer, `truncated` is `true`.
+
+`wait_terminal_output` and `run_terminal_command` wait for up to 60 seconds. `run_terminal_command` targets only existing connected sessions; it does not create new connections or read saved credentials.
 
 MCP clients should call the Streamable HTTP endpoint with a normal `Host` header and an `Accept` header that includes both `application/json` and `text/event-stream`.
 

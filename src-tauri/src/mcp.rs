@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use axum::{
     body::Body,
@@ -20,6 +20,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
+use tokio::time;
 
 use crate::config::McpConfig;
 use crate::serial::{self, SerialState};
@@ -29,6 +30,11 @@ use crate::terminal_control::{TerminalControlState, TerminalProtocol, TerminalSt
 
 const DEFAULT_READ_CHARS: usize = 2_000;
 const MAX_READ_CHARS: usize = 20_000;
+const MAX_INPUT_CHARS: usize = 20_000;
+const DEFAULT_WAIT_TIMEOUT_MS: u64 = 10_000;
+const MAX_WAIT_TIMEOUT_MS: u64 = 60_000;
+const DEFAULT_SETTLE_MS: u64 = 250;
+const MAX_SETTLE_MS: u64 = 5_000;
 
 #[derive(Clone)]
 pub struct McpRuntime {
@@ -57,50 +63,227 @@ impl McpTerminalService {
     }
 
     async fn read_terminal_output(&self, args: ReadTerminalOutputArgs) -> Result<Value, McpError> {
-        let max_chars = args
-            .max_chars
-            .unwrap_or(DEFAULT_READ_CHARS)
-            .clamp(1, MAX_READ_CHARS);
         let snapshot = self
             .runtime
             .terminals
-            .read_output(&args.session_id, max_chars)
+            .read_output(&args.session_id, normalize_max_chars(args.max_chars))
             .await
             .map_err(invalid_params)?;
 
         Ok(json!(snapshot))
     }
 
-    async fn send_terminal_input(&self, args: SendTerminalInputArgs) -> Result<Value, McpError> {
-        let info = self
+    async fn read_terminal_output_delta(
+        &self,
+        args: ReadTerminalOutputDeltaArgs,
+    ) -> Result<Value, McpError> {
+        let snapshot = self
             .runtime
             .terminals
-            .session_info(&args.session_id)
+            .read_output_delta(
+                &args.session_id,
+                args.cursor,
+                normalize_max_chars(args.max_chars),
+            )
             .await
-            .ok_or_else(|| invalid_params("セッションが見つかりません"))?;
+            .map_err(invalid_params)?;
 
-        if info.status != TerminalStatus::Connected {
-            return Err(invalid_params("セッションは切断済みです"));
-        }
+        Ok(json!(snapshot))
+    }
 
-        match info.protocol {
-            TerminalProtocol::Ssh => {
-                ssh::write_data(&self.runtime.ssh, &args.session_id, args.data).await
-            }
-            TerminalProtocol::Serial => {
-                serial::write_data(&self.runtime.serial, &args.session_id, args.data).await
-            }
-            TerminalProtocol::Telnet => {
-                telnet::write_data(&self.runtime.telnet, &args.session_id, args.data).await
-            }
-        }
-        .map_err(internal_error)?;
+    async fn wait_terminal_output(&self, args: WaitTerminalOutputArgs) -> Result<Value, McpError> {
+        let start_cursor = match args.cursor {
+            Some(cursor) => cursor,
+            None => self
+                .runtime
+                .terminals
+                .cursor(&args.session_id)
+                .await
+                .map_err(invalid_params)?,
+        };
+        let contains = args.contains.filter(|value| !value.is_empty());
+
+        wait_for_terminal_output(
+            &self.runtime.terminals,
+            &args.session_id,
+            start_cursor,
+            contains.as_deref(),
+            normalize_max_chars(args.max_chars),
+            normalize_timeout_ms(args.timeout_ms),
+        )
+        .await
+    }
+
+    async fn send_terminal_input(&self, args: SendTerminalInputArgs) -> Result<Value, McpError> {
+        send_terminal_input_to_runtime(&self.runtime, &args.session_id, args.data).await?;
 
         Ok(json!({
             "session_id": args.session_id,
             "sent": true,
         }))
     }
+
+    async fn run_terminal_command(&self, args: RunTerminalCommandArgs) -> Result<Value, McpError> {
+        if args.command.trim().is_empty() {
+            return Err(invalid_params("送信するコマンドが空です"));
+        }
+        if args.command.chars().count() > MAX_INPUT_CHARS {
+            return Err(invalid_params(format!(
+                "コマンドは{}文字以内で指定してください",
+                MAX_INPUT_CHARS
+            )));
+        }
+
+        let start_cursor = self
+            .runtime
+            .terminals
+            .cursor(&args.session_id)
+            .await
+            .map_err(invalid_params)?;
+        let data = if args.append_newline.unwrap_or(true) {
+            format!("{}\n", args.command)
+        } else {
+            args.command.clone()
+        };
+        send_terminal_input_to_runtime(&self.runtime, &args.session_id, data).await?;
+
+        let max_chars = normalize_max_chars(args.max_chars);
+        let wait_result = wait_for_terminal_output(
+            &self.runtime.terminals,
+            &args.session_id,
+            start_cursor,
+            args.wait_contains
+                .as_deref()
+                .filter(|value| !value.is_empty()),
+            max_chars,
+            normalize_timeout_ms(args.timeout_ms),
+        )
+        .await?;
+
+        let settle_ms = args
+            .settle_ms
+            .unwrap_or(DEFAULT_SETTLE_MS)
+            .clamp(0, MAX_SETTLE_MS);
+        if wait_result["timed_out"] == false && settle_ms > 0 {
+            time::sleep(Duration::from_millis(settle_ms)).await;
+        }
+
+        let snapshot = self
+            .runtime
+            .terminals
+            .read_output_delta(&args.session_id, start_cursor, max_chars)
+            .await
+            .map_err(invalid_params)?;
+
+        Ok(json!({
+            "session_id": args.session_id,
+            "sent": true,
+            "matched": wait_result["matched"],
+            "timed_out": wait_result["timed_out"],
+            "output": snapshot.output,
+            "truncated": snapshot.truncated,
+            "available_chars": snapshot.available_chars,
+            "start_cursor": snapshot.start_cursor,
+            "cursor": snapshot.cursor,
+        }))
+    }
+}
+
+async fn send_terminal_input_to_runtime(
+    runtime: &McpRuntime,
+    session_id: &str,
+    data: String,
+) -> Result<(), McpError> {
+    if data.chars().count() > MAX_INPUT_CHARS {
+        return Err(invalid_params(format!(
+            "入力は{}文字以内で指定してください",
+            MAX_INPUT_CHARS
+        )));
+    }
+
+    let info = runtime
+        .terminals
+        .session_info(session_id)
+        .await
+        .ok_or_else(|| invalid_params("セッションが見つかりません"))?;
+
+    if info.status != TerminalStatus::Connected {
+        return Err(invalid_params("セッションは切断済みです"));
+    }
+
+    match info.protocol {
+        TerminalProtocol::Ssh => ssh::write_data(&runtime.ssh, session_id, data).await,
+        TerminalProtocol::Serial => serial::write_data(&runtime.serial, session_id, data).await,
+        TerminalProtocol::Telnet => telnet::write_data(&runtime.telnet, session_id, data).await,
+    }
+    .map_err(internal_error)
+}
+
+async fn wait_for_terminal_output(
+    terminals: &TerminalControlState,
+    session_id: &str,
+    start_cursor: usize,
+    contains: Option<&str>,
+    max_chars: usize,
+    timeout_ms: u64,
+) -> Result<Value, McpError> {
+    let deadline = time::Instant::now() + Duration::from_millis(timeout_ms);
+
+    loop {
+        let output_changed = terminals.output_change_notified();
+        tokio::pin!(output_changed);
+
+        let snapshot = terminals
+            .read_output_delta(session_id, start_cursor, max_chars)
+            .await
+            .map_err(invalid_params)?;
+        let matched = match contains {
+            Some(needle) => snapshot.output.contains(needle),
+            None => !snapshot.output.is_empty(),
+        };
+
+        if matched {
+            return Ok(json!({
+                "session_id": snapshot.session_id,
+                "matched": true,
+                "timed_out": false,
+                "output": snapshot.output,
+                "truncated": snapshot.truncated,
+                "available_chars": snapshot.available_chars,
+                "start_cursor": snapshot.start_cursor,
+                "cursor": snapshot.cursor,
+            }));
+        }
+
+        let now = time::Instant::now();
+        if now >= deadline {
+            return Ok(json!({
+                "session_id": snapshot.session_id,
+                "matched": false,
+                "timed_out": true,
+                "output": snapshot.output,
+                "truncated": snapshot.truncated,
+                "available_chars": snapshot.available_chars,
+                "start_cursor": snapshot.start_cursor,
+                "cursor": snapshot.cursor,
+            }));
+        }
+
+        let remaining = deadline - now;
+        let _ = time::timeout(remaining, &mut output_changed).await;
+    }
+}
+
+fn normalize_max_chars(max_chars: Option<usize>) -> usize {
+    max_chars
+        .unwrap_or(DEFAULT_READ_CHARS)
+        .clamp(1, MAX_READ_CHARS)
+}
+
+fn normalize_timeout_ms(timeout_ms: Option<u64>) -> u64 {
+    timeout_ms
+        .unwrap_or(DEFAULT_WAIT_TIMEOUT_MS)
+        .clamp(1, MAX_WAIT_TIMEOUT_MS)
 }
 
 #[derive(Clone)]
@@ -144,6 +327,34 @@ impl ExaTermMcpServer {
     }
 
     #[tool(
+        name = "read_terminal_output_delta",
+        description = "Read output written after a previously returned ExaTerm terminal cursor."
+    )]
+    async fn read_terminal_output_delta(
+        &self,
+        Parameters(args): Parameters<ReadTerminalOutputDeltaArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.service
+            .read_terminal_output_delta(args)
+            .await
+            .and_then(structured_tool_result)
+    }
+
+    #[tool(
+        name = "wait_terminal_output",
+        description = "Wait until an ExaTerm terminal session produces new output or a target string appears."
+    )]
+    async fn wait_terminal_output(
+        &self,
+        Parameters(args): Parameters<WaitTerminalOutputArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.service
+            .wait_terminal_output(args)
+            .await
+            .and_then(structured_tool_result)
+    }
+
+    #[tool(
         name = "send_terminal_input",
         description = "Send text to an existing connected ExaTerm terminal session."
     )]
@@ -153,6 +364,20 @@ impl ExaTermMcpServer {
     ) -> Result<CallToolResult, McpError> {
         self.service
             .send_terminal_input(args)
+            .await
+            .and_then(structured_tool_result)
+    }
+
+    #[tool(
+        name = "run_terminal_command",
+        description = "Send a command to an existing connected ExaTerm terminal session, wait for output, and return the output delta."
+    )]
+    async fn run_terminal_command(
+        &self,
+        Parameters(args): Parameters<RunTerminalCommandArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.service
+            .run_terminal_command(args)
             .await
             .and_then(structured_tool_result)
     }
@@ -176,11 +401,59 @@ struct ReadTerminalOutputArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct ReadTerminalOutputDeltaArgs {
+    /// Session ID returned by list_terminal_sessions.
+    session_id: String,
+    /// Cursor returned by read_terminal_output, read_terminal_output_delta, wait_terminal_output, or run_terminal_command.
+    cursor: usize,
+    /// Maximum number of recent characters to return.
+    #[schemars(range(min = 1, max = MAX_READ_CHARS))]
+    max_chars: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WaitTerminalOutputArgs {
+    /// Session ID returned by list_terminal_sessions.
+    session_id: String,
+    /// Cursor to wait from. When omitted, waits from the current output cursor.
+    cursor: Option<usize>,
+    /// Optional substring to wait for in the output delta.
+    contains: Option<String>,
+    /// Maximum wait time in milliseconds.
+    #[schemars(range(min = 1, max = MAX_WAIT_TIMEOUT_MS))]
+    timeout_ms: Option<u64>,
+    /// Maximum number of recent characters to return.
+    #[schemars(range(min = 1, max = MAX_READ_CHARS))]
+    max_chars: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct SendTerminalInputArgs {
     /// Session ID returned by list_terminal_sessions.
     session_id: String,
     /// Text to send to the terminal. Include newline characters when needed.
     data: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RunTerminalCommandArgs {
+    /// Session ID returned by list_terminal_sessions.
+    session_id: String,
+    /// Command text to send to the terminal.
+    command: String,
+    /// Append a newline after the command. Defaults to true.
+    append_newline: Option<bool>,
+    /// Optional substring to wait for in the output delta after sending.
+    wait_contains: Option<String>,
+    /// Maximum wait time in milliseconds.
+    #[schemars(range(min = 1, max = MAX_WAIT_TIMEOUT_MS))]
+    timeout_ms: Option<u64>,
+    /// Additional quiet period after a match before the final output delta is returned.
+    #[schemars(range(min = 0, max = MAX_SETTLE_MS))]
+    settle_ms: Option<u64>,
+    /// Maximum number of recent characters to return.
+    #[schemars(range(min = 1, max = MAX_READ_CHARS))]
+    max_chars: Option<usize>,
 }
 
 type ExaTermMcpHttpService = StreamableHttpService<ExaTermMcpServer, LocalSessionManager>;
@@ -401,6 +674,91 @@ mod tests {
         assert_eq!(result["session_id"], "s1");
         assert_eq!(result["output"], "世界");
         assert_eq!(result["truncated"], true);
+        assert_eq!(result["start_cursor"], 5);
+        assert_eq!(result["cursor"], 7);
+    }
+
+    #[tokio::test]
+    async fn service_reads_terminal_output_delta() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session("s1".into(), TerminalProtocol::Serial, "COM1".into())
+            .await;
+        runtime
+            .terminals
+            .append_output("s1", "abcこんにちは".as_bytes())
+            .await;
+        let service = McpTerminalService::new(runtime);
+
+        let result = service
+            .read_terminal_output_delta(ReadTerminalOutputDeltaArgs {
+                session_id: "s1".into(),
+                cursor: 3,
+                max_chars: Some(100),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result["output"], "こんにちは");
+        assert_eq!(result["start_cursor"], 3);
+        assert_eq!(result["cursor"], 8);
+    }
+
+    #[tokio::test]
+    async fn service_waits_for_matching_terminal_output() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+            .await;
+        let terminals = runtime.terminals.clone();
+        tokio::spawn(async move {
+            time::sleep(Duration::from_millis(10)).await;
+            terminals.append_output("s1", b"router#").await;
+        });
+        let service = McpTerminalService::new(runtime);
+
+        let result = service
+            .wait_terminal_output(WaitTerminalOutputArgs {
+                session_id: "s1".into(),
+                cursor: Some(0),
+                contains: Some("router#".into()),
+                timeout_ms: Some(500),
+                max_chars: Some(100),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result["matched"], true);
+        assert_eq!(result["timed_out"], false);
+        assert_eq!(result["output"], "router#");
+    }
+
+    #[tokio::test]
+    async fn service_wait_timeout_returns_latest_delta() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+            .await;
+        runtime.terminals.append_output("s1", b"partial").await;
+        let service = McpTerminalService::new(runtime);
+
+        let result = service
+            .wait_terminal_output(WaitTerminalOutputArgs {
+                session_id: "s1".into(),
+                cursor: Some(0),
+                contains: Some("missing".into()),
+                timeout_ms: Some(1),
+                max_chars: Some(100),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result["matched"], false);
+        assert_eq!(result["timed_out"], true);
+        assert_eq!(result["output"], "partial");
     }
 
     #[tokio::test]
@@ -421,6 +779,31 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.message.contains("切断済み"));
+    }
+
+    #[tokio::test]
+    async fn service_rejects_empty_run_terminal_command() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+            .await;
+        let service = McpTerminalService::new(runtime);
+
+        let error = service
+            .run_terminal_command(RunTerminalCommandArgs {
+                session_id: "s1".into(),
+                command: "   ".into(),
+                append_newline: None,
+                wait_contains: None,
+                timeout_ms: None,
+                settle_ms: None,
+                max_chars: None,
+            })
+            .await
+            .unwrap_err();
+
+        assert!(error.message.contains("空"));
     }
 
     #[tokio::test]
@@ -470,7 +853,10 @@ mod tests {
             vec![
                 "list_terminal_sessions",
                 "read_terminal_output",
-                "send_terminal_input"
+                "read_terminal_output_delta",
+                "run_terminal_command",
+                "send_terminal_input",
+                "wait_terminal_output",
             ]
         );
 
@@ -483,5 +869,15 @@ mod tests {
         let max_chars_schema = &read_tool["inputSchema"]["properties"]["max_chars"];
         assert_eq!(max_chars_schema["minimum"], 1);
         assert_eq!(max_chars_schema["maximum"], MAX_READ_CHARS);
+
+        let wait_tool = tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "wait_terminal_output")
+            .unwrap();
+        let timeout_schema = &wait_tool["inputSchema"]["properties"]["timeout_ms"];
+        assert_eq!(timeout_schema["minimum"], 1);
+        assert_eq!(timeout_schema["maximum"], MAX_WAIT_TIMEOUT_MS);
     }
 }

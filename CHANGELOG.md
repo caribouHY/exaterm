@@ -5,6 +5,7 @@
 ### Added
 
 - Added a local MCP server that lets external AI clients list terminal sessions, read recent terminal output, and send input to connected sessions.
+- Added MCP terminal automation tools for cursor-based output deltas, output waiting, and command execution with returned output.
 
 ### Fixed
 

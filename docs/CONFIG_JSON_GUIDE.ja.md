@@ -123,8 +123,15 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 MCP が有効な場合、外部クライアントは次のツールを呼び出せます。
 
 - `list_terminal_sessions`: ユーザーが ExaTerm で開いたターミナルセッションを一覧表示します。
-- `read_terminal_output`: セッションの直近出力を読み取ります。
+- `read_terminal_output`: セッションの直近出力を読み取ります。返却値には次回差分読み取りに使える `cursor` が含まれます。
+- `read_terminal_output_delta`: 指定した `cursor` 以降の出力だけを読み取ります。
+- `wait_terminal_output`: 新しい出力、または指定した文字列が出力に現れるまで待機します。
 - `send_terminal_input`: 接続中のセッションへテキストを送信します。
+- `run_terminal_command`: 接続中のセッションへコマンドを送信し、出力待機後に差分出力を返します。
+
+出力読み取り系ツールは `start_cursor`、`cursor`、`truncated` を返します。`cursor` は次回の `read_terminal_output_delta` や `wait_terminal_output` に渡せます。古い出力が内部バッファから切り詰められている場合、`truncated` は `true` になります。
+
+`wait_terminal_output` と `run_terminal_command` の待機時間は最大 60 秒です。`run_terminal_command` は既存の接続済みセッションだけを対象とし、新規接続の作成や保存済み認証情報の読み取りは行いません。
 
 MCP クライアントは Streamable HTTP エンドポイントを呼び出すときに、通常の `Host` ヘッダーと、`application/json` と `text/event-stream` の両方を含む `Accept` ヘッダーを送信してください。
 
