@@ -1,13 +1,9 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { lazy, Suspense, useState, useRef, useCallback, useEffect } from "react";
 import TitleBar from "./components/TitleBar/TitleBar";
 import TerminalTabs from "./components/Terminal/TerminalTabs";
 import TerminalView from "./components/Terminal/TerminalView";
 import type { TerminalViewHandle } from "./components/Terminal/TerminalView";
-import ConnectionDialog from "./components/Connection/ConnectionDialog";
-import AIChatPanel from "./components/AI/AIChatPanel";
 import StatusBar from "./components/StatusBar/StatusBar";
-import SettingsPanel from "./components/Settings/SettingsPanel";
-import LogViewer from "./components/Log/LogViewer";
 import type {
   AppTabInfo,
   TabInfo,
@@ -26,6 +22,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import "./App.css";
+
+const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
+const loadAIChatPanel = () => import("./components/AI/AIChatPanel");
+const loadSettingsPanel = () => import("./components/Settings/SettingsPanel");
+const loadLogViewer = () => import("./components/Log/LogViewer");
+
+const ConnectionDialog = lazy(loadConnectionDialog);
+const AIChatPanel = lazy(loadAIChatPanel);
+const SettingsPanel = lazy(loadSettingsPanel);
+const LogViewer = lazy(loadLogViewer);
 
 const AI_PANEL_DEFAULT_WIDTH = 340;
 const AI_PANEL_MIN_WIDTH = 200;
@@ -111,6 +117,7 @@ export default function App() {
   const handleViewChange = useCallback(
     (view: ViewMode) => {
       if (view === "settings" || view === "logs") {
+        void (view === "settings" ? loadSettingsPanel() : loadLogViewer());
         openUtilityTab(view);
         return;
       }
@@ -358,8 +365,18 @@ export default function App() {
     [activeTab]
   );
 
-  const openConnection = useCallback(() => setShowConnection(true), []);
-  const toggleAiPanel = useCallback(() => setShowAiPanel((current) => !current), []);
+  const openConnection = useCallback(() => {
+    void loadConnectionDialog();
+    setShowConnection(true);
+  }, []);
+  const toggleAiPanel = useCallback(() => {
+    setShowAiPanel((current) => {
+      if (!current) {
+        void loadAIChatPanel();
+      }
+      return !current;
+    });
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -367,9 +384,10 @@ export default function App() {
         const key = e.key.toLowerCase();
         if (key === "n" || key === "t") {
           e.preventDefault();
-          setShowConnection(true);
+          openConnection();
         } else if (key === ",") {
           e.preventDefault();
+          void loadSettingsPanel();
           openUtilityTab("settings");
         }
       }
@@ -377,7 +395,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [openUtilityTab]);
+  }, [openConnection, openUtilityTab]);
 
   const refreshConfig = useCallback(async () => {
     try {
@@ -397,6 +415,7 @@ export default function App() {
       .then((request) => {
         if (!request) return;
         setStartupCliRequest(request);
+        void loadConnectionDialog();
         setShowConnection(true);
       })
       .catch((error) => {
@@ -506,8 +525,16 @@ export default function App() {
                   ))
                 )}
               </div>
-              {activeView === "settings" && <SettingsPanel onSave={refreshConfig} />}
-              {activeView === "logs" && <LogViewer />}
+              {activeView === "settings" && (
+                <Suspense fallback={<div aria-hidden="true" />}>
+                  <SettingsPanel onSave={refreshConfig} />
+                </Suspense>
+              )}
+              {activeView === "logs" && (
+                <Suspense fallback={<div aria-hidden="true" />}>
+                  <LogViewer />
+                </Suspense>
+              )}
             </div>
             {showAiPanel && (
               <>
@@ -519,20 +546,22 @@ export default function App() {
                   className="app__ai-panel"
                   style={{ width: clampAiPanelWidth(aiPanelWidth, window.innerWidth) }}
                 >
-                  <AIChatPanel
-                    onClose={() => setShowAiPanel(false)}
-                    config={config}
-                    terminalBuffer={activeTerminalBuffer}
-                    messages={aiMessages}
-                    setMessages={setAiMessages}
-                    selectedProvider={aiSelectedProvider}
-                    setSelectedProvider={setAiSelectedProvider}
-                    selectedModel={aiSelectedModel}
-                    setSelectedModel={setAiSelectedModel}
-                    onInsertCommand={handleInsertCommand}
-                    canInsertCommand={Boolean(activeTab?.isConnected)}
-                    activeTerminalMode={activeTab?.terminalMode ?? DEFAULT_TERMINAL_MODE}
-                  />
+                  <Suspense fallback={<div aria-hidden="true" />}>
+                    <AIChatPanel
+                      onClose={() => setShowAiPanel(false)}
+                      config={config}
+                      terminalBuffer={activeTerminalBuffer}
+                      messages={aiMessages}
+                      setMessages={setAiMessages}
+                      selectedProvider={aiSelectedProvider}
+                      setSelectedProvider={setAiSelectedProvider}
+                      selectedModel={aiSelectedModel}
+                      setSelectedModel={setAiSelectedModel}
+                      onInsertCommand={handleInsertCommand}
+                      canInsertCommand={Boolean(activeTab?.isConnected)}
+                      activeTerminalMode={activeTab?.terminalMode ?? DEFAULT_TERMINAL_MODE}
+                    />
+                  </Suspense>
                 </div>
               </>
             )}
@@ -555,12 +584,14 @@ export default function App() {
         </div>
       </div>
       {showConnection && (
-        <ConnectionDialog
-          startupRequest={startupCliRequest}
-          onStartupRequestHandled={() => setStartupCliRequest(null)}
-          onClose={() => setShowConnection(false)}
-          onConnect={handleConnect}
-        />
+        <Suspense fallback={<div aria-hidden="true" />}>
+          <ConnectionDialog
+            startupRequest={startupCliRequest}
+            onStartupRequestHandled={() => setStartupCliRequest(null)}
+            onClose={() => setShowConnection(false)}
+            onConnect={handleConnect}
+          />
+        </Suspense>
       )}
     </div>
   );

@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 
-const SERIAL_IO_TIMEOUT: Duration = Duration::from_millis(1);
+const SERIAL_IO_TIMEOUT: Duration = Duration::from_millis(5);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SerialConfig {
