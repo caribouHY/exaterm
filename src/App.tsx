@@ -21,6 +21,7 @@ import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
+import { useTranslation } from "react-i18next";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -42,7 +43,35 @@ function clampAiPanelWidth(width: number, viewportWidth: number) {
   return Math.min(Math.max(width, AI_PANEL_MIN_WIDTH), maxWidth);
 }
 
+interface TerminalCreatedPayload {
+  session_id: string;
+  connection_type: ConnectionType;
+  target: string;
+  title: string;
+  encoding?: Encoding;
+  terminal_mode?: TerminalMode;
+  auto_logging: boolean;
+}
+
+interface McpCredentialRequestPayload {
+  request_id: string;
+  profile_id: string;
+  host: string;
+  port: number;
+  username: string;
+  auth_method: "password" | "public_key";
+  target: string;
+  title: string;
+}
+
+interface McpCredentialPromptState extends McpCredentialRequestPayload {
+  value: string;
+  error: string;
+  submitting: boolean;
+}
+
 export default function App() {
+  const { t } = useTranslation();
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [utilityTabs, setUtilityTabs] = useState<UtilityTabKind[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -58,6 +87,7 @@ export default function App() {
   const [aiSelectedProvider, setAiSelectedProvider] = useState("");
   const [aiSelectedModel, setAiSelectedModel] = useState("");
   const [startupCliRequest, setStartupCliRequest] = useState<StartupCliRequest | null>(null);
+  const [mcpCredentialPrompts, setMcpCredentialPrompts] = useState<McpCredentialPromptState[]>([]);
   const activeTerminalBuffer = useRef("");
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
@@ -79,8 +109,9 @@ export default function App() {
     activeAppTab?.kind === "settings" || activeAppTab?.kind === "logs"
       ? activeAppTab.kind
       : "terminal";
+  const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
 
-  const handleConnect = useCallback(
+  const addTerminalTab = useCallback(
     (
       type: ConnectionType,
       sessionId: string,
@@ -102,11 +133,27 @@ export default function App() {
         isManualLogging: false,
         isLoggingPaused: false,
       };
-      setTabs((prev) => [...prev, newTab]);
+      setTabs((prev) =>
+        prev.some((tab) => tab.sessionId === sessionId) ? prev : [...prev, newTab]
+      );
       setActiveTabId(sessionId);
-      setShowConnection(false);
     },
     []
+  );
+
+  const handleConnect = useCallback(
+    (
+      type: ConnectionType,
+      sessionId: string,
+      title: string,
+      isAutoLogging: boolean,
+      encoding: Encoding = "utf-8",
+      terminalMode: TerminalMode = DEFAULT_TERMINAL_MODE
+    ) => {
+      addTerminalTab(type, sessionId, title, isAutoLogging, encoding, terminalMode);
+      setShowConnection(false);
+    },
+    [addTerminalTab]
   );
 
   const openUtilityTab = useCallback((kind: UtilityTabKind) => {
@@ -163,6 +210,46 @@ export default function App() {
       unlistenSsh.then((fn) => fn());
       unlistenSerial.then((fn) => fn());
       unlistenTelnet.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlistenCreated = listen<TerminalCreatedPayload>("terminal://created", (event) => {
+      const payload = event.payload;
+      if (payload.connection_type !== "ssh" && payload.connection_type !== "telnet") return;
+      addTerminalTab(
+        payload.connection_type,
+        payload.session_id,
+        payload.title || payload.target,
+        Boolean(payload.auto_logging),
+        payload.encoding ?? "utf-8",
+        payload.terminal_mode ?? DEFAULT_TERMINAL_MODE
+      );
+    });
+
+    return () => {
+      unlistenCreated.then((fn) => fn());
+    };
+  }, [addTerminalTab]);
+
+  useEffect(() => {
+    const unlistenCredential = listen<McpCredentialRequestPayload>(
+      "mcp://credential-request",
+      (event) => {
+        setMcpCredentialPrompts((prev) => [
+          ...prev,
+          {
+            ...event.payload,
+            value: "",
+            error: "",
+            submitting: false,
+          },
+        ]);
+      }
+    );
+
+    return () => {
+      unlistenCredential.then((fn) => fn());
     };
   }, []);
 
@@ -249,6 +336,37 @@ export default function App() {
       activeTerminalBuffer.current = nextBuffer;
     }
   }, []);
+
+  const updateActiveMcpCredentialPrompt = useCallback(
+    (patch: Partial<McpCredentialPromptState>) => {
+      setMcpCredentialPrompts((prev) => {
+        if (prev.length === 0) return prev;
+        return [{ ...prev[0], ...patch }, ...prev.slice(1)];
+      });
+    },
+    []
+  );
+
+  const resolveMcpCredentialPrompt = useCallback(
+    async (credential: string | null) => {
+      if (!activeMcpCredentialPrompt || activeMcpCredentialPrompt.submitting) return;
+
+      updateActiveMcpCredentialPrompt({ error: "", submitting: true });
+      try {
+        await invoke("mcp_credential_submit", {
+          requestId: activeMcpCredentialPrompt.request_id,
+          credential,
+        });
+        setMcpCredentialPrompts((prev) => prev.slice(1));
+      } catch (error) {
+        updateActiveMcpCredentialPrompt({
+          error: typeof error === "string" ? error : t("mcp.credential_submit_failed"),
+          submitting: false,
+        });
+      }
+    },
+    [activeMcpCredentialPrompt, t, updateActiveMcpCredentialPrompt]
+  );
 
   const handleInsertCommand = useCallback(
     (command: string) => {
@@ -592,6 +710,83 @@ export default function App() {
             onConnect={handleConnect}
           />
         </Suspense>
+      )}
+      {activeMcpCredentialPrompt && (
+        <div className="app-credential-overlay">
+          <div
+            className="app-credential-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mcp-credential-title"
+            aria-describedby="mcp-credential-description"
+          >
+            <div className="app-credential-modal__header">
+              <div>
+                <div className="app-credential-modal__eyebrow">
+                  {t("mcp.credential_request_title")}
+                </div>
+                <div className="app-credential-modal__title" id="mcp-credential-title">
+                  {activeMcpCredentialPrompt.auth_method === "public_key"
+                    ? t("connection.key_passphrase_prompt_title")
+                    : t("connection.password_prompt_title")}
+                </div>
+              </div>
+            </div>
+            <div className="app-credential-modal__body">
+              <div className="app-credential-modal__target">{activeMcpCredentialPrompt.target}</div>
+              <p className="app-credential-modal__description" id="mcp-credential-description">
+                {t("mcp.credential_request_desc")}
+              </p>
+              <label className="label" htmlFor="mcp-credential-input">
+                {activeMcpCredentialPrompt.auth_method === "public_key"
+                  ? t("connection.key_passphrase")
+                  : t("connection.password")}
+              </label>
+              <input
+                id="mcp-credential-input"
+                className="input"
+                type="password"
+                autoFocus
+                value={activeMcpCredentialPrompt.value}
+                disabled={activeMcpCredentialPrompt.submitting}
+                onChange={(event) => updateActiveMcpCredentialPrompt({ value: event.target.value })}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    void resolveMcpCredentialPrompt(activeMcpCredentialPrompt.value);
+                  } else if (event.key === "Escape") {
+                    void resolveMcpCredentialPrompt(null);
+                  }
+                }}
+              />
+              {activeMcpCredentialPrompt.error && (
+                <div className="app-credential-modal__error">{activeMcpCredentialPrompt.error}</div>
+              )}
+            </div>
+            <div className="app-credential-modal__footer">
+              {activeMcpCredentialPrompt.submitting ? (
+                <div className="app-credential-modal__submitting">
+                  <div className="app-credential-modal__spinner" />
+                  {t("connection.connecting")}
+                </div>
+              ) : (
+                <>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => void resolveMcpCredentialPrompt(null)}
+                  >
+                    {t("connection.cancel")}
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => void resolveMcpCredentialPrompt(activeMcpCredentialPrompt.value)}
+                  >
+                    {t("connection.connect")}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

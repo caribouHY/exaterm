@@ -240,6 +240,18 @@ pub async fn telnet_connect(
     cols: u32,
     rows: u32,
 ) -> Result<String, String> {
+    connect(&app, &state, &terminals, host, port, cols, rows).await
+}
+
+pub async fn connect(
+    app: &AppHandle,
+    state: &TelnetState,
+    terminals: &TerminalControlState,
+    host: String,
+    port: u16,
+    cols: u32,
+    rows: u32,
+) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let stream = TcpStream::connect((host.as_str(), port))
         .await
@@ -250,7 +262,7 @@ pub async fn telnet_connect(
     let write_sid = session_id.clone();
     let write_app = app.clone();
     let write_sessions = state.sessions.clone();
-    let write_terminals = terminals.inner().clone();
+    let write_terminals = terminals.clone();
     let write_task = tokio::spawn(async move {
         while let Some(data) = write_rx.recv().await {
             if let Err(e) = writer_stream.write_all(&data).await {
@@ -264,7 +276,7 @@ pub async fn telnet_connect(
     let read_sid = session_id.clone();
     let read_app = app.clone();
     let read_sessions = state.sessions.clone();
-    let read_terminals = terminals.inner().clone();
+    let read_terminals = terminals.clone();
     let read_task = tokio::spawn(async move {
         let mut parser = TelnetParser::new(cols, rows);
         let mut buf = [0u8; 4096];

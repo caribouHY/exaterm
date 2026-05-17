@@ -249,6 +249,19 @@ pub struct SshConnectResult {
     pub session_id: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct SshConnectOptions {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    pub auth_method: Option<String>,
+    pub private_key_path: Option<String>,
+    pub key_passphrase: Option<String>,
+    pub cols: u32,
+    pub rows: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SshAuthRequest {
     Password {
@@ -534,6 +547,16 @@ async fn run_host_key_probe(
     Ok((result, observed_key))
 }
 
+#[cfg(not(test))]
+pub async fn verify_trusted_host_key(host: &str, port: u16) -> Result<(), String> {
+    let (result, _) = run_host_key_probe(host, port).await?;
+    if result.status == HostKeyCheckStatus::Trusted {
+        Ok(())
+    } else {
+        Err(host_key_error_message(&result))
+    }
+}
+
 #[tauri::command]
 pub async fn ssh_probe_host_key(
     state: tauri::State<'_, SshState>,
@@ -585,23 +608,57 @@ pub async fn ssh_connect(
     cols: u32,
     rows: u32,
 ) -> Result<SshConnectResult, String> {
+    connect(
+        &app,
+        &state,
+        &terminals,
+        SshConnectOptions {
+            host,
+            port,
+            username,
+            password,
+            auth_method,
+            private_key_path,
+            key_passphrase,
+            cols,
+            rows,
+        },
+    )
+    .await
+}
+
+pub async fn connect(
+    app: &AppHandle,
+    state: &SshState,
+    terminals: &TerminalControlState,
+    options: SshConnectOptions,
+) -> Result<SshConnectResult, String> {
     let session_id = Uuid::new_v4().to_string();
-    let auth = build_auth_request(auth_method, password, private_key_path, key_passphrase)?;
+    let auth = build_auth_request(
+        options.auth_method,
+        options.password,
+        options.private_key_path,
+        options.key_passphrase,
+    )?;
     let config = load_client_config()?;
-    let host_verifier = HostKeyVerifier::enforce(host.clone(), port);
+    let host_verifier = HostKeyVerifier::enforce(options.host.clone(), options.port);
     let handler = SshClientHandler {
         app: app.clone(),
         session_id: session_id.clone(),
         sessions: state.sessions.clone(),
         host_verifier: host_verifier.clone(),
-        terminals: terminals.inner().clone(),
+        terminals: terminals.clone(),
     };
 
-    let mut handle = russh::client::connect(Arc::new(config), (host.as_str(), port), handler)
-        .await
-        .map_err(|error| map_connect_error(error, &host_verifier))?;
+    let mut handle = russh::client::connect(
+        Arc::new(config),
+        (options.host.as_str(), options.port),
+        handler,
+    )
+    .await
+    .map_err(|error| map_connect_error(error, &host_verifier))?;
 
-    authenticate_ssh(&mut handle, &username, auth).await?;
+    authenticate_ssh(&mut handle, &options.username, auth).await?;
 
     let channel = handle
         .channel_open_session()
@@ -609,7 +666,15 @@ pub async fn ssh_connect(
         .map_err(|e| format!("SSHチャネルオープンエラー: {}", e))?;
 
     channel
-        .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
+        .request_pty(
+            false,
+            "xterm-256color",
+            options.cols,
+            options.rows,
+            0,
+            0,
+            &[],
+        )
         .await
         .map_err(|_| "PTYリクエストエラー".to_string())?;
 
@@ -630,7 +695,7 @@ pub async fn ssh_connect(
         .register_session(
             session_id.clone(),
             TerminalProtocol::Ssh,
-            format!("{}:{}", host, port),
+            format!("{}:{}", options.host, options.port),
         )
         .await;
 

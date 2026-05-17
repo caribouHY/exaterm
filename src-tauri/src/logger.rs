@@ -24,6 +24,7 @@ struct ActiveLogTargets {
     manual: Option<LogSession>,
 }
 
+#[derive(Clone)]
 pub struct LoggerState {
     log_dir: PathBuf,
     index_path: PathBuf,
@@ -358,6 +359,15 @@ fn log_sessions_for_mode(
 #[tauri::command]
 pub async fn logger_start_auto(
     state: tauri::State<'_, LoggerState>,
+    session_id: String,
+    connection_type: String,
+    target: String,
+) -> Result<String, String> {
+    start_auto_log(&state, session_id, connection_type, target).await
+}
+
+pub async fn start_auto_log(
+    state: &LoggerState,
     session_id: String,
     connection_type: String,
     target: String,

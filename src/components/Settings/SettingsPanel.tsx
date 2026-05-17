@@ -17,6 +17,7 @@ type SecretEdits = Record<SecretKey, string>;
 const MASKED_VALUE = "••••••••";
 const DEFAULT_MCP_CONFIG = {
   enabled: false,
+  connect_enabled: false,
   host: "127.0.0.1",
   port: 8765,
 };
@@ -358,6 +359,20 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               type="checkbox"
               checked={Boolean(config.mcp?.enabled)}
               onChange={(e) => update("mcp.enabled", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.mcp_connect_enabled")}</span>
+            <small>{t("settings.mcp_connect_enabled_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(config.mcp?.connect_enabled)}
+              onChange={(e) => update("mcp.connect_enabled", e.target.checked)}
             />
             <span className="toggle-track" />
           </label>

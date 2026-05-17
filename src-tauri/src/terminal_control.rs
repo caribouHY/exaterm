@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tokio::sync::{futures::Notified, Mutex, Notify};
 
 const DEFAULT_OUTPUT_LIMIT: usize = 64 * 1024;
+const DEFAULT_SNAPSHOT_MAX_CHARS: usize = 20_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -236,6 +237,20 @@ fn tail_chars(input: &str, max_chars: usize) -> String {
 
 fn chars_from(input: &str, start: usize) -> String {
     input.chars().skip(start).collect()
+}
+
+#[tauri::command]
+pub async fn terminal_output_snapshot_get(
+    state: tauri::State<'_, TerminalControlState>,
+    session_id: String,
+    max_chars: Option<usize>,
+) -> Result<TerminalOutputSnapshot, String> {
+    state
+        .read_output(
+            &session_id,
+            max_chars.unwrap_or(DEFAULT_SNAPSHOT_MAX_CHARS).max(1),
+        )
+        .await
 }
 
 #[cfg(test)]
