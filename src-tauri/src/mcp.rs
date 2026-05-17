@@ -469,6 +469,25 @@ fn normalize_profile_auth_method(value: Option<&str>) -> Result<String, String> 
     }
 }
 
+fn ssh_credential_required(
+    auth_method: &str,
+    private_key_path: Option<&str>,
+) -> Result<bool, String> {
+    match auth_method {
+        "password" => Ok(true),
+        "public_key" => {
+            let private_key_path = private_key_path
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    "保存済みSSHプロファイルに秘密鍵ファイルが設定されていません".to_string()
+                })?;
+            ssh::private_key_requires_passphrase(private_key_path)
+        }
+        _ => Err("SSH認証方式が不正です".into()),
+    }
+}
+
 fn available_serial_port_names(ports: &[serial::PortInfo]) -> String {
     if ports.is_empty() {
         "なし".into()
@@ -693,31 +712,39 @@ async fn connect_prepared_profile(
             ssh::verify_trusted_host_key(host, *port)
                 .await
                 .map_err(invalid_params)?;
-            let credentials = runtime
-                .credentials
-                .as_ref()
-                .ok_or_else(|| internal_error("MCP認証入力に必要な状態がありません"))?;
-            let credential = credentials
-                .request_ssh_credential(
-                    app,
-                    McpCredentialRequestPayload {
-                        request_id: String::new(),
-                        profile_id: prepared.profile_id.clone(),
-                        host: host.clone(),
-                        port: *port,
-                        username: username.clone(),
-                        auth_method: auth_method.clone(),
-                        target: prepared.target.clone(),
-                        title: prepared.title.clone(),
-                    },
-                )
-                .await
+            let credential = if ssh_credential_required(auth_method, private_key_path.as_deref())
                 .map_err(invalid_params)?
-                .ok_or_else(|| invalid_params("MCP認証入力がキャンセルされました"))?;
-            let (password, key_passphrase) = if auth_method == "password" {
-                (credential, None)
+            {
+                let credentials = runtime
+                    .credentials
+                    .as_ref()
+                    .ok_or_else(|| internal_error("MCP認証入力に必要な状態がありません"))?;
+                Some(
+                    credentials
+                        .request_ssh_credential(
+                            app,
+                            McpCredentialRequestPayload {
+                                request_id: String::new(),
+                                profile_id: prepared.profile_id.clone(),
+                                host: host.clone(),
+                                port: *port,
+                                username: username.clone(),
+                                auth_method: auth_method.clone(),
+                                target: prepared.target.clone(),
+                                title: prepared.title.clone(),
+                            },
+                        )
+                        .await
+                        .map_err(invalid_params)?
+                        .ok_or_else(|| invalid_params("MCP認証入力がキャンセルされました"))?,
+                )
             } else {
-                (String::new(), Some(credential))
+                None
+            };
+            let (password, key_passphrase) = if auth_method == "password" {
+                (credential.unwrap_or_default(), None)
+            } else {
+                (String::new(), credential)
             };
 
             ssh::connect(
@@ -916,7 +943,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "connect_saved_profile",
-        description = "Open a new ExaTerm SSH or Telnet session from a saved profile when MCP profile connections are enabled. SSH passwords and key passphrases are requested in the ExaTerm UI."
+        description = "Open a new ExaTerm SSH or Telnet session from a saved profile when MCP profile connections are enabled. SSH passwords and encrypted key passphrases are requested in the ExaTerm UI."
     )]
     async fn connect_saved_profile(
         &self,
@@ -1642,6 +1669,14 @@ mod tests {
         assert_eq!(prepared.terminal_mode, "cisco_ios");
         assert_eq!(prepared.cols, 80);
         assert_eq!(prepared.rows, 24);
+    }
+
+    #[test]
+    fn ssh_credential_required_keeps_password_prompt_and_rejects_missing_key() {
+        assert!(ssh_credential_required("password", None).unwrap());
+
+        let error = ssh_credential_required("public_key", None).unwrap_err();
+        assert!(error.contains("秘密鍵"));
     }
 
     #[test]

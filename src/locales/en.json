@@ -62,7 +62,7 @@
   "connection.password_prompt_title": "Enter Password",
   "connection.password_prompt_desc": "Enter the SSH password for this connection.",
   "connection.key_passphrase_prompt_title": "Enter Key Passphrase",
-  "connection.key_passphrase_prompt_desc": "Enter the passphrase for the selected private key. Leave it blank if the key is not encrypted.",
+  "connection.key_passphrase_prompt_desc": "Enter the passphrase for the selected encrypted private key.",
   "connection.select_file": "Select",
   "connection.encoding": "Encoding",
   "connection.terminal_mode": "Terminal Mode",

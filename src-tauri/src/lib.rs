@@ -100,6 +100,7 @@ pub fn run() {
             startup_cli_request_get,
             ssh::ssh_probe_host_key,
             ssh::ssh_trust_host_key,
+            ssh::ssh_private_key_requires_passphrase,
             ssh::ssh_connect,
             ssh::ssh_write,
             ssh::ssh_resize,
