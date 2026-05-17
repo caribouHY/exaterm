@@ -19,7 +19,6 @@ type ProviderId = CloudProviderId | "Ollama";
 
 interface AIChatPanelProps {
   onClose: () => void;
-  config: AppConfig | null;
   terminalBuffer: React.MutableRefObject<string>;
   messages: ChatMessage[];
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -103,15 +102,8 @@ function parseAssistantContent(content: string): AssistantContentSegment[] {
   return segments;
 }
 
-function providerMessagesFor(messages: ChatMessage[]): ChatMessage[] {
-  return messages
-    .filter((message) => !message.is_error)
-    .map(({ role, content }) => ({ role, content }));
-}
-
 export default function AIChatPanel({
   onClose,
-  config,
   terminalBuffer,
   messages,
   setMessages,
@@ -138,7 +130,7 @@ export default function AIChatPanel({
 
     const loadAiSettings = async () => {
       let cloudModels: AiModelInfo[] = [];
-      let cfg = config;
+      let cfg: AppConfig | null = null;
       let secretStatus: AiSecretStatus = {
         openai: false,
         azure_openai: false,
@@ -159,12 +151,10 @@ export default function AIChatPanel({
         console.error("AI models fetch failed:", e);
       }
 
-      if (!cfg) {
-        try {
-          cfg = await invoke<AppConfig>("config_load");
-        } catch (e) {
-          console.error("Config load failed:", e);
-        }
+      try {
+        cfg = await invoke<AppConfig>("config_load");
+      } catch (e) {
+        console.error("Config load failed:", e);
       }
 
       const ollamaUrl = cfg?.ai?.ollama_base_url || "http://localhost:11434";
@@ -247,7 +237,7 @@ export default function AIChatPanel({
     return () => {
       cancelled = true;
     };
-  }, [config]);
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -290,7 +280,6 @@ export default function AIChatPanel({
     if (!input.trim() || loading || !selectedModel) return;
     const userMsg: ChatMessage = { role: "user", content: input.trim() };
     const newMessages = [...messages, userMsg];
-    const providerMessages = providerMessagesFor(newMessages);
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
@@ -299,7 +288,7 @@ export default function AIChatPanel({
       const response = await invoke<string>("ai_chat", {
         provider: selectedProvider,
         model: selectedModel,
-        messages: providerMessages,
+        messages: newMessages,
         terminalContext: useContext ? terminalBuffer.current : null,
         language: i18n.language,
         ollamaBaseUrl: selectedProvider === "Ollama" ? ollamaBaseUrl : null,
@@ -323,7 +312,6 @@ export default function AIChatPanel({
           content: `Error: ${detail}`,
           provider: selectedProvider,
           model_id: selectedModel,
-          is_error: true,
         },
       ]);
     }
