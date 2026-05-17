@@ -48,6 +48,10 @@ interface LineDecorationSet {
   decoration: IDecoration;
 }
 
+interface TerminalOutputSnapshot {
+  output: string;
+}
+
 const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
   {
     sessionId,
@@ -481,9 +485,8 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     const eventPrefix = protocol.dataEvent;
     const errorPrefix = protocol.errorEvent;
 
-    const handleData = (event: { payload: number[] }) => {
-      const data = new Uint8Array(event.payload);
-      const text = decoderRef.current.decode(data, { stream: true });
+    const writeTerminalText = (text: string) => {
+      if (!text) return;
       term.write(text, () => scheduleTerminalModeDecoration(term));
       if (onTerminalData) onTerminalData(text);
       if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
@@ -504,8 +507,31 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       }
     };
 
-    const unlistenData = listen<number[]>(`${eventPrefix}/${sessionId}`, handleData);
-    const unlistenError = listen<number[]>(`${errorPrefix}/${sessionId}`, handleData);
+    const handleData = (event: { payload: number[] }) => {
+      const data = new Uint8Array(event.payload);
+      const text = decoderRef.current.decode(data, { stream: true });
+      writeTerminalText(text);
+    };
+
+    let disposed = false;
+    let unlistenData: Promise<() => void> | null = null;
+    let unlistenError: Promise<() => void> | null = null;
+
+    invoke<TerminalOutputSnapshot>("terminal_output_snapshot_get", {
+      sessionId,
+      maxChars: terminalConfig?.scrollback ?? 20000,
+    })
+      .then((snapshot) => {
+        if (!disposed) {
+          writeTerminalText(snapshot.output);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (disposed) return;
+        unlistenData = listen<number[]>(`${eventPrefix}/${sessionId}`, handleData);
+        unlistenError = listen<number[]>(`${errorPrefix}/${sessionId}`, handleData);
+      });
 
     // Resize handling
     const resizeCmd = protocol.resize;
@@ -520,8 +546,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     resizeObserver.observe(containerRef.current);
 
     return () => {
-      unlistenData.then((fn) => fn());
-      unlistenError.then((fn) => fn());
+      disposed = true;
+      unlistenData?.then((fn) => fn());
+      unlistenError?.then((fn) => fn());
       if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
         const logText = autoLogSanitizerRef.current.flush();
         if (logText) {

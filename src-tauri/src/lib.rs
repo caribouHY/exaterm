@@ -11,7 +11,7 @@ mod terminal_control;
 
 use cli::{CliAction, StartupCliRequest};
 use logger::LoggerState;
-use mcp::{spawn_mcp_server, McpRuntime};
+use mcp::{spawn_mcp_server, McpCredentialState, McpRuntime};
 use serial::SerialState;
 use ssh::SshState;
 use std::sync::Mutex;
@@ -53,6 +53,8 @@ pub fn run() {
     let serial_state = SerialState::new();
     let telnet_state = TelnetState::new();
     let terminal_control_state = TerminalControlState::new();
+    let logger_state = LoggerState::new();
+    let mcp_credential_state = McpCredentialState::new();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -62,16 +64,26 @@ pub fn run() {
         .manage(serial_state.clone())
         .manage(telnet_state.clone())
         .manage(terminal_control_state.clone())
-        .manage(LoggerState::new())
-        .setup(move |_app| {
+        .manage(logger_state.clone())
+        .manage(mcp_credential_state.clone())
+        .setup(move |app| {
+            #[cfg(test)]
+            let _ = app;
+
             match config::config_load() {
                 Ok(cfg) if cfg.mcp.enabled => {
                     spawn_mcp_server(McpRuntime {
                         config: cfg.mcp,
+                        #[cfg(not(test))]
+                        app: Some(app.handle().clone()),
                         terminals: terminal_control_state.clone(),
                         ssh: ssh_state.clone(),
                         serial: serial_state.clone(),
                         telnet: telnet_state.clone(),
+                        #[cfg(not(test))]
+                        logger: Some(logger_state.clone()),
+                        #[cfg(not(test))]
+                        credentials: Some(mcp_credential_state.clone()),
                     });
                 }
                 Ok(_) => {}
@@ -120,6 +132,8 @@ pub fn run() {
             logger::logger_get_sessions,
             logger::logger_bulk_delete_sessions,
             logger::logger_get_log_dir,
+            mcp::mcp_credential_submit,
+            terminal_control::terminal_output_snapshot_get,
             // Config
             config::config_load,
             config::config_save,

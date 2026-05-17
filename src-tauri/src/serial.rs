@@ -12,7 +12,7 @@ use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 
 const SERIAL_IO_TIMEOUT: Duration = Duration::from_millis(5);
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SerialConfig {
     pub baud_rate: u32,
     pub data_bits: u8,
@@ -117,6 +117,16 @@ pub async fn serial_connect(
     port: String,
     config: SerialConfig,
 ) -> Result<String, String> {
+    connect(&app, &state, &terminals, port, config).await
+}
+
+pub async fn connect(
+    app: &AppHandle,
+    state: &SerialState,
+    terminals: &TerminalControlState,
+    port: String,
+    config: SerialConfig,
+) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let running = Arc::new(AtomicBool::new(true));
 
@@ -160,7 +170,7 @@ pub async fn serial_connect(
     let app_clone = app.clone();
     let run_flag = running.clone();
     let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-    let output_terminals = terminals.inner().clone();
+    let output_terminals = terminals.clone();
     let output_sid = session_id.clone();
     tokio::spawn(async move {
         while let Some(data) = output_rx.recv().await {

@@ -32,6 +32,8 @@ fn default_language() -> String {
 pub struct McpConfig {
     #[serde(default)]
     pub enabled: bool,
+    #[serde(default)]
+    pub connect_enabled: bool,
     #[serde(default = "default_mcp_host")]
     pub host: String,
     #[serde(default = "default_mcp_port")]
@@ -42,6 +44,7 @@ impl Default for McpConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            connect_enabled: false,
             host: default_mcp_host(),
             port: default_mcp_port(),
         }
@@ -284,6 +287,8 @@ mod tests {
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
         assert!(!cfg.ai.debug_log_enabled);
         assert!(!cfg.ai.azure_openai_enabled);
+        assert!(!cfg.mcp.enabled);
+        assert!(!cfg.mcp.connect_enabled);
         assert_eq!(cfg.ai.azure_openai_endpoint, "");
         assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.terminal.font_size, 14);
