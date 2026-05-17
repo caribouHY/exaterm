@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useRef, useCallback, useEffect } from "react";
+import { lazy, Suspense, useState, useRef, useCallback, useEffect, useMemo } from "react";
 import TitleBar from "./components/TitleBar/TitleBar";
 import TerminalTabs from "./components/Terminal/TerminalTabs";
 import TerminalView from "./components/Terminal/TerminalView";
@@ -70,10 +70,22 @@ interface McpCredentialPromptState extends McpCredentialRequestPayload {
   submitting: boolean;
 }
 
+function orderAppTabs(appTabs: AppTabInfo[], tabOrder: string[]) {
+  const tabsById = new Map(appTabs.map((tab) => [tab.id, tab]));
+  const orderedTabs = tabOrder
+    .map((id) => tabsById.get(id))
+    .filter((tab): tab is AppTabInfo => Boolean(tab));
+  const orderedIds = new Set(orderedTabs.map((tab) => tab.id));
+  const newTabs = appTabs.filter((tab) => !orderedIds.has(tab.id));
+
+  return [...orderedTabs, ...newTabs];
+}
+
 export default function App() {
   const { t } = useTranslation();
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [utilityTabs, setUtilityTabs] = useState<UtilityTabKind[]>([]);
+  const [tabOrder, setTabOrder] = useState<string[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [closingTabIds, setClosingTabIds] = useState<string[]>([]);
   const [showConnection, setShowConnection] = useState(false);
@@ -95,13 +107,20 @@ export default function App() {
   const activeTabIdRef = useRef<string | null>(null);
   const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
 
-  const appTabs: AppTabInfo[] = [
-    ...tabs,
-    ...utilityTabs.map((kind) => ({
-      kind,
-      id: kind,
-    })),
-  ];
+  const appTabs: AppTabInfo[] = useMemo(
+    () =>
+      orderAppTabs(
+        [
+          ...tabs,
+          ...utilityTabs.map((kind) => ({
+            kind,
+            id: kind,
+          })),
+        ],
+        tabOrder
+      ),
+    [tabs, utilityTabs, tabOrder]
+  );
   const activeAppTab = appTabs.find((tab) => tab.id === activeTabId) || null;
   const activeTab =
     activeAppTab?.kind === "terminal" ? tabs.find((t) => t.id === activeAppTab.id) || null : null;
@@ -136,6 +155,7 @@ export default function App() {
       setTabs((prev) =>
         prev.some((tab) => tab.sessionId === sessionId) ? prev : [...prev, newTab]
       );
+      setTabOrder((prev) => (prev.includes(sessionId) ? prev : [...prev, sessionId]));
       setActiveTabId(sessionId);
     },
     []
@@ -158,6 +178,7 @@ export default function App() {
 
   const openUtilityTab = useCallback((kind: UtilityTabKind) => {
     setUtilityTabs((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
+    setTabOrder((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
     setActiveTabId(kind);
   }, []);
 
@@ -270,6 +291,7 @@ export default function App() {
       activeTerminalBuffer.current = "";
     }
     setTabs((prev) => prev.filter((tab) => tab.id !== id));
+    setTabOrder((prev) => prev.filter((tabId) => tabId !== id));
   }, []);
 
   const disconnectTab = useCallback(
@@ -325,12 +347,33 @@ export default function App() {
     async (id: string) => {
       if (id === "settings" || id === "logs") {
         setUtilityTabs((prev) => prev.filter((kind) => kind !== id));
+        setTabOrder((prev) => prev.filter((tabId) => tabId !== id));
         return;
       }
 
       await disconnectTab(id);
     },
     [disconnectTab]
+  );
+
+  const handleReorderTabs = useCallback(
+    (draggedId: string, targetId: string, dropSide: "before" | "after") => {
+      if (draggedId === targetId) return;
+
+      const visibleOrder = appTabs.map((tab) => tab.id);
+      const draggedIndex = visibleOrder.indexOf(draggedId);
+      const targetIndex = visibleOrder.indexOf(targetId);
+      if (draggedIndex < 0 || targetIndex < 0) return;
+
+      const nextOrder = [...visibleOrder];
+      const [draggedTabId] = nextOrder.splice(draggedIndex, 1);
+      const targetIndexAfterRemoval = nextOrder.indexOf(targetId);
+      const insertIndex =
+        dropSide === "after" ? targetIndexAfterRemoval + 1 : targetIndexAfterRemoval;
+      nextOrder.splice(insertIndex, 0, draggedTabId);
+      setTabOrder(nextOrder);
+    },
+    [appTabs]
   );
 
   const handleTerminalData = useCallback((tabId: string, data: string) => {
@@ -602,6 +645,7 @@ export default function App() {
                 onSelectTab={setActiveTabId}
                 onCloseTab={handleCloseTab}
                 onAddTab={openConnection}
+                onReorderTabs={handleReorderTabs}
               />
               <div
                 className={`app__terminal-area ${activeView !== "terminal" ? "app__hidden" : ""}`}
