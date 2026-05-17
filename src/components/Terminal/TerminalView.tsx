@@ -60,6 +60,11 @@ interface CommandDecorationSegment {
   text: string;
 }
 
+interface LineRange {
+  firstLineIndex: number;
+  lastLineIndex: number;
+}
+
 interface TerminalOutputSnapshot {
   output: string;
 }
@@ -242,50 +247,104 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     decorateCiscoIosErrors(term);
   };
 
+  const getCiscoIosDecorationRanges = (term: Terminal): LineRange[] => {
+    const buffer = term.buffer.active;
+    if (buffer.type === "alternate") return [];
+
+    const lastBufferLineIndex = Math.max(0, buffer.length - 1);
+    const cursorLineIndex = Math.min(lastBufferLineIndex, buffer.baseY + buffer.cursorY);
+    const viewportLastLineIndex = Math.min(lastBufferLineIndex, buffer.viewportY + term.rows - 1);
+    const ranges: LineRange[] = [];
+
+    const addRange = (firstLineIndex: number, lastLineIndex: number) => {
+      const nextRange = {
+        firstLineIndex: Math.max(0, firstLineIndex),
+        lastLineIndex: Math.min(lastBufferLineIndex, lastLineIndex),
+      };
+      if (nextRange.lastLineIndex < nextRange.firstLineIndex) return;
+      ranges.push(nextRange);
+    };
+
+    addRange(cursorLineIndex - ciscoIosDecorationLookback, cursorLineIndex);
+    addRange(buffer.viewportY - ciscoIosDecorationLookback, viewportLastLineIndex);
+
+    return ranges
+      .sort((a, b) => a.firstLineIndex - b.firstLineIndex)
+      .reduce<LineRange[]>((mergedRanges, range) => {
+        const previousRange = mergedRanges[mergedRanges.length - 1];
+        if (!previousRange || range.firstLineIndex > previousRange.lastLineIndex + 1) {
+          mergedRanges.push({ ...range });
+          return mergedRanges;
+        }
+
+        previousRange.lastLineIndex = Math.max(previousRange.lastLineIndex, range.lastLineIndex);
+        return mergedRanges;
+      }, []);
+  };
+
+  const isLineInRanges = (lineIndex: number, ranges: LineRange[]) =>
+    ranges.some((range) => lineIndex >= range.firstLineIndex && lineIndex <= range.lastLineIndex);
+
   const decorateCiscoIosErrors = (term: Terminal) => {
     const buffer = term.buffer.active;
     if (buffer.type === "alternate") return;
 
     const cursorLineIndex = buffer.baseY + buffer.cursorY;
-    const firstLineIndex = Math.max(0, cursorLineIndex - ciscoIosDecorationLookback);
+    const decorationRanges = getCiscoIosDecorationRanges(term);
+    const visitedErrorLineIndexes = new Set<number>();
 
-    for (let lineIndex = firstLineIndex; lineIndex <= cursorLineIndex; lineIndex += 1) {
-      const line = buffer.getLine(lineIndex)?.translateToString(true) ?? "";
-      const trimmedLine = line.trimEnd();
-      if (!trimmedLine || ciscoIosPromptPattern.test(trimmedLine)) continue;
-      if (!ciscoIosErrorPatterns.some((pattern) => pattern.test(trimmedLine))) continue;
+    decorationRanges.forEach(({ firstLineIndex, lastLineIndex }) => {
+      for (let lineIndex = firstLineIndex; lineIndex <= lastLineIndex; lineIndex += 1) {
+        const line = buffer.getLine(lineIndex)?.translateToString(true) ?? "";
+        const trimmedLine = line.trimEnd();
+        if (!trimmedLine || ciscoIosPromptPattern.test(trimmedLine)) continue;
+        if (!ciscoIosErrorPatterns.some((pattern) => pattern.test(trimmedLine))) continue;
 
-      const decorationStart = Math.max(0, trimmedLine.search(/\S/));
-      const decorationWidth = trimmedLine.length - decorationStart;
-      if (decorationWidth <= 0) continue;
+        const decorationStart = Math.max(0, trimmedLine.search(/\S/));
+        const decorationWidth = trimmedLine.length - decorationStart;
+        if (decorationWidth <= 0) continue;
 
-      const signature = `${decorationStart}:${decorationWidth}:${trimmedLine}`;
-      const existingDecorationSet = errorDecorationsRef.current.get(lineIndex);
-      if (existingDecorationSet?.signature === signature) continue;
-      if (existingDecorationSet) {
-        disposeLineDecorationSet(existingDecorationSet);
-        errorDecorationsRef.current.delete(lineIndex);
+        const signature = `${decorationStart}:${decorationWidth}:${trimmedLine}`;
+        const existingDecorationSet = errorDecorationsRef.current.get(lineIndex);
+        visitedErrorLineIndexes.add(lineIndex);
+        if (existingDecorationSet?.signature === signature) continue;
+        if (existingDecorationSet) {
+          disposeLineDecorationSet(existingDecorationSet);
+          errorDecorationsRef.current.delete(lineIndex);
+        }
+
+        const marker = term.registerMarker(lineIndex - cursorLineIndex);
+        if (!marker) continue;
+
+        const decoration = term.registerDecoration({
+          marker,
+          x: decorationStart,
+          width: decorationWidth,
+          foregroundColor: "#f87171",
+          layer: "top",
+        });
+
+        if (!decoration) {
+          marker.dispose();
+          continue;
+        }
+
+        decoration.onDispose(() => errorDecorationsRef.current.delete(lineIndex));
+        errorDecorationsRef.current.set(lineIndex, { signature, marker, decoration });
+      }
+    });
+
+    errorDecorationsRef.current.forEach((decorationSet, decoratedLineIndex) => {
+      if (
+        !isLineInRanges(decoratedLineIndex, decorationRanges) ||
+        visitedErrorLineIndexes.has(decoratedLineIndex)
+      ) {
+        return;
       }
 
-      const marker = term.registerMarker(lineIndex - cursorLineIndex);
-      if (!marker) continue;
-
-      const decoration = term.registerDecoration({
-        marker,
-        x: decorationStart,
-        width: decorationWidth,
-        foregroundColor: "#f87171",
-        layer: "top",
-      });
-
-      if (!decoration) {
-        marker.dispose();
-        continue;
-      }
-
-      decoration.onDispose(() => errorDecorationsRef.current.delete(lineIndex));
-      errorDecorationsRef.current.set(lineIndex, { signature, marker, decoration });
-    }
+      disposeLineDecorationSet(decorationSet);
+      errorDecorationsRef.current.delete(decoratedLineIndex);
+    });
   };
 
   const decorateCiscoIosPrompt = (term: Terminal) => {
@@ -293,111 +352,112 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     if (buffer.type === "alternate") return;
 
     const cursorLineIndex = buffer.baseY + buffer.cursorY;
-    const firstLineIndex = Math.max(0, cursorLineIndex - ciscoIosDecorationLookback);
+    const decorationRanges = getCiscoIosDecorationRanges(term);
     const visitedPromptLineIndexes = new Set<number>();
 
-    for (let lineIndex = firstLineIndex; lineIndex <= cursorLineIndex; lineIndex += 1) {
-      const bufferLine = buffer.getLine(lineIndex);
-      if (!bufferLine || bufferLine.isWrapped) continue;
+    decorationRanges.forEach(({ firstLineIndex, lastLineIndex }) => {
+      for (let lineIndex = firstLineIndex; lineIndex <= lastLineIndex; lineIndex += 1) {
+        const bufferLine = buffer.getLine(lineIndex);
+        if (!bufferLine || bufferLine.isWrapped) continue;
 
-      const trimmedLine = bufferLine.translateToString(true).trimEnd();
-      const promptMatch = ciscoIosPromptPattern.exec(trimmedLine);
-      if (!promptMatch) continue;
+        const trimmedLine = bufferLine.translateToString(true).trimEnd();
+        const promptMatch = ciscoIosPromptPattern.exec(trimmedLine);
+        if (!promptMatch) continue;
 
-      const hostname = promptMatch[1];
-      const configMode = promptMatch[2];
-      const terminator = promptMatch[3];
-      const commandText = promptMatch[4].trimEnd();
-      const promptText = `${hostname}${configMode}${terminator}`;
-      const isConfigPrompt = ciscoIosConfigPromptPattern.test(promptText);
-      const hostnameStart = trimmedLine.indexOf(hostname);
-      if (hostnameStart < 0 || hostname.length === 0) continue;
-      const promptWidth = promptText.length;
-      if (promptWidth === 0) continue;
-      const commandStart = hostnameStart + promptMatch[0].length - promptMatch[4].length;
-      const commandSegments = collectCiscoIosCommandSegments(
-        buffer,
-        lineIndex,
-        commandStart,
-        commandText,
-        cursorLineIndex
-      );
-      const promptSignature = `${hostnameStart}:${promptWidth}:${promptText}:${isConfigPrompt}`;
-      const commandSignature = commandSegments
-        .map(
-          (segment) =>
-            `${segment.lineIndex - lineIndex}:${segment.x}:${segment.width}:${segment.text}`
-        )
-        .join("\n");
-      const existingDecorationSet = promptDecorationsRef.current.get(lineIndex);
-      visitedPromptLineIndexes.add(lineIndex);
+        const hostname = promptMatch[1];
+        const configMode = promptMatch[2];
+        const terminator = promptMatch[3];
+        const commandText = promptMatch[4].trimEnd();
+        const promptText = `${hostname}${configMode}${terminator}`;
+        const isConfigPrompt = ciscoIosConfigPromptPattern.test(promptText);
+        const hostnameStart = trimmedLine.indexOf(hostname);
+        if (hostnameStart < 0 || hostname.length === 0) continue;
+        const promptWidth = promptText.length;
+        if (promptWidth === 0) continue;
+        const commandStart = hostnameStart + promptMatch[0].length - promptMatch[4].length;
+        const commandSegments = collectCiscoIosCommandSegments(
+          buffer,
+          lineIndex,
+          commandStart,
+          commandText,
+          lastLineIndex
+        );
+        const promptSignature = `${hostnameStart}:${promptWidth}:${promptText}:${isConfigPrompt}`;
+        const commandSignature = commandSegments
+          .map(
+            (segment) =>
+              `${segment.lineIndex - lineIndex}:${segment.x}:${segment.width}:${segment.text}`
+          )
+          .join("\n");
+        const existingDecorationSet = promptDecorationsRef.current.get(lineIndex);
+        visitedPromptLineIndexes.add(lineIndex);
 
-      if (existingDecorationSet?.promptSignature === promptSignature) {
-        if (existingDecorationSet.commandSignature === commandSignature) continue;
+        if (existingDecorationSet?.promptSignature === promptSignature) {
+          if (existingDecorationSet.commandSignature === commandSignature) continue;
 
-        existingDecorationSet.commandDecorations.forEach(disposeCommandDecoration);
-        existingDecorationSet.commandDecorations = registerCiscoIosCommandDecorations(
+          existingDecorationSet.commandDecorations.forEach(disposeCommandDecoration);
+          existingDecorationSet.commandDecorations = registerCiscoIosCommandDecorations(
+            term,
+            existingDecorationSet.marker,
+            lineIndex,
+            commandSegments,
+            cursorLineIndex
+          );
+          existingDecorationSet.commandSignature = commandSignature;
+          continue;
+        }
+
+        if (existingDecorationSet) {
+          disposePromptDecorationSet(existingDecorationSet);
+          promptDecorationsRef.current.delete(lineIndex);
+        }
+
+        const marker = term.registerMarker(lineIndex - cursorLineIndex);
+        if (!marker) continue;
+
+        const promptDecoration = term.registerDecoration({
+          marker,
+          x: hostnameStart,
+          width: promptWidth,
+          foregroundColor: isConfigPrompt ? "#facc15" : "#7dd3fc",
+          backgroundColor: isConfigPrompt ? "#3a2f0a" : "#0f2f3f",
+          layer: "top",
+        });
+
+        if (!promptDecoration) {
+          marker.dispose();
+          continue;
+        }
+
+        promptDecoration.onRender((element) => {
+          element.classList.add("terminal-view__cisco-hostname");
+          if (isConfigPrompt) {
+            element.classList.add("terminal-view__cisco-hostname--config");
+          }
+        });
+
+        const commandDecorations = registerCiscoIosCommandDecorations(
           term,
-          existingDecorationSet.marker,
+          marker,
           lineIndex,
           commandSegments,
           cursorLineIndex
         );
-        existingDecorationSet.commandSignature = commandSignature;
-        continue;
+
+        promptDecoration.onDispose(() => promptDecorationsRef.current.delete(lineIndex));
+        promptDecorationsRef.current.set(lineIndex, {
+          promptSignature,
+          commandSignature,
+          marker,
+          promptDecoration,
+          commandDecorations,
+        });
       }
-
-      if (existingDecorationSet) {
-        disposePromptDecorationSet(existingDecorationSet);
-        promptDecorationsRef.current.delete(lineIndex);
-      }
-
-      const marker = term.registerMarker(lineIndex - cursorLineIndex);
-      if (!marker) continue;
-
-      const promptDecoration = term.registerDecoration({
-        marker,
-        x: hostnameStart,
-        width: promptWidth,
-        foregroundColor: isConfigPrompt ? "#facc15" : "#7dd3fc",
-        backgroundColor: isConfigPrompt ? "#3a2f0a" : "#0f2f3f",
-        layer: "top",
-      });
-
-      if (!promptDecoration) {
-        marker.dispose();
-        continue;
-      }
-
-      promptDecoration.onRender((element) => {
-        element.classList.add("terminal-view__cisco-hostname");
-        if (isConfigPrompt) {
-          element.classList.add("terminal-view__cisco-hostname--config");
-        }
-      });
-
-      const commandDecorations = registerCiscoIosCommandDecorations(
-        term,
-        marker,
-        lineIndex,
-        commandSegments,
-        cursorLineIndex
-      );
-
-      promptDecoration.onDispose(() => promptDecorationsRef.current.delete(lineIndex));
-      promptDecorationsRef.current.set(lineIndex, {
-        promptSignature,
-        commandSignature,
-        marker,
-        promptDecoration,
-        commandDecorations,
-      });
-    }
+    });
 
     promptDecorationsRef.current.forEach((decorationSet, decoratedLineIndex) => {
       if (
-        decoratedLineIndex < firstLineIndex ||
-        decoratedLineIndex > cursorLineIndex ||
+        !isLineInRanges(decoratedLineIndex, decorationRanges) ||
         visitedPromptLineIndexes.has(decoratedLineIndex)
       ) {
         return;
@@ -413,7 +473,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     promptLineIndex: number,
     commandStart: number,
     commandText: string,
-    cursorLineIndex: number
+    lastLineIndex: number
   ): CommandDecorationSegment[] => {
     if (buffer.type === "alternate") return [];
 
@@ -427,7 +487,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       });
     }
 
-    for (let lineIndex = promptLineIndex + 1; lineIndex <= cursorLineIndex; lineIndex += 1) {
+    for (let lineIndex = promptLineIndex + 1; lineIndex <= lastLineIndex; lineIndex += 1) {
       const wrappedLine = buffer.getLine(lineIndex);
       if (!wrappedLine?.isWrapped) break;
 
@@ -444,7 +504,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
     return segments;
   };
-
   const registerCiscoIosCommandDecorations = (
     term: Terminal,
     promptMarker: IMarker,
@@ -606,6 +665,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       if (!isConnectedRef.current) return;
       invoke(protocol.write, { sessionId, data }).catch(console.error);
     });
+    const scrollDecorationDisposable = term.onScroll(() => scheduleTerminalModeDecoration(term));
 
     // Backend data -> terminal
     const eventPrefix = protocol.dataEvent;
@@ -693,6 +753,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         }
       }
       resizeObserver.disconnect();
+      scrollDecorationDisposable.dispose();
       cancelScheduledDecoration();
       clearModeDecorations();
       term.dispose();
