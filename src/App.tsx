@@ -357,7 +357,7 @@ export default function App() {
   );
 
   const handleReorderTabs = useCallback(
-    (draggedId: string, targetId: string) => {
+    (draggedId: string, targetId: string, dropSide: "before" | "after") => {
       if (draggedId === targetId) return;
 
       const visibleOrder = appTabs.map((tab) => tab.id);
@@ -367,7 +367,10 @@ export default function App() {
 
       const nextOrder = [...visibleOrder];
       const [draggedTabId] = nextOrder.splice(draggedIndex, 1);
-      nextOrder.splice(targetIndex, 0, draggedTabId);
+      const targetIndexAfterRemoval = nextOrder.indexOf(targetId);
+      const insertIndex =
+        dropSide === "after" ? targetIndexAfterRemoval + 1 : targetIndexAfterRemoval;
+      nextOrder.splice(insertIndex, 0, draggedTabId);
       setTabOrder(nextOrder);
     },
     [appTabs]

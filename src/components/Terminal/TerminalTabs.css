@@ -6,6 +6,7 @@
   border-bottom: 1px solid var(--border-secondary);
   overflow-x: auto;
   flex-shrink: 0;
+  position: relative;
 }
 
 .terminal-tabs::-webkit-scrollbar {
@@ -45,14 +46,22 @@
 }
 
 .terminal-tab--dragging {
+  background: var(--bg-active);
   cursor: grabbing;
   opacity: 0.55;
 }
 
-.terminal-tab--drag-over {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  box-shadow: inset 2px 0 0 var(--accent-primary);
+.terminal-tabs__drop-indicator {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text-primary);
+  border-radius: 999px;
+  box-shadow: 0 0 6px rgba(204, 204, 204, 0.45);
+  pointer-events: none;
+  z-index: 5;
 }
 
 .terminal-tab--active::after {
