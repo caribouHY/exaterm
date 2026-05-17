@@ -30,6 +30,8 @@
   min-width: 120px;
   max-width: 200px;
   position: relative;
+  user-select: none;
+  touch-action: none;
 }
 
 .terminal-tab:hover {
@@ -40,6 +42,17 @@
 .terminal-tab--active {
   background: var(--bg-base);
   color: var(--text-primary);
+}
+
+.terminal-tab--dragging {
+  cursor: grabbing;
+  opacity: 0.55;
+}
+
+.terminal-tab--drag-over {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  box-shadow: inset 2px 0 0 var(--accent-primary);
 }
 
 .terminal-tab--active::after {
