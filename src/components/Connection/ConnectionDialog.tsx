@@ -411,6 +411,28 @@ export default function ConnectionDialog({
     onConnect("ssh", result.session_id, `${username}@${host}`, autoLog, encoding, sshTerminalMode);
   };
 
+  const continueSshConnect = async (sshPort: number) => {
+    if (authMethod === "password") {
+      openCredentialPrompt(sshPort);
+      connectingRef.current = false;
+      setConnecting(false);
+      return;
+    }
+
+    const requiresPassphrase = await invoke<boolean>("ssh_private_key_requires_passphrase", {
+      privateKeyPath,
+    });
+    if (requiresPassphrase) {
+      openCredentialPrompt(sshPort);
+      connectingRef.current = false;
+      setConnecting(false);
+      return;
+    }
+
+    const autoLog = await getAutoLogPreference();
+    await performSshConnect(autoLog, sshPort, "", "public_key");
+  };
+
   const handleCredentialSubmit = async () => {
     if (!credentialPrompt || connectingRef.current) return;
 
@@ -452,9 +474,7 @@ export default function ConnectionDialog({
         replace,
       });
       setHostKeyCheck(null);
-      openCredentialPrompt(hostKeyCheck.port);
-      connectingRef.current = false;
-      setConnecting(false);
+      await continueSshConnect(hostKeyCheck.port);
     } catch (e: unknown) {
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
@@ -483,9 +503,7 @@ export default function ConnectionDialog({
         });
 
         if (result.status === "trusted") {
-          openCredentialPrompt(sshPort);
-          connectingRef.current = false;
-          setConnecting(false);
+          await continueSshConnect(sshPort);
           return;
         }
 

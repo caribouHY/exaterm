@@ -62,7 +62,7 @@
   "connection.password_prompt_title": "パスワードを入力",
   "connection.password_prompt_desc": "このSSH接続で使用するパスワードを入力してください。",
   "connection.key_passphrase_prompt_title": "鍵パスフレーズを入力",
-  "connection.key_passphrase_prompt_desc": "選択した秘密鍵のパスフレーズを入力してください。暗号化されていない鍵の場合は空欄のまま進めます。",
+  "connection.key_passphrase_prompt_desc": "選択した暗号化済み秘密鍵のパスフレーズを入力してください。",
   "connection.select_file": "選択",
   "connection.encoding": "文字コード",
   "connection.terminal_mode": "ターミナルモード",

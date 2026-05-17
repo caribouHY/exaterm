@@ -386,7 +386,7 @@ fn private_key_format_hint(secret: &str) -> Result<(), String> {
     }
 }
 
-fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<KeyPair, String> {
+fn read_private_key_secret(path: &str) -> Result<(PathBuf, String), String> {
     let path = normalize_auth_path(path);
     let secret = fs::read_to_string(&path).map_err(|error| {
         format!(
@@ -396,6 +396,35 @@ fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<Key
         )
     })?;
 
+    Ok((path, secret))
+}
+
+pub fn private_key_requires_passphrase(path: &str) -> Result<bool, String> {
+    if path.trim().is_empty() {
+        return Err("秘密鍵ファイルを指定してください".to_string());
+    }
+
+    let (_path, secret) = read_private_key_secret(path)?;
+    private_key_format_hint(&secret)?;
+    match decode_secret_key(&secret, None) {
+        Ok(_) => Ok(false),
+        Err(russh_keys::Error::KeyIsEncrypted) => Ok(true),
+        Err(russh_keys::Error::CouldNotReadKey) => Err(
+            "秘密鍵を読み込めません。鍵形式、パスフレーズ、またはファイル内容を確認してください"
+                .to_string(),
+        ),
+        Err(other) => Err(format!("秘密鍵を読み込めません: {}", other)),
+    }
+}
+
+#[tauri::command]
+pub fn ssh_private_key_requires_passphrase(private_key_path: String) -> Result<bool, String> {
+    private_key_requires_passphrase(&private_key_path)
+        .map_err(|error| format!("SSH公開鍵認証エラー: {}", error))
+}
+
+fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<KeyPair, String> {
+    let (_path, secret) = read_private_key_secret(path)?;
     private_key_format_hint(&secret)?;
     decode_secret_key(&secret, passphrase).map_err(|error| match error {
         russh_keys::Error::KeyIsEncrypted => {
@@ -781,6 +810,7 @@ pub async fn ssh_disconnect(
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::process::Command;
 
     use super::*;
 
@@ -796,6 +826,28 @@ mod tests {
 
     fn read_test_key(base64: &str) -> PublicKey {
         russh_keys::parse_public_key_base64(base64).unwrap()
+    }
+
+    fn write_temp_private_key(contents: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("exaterm-ssh-key-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("id_ed25519");
+        fs::write(&path, contents).unwrap();
+        path
+    }
+
+    fn generate_temp_private_key(passphrase: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("exaterm-ssh-keygen-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("id_ed25519");
+        let status = Command::new("ssh-keygen")
+            .args(["-t", "ed25519", "-N", passphrase, "-f"])
+            .arg(&path)
+            .arg("-q")
+            .status()
+            .unwrap_or_else(|error| panic!("ssh-keygen is required for this test: {error}"));
+        assert!(status.success(), "ssh-keygen failed with status {status}");
+        path
     }
 
     #[test]
@@ -961,5 +1013,40 @@ mod tests {
         let error = private_key_format_hint("PuTTY-User-Key-File-3: ssh-ed25519\n").unwrap_err();
 
         assert!(error.contains("PuTTY形式"));
+    }
+
+    #[test]
+    fn private_key_requires_passphrase_detects_unencrypted_keys() {
+        let path = generate_temp_private_key("");
+
+        let requires_passphrase = private_key_requires_passphrase(path.to_str().unwrap()).unwrap();
+
+        assert!(!requires_passphrase);
+    }
+
+    #[test]
+    fn private_key_requires_passphrase_detects_encrypted_keys() {
+        let path = generate_temp_private_key("secret");
+
+        let requires_passphrase = private_key_requires_passphrase(path.to_str().unwrap()).unwrap();
+
+        assert!(requires_passphrase);
+    }
+
+    #[test]
+    fn private_key_requires_passphrase_rejects_public_key_files() {
+        let path =
+            write_temp_private_key("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEexample user@example\n");
+
+        let error = private_key_requires_passphrase(path.to_str().unwrap()).unwrap_err();
+
+        assert!(error.contains("公開鍵ファイル"));
+    }
+
+    #[test]
+    fn private_key_requires_passphrase_rejects_empty_path() {
+        let error = private_key_requires_passphrase("  ").unwrap_err();
+
+        assert!(error.contains("秘密鍵ファイル"));
     }
 }
