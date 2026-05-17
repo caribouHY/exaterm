@@ -92,6 +92,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const isLoggingPausedRef = useRef(isLoggingPaused);
   const terminalModeRef = useRef(terminalMode);
   const decorationFrameRef = useRef<number | null>(null);
+  const decorationRebuildRef = useRef(false);
   const promptDecorationsRef = useRef<Map<number, PromptDecorationSet>>(new Map());
   const errorDecorationsRef = useRef<Map<number, LineDecorationSet>>(new Map());
   const autoLogSanitizerRef = useRef(
@@ -130,17 +131,23 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   };
 
   const cancelScheduledDecoration = () => {
+    decorationRebuildRef.current = false;
     if (decorationFrameRef.current === null) return;
     window.cancelAnimationFrame(decorationFrameRef.current);
     decorationFrameRef.current = null;
   };
 
-  const scheduleTerminalModeDecoration = (term: Terminal) => {
+  const scheduleTerminalModeDecoration = (term: Terminal, rebuild = false) => {
     if (terminalModeRef.current === DEFAULT_TERMINAL_MODE) return;
+    decorationRebuildRef.current = decorationRebuildRef.current || rebuild;
     if (decorationFrameRef.current !== null) return;
 
     decorationFrameRef.current = window.requestAnimationFrame(() => {
       decorationFrameRef.current = null;
+      if (decorationRebuildRef.current) {
+        clearModeDecorations();
+        decorationRebuildRef.current = false;
+      }
       terminalModeDecorators[terminalModeRef.current]?.(term);
     });
   };
@@ -656,6 +663,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     const resizeCmd = protocol.resize;
     const handleResize = () => {
       fitAddon.fit();
+      scheduleTerminalModeDecoration(term, true);
       if (resizeCmd && sessionId && isConnectedRef.current) {
         invoke(resizeCmd, { sessionId, cols: term.cols, rows: term.rows }).catch(() => {});
       }
@@ -699,6 +707,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       // Small delay to allow the browser to lay out the now-visible container
       const timer = setTimeout(() => {
         fitRef.current?.fit();
+        if (termRef.current) {
+          scheduleTerminalModeDecoration(termRef.current, true);
+        }
         termRef.current?.focus();
       }, 50);
       return () => clearTimeout(timer);
@@ -716,6 +727,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       // Re-fit to adjust for potential size changes
       setTimeout(() => {
         fitRef.current?.fit();
+        if (termRef.current) {
+          scheduleTerminalModeDecoration(termRef.current, true);
+        }
       }, 50);
     }
   }, [terminalConfig]);

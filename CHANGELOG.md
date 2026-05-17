@@ -16,7 +16,7 @@
 - Fixed the production build chunk-size warning by lazy-loading optional frontend panels.
 - Skipped SSH key passphrase prompts for unencrypted private keys in both manual and MCP profile connections.
 - Improved serial terminal input responsiveness in release builds.
-- Fixed Cisco IOS mode command highlighting for long or delayed-echo input lines.
+- Fixed Cisco IOS mode command highlighting for long, delayed-echo, or resized input lines.
 
 ## v0.3.0
 
