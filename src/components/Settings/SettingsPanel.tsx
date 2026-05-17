@@ -15,6 +15,12 @@ type SecretProvider = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini" | "OpenR
 type SecretEdits = Record<SecretKey, string>;
 
 const MASKED_VALUE = "••••••••";
+const DEFAULT_MCP_CONFIG = {
+  enabled: false,
+  connect_enabled: false,
+  host: "127.0.0.1",
+  port: 8765,
+};
 
 const EMPTY_SECRET_STATUS: AiSecretStatus = {
   openai: false,
@@ -31,6 +37,18 @@ const EMPTY_SECRET_EDITS: SecretEdits = {
   gemini: "",
   openrouter: "",
 };
+
+function normalizeMcpConfig(config: AppConfig): AppConfig {
+  return {
+    ...config,
+    mcp: {
+      ...DEFAULT_MCP_CONFIG,
+      ...(config.mcp ?? {}),
+      host: (config.mcp?.host ?? DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
+      port: Number(config.mcp?.port ?? DEFAULT_MCP_CONFIG.port),
+    },
+  };
+}
 
 export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   const { t, i18n } = useTranslation();
@@ -59,7 +77,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
 
   useEffect(() => {
     invoke<AppConfig>("config_load")
-      .then(setConfig)
+      .then((cfg) => setConfig(normalizeMcpConfig(cfg)))
       .catch(() => {});
     refreshSecretStatus();
   }, []);
@@ -68,7 +86,17 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     if (!config) return;
     try {
       setError("");
-      await invoke("config_save", { config });
+      const normalizedConfig = normalizeMcpConfig(config);
+      if (
+        !Number.isInteger(normalizedConfig.mcp.port) ||
+        normalizedConfig.mcp.port < 1 ||
+        normalizedConfig.mcp.port > 65535
+      ) {
+        setError(t("settings.mcp_port_error"));
+        return;
+      }
+      setConfig(normalizedConfig);
+      await invoke("config_save", { config: normalizedConfig });
 
       if (secretEdits.openai.trim()) {
         await invoke("ai_secret_set", { provider: "OpenAi", value: secretEdits.openai.trim() });
@@ -105,8 +133,8 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       });
       await refreshSecretStatus();
 
-      if (config.language !== i18n.language) {
-        i18n.changeLanguage(config.language);
+      if (normalizedConfig.language !== i18n.language) {
+        i18n.changeLanguage(normalizedConfig.language);
       }
       setSaved(true);
       if (onSave) onSave();
@@ -317,6 +345,65 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             placeholder="http://localhost:11434"
           />
         </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section__title">{t("settings.mcp_settings")}</div>
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.mcp_enabled")}</span>
+            <small>{t("settings.mcp_enabled_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(config.mcp?.enabled)}
+              onChange={(e) => update("mcp.enabled", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.mcp_connect_enabled")}</span>
+            <small>{t("settings.mcp_connect_enabled_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(config.mcp?.connect_enabled)}
+              onChange={(e) => update("mcp.connect_enabled", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+        <div className="settings-row">
+          <div>
+            <label className="label">{t("settings.mcp_host")}</label>
+            <input
+              className="input"
+              type="text"
+              value={config.mcp?.host ?? DEFAULT_MCP_CONFIG.host}
+              onChange={(e) => update("mcp.host", e.target.value)}
+              placeholder={DEFAULT_MCP_CONFIG.host}
+            />
+          </div>
+          <div>
+            <label className="label">{t("settings.mcp_port")}</label>
+            <input
+              className="input"
+              type="number"
+              value={config.mcp?.port ?? DEFAULT_MCP_CONFIG.port}
+              onChange={(e) => update("mcp.port", Number(e.target.value))}
+              min={1}
+              max={65535}
+            />
+          </div>
+        </div>
+        <p className="settings-help">{t("settings.mcp_restart_notice")}</p>
+        {t("settings.mcp_loopback_warning") && (
+          <p className="settings-help">{t("settings.mcp_loopback_warning")}</p>
+        )}
       </div>
 
       <div className="settings-section">

@@ -1,13 +1,9 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { lazy, Suspense, useState, useRef, useCallback, useEffect, useMemo } from "react";
 import TitleBar from "./components/TitleBar/TitleBar";
 import TerminalTabs from "./components/Terminal/TerminalTabs";
 import TerminalView from "./components/Terminal/TerminalView";
 import type { TerminalViewHandle } from "./components/Terminal/TerminalView";
-import ConnectionDialog from "./components/Connection/ConnectionDialog";
-import AIChatPanel from "./components/AI/AIChatPanel";
 import StatusBar from "./components/StatusBar/StatusBar";
-import SettingsPanel from "./components/Settings/SettingsPanel";
-import LogViewer from "./components/Log/LogViewer";
 import type {
   AppTabInfo,
   TabInfo,
@@ -25,7 +21,18 @@ import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
+import { useTranslation } from "react-i18next";
 import "./App.css";
+
+const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
+const loadAIChatPanel = () => import("./components/AI/AIChatPanel");
+const loadSettingsPanel = () => import("./components/Settings/SettingsPanel");
+const loadLogViewer = () => import("./components/Log/LogViewer");
+
+const ConnectionDialog = lazy(loadConnectionDialog);
+const AIChatPanel = lazy(loadAIChatPanel);
+const SettingsPanel = lazy(loadSettingsPanel);
+const LogViewer = lazy(loadLogViewer);
 
 const AI_PANEL_DEFAULT_WIDTH = 340;
 const AI_PANEL_MIN_WIDTH = 200;
@@ -36,9 +43,49 @@ function clampAiPanelWidth(width: number, viewportWidth: number) {
   return Math.min(Math.max(width, AI_PANEL_MIN_WIDTH), maxWidth);
 }
 
+interface TerminalCreatedPayload {
+  session_id: string;
+  connection_type: ConnectionType;
+  target: string;
+  title: string;
+  encoding?: Encoding;
+  terminal_mode?: TerminalMode;
+  auto_logging: boolean;
+}
+
+interface McpCredentialRequestPayload {
+  request_id: string;
+  profile_id: string;
+  host: string;
+  port: number;
+  username: string;
+  auth_method: "password" | "public_key";
+  target: string;
+  title: string;
+}
+
+interface McpCredentialPromptState extends McpCredentialRequestPayload {
+  value: string;
+  error: string;
+  submitting: boolean;
+}
+
+function orderAppTabs(appTabs: AppTabInfo[], tabOrder: string[]) {
+  const tabsById = new Map(appTabs.map((tab) => [tab.id, tab]));
+  const orderedTabs = tabOrder
+    .map((id) => tabsById.get(id))
+    .filter((tab): tab is AppTabInfo => Boolean(tab));
+  const orderedIds = new Set(orderedTabs.map((tab) => tab.id));
+  const newTabs = appTabs.filter((tab) => !orderedIds.has(tab.id));
+
+  return [...orderedTabs, ...newTabs];
+}
+
 export default function App() {
+  const { t } = useTranslation();
   const [tabs, setTabs] = useState<TabInfo[]>([]);
   const [utilityTabs, setUtilityTabs] = useState<UtilityTabKind[]>([]);
+  const [tabOrder, setTabOrder] = useState<string[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [closingTabIds, setClosingTabIds] = useState<string[]>([]);
   const [showConnection, setShowConnection] = useState(false);
@@ -52,6 +99,7 @@ export default function App() {
   const [aiSelectedProvider, setAiSelectedProvider] = useState("");
   const [aiSelectedModel, setAiSelectedModel] = useState("");
   const [startupCliRequest, setStartupCliRequest] = useState<StartupCliRequest | null>(null);
+  const [mcpCredentialPrompts, setMcpCredentialPrompts] = useState<McpCredentialPromptState[]>([]);
   const activeTerminalBuffer = useRef("");
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
@@ -59,13 +107,20 @@ export default function App() {
   const activeTabIdRef = useRef<string | null>(null);
   const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
 
-  const appTabs: AppTabInfo[] = [
-    ...tabs,
-    ...utilityTabs.map((kind) => ({
-      kind,
-      id: kind,
-    })),
-  ];
+  const appTabs: AppTabInfo[] = useMemo(
+    () =>
+      orderAppTabs(
+        [
+          ...tabs,
+          ...utilityTabs.map((kind) => ({
+            kind,
+            id: kind,
+          })),
+        ],
+        tabOrder
+      ),
+    [tabs, utilityTabs, tabOrder]
+  );
   const activeAppTab = appTabs.find((tab) => tab.id === activeTabId) || null;
   const activeTab =
     activeAppTab?.kind === "terminal" ? tabs.find((t) => t.id === activeAppTab.id) || null : null;
@@ -73,8 +128,9 @@ export default function App() {
     activeAppTab?.kind === "settings" || activeAppTab?.kind === "logs"
       ? activeAppTab.kind
       : "terminal";
+  const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
 
-  const handleConnect = useCallback(
+  const addTerminalTab = useCallback(
     (
       type: ConnectionType,
       sessionId: string,
@@ -96,21 +152,40 @@ export default function App() {
         isManualLogging: false,
         isLoggingPaused: false,
       };
-      setTabs((prev) => [...prev, newTab]);
+      setTabs((prev) =>
+        prev.some((tab) => tab.sessionId === sessionId) ? prev : [...prev, newTab]
+      );
+      setTabOrder((prev) => (prev.includes(sessionId) ? prev : [...prev, sessionId]));
       setActiveTabId(sessionId);
-      setShowConnection(false);
     },
     []
   );
 
+  const handleConnect = useCallback(
+    (
+      type: ConnectionType,
+      sessionId: string,
+      title: string,
+      isAutoLogging: boolean,
+      encoding: Encoding = "utf-8",
+      terminalMode: TerminalMode = DEFAULT_TERMINAL_MODE
+    ) => {
+      addTerminalTab(type, sessionId, title, isAutoLogging, encoding, terminalMode);
+      setShowConnection(false);
+    },
+    [addTerminalTab]
+  );
+
   const openUtilityTab = useCallback((kind: UtilityTabKind) => {
     setUtilityTabs((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
+    setTabOrder((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
     setActiveTabId(kind);
   }, []);
 
   const handleViewChange = useCallback(
     (view: ViewMode) => {
       if (view === "settings" || view === "logs") {
+        void (view === "settings" ? loadSettingsPanel() : loadLogViewer());
         openUtilityTab(view);
         return;
       }
@@ -160,6 +235,51 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const unlistenCreated = listen<TerminalCreatedPayload>("terminal://created", (event) => {
+      const payload = event.payload;
+      if (
+        payload.connection_type !== "ssh" &&
+        payload.connection_type !== "telnet" &&
+        payload.connection_type !== "serial"
+      )
+        return;
+      addTerminalTab(
+        payload.connection_type,
+        payload.session_id,
+        payload.title || payload.target,
+        Boolean(payload.auto_logging),
+        payload.encoding ?? "utf-8",
+        payload.terminal_mode ?? DEFAULT_TERMINAL_MODE
+      );
+    });
+
+    return () => {
+      unlistenCreated.then((fn) => fn());
+    };
+  }, [addTerminalTab]);
+
+  useEffect(() => {
+    const unlistenCredential = listen<McpCredentialRequestPayload>(
+      "mcp://credential-request",
+      (event) => {
+        setMcpCredentialPrompts((prev) => [
+          ...prev,
+          {
+            ...event.payload,
+            value: "",
+            error: "",
+            submitting: false,
+          },
+        ]);
+      }
+    );
+
+    return () => {
+      unlistenCredential.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
     if (activeTabId && !appTabs.some((tab) => tab.id === activeTabId)) {
       setActiveTabId(appTabs.length > 0 ? appTabs[appTabs.length - 1].id : null);
     }
@@ -171,6 +291,7 @@ export default function App() {
       activeTerminalBuffer.current = "";
     }
     setTabs((prev) => prev.filter((tab) => tab.id !== id));
+    setTabOrder((prev) => prev.filter((tabId) => tabId !== id));
   }, []);
 
   const disconnectTab = useCallback(
@@ -226,12 +347,33 @@ export default function App() {
     async (id: string) => {
       if (id === "settings" || id === "logs") {
         setUtilityTabs((prev) => prev.filter((kind) => kind !== id));
+        setTabOrder((prev) => prev.filter((tabId) => tabId !== id));
         return;
       }
 
       await disconnectTab(id);
     },
     [disconnectTab]
+  );
+
+  const handleReorderTabs = useCallback(
+    (draggedId: string, targetId: string, dropSide: "before" | "after") => {
+      if (draggedId === targetId) return;
+
+      const visibleOrder = appTabs.map((tab) => tab.id);
+      const draggedIndex = visibleOrder.indexOf(draggedId);
+      const targetIndex = visibleOrder.indexOf(targetId);
+      if (draggedIndex < 0 || targetIndex < 0) return;
+
+      const nextOrder = [...visibleOrder];
+      const [draggedTabId] = nextOrder.splice(draggedIndex, 1);
+      const targetIndexAfterRemoval = nextOrder.indexOf(targetId);
+      const insertIndex =
+        dropSide === "after" ? targetIndexAfterRemoval + 1 : targetIndexAfterRemoval;
+      nextOrder.splice(insertIndex, 0, draggedTabId);
+      setTabOrder(nextOrder);
+    },
+    [appTabs]
   );
 
   const handleTerminalData = useCallback((tabId: string, data: string) => {
@@ -242,6 +384,37 @@ export default function App() {
       activeTerminalBuffer.current = nextBuffer;
     }
   }, []);
+
+  const updateActiveMcpCredentialPrompt = useCallback(
+    (patch: Partial<McpCredentialPromptState>) => {
+      setMcpCredentialPrompts((prev) => {
+        if (prev.length === 0) return prev;
+        return [{ ...prev[0], ...patch }, ...prev.slice(1)];
+      });
+    },
+    []
+  );
+
+  const resolveMcpCredentialPrompt = useCallback(
+    async (credential: string | null) => {
+      if (!activeMcpCredentialPrompt || activeMcpCredentialPrompt.submitting) return;
+
+      updateActiveMcpCredentialPrompt({ error: "", submitting: true });
+      try {
+        await invoke("mcp_credential_submit", {
+          requestId: activeMcpCredentialPrompt.request_id,
+          credential,
+        });
+        setMcpCredentialPrompts((prev) => prev.slice(1));
+      } catch (error) {
+        updateActiveMcpCredentialPrompt({
+          error: typeof error === "string" ? error : t("mcp.credential_submit_failed"),
+          submitting: false,
+        });
+      }
+    },
+    [activeMcpCredentialPrompt, t, updateActiveMcpCredentialPrompt]
+  );
 
   const handleInsertCommand = useCallback(
     (command: string) => {
@@ -358,8 +531,18 @@ export default function App() {
     [activeTab]
   );
 
-  const openConnection = useCallback(() => setShowConnection(true), []);
-  const toggleAiPanel = useCallback(() => setShowAiPanel((current) => !current), []);
+  const openConnection = useCallback(() => {
+    void loadConnectionDialog();
+    setShowConnection(true);
+  }, []);
+  const toggleAiPanel = useCallback(() => {
+    setShowAiPanel((current) => {
+      if (!current) {
+        void loadAIChatPanel();
+      }
+      return !current;
+    });
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -367,9 +550,10 @@ export default function App() {
         const key = e.key.toLowerCase();
         if (key === "n" || key === "t") {
           e.preventDefault();
-          setShowConnection(true);
+          openConnection();
         } else if (key === ",") {
           e.preventDefault();
+          void loadSettingsPanel();
           openUtilityTab("settings");
         }
       }
@@ -377,7 +561,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [openUtilityTab]);
+  }, [openConnection, openUtilityTab]);
 
   const refreshConfig = useCallback(async () => {
     try {
@@ -397,6 +581,7 @@ export default function App() {
       .then((request) => {
         if (!request) return;
         setStartupCliRequest(request);
+        void loadConnectionDialog();
         setShowConnection(true);
       })
       .catch((error) => {
@@ -460,6 +645,7 @@ export default function App() {
                 onSelectTab={setActiveTabId}
                 onCloseTab={handleCloseTab}
                 onAddTab={openConnection}
+                onReorderTabs={handleReorderTabs}
               />
               <div
                 className={`app__terminal-area ${activeView !== "terminal" ? "app__hidden" : ""}`}
@@ -506,8 +692,16 @@ export default function App() {
                   ))
                 )}
               </div>
-              {activeView === "settings" && <SettingsPanel onSave={refreshConfig} />}
-              {activeView === "logs" && <LogViewer />}
+              {activeView === "settings" && (
+                <Suspense fallback={<div aria-hidden="true" />}>
+                  <SettingsPanel onSave={refreshConfig} />
+                </Suspense>
+              )}
+              {activeView === "logs" && (
+                <Suspense fallback={<div aria-hidden="true" />}>
+                  <LogViewer />
+                </Suspense>
+              )}
             </div>
             {showAiPanel && (
               <>
@@ -519,19 +713,22 @@ export default function App() {
                   className="app__ai-panel"
                   style={{ width: clampAiPanelWidth(aiPanelWidth, window.innerWidth) }}
                 >
-                  <AIChatPanel
-                    onClose={() => setShowAiPanel(false)}
-                    terminalBuffer={activeTerminalBuffer}
-                    messages={aiMessages}
-                    setMessages={setAiMessages}
-                    selectedProvider={aiSelectedProvider}
-                    setSelectedProvider={setAiSelectedProvider}
-                    selectedModel={aiSelectedModel}
-                    setSelectedModel={setAiSelectedModel}
-                    onInsertCommand={handleInsertCommand}
-                    canInsertCommand={Boolean(activeTab?.isConnected)}
-                    activeTerminalMode={activeTab?.terminalMode ?? DEFAULT_TERMINAL_MODE}
-                  />
+                  <Suspense fallback={<div aria-hidden="true" />}>
+                    <AIChatPanel
+                      onClose={() => setShowAiPanel(false)}
+                      config={config}
+                      terminalBuffer={activeTerminalBuffer}
+                      messages={aiMessages}
+                      setMessages={setAiMessages}
+                      selectedProvider={aiSelectedProvider}
+                      setSelectedProvider={setAiSelectedProvider}
+                      selectedModel={aiSelectedModel}
+                      setSelectedModel={setAiSelectedModel}
+                      onInsertCommand={handleInsertCommand}
+                      canInsertCommand={Boolean(activeTab?.isConnected)}
+                      activeTerminalMode={activeTab?.terminalMode ?? DEFAULT_TERMINAL_MODE}
+                    />
+                  </Suspense>
                 </div>
               </>
             )}
@@ -554,12 +751,91 @@ export default function App() {
         </div>
       </div>
       {showConnection && (
-        <ConnectionDialog
-          startupRequest={startupCliRequest}
-          onStartupRequestHandled={() => setStartupCliRequest(null)}
-          onClose={() => setShowConnection(false)}
-          onConnect={handleConnect}
-        />
+        <Suspense fallback={<div aria-hidden="true" />}>
+          <ConnectionDialog
+            startupRequest={startupCliRequest}
+            onStartupRequestHandled={() => setStartupCliRequest(null)}
+            onClose={() => setShowConnection(false)}
+            onConnect={handleConnect}
+          />
+        </Suspense>
+      )}
+      {activeMcpCredentialPrompt && (
+        <div className="app-credential-overlay">
+          <div
+            className="app-credential-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mcp-credential-title"
+            aria-describedby="mcp-credential-description"
+          >
+            <div className="app-credential-modal__header">
+              <div>
+                <div className="app-credential-modal__eyebrow">
+                  {t("mcp.credential_request_title")}
+                </div>
+                <div className="app-credential-modal__title" id="mcp-credential-title">
+                  {activeMcpCredentialPrompt.auth_method === "public_key"
+                    ? t("connection.key_passphrase_prompt_title")
+                    : t("connection.password_prompt_title")}
+                </div>
+              </div>
+            </div>
+            <div className="app-credential-modal__body">
+              <div className="app-credential-modal__target">{activeMcpCredentialPrompt.target}</div>
+              <p className="app-credential-modal__description" id="mcp-credential-description">
+                {t("mcp.credential_request_desc")}
+              </p>
+              <label className="label" htmlFor="mcp-credential-input">
+                {activeMcpCredentialPrompt.auth_method === "public_key"
+                  ? t("connection.key_passphrase")
+                  : t("connection.password")}
+              </label>
+              <input
+                id="mcp-credential-input"
+                className="input"
+                type="password"
+                autoFocus
+                value={activeMcpCredentialPrompt.value}
+                disabled={activeMcpCredentialPrompt.submitting}
+                onChange={(event) => updateActiveMcpCredentialPrompt({ value: event.target.value })}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    void resolveMcpCredentialPrompt(activeMcpCredentialPrompt.value);
+                  } else if (event.key === "Escape") {
+                    void resolveMcpCredentialPrompt(null);
+                  }
+                }}
+              />
+              {activeMcpCredentialPrompt.error && (
+                <div className="app-credential-modal__error">{activeMcpCredentialPrompt.error}</div>
+              )}
+            </div>
+            <div className="app-credential-modal__footer">
+              {activeMcpCredentialPrompt.submitting ? (
+                <div className="app-credential-modal__submitting">
+                  <div className="app-credential-modal__spinner" />
+                  {t("connection.connecting")}
+                </div>
+              ) : (
+                <>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => void resolveMcpCredentialPrompt(null)}
+                  >
+                    {t("connection.cancel")}
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => void resolveMcpCredentialPrompt(activeMcpCredentialPrompt.value)}
+                  >
+                    {t("connection.connect")}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

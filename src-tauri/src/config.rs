@@ -15,6 +15,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub ai: AiConfig,
     #[serde(default)]
+    pub mcp: McpConfig,
+    #[serde(default)]
     pub terminal: TerminalConfig,
     #[serde(default)]
     pub ssh: SshConfig,
@@ -24,6 +26,37 @@ pub struct AppConfig {
 
 fn default_language() -> String {
     "en".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub connect_enabled: bool,
+    #[serde(default = "default_mcp_host")]
+    pub host: String,
+    #[serde(default = "default_mcp_port")]
+    pub port: u16,
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            connect_enabled: false,
+            host: default_mcp_host(),
+            port: default_mcp_port(),
+        }
+    }
+}
+
+fn default_mcp_host() -> String {
+    "127.0.0.1".into()
+}
+
+fn default_mcp_port() -> u16 {
+    8765
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,6 +220,7 @@ impl Default for AppConfig {
             config_version: CURRENT_CONFIG_VERSION,
             language: default_language(),
             ai: AiConfig::default(),
+            mcp: McpConfig::default(),
             terminal: TerminalConfig::default(),
             ssh: SshConfig::default(),
             saved_connections: Vec::new(),
@@ -253,6 +287,8 @@ mod tests {
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
         assert!(!cfg.ai.debug_log_enabled);
         assert!(!cfg.ai.azure_openai_enabled);
+        assert!(!cfg.mcp.enabled);
+        assert!(!cfg.mcp.connect_enabled);
         assert_eq!(cfg.ai.azure_openai_endpoint, "");
         assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.terminal.font_size, 14);

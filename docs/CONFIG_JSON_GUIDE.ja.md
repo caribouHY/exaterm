@@ -41,6 +41,12 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "default_model": "gpt-4o",
     "debug_log_enabled": false
   },
+  "mcp": {
+    "enabled": false,
+    "connect_enabled": false,
+    "host": "127.0.0.1",
+    "port": 8765
+  },
   "terminal": {
     "font_size": 14,
     "font_family": "Consolas, 'Courier New', monospace",
@@ -64,6 +70,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | `config_version`    | number | `1`      | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。 |
 | `language`          | string | `"en"`   | 画面表示言語です。`"en"` は英語、`"ja"` は日本語です。                                                               |
 | `ai`                | object | 下記参照 | AI アシスタント関連の設定です。                                                                                      |
+| `mcp`               | object | 下記参照 | 外部 AI エージェントからターミナルを制御するためのローカル MCP サーバー設定です。                                    |
 | `terminal`          | object | 下記参照 | ターミナル表示とログ関連の設定です。                                                                                 |
 | `ssh`               | object | 下記参照 | SSH 接続の互換性設定です。                                                                                           |
 | `saved_connections` | array  | `[]`     | 保存済み SSH/Telnet 接続プロファイルです。プロファイルは接続ダイアログから作成、選択、削除できます。                 |
@@ -103,6 +110,41 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 | Gemini       | `gemini-2.5-pro`, `gemini-2.5-flash`                    |
 | OpenRouter   | `openai/gpt-4o`, `anthropic/claude-sonnet-4`            |
 | Ollama       | ローカルの Ollama にインストール済みのモデル名          |
+
+## mcp
+
+| パラメータ            | 型      | 既定値        | 説明                                                                                                                                                                                                                                                                                                 |
+| --------------------- | ------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mcp.enabled`         | boolean | `false`       | `true` にすると、外部 AI エージェント向けにローカル MCP Streamable HTTP エンドポイント `/mcp` を起動します。既存のターミナル制御ツールは ExaTerm 上で開かれたセッションを公開します。                                                                                                                |
+| `mcp.connect_enabled` | boolean | `false`       | `true` にすると、信頼済み MCP クライアントが保存済み SSH/Telnet プロファイルの一覧取得、そのプロファイルからの新規タブ作成、シリアルポート一覧取得、シリアルコンソール接続を行えます。SSH パスワードや暗号化鍵のパスフレーズは ExaTerm UI で入力し、MCP クライアントへは公開されず保存もされません。 |
+| `mcp.host`            | string  | `"127.0.0.1"` | MCP サーバーの待ち受けアドレスです。他の端末からターミナル制御を受け付けるリスクを理解している場合を除き、ループバックアドレスのままにしてください。                                                                                                                                                 |
+| `mcp.port`            | number  | `8765`        | MCP サーバーの TCP ポートです。ポートが使用中の場合、MCP サーバーの起動に失敗しますが、ExaTerm 本体は起動を続けます。                                                                                                                                                                                |
+
+### MCP ツール
+
+MCP が有効な場合、外部クライアントは次のツールを呼び出せます。
+
+- `list_terminal_sessions`: ユーザーが ExaTerm で開いたターミナルセッションを一覧表示します。
+- `read_terminal_output`: セッションの直近出力を読み取ります。返却値には次回差分読み取りに使える `cursor` が含まれます。
+- `read_terminal_output_delta`: 指定した `cursor` 以降の出力だけを読み取ります。
+- `wait_terminal_output`: 新しい出力、または指定した文字列が出力に現れるまで待機します。
+- `send_terminal_input`: 接続中のセッションへテキストを送信します。
+- `run_terminal_command`: 接続中のセッションへコマンドを送信し、出力待機後に差分出力を返します。
+
+`mcp.connect_enabled` も `true` の場合、外部クライアントは次の追加ツールを呼び出せます。
+
+- `list_connection_profiles`: 保存済み SSH/Telnet プロファイルを一覧表示します。秘密鍵パスや認証情報は返しません。
+- `connect_saved_profile`: 保存済みプロファイルから新しい SSH/Telnet セッションを開き、ExaTerm のタブとして表示します。SSH パスワードや暗号化鍵のパスフレーズは MCP ツール引数では受け取らず、ExaTerm UI で入力します。
+- `list_serial_ports`: 現在利用可能なシリアルポートを一覧表示します。
+- `connect_serial_console`: MCP ツール引数で指定したポート名と通信設定から新しいシリアルコンソールセッションを開き、ExaTerm のタブとして表示します。ポート名は利用可能なシリアルポートと完全一致する必要があります。
+
+出力読み取り系ツールは `start_cursor`、`cursor`、`truncated` を返します。`cursor` は次回の `read_terminal_output_delta` や `wait_terminal_output` に渡せます。古い出力が内部バッファから切り詰められている場合、`truncated` は `true` になります。
+
+`wait_terminal_output` と `run_terminal_command` の待機時間は最大 60 秒です。`run_terminal_command` は既存の接続済みセッションだけを対象とします。保存済みプロファイルからの新規接続には、明示的に有効化した `connect_saved_profile` を使用します。
+
+MCP クライアントは Streamable HTTP エンドポイントを呼び出すときに、通常の `Host` ヘッダーと、`application/json` と `text/event-stream` の両方を含む `Accept` ヘッダーを送信してください。
+
+MCP サーバーは保存済み認証情報の読み取り、API キーの公開、ログファイルの直接読み取りを行いません。MCP 経由の SSH/Telnet 新規接続は保存済みプロファイルに限定され、シリアル接続は明示的に指定した利用可能ポート名だけを対象にし、すべての MCP 新規接続には `mcp.connect_enabled=true` が必要です。SSH では既存の known_hosts 検証もそのまま適用されます。ターミナル出力自体に機密情報が含まれる可能性があるため、信頼できるローカルクライアントに対してのみ有効化してください。
 
 ## terminal
 

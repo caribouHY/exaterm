@@ -8,6 +8,8 @@ use uuid::Uuid;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
+use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+
 const IAC: u8 = 255;
 const DONT: u8 = 254;
 const DO: u8 = 253;
@@ -30,6 +32,7 @@ struct TelnetSession {
     write_task: JoinHandle<()>,
 }
 
+#[derive(Clone)]
 pub struct TelnetState {
     sessions: Arc<Mutex<HashMap<String, TelnetSession>>>,
 }
@@ -206,11 +209,13 @@ fn escape_iac_bytes(data: Vec<u8>) -> Vec<u8> {
 
 async fn remove_session(
     app: &AppHandle,
+    terminals: &TerminalControlState,
     sessions: &Arc<Mutex<HashMap<String, TelnetSession>>>,
     session_id: &str,
 ) -> Option<TelnetSession> {
     let session = sessions.lock().await.remove(session_id);
     if session.is_some() {
+        terminals.mark_disconnected(session_id).await;
         let _ = app.emit("telnet://disconnected", session_id);
     }
     session
@@ -218,16 +223,30 @@ async fn remove_session(
 
 async fn mark_disconnected(
     app: &AppHandle,
+    terminals: &TerminalControlState,
     sessions: &Arc<Mutex<HashMap<String, TelnetSession>>>,
     session_id: &str,
 ) {
-    let _ = remove_session(app, sessions, session_id).await;
+    let _ = remove_session(app, terminals, sessions, session_id).await;
 }
 
 #[tauri::command]
 pub async fn telnet_connect(
     app: AppHandle,
     state: tauri::State<'_, TelnetState>,
+    terminals: tauri::State<'_, TerminalControlState>,
+    host: String,
+    port: u16,
+    cols: u32,
+    rows: u32,
+) -> Result<String, String> {
+    connect(&app, &state, &terminals, host, port, cols, rows).await
+}
+
+pub async fn connect(
+    app: &AppHandle,
+    state: &TelnetState,
+    terminals: &TerminalControlState,
     host: String,
     port: u16,
     cols: u32,
@@ -243,11 +262,12 @@ pub async fn telnet_connect(
     let write_sid = session_id.clone();
     let write_app = app.clone();
     let write_sessions = state.sessions.clone();
+    let write_terminals = terminals.clone();
     let write_task = tokio::spawn(async move {
         while let Some(data) = write_rx.recv().await {
             if let Err(e) = writer_stream.write_all(&data).await {
                 let _ = write_app.emit(&format!("telnet://error/{}", write_sid), e.to_string());
-                mark_disconnected(&write_app, &write_sessions, &write_sid).await;
+                mark_disconnected(&write_app, &write_terminals, &write_sessions, &write_sid).await;
                 break;
             }
         }
@@ -256,6 +276,7 @@ pub async fn telnet_connect(
     let read_sid = session_id.clone();
     let read_app = app.clone();
     let read_sessions = state.sessions.clone();
+    let read_terminals = terminals.clone();
     let read_task = tokio::spawn(async move {
         let mut parser = TelnetParser::new(cols, rows);
         let mut buf = [0u8; 4096];
@@ -263,12 +284,13 @@ pub async fn telnet_connect(
         loop {
             match reader.read(&mut buf).await {
                 Ok(0) => {
-                    mark_disconnected(&read_app, &read_sessions, &read_sid).await;
+                    mark_disconnected(&read_app, &read_terminals, &read_sessions, &read_sid).await;
                     break;
                 }
                 Ok(n) => {
                     let (data, response) = parser.parse(&buf[..n]);
                     if !data.is_empty() {
+                        read_terminals.append_output(&read_sid, &data).await;
                         let _ = read_app.emit(&format!("telnet://data/{}", read_sid), data);
                     }
                     if !response.is_empty() {
@@ -285,7 +307,7 @@ pub async fn telnet_connect(
                 }
                 Err(e) => {
                     let _ = read_app.emit(&format!("telnet://error/{}", read_sid), e.to_string());
-                    mark_disconnected(&read_app, &read_sessions, &read_sid).await;
+                    mark_disconnected(&read_app, &read_terminals, &read_sessions, &read_sid).await;
                     break;
                 }
             }
@@ -301,6 +323,14 @@ pub async fn telnet_connect(
         },
     );
 
+    terminals
+        .register_session(
+            session_id.clone(),
+            TerminalProtocol::Telnet,
+            format!("{}:{}", host, port),
+        )
+        .await;
+
     let _ = app.emit("telnet://connected", &session_id);
     Ok(session_id)
 }
@@ -311,10 +341,14 @@ pub async fn telnet_write(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
+    write_data(&state, &session_id, data).await
+}
+
+pub async fn write_data(state: &TelnetState, session_id: &str, data: String) -> Result<(), String> {
     let writer = {
         let sessions = state.sessions.lock().await;
         sessions
-            .get(&session_id)
+            .get(session_id)
             .ok_or("セッションが見つかりません")?
             .writer
             .clone()
@@ -352,9 +386,10 @@ pub async fn telnet_resize(
 pub async fn telnet_disconnect(
     app: AppHandle,
     state: tauri::State<'_, TelnetState>,
+    terminals: tauri::State<'_, TerminalControlState>,
     session_id: String,
 ) -> Result<(), String> {
-    if let Some(session) = remove_session(&app, &state.sessions, &session_id).await {
+    if let Some(session) = remove_session(&app, &terminals, &state.sessions, &session_id).await {
         session.read_task.abort();
         session.write_task.abort();
     }

@@ -17,6 +17,7 @@ use crate::ssh_known_hosts::{
     endpoint_cache_key, inspect_host_key_with_path, known_hosts_path, write_trusted_host,
     HostKeyCheckResult, HostKeyCheckStatus,
 };
+use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 
 /// SSH session state shared across async tasks
 struct SshSession {
@@ -30,6 +31,7 @@ struct PendingHostKey {
 }
 
 /// Global SSH session store
+#[derive(Clone)]
 pub struct SshState {
     sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
     pending_host_keys: Arc<Mutex<HashMap<String, PendingHostKey>>>,
@@ -149,6 +151,7 @@ struct SshClientHandler {
     session_id: String,
     sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
     host_verifier: HostKeyVerifier,
+    terminals: TerminalControlState,
 }
 
 struct ProbeClientHandler {
@@ -184,6 +187,7 @@ impl russh::client::Handler for SshClientHandler {
         data: &[u8],
         _session: &mut russh::client::Session,
     ) -> Result<(), Self::Error> {
+        self.terminals.append_output(&self.session_id, data).await;
         let _ = self
             .app
             .emit(&format!("ssh://data/{}", self.session_id), data.to_vec());
@@ -197,6 +201,7 @@ impl russh::client::Handler for SshClientHandler {
         data: &[u8],
         _session: &mut russh::client::Session,
     ) -> Result<(), Self::Error> {
+        self.terminals.append_output(&self.session_id, data).await;
         let _ = self
             .app
             .emit(&format!("ssh://error/{}", self.session_id), data.to_vec());
@@ -233,6 +238,7 @@ impl SshClientHandler {
             .remove(&self.session_id)
             .is_some();
         if was_connected {
+            self.terminals.mark_disconnected(&self.session_id).await;
             let _ = self.app.emit("ssh://disconnected", &self.session_id);
         }
     }
@@ -241,6 +247,19 @@ impl SshClientHandler {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SshConnectResult {
     pub session_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SshConnectOptions {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    pub auth_method: Option<String>,
+    pub private_key_path: Option<String>,
+    pub key_passphrase: Option<String>,
+    pub cols: u32,
+    pub rows: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -367,7 +386,7 @@ fn private_key_format_hint(secret: &str) -> Result<(), String> {
     }
 }
 
-fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<KeyPair, String> {
+fn read_private_key_secret(path: &str) -> Result<(PathBuf, String), String> {
     let path = normalize_auth_path(path);
     let secret = fs::read_to_string(&path).map_err(|error| {
         format!(
@@ -377,6 +396,35 @@ fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<Key
         )
     })?;
 
+    Ok((path, secret))
+}
+
+pub fn private_key_requires_passphrase(path: &str) -> Result<bool, String> {
+    if path.trim().is_empty() {
+        return Err("秘密鍵ファイルを指定してください".to_string());
+    }
+
+    let (_path, secret) = read_private_key_secret(path)?;
+    private_key_format_hint(&secret)?;
+    match decode_secret_key(&secret, None) {
+        Ok(_) => Ok(false),
+        Err(russh_keys::Error::KeyIsEncrypted) => Ok(true),
+        Err(russh_keys::Error::CouldNotReadKey) => Err(
+            "秘密鍵を読み込めません。鍵形式、パスフレーズ、またはファイル内容を確認してください"
+                .to_string(),
+        ),
+        Err(other) => Err(format!("秘密鍵を読み込めません: {}", other)),
+    }
+}
+
+#[tauri::command]
+pub fn ssh_private_key_requires_passphrase(private_key_path: String) -> Result<bool, String> {
+    private_key_requires_passphrase(&private_key_path)
+        .map_err(|error| format!("SSH公開鍵認証エラー: {}", error))
+}
+
+fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<KeyPair, String> {
+    let (_path, secret) = read_private_key_secret(path)?;
     private_key_format_hint(&secret)?;
     decode_secret_key(&secret, passphrase).map_err(|error| match error {
         russh_keys::Error::KeyIsEncrypted => {
@@ -528,6 +576,16 @@ async fn run_host_key_probe(
     Ok((result, observed_key))
 }
 
+#[cfg(not(test))]
+pub async fn verify_trusted_host_key(host: &str, port: u16) -> Result<(), String> {
+    let (result, _) = run_host_key_probe(host, port).await?;
+    if result.status == HostKeyCheckStatus::Trusted {
+        Ok(())
+    } else {
+        Err(host_key_error_message(&result))
+    }
+}
+
 #[tauri::command]
 pub async fn ssh_probe_host_key(
     state: tauri::State<'_, SshState>,
@@ -568,6 +626,7 @@ pub async fn ssh_trust_host_key(
 pub async fn ssh_connect(
     app: AppHandle,
     state: tauri::State<'_, SshState>,
+    terminals: tauri::State<'_, TerminalControlState>,
     host: String,
     port: u16,
     username: String,
@@ -578,22 +637,57 @@ pub async fn ssh_connect(
     cols: u32,
     rows: u32,
 ) -> Result<SshConnectResult, String> {
+    connect(
+        &app,
+        &state,
+        &terminals,
+        SshConnectOptions {
+            host,
+            port,
+            username,
+            password,
+            auth_method,
+            private_key_path,
+            key_passphrase,
+            cols,
+            rows,
+        },
+    )
+    .await
+}
+
+pub async fn connect(
+    app: &AppHandle,
+    state: &SshState,
+    terminals: &TerminalControlState,
+    options: SshConnectOptions,
+) -> Result<SshConnectResult, String> {
     let session_id = Uuid::new_v4().to_string();
-    let auth = build_auth_request(auth_method, password, private_key_path, key_passphrase)?;
+    let auth = build_auth_request(
+        options.auth_method,
+        options.password,
+        options.private_key_path,
+        options.key_passphrase,
+    )?;
     let config = load_client_config()?;
-    let host_verifier = HostKeyVerifier::enforce(host.clone(), port);
+    let host_verifier = HostKeyVerifier::enforce(options.host.clone(), options.port);
     let handler = SshClientHandler {
         app: app.clone(),
         session_id: session_id.clone(),
         sessions: state.sessions.clone(),
         host_verifier: host_verifier.clone(),
+        terminals: terminals.clone(),
     };
 
-    let mut handle = russh::client::connect(Arc::new(config), (host.as_str(), port), handler)
-        .await
-        .map_err(|error| map_connect_error(error, &host_verifier))?;
+    let mut handle = russh::client::connect(
+        Arc::new(config),
+        (options.host.as_str(), options.port),
+        handler,
+    )
+    .await
+    .map_err(|error| map_connect_error(error, &host_verifier))?;
 
-    authenticate_ssh(&mut handle, &username, auth).await?;
+    authenticate_ssh(&mut handle, &options.username, auth).await?;
 
     let channel = handle
         .channel_open_session()
@@ -601,7 +695,15 @@ pub async fn ssh_connect(
         .map_err(|e| format!("SSHチャネルオープンエラー: {}", e))?;
 
     channel
-        .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
+        .request_pty(
+            false,
+            "xterm-256color",
+            options.cols,
+            options.rows,
+            0,
+            0,
+            &[],
+        )
         .await
         .map_err(|_| "PTYリクエストエラー".to_string())?;
 
@@ -618,6 +720,14 @@ pub async fn ssh_connect(
         .await
         .insert(session_id.clone(), Arc::new(Mutex::new(session)));
 
+    terminals
+        .register_session(
+            session_id.clone(),
+            TerminalProtocol::Ssh,
+            format!("{}:{}", options.host, options.port),
+        )
+        .await;
+
     let _ = app.emit("ssh://connected", &session_id);
 
     Ok(SshConnectResult { session_id })
@@ -630,9 +740,13 @@ pub async fn ssh_write(
     session_id: String,
     data: String,
 ) -> Result<(), String> {
+    write_data(&state, &session_id, data).await
+}
+
+pub async fn write_data(state: &SshState, session_id: &str, data: String) -> Result<(), String> {
     let sessions = state.sessions.lock().await;
     let session = sessions
-        .get(&session_id)
+        .get(session_id)
         .ok_or("セッションが見つかりません")?
         .clone();
 
@@ -675,6 +789,7 @@ pub async fn ssh_resize(
 pub async fn ssh_disconnect(
     app: AppHandle,
     state: tauri::State<'_, SshState>,
+    terminals: tauri::State<'_, TerminalControlState>,
     session_id: String,
 ) -> Result<(), String> {
     let session = state.sessions.lock().await.remove(&session_id);
@@ -687,6 +802,7 @@ pub async fn ssh_disconnect(
             .disconnect(Disconnect::ByApplication, "User disconnected", "en")
             .await;
     }
+    terminals.mark_disconnected(&session_id).await;
     let _ = app.emit("ssh://disconnected", &session_id);
     Ok(())
 }
@@ -694,6 +810,7 @@ pub async fn ssh_disconnect(
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::process::Command;
 
     use super::*;
 
@@ -709,6 +826,28 @@ mod tests {
 
     fn read_test_key(base64: &str) -> PublicKey {
         russh_keys::parse_public_key_base64(base64).unwrap()
+    }
+
+    fn write_temp_private_key(contents: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("exaterm-ssh-key-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("id_ed25519");
+        fs::write(&path, contents).unwrap();
+        path
+    }
+
+    fn generate_temp_private_key(passphrase: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("exaterm-ssh-keygen-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("id_ed25519");
+        let status = Command::new("ssh-keygen")
+            .args(["-t", "ed25519", "-N", passphrase, "-f"])
+            .arg(&path)
+            .arg("-q")
+            .status()
+            .unwrap_or_else(|error| panic!("ssh-keygen is required for this test: {error}"));
+        assert!(status.success(), "ssh-keygen failed with status {status}");
+        path
     }
 
     #[test]
@@ -874,5 +1013,40 @@ mod tests {
         let error = private_key_format_hint("PuTTY-User-Key-File-3: ssh-ed25519\n").unwrap_err();
 
         assert!(error.contains("PuTTY形式"));
+    }
+
+    #[test]
+    fn private_key_requires_passphrase_detects_unencrypted_keys() {
+        let path = generate_temp_private_key("");
+
+        let requires_passphrase = private_key_requires_passphrase(path.to_str().unwrap()).unwrap();
+
+        assert!(!requires_passphrase);
+    }
+
+    #[test]
+    fn private_key_requires_passphrase_detects_encrypted_keys() {
+        let path = generate_temp_private_key("secret");
+
+        let requires_passphrase = private_key_requires_passphrase(path.to_str().unwrap()).unwrap();
+
+        assert!(requires_passphrase);
+    }
+
+    #[test]
+    fn private_key_requires_passphrase_rejects_public_key_files() {
+        let path =
+            write_temp_private_key("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEexample user@example\n");
+
+        let error = private_key_requires_passphrase(path.to_str().unwrap()).unwrap_err();
+
+        assert!(error.contains("公開鍵ファイル"));
+    }
+
+    #[test]
+    fn private_key_requires_passphrase_rejects_empty_path() {
+        let error = private_key_requires_passphrase("  ").unwrap_err();
+
+        assert!(error.contains("秘密鍵ファイル"));
     }
 }

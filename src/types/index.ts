@@ -51,6 +51,7 @@ export interface ChatMessage {
   content: string;
   provider?: string;
   model_id?: string;
+  is_error?: boolean;
 }
 
 export interface AiSecretStatus {
@@ -85,9 +86,17 @@ export interface AppConfig {
   config_version: number;
   language: string;
   ai: AiConfig;
+  mcp: McpConfig;
   terminal: TerminalConfig;
   ssh: SshConfig;
   saved_connections: SavedConnection[];
+}
+
+export interface McpConfig {
+  enabled: boolean;
+  connect_enabled: boolean;
+  host: string;
+  port: number;
 }
 
 export interface AiConfig {
