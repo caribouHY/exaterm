@@ -6,17 +6,15 @@
 
 ### Added
 
-- Added a local MCP server that lets external AI clients list terminal sessions, read recent terminal output, and send input to connected sessions.
-- Added MCP terminal automation tools for cursor-based output deltas, output waiting, and command execution with returned output.
-- Added an opt-in MCP profile connection flow for listing saved SSH/Telnet profiles and opening them as visible ExaTerm tabs, with SSH credentials entered only in the ExaTerm UI.
-- Added opt-in MCP Serial console tools for listing available ports and opening visible Serial tabs from explicit line settings.
+- Added an opt-in local MCP server that lets external AI clients inspect terminal sessions, read output, send input, wait for output, and run commands with captured results.
+- Added MCP tools for opening saved SSH/Telnet profiles and Serial consoles as visible ExaTerm tabs, with SSH credentials entered only in the ExaTerm UI.
 - Added drag-and-drop reordering for terminal, settings, and log tabs during the current app session.
 
 ### Fixed
 
-- Fixed Azure OpenAI chat requests so saved endpoint settings stay in sync with the AI panel and are used as a backend fallback when sending.
+- Fixed Azure OpenAI chat requests so saved endpoint settings are reliably used when sending messages.
 - Fixed AI chat history so UI-only provider error messages are not resent as conversation context.
-- Fixed the production build chunk-size warning by lazy-loading optional frontend panels.
+- Improved application loading by lazy-loading optional panels.
 - Skipped SSH key passphrase prompts for unencrypted private keys in both manual and MCP profile connections.
 - Improved serial terminal input responsiveness in release builds.
 - Fixed Cisco IOS mode command highlighting for long, delayed-echo, or resized input lines.
