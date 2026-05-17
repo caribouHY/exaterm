@@ -216,7 +216,12 @@ export default function App() {
   useEffect(() => {
     const unlistenCreated = listen<TerminalCreatedPayload>("terminal://created", (event) => {
       const payload = event.payload;
-      if (payload.connection_type !== "ssh" && payload.connection_type !== "telnet") return;
+      if (
+        payload.connection_type !== "ssh" &&
+        payload.connection_type !== "telnet" &&
+        payload.connection_type !== "serial"
+      )
+        return;
       addTerminalTab(
         payload.connection_type,
         payload.session_id,

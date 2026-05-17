@@ -7,6 +7,7 @@
 - Added a local MCP server that lets external AI clients list terminal sessions, read recent terminal output, and send input to connected sessions.
 - Added MCP terminal automation tools for cursor-based output deltas, output waiting, and command execution with returned output.
 - Added an opt-in MCP profile connection flow for listing saved SSH/Telnet profiles and opening them as visible ExaTerm tabs, with SSH credentials entered only in the ExaTerm UI.
+- Added opt-in MCP Serial console tools for listing available ports and opening visible Serial tabs from explicit line settings.
 
 ### Fixed
 

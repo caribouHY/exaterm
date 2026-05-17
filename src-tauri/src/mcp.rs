@@ -45,6 +45,9 @@ const MAX_SETTLE_MS: u64 = 5_000;
 const DEFAULT_CONNECT_COLS: u32 = 120;
 const DEFAULT_CONNECT_ROWS: u32 = 30;
 const MAX_CONNECT_DIMENSION: u32 = 1_000;
+const DEFAULT_SERIAL_BAUD_RATE: u32 = 9_600;
+const DEFAULT_SERIAL_DATA_BITS: u8 = 8;
+const DEFAULT_SERIAL_STOP_BITS: u8 = 1;
 #[cfg(not(test))]
 const CREDENTIAL_REQUEST_TIMEOUT_MS: u64 = 5 * 60 * 1_000;
 
@@ -171,6 +174,26 @@ impl McpTerminalService {
             .map_err(|error| internal_error(format!("設定読み込みエラー: {error}")))?;
         let prepared = prepare_saved_profile_connection(&config, args).map_err(invalid_params)?;
         connect_prepared_profile(&self.runtime, &config, prepared).await
+    }
+
+    async fn list_serial_ports(&self) -> Result<Value, McpError> {
+        self.ensure_connect_enabled()?;
+        let ports = serial::serial_list_ports().map_err(internal_error)?;
+        Ok(json!({
+            "ports": ports,
+        }))
+    }
+
+    async fn connect_serial_console(
+        &self,
+        args: ConnectSerialConsoleArgs,
+    ) -> Result<Value, McpError> {
+        self.ensure_connect_enabled()?;
+        let ports = serial::serial_list_ports().map_err(internal_error)?;
+        let prepared = prepare_serial_console_connection(args, &ports).map_err(invalid_params)?;
+        let config = config::config_read()
+            .map_err(|error| internal_error(format!("設定読み込みエラー: {error}")))?;
+        connect_prepared_serial_console(&self.runtime, &config, prepared).await
     }
 
     async fn read_terminal_output(&self, args: ReadTerminalOutputArgs) -> Result<Value, McpError> {
@@ -446,6 +469,77 @@ fn normalize_profile_auth_method(value: Option<&str>) -> Result<String, String> 
     }
 }
 
+fn available_serial_port_names(ports: &[serial::PortInfo]) -> String {
+    if ports.is_empty() {
+        "なし".into()
+    } else {
+        ports
+            .iter()
+            .map(|port| port.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+fn normalize_serial_data_bits(value: Option<u8>) -> Result<u8, String> {
+    let value = value.unwrap_or(DEFAULT_SERIAL_DATA_BITS);
+    match value {
+        5 | 6 | 7 | 8 => Ok(value),
+        _ => Err("data_bits は 5, 6, 7, 8 のいずれかを指定してください".into()),
+    }
+}
+
+fn normalize_serial_stop_bits(value: Option<u8>) -> Result<u8, String> {
+    let value = value.unwrap_or(DEFAULT_SERIAL_STOP_BITS);
+    match value {
+        1 | 2 => Ok(value),
+        _ => Err("stop_bits は 1 または 2 を指定してください".into()),
+    }
+}
+
+fn prepare_serial_console_connection(
+    args: ConnectSerialConsoleArgs,
+    available_ports: &[serial::PortInfo],
+) -> Result<PreparedSerialConnection, String> {
+    let port = args.port.trim().to_string();
+    if port.is_empty() {
+        return Err("port を指定してください".into());
+    }
+    if !available_ports
+        .iter()
+        .any(|available| available.name == port)
+    {
+        return Err(format!(
+            "指定されたシリアルポートが見つかりません: {port}。利用可能: {}",
+            available_serial_port_names(available_ports)
+        ));
+    }
+
+    let baud_rate = args.baud_rate.unwrap_or(DEFAULT_SERIAL_BAUD_RATE);
+    if baud_rate == 0 {
+        return Err("baud_rate は 1 以上で指定してください".into());
+    }
+
+    let terminal_mode = args.terminal_mode.unwrap_or_default().as_str().to_string();
+    let _cols = normalize_connect_dimension(args.cols, DEFAULT_CONNECT_COLS);
+    let _rows = normalize_connect_dimension(args.rows, DEFAULT_CONNECT_ROWS);
+
+    Ok(PreparedSerialConnection {
+        port: port.clone(),
+        config: serial::SerialConfig {
+            baud_rate,
+            data_bits: normalize_serial_data_bits(args.data_bits)?,
+            parity: args.parity.unwrap_or_default().as_str().to_string(),
+            stop_bits: normalize_serial_stop_bits(args.stop_bits)?,
+            flow_control: args.flow_control.unwrap_or_default().as_str().to_string(),
+        },
+        target: port.clone(),
+        title: port,
+        encoding: "utf-8".into(),
+        terminal_mode,
+    })
+}
+
 fn list_connection_profiles_from_config(config: &AppConfig) -> Vec<McpConnectionProfile> {
     config
         .saved_connections
@@ -659,13 +753,41 @@ async fn connect_prepared_profile(
         .map_err(invalid_params)?,
     };
 
+    finish_created_session(
+        runtime,
+        config,
+        session_id,
+        prepared.connection_type,
+        prepared.target,
+        prepared.title,
+        prepared.encoding,
+        prepared.terminal_mode,
+    )
+    .await
+}
+
+#[cfg(not(test))]
+async fn finish_created_session(
+    runtime: &McpRuntime,
+    config: &AppConfig,
+    session_id: String,
+    connection_type: String,
+    target: String,
+    title: String,
+    encoding: String,
+    terminal_mode: String,
+) -> Result<Value, McpError> {
+    let app = runtime
+        .app
+        .as_ref()
+        .ok_or_else(|| internal_error("MCP接続に必要なアプリハンドルがありません"))?;
     let auto_logging = if config.terminal.auto_session_log {
         match &runtime.logger {
             Some(logger_state) => logger::start_auto_log(
                 logger_state,
                 session_id.clone(),
-                prepared.connection_type.clone(),
-                prepared.target.clone(),
+                connection_type.clone(),
+                target.clone(),
             )
             .await
             .map(|_| true)
@@ -684,11 +806,11 @@ async fn connect_prepared_profile(
 
     let payload = McpConnectionCreatedPayload {
         session_id,
-        connection_type: prepared.connection_type,
-        target: prepared.target,
-        title: prepared.title,
-        encoding: prepared.encoding,
-        terminal_mode: prepared.terminal_mode,
+        connection_type,
+        target,
+        title,
+        encoding,
+        terminal_mode,
         auto_logging,
     };
 
@@ -699,6 +821,40 @@ async fn connect_prepared_profile(
     Ok(json!(payload))
 }
 
+#[cfg(not(test))]
+async fn connect_prepared_serial_console(
+    runtime: &McpRuntime,
+    config: &AppConfig,
+    prepared: PreparedSerialConnection,
+) -> Result<Value, McpError> {
+    let app = runtime
+        .app
+        .as_ref()
+        .ok_or_else(|| internal_error("MCP接続に必要なアプリハンドルがありません"))?;
+
+    let session_id = serial::connect(
+        app,
+        &runtime.serial,
+        &runtime.terminals,
+        prepared.port.clone(),
+        prepared.config,
+    )
+    .await
+    .map_err(invalid_params)?;
+
+    finish_created_session(
+        runtime,
+        config,
+        session_id,
+        "serial".into(),
+        prepared.target,
+        prepared.title,
+        prepared.encoding,
+        prepared.terminal_mode,
+    )
+    .await
+}
+
 #[cfg(test)]
 async fn connect_prepared_profile(
     _runtime: &McpRuntime,
@@ -707,6 +863,17 @@ async fn connect_prepared_profile(
 ) -> Result<Value, McpError> {
     Err(internal_error(
         "MCPプロファイル接続の実接続処理はユニットテストでは実行しません",
+    ))
+}
+
+#[cfg(test)]
+async fn connect_prepared_serial_console(
+    _runtime: &McpRuntime,
+    _config: &AppConfig,
+    _prepared: PreparedSerialConnection,
+) -> Result<Value, McpError> {
+    Err(internal_error(
+        "MCPシリアル接続の実接続処理はユニットテストでは実行しません",
     ))
 }
 
@@ -757,6 +924,31 @@ impl ExaTermMcpServer {
     ) -> Result<CallToolResult, McpError> {
         self.service
             .connect_saved_profile(args)
+            .await
+            .and_then(structured_tool_result)
+    }
+
+    #[tool(
+        name = "list_serial_ports",
+        description = "List available Serial console ports when MCP profile connections are enabled."
+    )]
+    async fn list_serial_ports(&self) -> Result<CallToolResult, McpError> {
+        self.service
+            .list_serial_ports()
+            .await
+            .and_then(structured_tool_result)
+    }
+
+    #[tool(
+        name = "connect_serial_console",
+        description = "Open a new ExaTerm Serial console session from explicit port and line settings when MCP profile connections are enabled."
+    )]
+    async fn connect_serial_console(
+        &self,
+        Parameters(args): Parameters<ConnectSerialConsoleArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.service
+            .connect_serial_console(args)
             .await
             .and_then(structured_tool_result)
     }
@@ -895,6 +1087,88 @@ struct ConnectSavedProfileArgs {
     rows: Option<u32>,
 }
 
+#[derive(Debug, Clone, Deserialize, JsonSchema, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+enum McpSerialParity {
+    #[default]
+    None,
+    Odd,
+    Even,
+}
+
+impl McpSerialParity {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Odd => "odd",
+            Self::Even => "even",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+enum McpSerialFlowControl {
+    #[default]
+    None,
+    Software,
+    Hardware,
+}
+
+impl McpSerialFlowControl {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Software => "software",
+            Self::Hardware => "hardware",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+enum McpTerminalMode {
+    #[default]
+    General,
+    CiscoIos,
+}
+
+impl McpTerminalMode {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::General => "general",
+            Self::CiscoIos => "cisco_ios",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ConnectSerialConsoleArgs {
+    /// Serial port name, for example COM3.
+    port: String,
+    /// Baud rate. Defaults to 9600.
+    #[schemars(range(min = 1))]
+    baud_rate: Option<u32>,
+    /// Data bits. Supported values are 5, 6, 7, and 8. Defaults to 8.
+    #[schemars(range(min = 5, max = 8))]
+    data_bits: Option<u8>,
+    /// Parity. Defaults to none.
+    parity: Option<McpSerialParity>,
+    /// Stop bits. Supported values are 1 and 2. Defaults to 1.
+    #[schemars(range(min = 1, max = 2))]
+    stop_bits: Option<u8>,
+    /// Flow control. Defaults to none.
+    flow_control: Option<McpSerialFlowControl>,
+    /// Initial terminal mode. Defaults to general.
+    terminal_mode: Option<McpTerminalMode>,
+    /// Requested terminal columns. Defaults to 120.
+    #[schemars(range(min = 1, max = MAX_CONNECT_DIMENSION))]
+    cols: Option<u32>,
+    /// Requested terminal rows. Defaults to 30.
+    #[schemars(range(min = 1, max = MAX_CONNECT_DIMENSION))]
+    rows: Option<u32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PreparedConnection {
     kind: PreparedConnectionKind,
@@ -921,6 +1195,16 @@ enum PreparedConnectionKind {
         host: String,
         port: u16,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PreparedSerialConnection {
+    port: String,
+    config: serial::SerialConfig,
+    target: String,
+    title: String,
+    encoding: String,
+    terminal_mode: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1184,6 +1468,25 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.message.contains("connect_enabled"));
+
+        let error = service.list_serial_ports().await.unwrap_err();
+        assert!(error.message.contains("connect_enabled"));
+
+        let error = service
+            .connect_serial_console(ConnectSerialConsoleArgs {
+                port: "COM1".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: None,
+                cols: None,
+                rows: None,
+            })
+            .await
+            .unwrap_err();
+        assert!(error.message.contains("connect_enabled"));
     }
 
     #[test]
@@ -1339,6 +1642,119 @@ mod tests {
         assert_eq!(prepared.terminal_mode, "cisco_ios");
         assert_eq!(prepared.cols, 80);
         assert_eq!(prepared.rows, 24);
+    }
+
+    #[test]
+    fn prepare_serial_console_uses_defaults_and_line_settings() {
+        let ports = vec![serial::PortInfo {
+            name: "COM3".into(),
+            port_type: "USB".into(),
+        }];
+
+        let prepared = prepare_serial_console_connection(
+            ConnectSerialConsoleArgs {
+                port: " COM3 ".into(),
+                baud_rate: Some(115_200),
+                data_bits: Some(7),
+                parity: Some(McpSerialParity::Even),
+                stop_bits: Some(2),
+                flow_control: Some(McpSerialFlowControl::Hardware),
+                terminal_mode: Some(McpTerminalMode::CiscoIos),
+                cols: Some(80),
+                rows: Some(24),
+            },
+            &ports,
+        )
+        .unwrap();
+
+        assert_eq!(prepared.port, "COM3");
+        assert_eq!(prepared.config.baud_rate, 115_200);
+        assert_eq!(prepared.config.data_bits, 7);
+        assert_eq!(prepared.config.parity, "even");
+        assert_eq!(prepared.config.stop_bits, 2);
+        assert_eq!(prepared.config.flow_control, "hardware");
+        assert_eq!(prepared.target, "COM3");
+        assert_eq!(prepared.title, "COM3");
+        assert_eq!(prepared.encoding, "utf-8");
+        assert_eq!(prepared.terminal_mode, "cisco_ios");
+
+        let defaulted = prepare_serial_console_connection(
+            ConnectSerialConsoleArgs {
+                port: "COM3".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: None,
+                cols: None,
+                rows: None,
+            },
+            &ports,
+        )
+        .unwrap();
+        assert_eq!(defaulted.config, serial::SerialConfig::default());
+        assert_eq!(defaulted.terminal_mode, "general");
+    }
+
+    #[test]
+    fn prepare_serial_console_rejects_missing_port_and_invalid_settings() {
+        let ports = vec![serial::PortInfo {
+            name: "COM5".into(),
+            port_type: "USB".into(),
+        }];
+
+        let missing = prepare_serial_console_connection(
+            ConnectSerialConsoleArgs {
+                port: "COM4".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: None,
+                cols: None,
+                rows: None,
+            },
+            &ports,
+        )
+        .unwrap_err();
+        assert!(missing.contains("COM4"));
+        assert!(missing.contains("COM5"));
+
+        let invalid_data_bits = prepare_serial_console_connection(
+            ConnectSerialConsoleArgs {
+                port: "COM5".into(),
+                baud_rate: None,
+                data_bits: Some(9),
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: None,
+                cols: None,
+                rows: None,
+            },
+            &ports,
+        )
+        .unwrap_err();
+        assert!(invalid_data_bits.contains("data_bits"));
+
+        let invalid_stop_bits = prepare_serial_console_connection(
+            ConnectSerialConsoleArgs {
+                port: "COM5".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: Some(3),
+                flow_control: None,
+                terminal_mode: None,
+                cols: None,
+                rows: None,
+            },
+            &ports,
+        )
+        .unwrap_err();
+        assert!(invalid_stop_bits.contains("stop_bits"));
     }
 
     #[tokio::test]
@@ -1557,7 +1973,9 @@ mod tests {
             names,
             vec![
                 "connect_saved_profile",
+                "connect_serial_console",
                 "list_connection_profiles",
+                "list_serial_ports",
                 "list_terminal_sessions",
                 "read_terminal_output",
                 "read_terminal_output_delta",
@@ -1598,5 +2016,30 @@ mod tests {
             .unwrap();
         assert!(connect_properties.contains_key("profile_id"));
         assert!(!connect_properties.contains_key("credential"));
+
+        let serial_connect_tool = tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "connect_serial_console")
+            .unwrap();
+        let serial_properties = serial_connect_tool["inputSchema"]["properties"]
+            .as_object()
+            .unwrap();
+        for property in [
+            "port",
+            "baud_rate",
+            "data_bits",
+            "parity",
+            "stop_bits",
+            "flow_control",
+            "terminal_mode",
+            "cols",
+            "rows",
+        ] {
+            assert!(serial_properties.contains_key(property));
+        }
+        assert_eq!(serial_properties["cols"]["maximum"], MAX_CONNECT_DIMENSION);
+        assert_eq!(serial_properties["rows"]["maximum"], MAX_CONNECT_DIMENSION);
     }
 }
