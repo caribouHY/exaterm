@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added one-hop SSH jump host support for saved SSH profiles, including UI profile selection, host-key checks, MCP profile connections, and config documentation.
+
 ## v0.4.0
 
 ### Added
