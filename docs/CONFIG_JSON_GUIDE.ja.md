@@ -144,7 +144,7 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
 
 MCP クライアントは Streamable HTTP エンドポイントを呼び出すときに、通常の `Host` ヘッダーと、`application/json` と `text/event-stream` の両方を含む `Accept` ヘッダーを送信してください。
 
-MCP サーバーは保存済み認証情報の読み取り、API キーの公開、ログファイルの直接読み取りを行いません。MCP 経由の SSH/Telnet 新規接続は保存済みプロファイルに限定され、シリアル接続は明示的に指定した利用可能ポート名だけを対象にし、すべての MCP 新規接続には `mcp.connect_enabled=true` が必要です。SSH では既存の known_hosts 検証もそのまま適用されます。ターミナル出力自体に機密情報が含まれる可能性があるため、信頼できるローカルクライアントに対してのみ有効化してください。
+MCP サーバーは保存済み認証情報の読み取り、API キーの公開、ログファイルの直接読み取りを行いません。MCP 経由の SSH/Telnet 新規接続は保存済みプロファイルに限定され、シリアル接続は明示的に指定した利用可能ポート名だけを対象にし、すべての MCP 新規接続には `mcp.connect_enabled=true` が必要です。SSH では既存の known_hosts 検証もそのまま適用されます。SSH プロファイルに `jump_profile_id` がある場合、MCP 経由の新規接続でも同じ 1 段の踏み台フローを使用し、必要な踏み台認証情報は ExaTerm UI で入力します。ターミナル出力自体に機密情報が含まれる可能性があるため、信頼できるローカルクライアントに対してのみ有効化してください。
 
 ## terminal
 
@@ -217,6 +217,7 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
 | `terminal_mode`    | string または null | このプロファイルで接続したときのターミナルモードです。指定できる値は `"general"` と `"cisco_ios"` です。未設定の場合は `"general"` として扱われます。               |
 | `auth_method`      | string または null | SSH 認証方式です。指定できる値は `"password"` と `"public_key"` です。未設定の場合は `"password"` として扱われます。Telnet プロファイルでは使用しません。           |
 | `private_key_path` | string または null | SSH の `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                        |
+| `jump_profile_id`  | string または null | SSH 踏み台プロファイルの ID です。参照先は保存済み SSH プロファイルである必要があります。踏み台は 1 段のみ対応し、多段指定は拒否されます。                          |
 
 例:
 
@@ -229,10 +230,13 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
   "username": "admin",
   "auth_method": "public_key",
   "private_key_path": "C:\\Users\\user\\.ssh\\id_ed25519",
+  "jump_profile_id": "bastion",
   "encoding": "shift-jis",
   "terminal_mode": "cisco_ios"
 }
 ```
+
+`jump_profile_id` を設定すると、ExaTerm は参照先の SSH プロファイルへ先に接続し、その踏み台経由で接続先への SSH 接続を開きます。踏み台プロファイルからさらに別の踏み台を参照することはできず、自分自身を踏み台に指定することもできません。踏み台と接続先の SSH パスワードや暗号化鍵パスフレーズは ExaTerm UI で入力し、`config.json` には保存されません。
 
 Telnet の例:
 

@@ -592,6 +592,7 @@ fn list_connection_profiles_from_config(config: &AppConfig) -> Vec<McpConnection
                             .map(str::trim)
                             .is_some_and(|value| !value.is_empty()),
                     ),
+                    jump_profile_id: normalize_profile_string(profile.jump_profile_id.as_deref()),
                 }),
                 "telnet" => Some(McpConnectionProfile {
                     id: profile.id.clone(),
@@ -605,6 +606,7 @@ fn list_connection_profiles_from_config(config: &AppConfig) -> Vec<McpConnection
                         profile.terminal_mode.as_deref(),
                     )),
                     private_key_configured: None,
+                    jump_profile_id: None,
                 }),
                 _ => None,
             }
@@ -650,6 +652,11 @@ fn prepare_saved_profile_connection(
                     "保存済みSSHプロファイルに秘密鍵ファイルが設定されていません".to_string(),
                 );
             }
+            let jump_profile = ssh::resolve_jump_profile(
+                config,
+                profile.jump_profile_id.as_deref(),
+                Some(profile.id.as_str()),
+            )?;
             let port = profile.port.unwrap_or(22);
             Ok(PreparedConnection {
                 kind: PreparedConnectionKind::Ssh {
@@ -658,6 +665,7 @@ fn prepare_saved_profile_connection(
                     username: username.clone(),
                     auth_method,
                     private_key_path,
+                    jump_profile,
                 },
                 profile_id: profile.id.clone(),
                 connection_type,
@@ -708,43 +716,82 @@ async fn connect_prepared_profile(
             username,
             auth_method,
             private_key_path,
+            jump_profile,
         } => {
-            ssh::verify_trusted_host_key(host, *port)
-                .await
-                .map_err(invalid_params)?;
-            let credential = if ssh_credential_required(auth_method, private_key_path.as_deref())
-                .map_err(invalid_params)?
-            {
-                let credentials = runtime
-                    .credentials
-                    .as_ref()
-                    .ok_or_else(|| internal_error("MCP認証入力に必要な状態がありません"))?;
-                Some(
-                    credentials
-                        .request_ssh_credential(
-                            app,
-                            McpCredentialRequestPayload {
-                                request_id: String::new(),
-                                profile_id: prepared.profile_id.clone(),
-                                host: host.clone(),
-                                port: *port,
-                                username: username.clone(),
-                                auth_method: auth_method.clone(),
-                                target: prepared.target.clone(),
-                                title: prepared.title.clone(),
-                            },
-                        )
-                        .await
-                        .map_err(invalid_params)?
-                        .ok_or_else(|| invalid_params("MCP認証入力がキャンセルされました"))?,
+            let credentials = runtime
+                .credentials
+                .as_ref()
+                .ok_or_else(|| internal_error("MCP認証入力に必要な状態がありません"))?;
+            let jump_credential = if let Some(jump_profile) = jump_profile {
+                ssh::verify_trusted_host_key(&jump_profile.host, jump_profile.port)
+                    .await
+                    .map_err(invalid_params)?;
+                request_profile_credential(
+                    credentials,
+                    app,
+                    &jump_profile.id,
+                    &jump_profile.host,
+                    jump_profile.port,
+                    &jump_profile.username,
+                    &jump_profile.auth_method,
+                    jump_profile.private_key_path.as_deref(),
+                    &format!(
+                        "{}@{}:{}",
+                        jump_profile.username, jump_profile.host, jump_profile.port
+                    ),
+                    &format!("{}@{}", jump_profile.username, jump_profile.host),
                 )
+                .await?
             } else {
                 None
             };
+
+            if let Some(jump_profile) = jump_profile {
+                let (jump_password, jump_key_passphrase) = if jump_profile.auth_method == "password"
+                {
+                    (jump_credential.clone(), None)
+                } else {
+                    (None, jump_credential.clone())
+                };
+                ssh::verify_trusted_host_key_via_jump(
+                    host,
+                    *port,
+                    jump_profile.clone(),
+                    jump_password,
+                    jump_key_passphrase,
+                )
+                .await
+                .map_err(invalid_params)?;
+            } else {
+                ssh::verify_trusted_host_key(host, *port)
+                    .await
+                    .map_err(invalid_params)?;
+            }
+
+            let credential = request_profile_credential(
+                credentials,
+                app,
+                &prepared.profile_id,
+                host,
+                *port,
+                username,
+                auth_method,
+                private_key_path.as_deref(),
+                &prepared.target,
+                &prepared.title,
+            )
+            .await?;
             let (password, key_passphrase) = if auth_method == "password" {
                 (credential.unwrap_or_default(), None)
             } else {
                 (String::new(), credential)
+            };
+            let (jump_password, jump_key_passphrase) = match jump_profile {
+                Some(jump_profile) if jump_profile.auth_method == "password" => {
+                    (jump_credential, None)
+                }
+                Some(_) => (None, jump_credential),
+                None => (None, None),
             };
 
             ssh::connect(
@@ -759,6 +806,9 @@ async fn connect_prepared_profile(
                     auth_method: Some(auth_method.clone()),
                     private_key_path: private_key_path.clone(),
                     key_passphrase,
+                    jump_profile_id: jump_profile.as_ref().map(|profile| profile.id.clone()),
+                    jump_password,
+                    jump_key_passphrase,
                     cols: prepared.cols,
                     rows: prepared.rows,
                 },
@@ -791,6 +841,44 @@ async fn connect_prepared_profile(
         prepared.terminal_mode,
     )
     .await
+}
+
+#[cfg(not(test))]
+#[allow(clippy::too_many_arguments)]
+async fn request_profile_credential(
+    credentials: &McpCredentialState,
+    app: &AppHandle,
+    profile_id: &str,
+    host: &str,
+    port: u16,
+    username: &str,
+    auth_method: &str,
+    private_key_path: Option<&str>,
+    target: &str,
+    title: &str,
+) -> Result<Option<String>, McpError> {
+    if !ssh_credential_required(auth_method, private_key_path).map_err(invalid_params)? {
+        return Ok(None);
+    }
+
+    credentials
+        .request_ssh_credential(
+            app,
+            McpCredentialRequestPayload {
+                request_id: String::new(),
+                profile_id: profile_id.to_string(),
+                host: host.to_string(),
+                port,
+                username: username.to_string(),
+                auth_method: auth_method.to_string(),
+                target: target.to_string(),
+                title: title.to_string(),
+            },
+        )
+        .await
+        .map_err(invalid_params)?
+        .map(Some)
+        .ok_or_else(|| invalid_params("MCP認証入力がキャンセルされました"))
 }
 
 #[cfg(not(test))]
@@ -1075,6 +1163,8 @@ struct McpConnectionProfile {
     terminal_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     private_key_configured: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jump_profile_id: Option<String>,
 }
 
 #[cfg(not(test))]
@@ -1217,6 +1307,7 @@ enum PreparedConnectionKind {
         username: String,
         auth_method: String,
         private_key_path: Option<String>,
+        jump_profile: Option<ssh::SshJumpProfile>,
     },
     Telnet {
         host: String,
@@ -1530,6 +1621,7 @@ mod tests {
                 private_key_path: Some("C:\\Users\\me\\.ssh\\id_ed25519".into()),
                 encoding: Some("shift-jis".into()),
                 terminal_mode: Some("cisco_ios".into()),
+                jump_profile_id: Some("bastion".into()),
             },
             SavedConnection {
                 id: "legacy".into(),
@@ -1551,6 +1643,7 @@ mod tests {
         assert_eq!(profiles.len(), 2);
         assert_eq!(profiles[0].id, "dev");
         assert_eq!(profiles[0].private_key_configured, Some(true));
+        assert_eq!(profiles[0].jump_profile_id.as_deref(), Some("bastion"));
         assert_eq!(profiles[1].id, "legacy");
         assert_eq!(profiles[1].port, 23);
         let serialized = serde_json::to_string(&profiles).unwrap();
@@ -1669,6 +1762,132 @@ mod tests {
         assert_eq!(prepared.terminal_mode, "cisco_ios");
         assert_eq!(prepared.cols, 80);
         assert_eq!(prepared.rows, 24);
+    }
+
+    #[test]
+    fn prepare_saved_profile_resolves_jump_profile() {
+        let mut config = AppConfig::default();
+        config.saved_connections = vec![
+            SavedConnection {
+                id: "bastion".into(),
+                connection_type: "ssh".into(),
+                host: Some("198.51.100.10".into()),
+                port: Some(2222),
+                username: Some("jump".into()),
+                auth_method: Some("password".into()),
+                ..SavedConnection::default()
+            },
+            SavedConnection {
+                id: "inside".into(),
+                connection_type: "ssh".into(),
+                host: Some("192.0.2.10".into()),
+                username: Some("admin".into()),
+                auth_method: Some("password".into()),
+                jump_profile_id: Some("bastion".into()),
+                ..SavedConnection::default()
+            },
+        ];
+
+        let prepared = prepare_saved_profile_connection(
+            &config,
+            ConnectSavedProfileArgs {
+                profile_id: "inside".into(),
+                cols: None,
+                rows: None,
+            },
+        )
+        .unwrap();
+
+        match prepared.kind {
+            PreparedConnectionKind::Ssh {
+                jump_profile: Some(jump_profile),
+                ..
+            } => {
+                assert_eq!(jump_profile.id, "bastion");
+                assert_eq!(jump_profile.host, "198.51.100.10");
+                assert_eq!(jump_profile.port, 2222);
+                assert_eq!(jump_profile.username, "jump");
+            }
+            other => panic!("expected SSH jump profile, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn prepare_saved_profile_rejects_invalid_jump_profiles() {
+        let mut config = AppConfig::default();
+        config.saved_connections = vec![
+            SavedConnection {
+                id: "inside".into(),
+                connection_type: "ssh".into(),
+                host: Some("192.0.2.10".into()),
+                username: Some("admin".into()),
+                auth_method: Some("password".into()),
+                jump_profile_id: Some("inside".into()),
+                ..SavedConnection::default()
+            },
+            SavedConnection {
+                id: "telnet-hop".into(),
+                connection_type: "telnet".into(),
+                host: Some("198.51.100.20".into()),
+                ..SavedConnection::default()
+            },
+            SavedConnection {
+                id: "nested-hop".into(),
+                connection_type: "ssh".into(),
+                host: Some("198.51.100.30".into()),
+                username: Some("jump".into()),
+                auth_method: Some("password".into()),
+                jump_profile_id: Some("other-hop".into()),
+                ..SavedConnection::default()
+            },
+        ];
+
+        let self_ref = prepare_saved_profile_connection(
+            &config,
+            ConnectSavedProfileArgs {
+                profile_id: "inside".into(),
+                cols: None,
+                rows: None,
+            },
+        )
+        .unwrap_err();
+        assert!(self_ref.contains("自分自身"));
+
+        config.saved_connections[0].jump_profile_id = Some("missing".into());
+        let missing = prepare_saved_profile_connection(
+            &config,
+            ConnectSavedProfileArgs {
+                profile_id: "inside".into(),
+                cols: None,
+                rows: None,
+            },
+        )
+        .unwrap_err();
+        assert!(missing.contains("見つかりません"));
+
+        config.saved_connections[0].jump_profile_id = Some("telnet-hop".into());
+        let telnet = prepare_saved_profile_connection(
+            &config,
+            ConnectSavedProfileArgs {
+                profile_id: "inside".into(),
+                cols: None,
+                rows: None,
+            },
+        )
+        .unwrap_err();
+        assert!(telnet.contains("SSHプロファイル"));
+
+        config.saved_connections[0].jump_profile_id = Some("nested-hop".into());
+        let nested = prepare_saved_profile_connection(
+            &config,
+            ConnectSavedProfileArgs {
+                profile_id: "inside".into(),
+                cols: None,
+                rows: None,
+            },
+        )
+        .unwrap_err();
+        assert!(nested.contains("多段"));
     }
 
     #[test]

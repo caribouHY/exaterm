@@ -10,6 +10,9 @@ export interface SshConnectParams {
   auth_method?: SshAuthMethod | null;
   private_key_path?: string | null;
   key_passphrase?: string | null;
+  jump_profile_id?: string | null;
+  jump_password?: string | null;
+  jump_key_passphrase?: string | null;
   cols: number;
   rows: number;
 }
@@ -138,6 +141,7 @@ export interface SavedConnection {
   terminal_mode?: TerminalMode | null;
   auth_method?: SshAuthMethod | null;
   private_key_path?: string | null;
+  jump_profile_id?: string | null;
 }
 
 export type ConnectionType = "ssh" | "serial" | "telnet";

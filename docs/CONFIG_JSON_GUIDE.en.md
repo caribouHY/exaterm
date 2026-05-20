@@ -144,7 +144,7 @@ Output-reading tools return `start_cursor`, `cursor`, and `truncated`. Pass `cur
 
 MCP clients should call the Streamable HTTP endpoint with a normal `Host` header and an `Accept` header that includes both `application/json` and `text/event-stream`.
 
-The MCP server does not read saved credentials, expose API keys, or read log files directly. New MCP-created SSH/Telnet connections are limited to saved profiles, Serial connections require an explicit available port name, and all new MCP-created connections require `mcp.connect_enabled=true`. SSH connections still enforce the existing known-host checks. Terminal output can contain sensitive information, so enable MCP only for trusted local clients.
+The MCP server does not read saved credentials, expose API keys, or read log files directly. New MCP-created SSH/Telnet connections are limited to saved profiles, Serial connections require an explicit available port name, and all new MCP-created connections require `mcp.connect_enabled=true`. SSH connections still enforce the existing known-host checks. If an SSH profile uses `jump_profile_id`, MCP-created connections use the same one-hop jump host flow and request any required jump-host credential in the ExaTerm UI. Terminal output can contain sensitive information, so enable MCP only for trusted local clients.
 
 ## terminal
 
@@ -217,6 +217,7 @@ Internal SSH extension markers, such as strict key exchange and extension info m
 | `terminal_mode`    | string or null | Initial terminal mode for the profile. Supported values are `"general"` and `"cisco_ios"`. Missing values default to `"general"`.                      |
 | `auth_method`      | string or null | SSH authentication method. Supported values are `"password"` and `"public_key"`. Missing values default to `"password"`. Not used for Telnet profiles. |
 | `private_key_path` | string or null | Private key file path used with SSH `"public_key"` authentication, such as an `id_ed25519` file. The file contents and passphrase are not stored.      |
+| `jump_profile_id`  | string or null | SSH jump host profile ID. The referenced profile must be a saved SSH profile. Only one jump host is supported; nested jump hosts are rejected.         |
 
 Example:
 
@@ -229,10 +230,13 @@ Example:
   "username": "admin",
   "auth_method": "public_key",
   "private_key_path": "C:\\Users\\user\\.ssh\\id_ed25519",
+  "jump_profile_id": "bastion",
   "encoding": "shift-jis",
   "terminal_mode": "cisco_ios"
 }
 ```
+
+When `jump_profile_id` is set, ExaTerm first connects to the referenced SSH profile and then opens the target connection through that jump host. The jump host profile cannot reference another jump host, and a profile cannot reference itself. SSH passwords and encrypted key passphrases for both the jump host and the target are requested in the ExaTerm UI and are not saved in `config.json`.
 
 Telnet example:
 
