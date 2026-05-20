@@ -45,6 +45,16 @@ impl LoggerState {
             sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
+
+    #[cfg(test)]
+    pub fn with_paths(log_dir: PathBuf, index_path: PathBuf) -> Self {
+        let _ = fs::create_dir_all(&log_dir);
+        Self {
+            log_dir,
+            index_path,
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
 }
 
 fn default_log_mode() -> String {
@@ -397,7 +407,26 @@ pub async fn logger_start_manual(
     session_id: String,
     connection_type: String,
     target: String,
-    file_path: String,
+    file_path: Option<String>,
+    write_mode: Option<String>,
+) -> Result<String, String> {
+    start_manual_log(
+        &state,
+        session_id,
+        connection_type,
+        target,
+        file_path,
+        write_mode,
+    )
+    .await
+}
+
+pub async fn start_manual_log(
+    state: &LoggerState,
+    session_id: String,
+    connection_type: String,
+    target: String,
+    file_path: Option<String>,
     write_mode: Option<String>,
 ) -> Result<String, String> {
     let include_header = crate::config::config_read()
@@ -409,7 +438,7 @@ pub async fn logger_start_manual(
         session_id.clone(),
         connection_type,
         target,
-        Some(file_path),
+        file_path,
         "manual",
         include_header,
         write_mode,
@@ -435,14 +464,26 @@ pub async fn logger_stop_manual(
     state: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<(), String> {
+    stop_manual_log(&state, &session_id).await
+}
+
+pub async fn stop_manual_log(state: &LoggerState, session_id: &str) -> Result<(), String> {
     let mut sessions = state.sessions.lock().await;
-    if let Some(targets) = sessions.get_mut(&session_id) {
+    if let Some(targets) = sessions.get_mut(session_id) {
         targets.manual = None;
         if targets.auto.is_none() {
-            sessions.remove(&session_id);
+            sessions.remove(session_id);
         }
     }
     Ok(())
+}
+
+pub async fn manual_log_session(state: &LoggerState, session_id: &str) -> Option<LogSession> {
+    let sessions = state.sessions.lock().await;
+    sessions
+        .get(session_id)
+        .and_then(|targets| targets.manual.as_ref())
+        .cloned()
 }
 
 #[tauri::command]
@@ -450,11 +491,7 @@ pub async fn logger_is_manual_active(
     state: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<bool, String> {
-    let sessions = state.sessions.lock().await;
-    Ok(sessions
-        .get(&session_id)
-        .and_then(|targets| targets.manual.as_ref())
-        .is_some())
+    Ok(manual_log_session(&state, &session_id).await.is_some())
 }
 
 #[tauri::command]
@@ -735,6 +772,35 @@ mod tests {
         let data = fs::read_to_string(&session.file_path).expect("log should read");
 
         assert_eq!(data, "");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn start_manual_log_without_file_path_uses_log_dir() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        let index_path = dir.join("index.json");
+        let state = LoggerState::with_paths(dir.clone(), index_path.clone());
+
+        let file_path = start_manual_log(
+            &state,
+            "session-1".into(),
+            "ssh".into(),
+            "user@host:22".into(),
+            None,
+            None,
+        )
+        .await
+        .expect("manual log should start");
+        let path = PathBuf::from(&file_path);
+        let parent = path.parent().expect("manual log should have parent");
+
+        assert_eq!(parent, dir.as_path());
+        assert!(path.exists());
+
+        let loaded = read_log_index(&index_path).expect("index should read");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].log_mode, "manual");
+        assert_eq!(loaded[0].file_path, file_path);
         let _ = fs::remove_dir_all(&dir);
     }
 

@@ -70,6 +70,13 @@ interface McpCredentialPromptState extends McpCredentialRequestPayload {
   submitting: boolean;
 }
 
+interface McpLogControlRequestPayload {
+  request_id: string;
+  session_id: string;
+  connection_type: ConnectionType;
+  target: string;
+}
+
 function orderAppTabs(appTabs: AppTabInfo[], tabOrder: string[]) {
   const tabsById = new Map(appTabs.map((tab) => [tab.id, tab]));
   const orderedTabs = tabOrder
@@ -276,6 +283,128 @@ export default function App() {
 
     return () => {
       unlistenCredential.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    const waitForUiUpdate = () =>
+      new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => {
+          window.setTimeout(() => resolve(), 0);
+        });
+      });
+
+    const submitLogControl = async (
+      requestId: string,
+      filePath: string | null,
+      error: string | null
+    ) => {
+      try {
+        await invoke("mcp_log_control_submit", {
+          requestId,
+          filePath,
+          error,
+        });
+      } catch (submitError) {
+        console.error("Failed to submit MCP log control response:", submitError);
+      }
+    };
+
+    const unlistenStart = listen<McpLogControlRequestPayload>(
+      "mcp://log-start-request",
+      async (event) => {
+        const payload = event.payload;
+        const tab = tabsRef.current.find((item) => item.sessionId === payload.session_id);
+        if (!tab) {
+          await submitLogControl(payload.request_id, null, "セッションが見つかりません");
+          return;
+        }
+        if (!tab.isConnected) {
+          await submitLogControl(payload.request_id, null, "セッションは切断済みです");
+          return;
+        }
+        if (tab.isManualLogging && tab.manualLogFilePath) {
+          await submitLogControl(payload.request_id, tab.manualLogFilePath, null);
+          return;
+        }
+
+        try {
+          const filePath = await invoke<string>("logger_start_manual", {
+            sessionId: payload.session_id,
+            connectionType: payload.connection_type,
+            target: payload.target,
+            filePath: null,
+            writeMode: "overwrite",
+          });
+          setTabs((prev) =>
+            prev.map((item) =>
+              item.sessionId === payload.session_id
+                ? {
+                    ...item,
+                    isManualLogging: true,
+                    isLoggingPaused: false,
+                    manualLogFilePath: filePath,
+                  }
+                : item
+            )
+          );
+          await waitForUiUpdate();
+          await submitLogControl(payload.request_id, filePath, null);
+        } catch (error) {
+          console.error("Failed to start MCP manual log:", error);
+          await submitLogControl(
+            payload.request_id,
+            null,
+            typeof error === "string" ? error : "MCPログ開始に失敗しました"
+          );
+        }
+      }
+    );
+
+    const unlistenStop = listen<McpLogControlRequestPayload>(
+      "mcp://log-stop-request",
+      async (event) => {
+        const payload = event.payload;
+        const tab = tabsRef.current.find((item) => item.sessionId === payload.session_id);
+        if (!tab) {
+          await submitLogControl(payload.request_id, null, "セッションが見つかりません");
+          return;
+        }
+        if (!tab.isManualLogging) {
+          await submitLogControl(payload.request_id, null, null);
+          return;
+        }
+
+        try {
+          await terminalViewRefs.current.get(tab.id)?.flushManualLogBuffer();
+          await invoke("logger_stop_manual", { sessionId: payload.session_id });
+          setTabs((prev) =>
+            prev.map((item) =>
+              item.sessionId === payload.session_id
+                ? {
+                    ...item,
+                    isManualLogging: false,
+                    isLoggingPaused: item.isAutoLogging ? item.isLoggingPaused : false,
+                  }
+                : item
+            )
+          );
+          await waitForUiUpdate();
+          await submitLogControl(payload.request_id, null, null);
+        } catch (error) {
+          console.error("Failed to stop MCP manual log:", error);
+          await submitLogControl(
+            payload.request_id,
+            null,
+            typeof error === "string" ? error : "MCPログ停止に失敗しました"
+          );
+        }
+      }
+    );
+
+    return () => {
+      unlistenStart.then((fn) => fn());
+      unlistenStop.then((fn) => fn());
     };
   }, []);
 

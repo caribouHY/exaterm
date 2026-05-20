@@ -28,7 +28,6 @@ use tokio::time;
 use uuid::Uuid;
 
 use crate::config::{self, AppConfig, McpConfig, SavedConnection};
-#[cfg(not(test))]
 use crate::logger::{self, LoggerState};
 use crate::serial::{self, SerialState};
 use crate::ssh::{self, SshState};
@@ -50,6 +49,8 @@ const DEFAULT_SERIAL_DATA_BITS: u8 = 8;
 const DEFAULT_SERIAL_STOP_BITS: u8 = 1;
 #[cfg(not(test))]
 const CREDENTIAL_REQUEST_TIMEOUT_MS: u64 = 5 * 60 * 1_000;
+#[cfg(not(test))]
+const LOG_CONTROL_REQUEST_TIMEOUT_MS: u64 = 30_000;
 
 #[derive(Clone)]
 pub struct McpRuntime {
@@ -60,8 +61,9 @@ pub struct McpRuntime {
     pub ssh: SshState,
     pub serial: SerialState,
     pub telnet: TelnetState,
-    #[cfg(not(test))]
     pub logger: Option<LoggerState>,
+    #[cfg_attr(test, allow(dead_code))]
+    pub log_control: Option<McpLogControlState>,
     #[cfg(not(test))]
     pub credentials: Option<McpCredentialState>,
 }
@@ -127,6 +129,79 @@ pub async fn mcp_credential_submit(
     credential: Option<String>,
 ) -> Result<(), String> {
     state.submit(request_id, credential).await
+}
+
+#[derive(Clone, Default)]
+pub struct McpLogControlState {
+    pending: Arc<Mutex<HashMap<String, oneshot::Sender<Result<McpLogControlAck, String>>>>>,
+}
+
+impl McpLogControlState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[cfg(not(test))]
+    async fn request(
+        &self,
+        app: &AppHandle,
+        event: &str,
+        payload: McpLogControlRequestPayload,
+    ) -> Result<McpLogControlAck, String> {
+        let request_id = payload.request_id.clone();
+        let (sender, receiver) = oneshot::channel();
+        self.pending.lock().await.insert(request_id.clone(), sender);
+
+        if let Err(error) = app.emit(event, &payload) {
+            self.pending.lock().await.remove(&request_id);
+            return Err(format!("MCPログ制御リクエスト送信エラー: {error}"));
+        }
+
+        match time::timeout(
+            Duration::from_millis(LOG_CONTROL_REQUEST_TIMEOUT_MS),
+            receiver,
+        )
+        .await
+        {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err("MCPログ制御リクエストが完了しませんでした".into()),
+            Err(_) => {
+                self.pending.lock().await.remove(&request_id);
+                Err("MCPログ制御リクエストがタイムアウトしました".into())
+            }
+        }
+    }
+
+    async fn submit(
+        &self,
+        request_id: String,
+        file_path: Option<String>,
+        error: Option<String>,
+    ) -> Result<(), String> {
+        let sender = self
+            .pending
+            .lock()
+            .await
+            .remove(&request_id)
+            .ok_or_else(|| "MCPログ制御リクエストが見つかりません".to_string())?;
+        let result = match error {
+            Some(error) => Err(error),
+            None => Ok(McpLogControlAck { file_path }),
+        };
+        sender
+            .send(result)
+            .map_err(|_| "MCPログ制御リクエストはすでに終了しています".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn mcp_log_control_submit(
+    state: tauri::State<'_, McpLogControlState>,
+    request_id: String,
+    file_path: Option<String>,
+    error: Option<String>,
+) -> Result<(), String> {
+    state.submit(request_id, file_path, error).await
 }
 
 #[derive(Clone)]
@@ -257,6 +332,81 @@ impl McpTerminalService {
         }))
     }
 
+    async fn start_terminal_log(&self, args: StartTerminalLogArgs) -> Result<Value, McpError> {
+        let info = self
+            .runtime
+            .terminals
+            .session_info(&args.session_id)
+            .await
+            .ok_or_else(|| invalid_params("セッションが見つかりません"))?;
+
+        if info.status != TerminalStatus::Connected {
+            return Err(invalid_params("セッションは切断済みです"));
+        }
+
+        let logger_state = self
+            .runtime
+            .logger
+            .as_ref()
+            .ok_or_else(|| internal_error("MCPログ開始に必要なロガー状態がありません"))?;
+        if let Some(session) = logger::manual_log_session(logger_state, &args.session_id).await {
+            return Ok(json!({
+                "session_id": args.session_id,
+                "started": false,
+                "already_active": true,
+                "file_path": session.file_path,
+                "log_mode": "manual",
+            }));
+        }
+
+        let file_path = request_manual_log_start(&self.runtime, &info)
+            .await
+            .map_err(internal_error)?;
+
+        Ok(json!({
+            "session_id": args.session_id,
+            "started": true,
+            "already_active": false,
+            "file_path": file_path,
+            "log_mode": "manual",
+        }))
+    }
+
+    async fn stop_terminal_log(&self, args: StopTerminalLogArgs) -> Result<Value, McpError> {
+        let info = self
+            .runtime
+            .terminals
+            .session_info(&args.session_id)
+            .await
+            .ok_or_else(|| invalid_params("セッションが見つかりません"))?;
+
+        let logger_state = self
+            .runtime
+            .logger
+            .as_ref()
+            .ok_or_else(|| internal_error("MCPログ停止に必要なロガー状態がありません"))?;
+        if logger::manual_log_session(logger_state, &args.session_id)
+            .await
+            .is_none()
+        {
+            return Ok(json!({
+                "session_id": args.session_id,
+                "stopped": false,
+                "already_inactive": true,
+            }));
+        }
+
+        request_manual_log_stop(&self.runtime, &info)
+            .await
+            .map_err(internal_error)?;
+
+        Ok(json!({
+            "session_id": args.session_id,
+            "stopped": true,
+            "already_inactive": false,
+        }))
+    }
+
     async fn run_terminal_command(&self, args: RunTerminalCommandArgs) -> Result<Value, McpError> {
         if args.command.trim().is_empty() {
             return Err(invalid_params("送信するコマンドが空です"));
@@ -320,6 +470,103 @@ impl McpTerminalService {
             "start_cursor": snapshot.start_cursor,
             "cursor": snapshot.cursor,
         }))
+    }
+}
+
+#[cfg(not(test))]
+async fn request_manual_log_start(
+    runtime: &McpRuntime,
+    info: &crate::terminal_control::TerminalSessionInfo,
+) -> Result<String, String> {
+    let app = runtime
+        .app
+        .as_ref()
+        .ok_or_else(|| "MCPログ開始に必要なアプリハンドルがありません".to_string())?;
+    let log_control = runtime
+        .log_control
+        .as_ref()
+        .ok_or_else(|| "MCPログ開始に必要なログ制御状態がありません".to_string())?;
+    let ack = log_control
+        .request(
+            app,
+            "mcp://log-start-request",
+            McpLogControlRequestPayload {
+                request_id: Uuid::new_v4().to_string(),
+                session_id: info.session_id.clone(),
+                connection_type: terminal_protocol_log_type(info.protocol).into(),
+                target: info.target.clone(),
+            },
+        )
+        .await?;
+    ack.file_path
+        .ok_or_else(|| "MCPログ開始応答にログファイルパスがありません".to_string())
+}
+
+#[cfg(test)]
+async fn request_manual_log_start(
+    runtime: &McpRuntime,
+    info: &crate::terminal_control::TerminalSessionInfo,
+) -> Result<String, String> {
+    let logger_state = runtime
+        .logger
+        .as_ref()
+        .ok_or_else(|| "MCPログ開始に必要なロガー状態がありません".to_string())?;
+    logger::start_manual_log(
+        logger_state,
+        info.session_id.clone(),
+        terminal_protocol_log_type(info.protocol).into(),
+        info.target.clone(),
+        None,
+        None,
+    )
+    .await
+}
+
+#[cfg(not(test))]
+async fn request_manual_log_stop(
+    runtime: &McpRuntime,
+    info: &crate::terminal_control::TerminalSessionInfo,
+) -> Result<(), String> {
+    let app = runtime
+        .app
+        .as_ref()
+        .ok_or_else(|| "MCPログ停止に必要なアプリハンドルがありません".to_string())?;
+    let log_control = runtime
+        .log_control
+        .as_ref()
+        .ok_or_else(|| "MCPログ停止に必要なログ制御状態がありません".to_string())?;
+    log_control
+        .request(
+            app,
+            "mcp://log-stop-request",
+            McpLogControlRequestPayload {
+                request_id: Uuid::new_v4().to_string(),
+                session_id: info.session_id.clone(),
+                connection_type: terminal_protocol_log_type(info.protocol).into(),
+                target: info.target.clone(),
+            },
+        )
+        .await
+        .map(|_| ())
+}
+
+#[cfg(test)]
+async fn request_manual_log_stop(
+    runtime: &McpRuntime,
+    info: &crate::terminal_control::TerminalSessionInfo,
+) -> Result<(), String> {
+    let logger_state = runtime
+        .logger
+        .as_ref()
+        .ok_or_else(|| "MCPログ停止に必要なロガー状態がありません".to_string())?;
+    logger::stop_manual_log(logger_state, &info.session_id).await
+}
+
+fn terminal_protocol_log_type(protocol: TerminalProtocol) -> &'static str {
+    match protocol {
+        TerminalProtocol::Ssh => "ssh",
+        TerminalProtocol::Serial => "serial",
+        TerminalProtocol::Telnet => "telnet",
     }
 }
 
@@ -1125,6 +1372,34 @@ impl ExaTermMcpServer {
     }
 
     #[tool(
+        name = "start_terminal_log",
+        description = "Start a manual plaintext log for an existing connected ExaTerm terminal session. The log is saved under ExaTerm's log directory and the file path is returned."
+    )]
+    async fn start_terminal_log(
+        &self,
+        Parameters(args): Parameters<StartTerminalLogArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.service
+            .start_terminal_log(args)
+            .await
+            .and_then(structured_tool_result)
+    }
+
+    #[tool(
+        name = "stop_terminal_log",
+        description = "Stop a manual plaintext log for an existing ExaTerm terminal session after flushing pending displayed output."
+    )]
+    async fn stop_terminal_log(
+        &self,
+        Parameters(args): Parameters<StopTerminalLogArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.service
+            .stop_terminal_log(args)
+            .await
+            .and_then(structured_tool_result)
+    }
+
+    #[tool(
         name = "run_terminal_command",
         description = "Send a command to an existing connected ExaTerm terminal session, wait for output, and return the output delta."
     )]
@@ -1190,6 +1465,20 @@ struct McpCredentialRequestPayload {
     auth_method: String,
     target: String,
     title: String,
+}
+
+#[cfg_attr(test, allow(dead_code))]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct McpLogControlRequestPayload {
+    request_id: String,
+    session_id: String,
+    connection_type: String,
+    target: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct McpLogControlAck {
+    file_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1370,6 +1659,18 @@ struct SendTerminalInputArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct StartTerminalLogArgs {
+    /// Session ID returned by list_terminal_sessions.
+    session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct StopTerminalLogArgs {
+    /// Session ID returned by list_terminal_sessions.
+    session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct RunTerminalCommandArgs {
     /// Session ID returned by list_terminal_sessions.
     session_id: String,
@@ -1506,14 +1807,19 @@ mod tests {
     use super::*;
     use crate::terminal_control::TerminalProtocol;
     use axum::body::to_bytes;
+    use uuid::Uuid;
 
     fn test_runtime() -> McpRuntime {
+        let log_dir = std::env::temp_dir().join(format!("exaterm_mcp_log_test_{}", Uuid::new_v4()));
+        let index_path = log_dir.join("index.json");
         McpRuntime {
             config: McpConfig::default(),
             terminals: TerminalControlState::new(),
             ssh: SshState::new(),
             serial: SerialState::new(),
             telnet: TelnetState::new(),
+            logger: Some(LoggerState::with_paths(log_dir, index_path)),
+            log_control: Some(McpLogControlState::new()),
         }
     }
 
@@ -2157,6 +2463,127 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn service_starts_terminal_log_for_connected_session() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+            .await;
+        let service = McpTerminalService::new(runtime);
+
+        let result = service
+            .start_terminal_log(StartTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result["session_id"], "s1");
+        assert_eq!(result["started"], true);
+        assert_eq!(result["already_active"], false);
+        assert_eq!(result["log_mode"], "manual");
+        assert!(result["file_path"].as_str().unwrap().ends_with(".log"));
+    }
+
+    #[tokio::test]
+    async fn service_start_terminal_log_rejects_missing_and_disconnected_sessions() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session("s1".into(), TerminalProtocol::Serial, "COM1".into())
+            .await;
+        runtime.terminals.mark_disconnected("s1").await;
+        let service = McpTerminalService::new(runtime);
+
+        let missing = service
+            .start_terminal_log(StartTerminalLogArgs {
+                session_id: "missing".into(),
+            })
+            .await
+            .unwrap_err();
+        assert!(missing.message.contains("見つかりません"));
+
+        let disconnected = service
+            .start_terminal_log(StartTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap_err();
+        assert!(disconnected.message.contains("切断済み"));
+    }
+
+    #[tokio::test]
+    async fn service_start_terminal_log_reports_already_active() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session("s1".into(), TerminalProtocol::Telnet, "host:23".into())
+            .await;
+        let service = McpTerminalService::new(runtime);
+
+        let first = service
+            .start_terminal_log(StartTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+        let second = service
+            .start_terminal_log(StartTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(second["started"], false);
+        assert_eq!(second["already_active"], true);
+        assert_eq!(second["file_path"], first["file_path"]);
+    }
+
+    #[tokio::test]
+    async fn service_stop_terminal_log_stops_active_and_reports_inactive() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+            .await;
+        let service = McpTerminalService::new(runtime);
+
+        let inactive = service
+            .stop_terminal_log(StopTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(inactive["stopped"], false);
+        assert_eq!(inactive["already_inactive"], true);
+
+        service
+            .start_terminal_log(StartTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+        service.runtime.terminals.mark_disconnected("s1").await;
+
+        let stopped = service
+            .stop_terminal_log(StopTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(stopped["stopped"], true);
+        assert_eq!(stopped["already_inactive"], false);
+
+        let inactive_again = service
+            .stop_terminal_log(StopTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(inactive_again["already_inactive"], true);
+    }
+
+    #[tokio::test]
     async fn service_rejects_empty_run_terminal_command() {
         let runtime = test_runtime();
         runtime
@@ -2235,6 +2662,8 @@ mod tests {
                 "read_terminal_output_delta",
                 "run_terminal_command",
                 "send_terminal_input",
+                "start_terminal_log",
+                "stop_terminal_log",
                 "wait_terminal_output",
             ]
         );
@@ -2258,6 +2687,28 @@ mod tests {
         let timeout_schema = &wait_tool["inputSchema"]["properties"]["timeout_ms"];
         assert_eq!(timeout_schema["minimum"], 1);
         assert_eq!(timeout_schema["maximum"], MAX_WAIT_TIMEOUT_MS);
+
+        let start_log_tool = tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "start_terminal_log")
+            .unwrap();
+        let start_log_properties = start_log_tool["inputSchema"]["properties"]
+            .as_object()
+            .unwrap();
+        assert!(start_log_properties.contains_key("session_id"));
+
+        let stop_log_tool = tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "stop_terminal_log")
+            .unwrap();
+        let stop_log_properties = stop_log_tool["inputSchema"]["properties"]
+            .as_object()
+            .unwrap();
+        assert!(stop_log_properties.contains_key("session_id"));
 
         let connect_tool = tools["result"]["tools"]
             .as_array()
