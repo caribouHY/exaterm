@@ -132,6 +132,18 @@
   line-height: 1.4;
 }
 
+.connection-dialog__memo {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.connection-dialog__field-help {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .connection-dialog__footer {
   display: flex;
   flex-shrink: 0;

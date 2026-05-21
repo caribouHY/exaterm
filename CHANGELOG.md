@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added plaintext memos for saved SSH/Telnet profiles and exposed non-empty memos through MCP profile listing.
 - Added one-hop SSH jump host support for saved SSH profiles, including UI profile selection, host-key checks, MCP profile connections, and config documentation.
 - Added MCP tools to start and stop manual terminal session logs in ExaTerm's log directory without exposing log file contents through MCP.
 
