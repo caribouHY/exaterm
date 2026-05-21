@@ -206,7 +206,7 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
 
 ## saved_connections
 
-`saved_connections` は保存済み SSH/Telnet 接続プロファイルを表す配列です。プロファイルは接続ダイアログから管理できます。シリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズ、その他の認証情報はこのセクションには保存されません。
+`saved_connections` は保存済み SSH/Telnet 接続プロファイルを表す配列です。プロファイルは接続ダイアログから管理できます。シリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズ、その他の認証情報はこのセクションには保存されません。プロファイルのメモは平文で保存され、MCP のプロファイル接続が有効な場合は `list_connection_profiles` で返る可能性があるため、秘密情報は入力しないでください。
 
 | パラメータ         | 型                 | 説明                                                                                                                                                                |
 | ------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -220,6 +220,7 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
 | `auth_method`      | string または null | SSH 認証方式です。指定できる値は `"password"` と `"public_key"` です。未設定の場合は `"password"` として扱われます。Telnet プロファイルでは使用しません。           |
 | `private_key_path` | string または null | SSH の `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                        |
 | `jump_profile_id`  | string または null | SSH 踏み台プロファイルの ID です。参照先は保存済み SSH プロファイルである必要があります。踏み台は 1 段のみ対応し、多段指定は拒否されます。                          |
+| `memo`             | string または null | 任意の平文メモです。機種名、用途、作業時の注意などを記録できます。空でないメモは MCP のプロファイル一覧で返る場合があります。                                       |
 
 例:
 
@@ -234,7 +235,8 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
   "private_key_path": "C:\\Users\\user\\.ssh\\id_ed25519",
   "jump_profile_id": "bastion",
   "encoding": "shift-jis",
-  "terminal_mode": "cisco_ios"
+  "terminal_mode": "cisco_ios",
+  "memo": "Cisco ISR branch edge"
 }
 ```
 
@@ -249,7 +251,8 @@ Telnet の例:
   "host": "192.168.1.20",
   "port": 23,
   "encoding": "euc-jp",
-  "terminal_mode": "cisco_ios"
+  "terminal_mode": "cisco_ios",
+  "memo": "Legacy access switch"
 }
 ```
 

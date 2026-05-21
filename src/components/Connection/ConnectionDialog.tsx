@@ -71,6 +71,11 @@ const normalizeSshAuthMethod = (authMethod: string | null | undefined): SshAuthM
   return authMethod === "public_key" ? "public_key" : "password";
 };
 
+const normalizeProfileMemo = (memo: string): string | null => {
+  const trimmed = memo.trim();
+  return trimmed ? trimmed : null;
+};
+
 export default function ConnectionDialog({
   startupRequest,
   onStartupRequestHandled,
@@ -102,12 +107,14 @@ export default function ConnectionDialog({
   const [jumpCredential, setJumpCredential] = useState("");
   const [encoding, setEncoding] = useState<Encoding>("utf-8");
   const [sshTerminalMode, setSshTerminalMode] = useState<TerminalMode>(DEFAULT_TERMINAL_MODE);
+  const [sshMemo, setSshMemo] = useState("");
 
   // Telnet fields
   const [telnetHost, setTelnetHost] = useState("192.168.1.1");
   const [telnetPort, setTelnetPort] = useState("23");
   const [telnetEncoding, setTelnetEncoding] = useState<Encoding>("utf-8");
   const [telnetTerminalMode, setTelnetTerminalMode] = useState<TerminalMode>(DEFAULT_TERMINAL_MODE);
+  const [telnetMemo, setTelnetMemo] = useState("");
 
   // Serial fields
   const [ports, setPorts] = useState<PortInfo[]>([]);
@@ -187,6 +194,7 @@ export default function ConnectionDialog({
     setJumpCredential("");
     setEncoding(normalizeEncoding(profile.encoding));
     setSshTerminalMode(normalizeTerminalMode(profile.terminal_mode));
+    setSshMemo(profile.memo ?? "");
   }, []);
 
   const applyTelnetProfile = useCallback(
@@ -197,6 +205,7 @@ export default function ConnectionDialog({
       setTelnetPort(String(overridePort ?? profile.port ?? 23));
       setTelnetEncoding(normalizeEncoding(profile.encoding));
       setTelnetTerminalMode(normalizeTerminalMode(profile.terminal_mode));
+      setTelnetMemo(profile.memo ?? "");
     },
     []
   );
@@ -211,6 +220,7 @@ export default function ConnectionDialog({
       setJumpCredential("");
       setEncoding("utf-8");
       setSshTerminalMode(DEFAULT_TERMINAL_MODE);
+      setSshMemo("");
       return;
     }
 
@@ -226,6 +236,7 @@ export default function ConnectionDialog({
       setTelnetProfileName("");
       setTelnetEncoding("utf-8");
       setTelnetTerminalMode(DEFAULT_TERMINAL_MODE);
+      setTelnetMemo("");
       return;
     }
 
@@ -264,6 +275,7 @@ export default function ConnectionDialog({
         jump_profile_id: jumpProfileId || null,
         encoding,
         terminal_mode: sshTerminalMode,
+        memo: normalizeProfileMemo(sshMemo),
       };
       const existingConnections = loaded.saved_connections ?? [];
       const duplicateProfile = existingConnections.some(
@@ -319,6 +331,7 @@ export default function ConnectionDialog({
         port: parsedTelnetPort,
         encoding: telnetEncoding,
         terminal_mode: telnetTerminalMode,
+        memo: normalizeProfileMemo(telnetMemo),
       };
       const existingConnections = loaded.saved_connections ?? [];
       const duplicateProfile = existingConnections.some(
@@ -378,9 +391,11 @@ export default function ConnectionDialog({
         setJumpProfileId("");
         setJumpCredential("");
         setSshTerminalMode(DEFAULT_TERMINAL_MODE);
+        setSshMemo("");
       } else {
         setTelnetProfileName("");
         setTelnetTerminalMode(DEFAULT_TERMINAL_MODE);
+        setTelnetMemo("");
       }
     } catch (e: unknown) {
       const message =
@@ -1202,6 +1217,18 @@ export default function ConnectionDialog({
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="label">{t("connection.profile_memo")}</label>
+                <textarea
+                  className="input connection-dialog__memo"
+                  value={sshMemo}
+                  onChange={(e) => setSshMemo(e.target.value)}
+                  placeholder={t("connection.profile_memo_placeholder")}
+                />
+                <div className="connection-dialog__field-help">
+                  {t("connection.profile_memo_mcp_notice")}
+                </div>
+              </div>
               <div className="connection-dialog__profile-actions">
                 <button className="btn btn-ghost btn-sm" onClick={handleSaveSshProfile}>
                   {selectedProfileIds.ssh
@@ -1297,6 +1324,18 @@ export default function ConnectionDialog({
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="label">{t("connection.profile_memo")}</label>
+                <textarea
+                  className="input connection-dialog__memo"
+                  value={telnetMemo}
+                  onChange={(e) => setTelnetMemo(e.target.value)}
+                  placeholder={t("connection.profile_memo_placeholder")}
+                />
+                <div className="connection-dialog__field-help">
+                  {t("connection.profile_memo_mcp_notice")}
+                </div>
               </div>
               <div className="connection-dialog__profile-actions">
                 <button className="btn btn-ghost btn-sm" onClick={handleSaveTelnetProfile}>

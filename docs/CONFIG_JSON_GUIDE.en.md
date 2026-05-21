@@ -206,7 +206,7 @@ Internal SSH extension markers, such as strict key exchange and extension info m
 
 ## saved_connections
 
-`saved_connections` is an array of saved SSH and Telnet connection profiles. Profiles can be managed from the connection dialog. Serial profiles are not currently supported. Passwords, private key contents, key passphrases, and other credentials are not stored in this section.
+`saved_connections` is an array of saved SSH and Telnet connection profiles. Profiles can be managed from the connection dialog. Serial profiles are not currently supported. Passwords, private key contents, key passphrases, and other credentials are not stored in this section. Profile memos are stored as plaintext and may be returned by `list_connection_profiles` when MCP profile connections are enabled, so do not put secrets in them.
 
 | Parameter          | Type           | Description                                                                                                                                            |
 | ------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -220,6 +220,7 @@ Internal SSH extension markers, such as strict key exchange and extension info m
 | `auth_method`      | string or null | SSH authentication method. Supported values are `"password"` and `"public_key"`. Missing values default to `"password"`. Not used for Telnet profiles. |
 | `private_key_path` | string or null | Private key file path used with SSH `"public_key"` authentication, such as an `id_ed25519` file. The file contents and passphrase are not stored.      |
 | `jump_profile_id`  | string or null | SSH jump host profile ID. The referenced profile must be a saved SSH profile. Only one jump host is supported; nested jump hosts are rejected.         |
+| `memo`             | string or null | Optional plaintext profile memo, such as the device model, role, or operational notes. Non-empty memos may be returned by MCP profile listing.         |
 
 Example:
 
@@ -234,7 +235,8 @@ Example:
   "private_key_path": "C:\\Users\\user\\.ssh\\id_ed25519",
   "jump_profile_id": "bastion",
   "encoding": "shift-jis",
-  "terminal_mode": "cisco_ios"
+  "terminal_mode": "cisco_ios",
+  "memo": "Cisco ISR branch edge"
 }
 ```
 
@@ -249,7 +251,8 @@ Telnet example:
   "host": "192.168.1.20",
   "port": 23,
   "encoding": "euc-jp",
-  "terminal_mode": "cisco_ios"
+  "terminal_mode": "cisco_ios",
+  "memo": "Legacy access switch"
 }
 ```
 

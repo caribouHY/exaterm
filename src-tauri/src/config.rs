@@ -198,6 +198,8 @@ pub struct SavedConnection {
     pub private_key_path: Option<String>,
     #[serde(default)]
     pub jump_profile_id: Option<String>,
+    #[serde(default)]
+    pub memo: Option<String>,
 }
 
 impl Default for SavedConnection {
@@ -213,6 +215,7 @@ impl Default for SavedConnection {
             auth_method: None,
             private_key_path: None,
             jump_profile_id: None,
+            memo: None,
         }
     }
 }
@@ -333,6 +336,7 @@ mod tests {
         assert_eq!(cfg.saved_connections[0].auth_method, None);
         assert_eq!(cfg.saved_connections[0].private_key_path, None);
         assert_eq!(cfg.saved_connections[0].jump_profile_id, None);
+        assert_eq!(cfg.saved_connections[0].memo, None);
     }
 
     #[test]
@@ -436,6 +440,25 @@ mod tests {
         assert_eq!(
             cfg.saved_connections[0].jump_profile_id.as_deref(),
             Some("bastion")
+        );
+    }
+
+    #[test]
+    fn saved_connection_preserves_memo() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "saved_connections": [{
+                    "id": "edge-router",
+                    "connection_type": "ssh",
+                    "memo": "Cisco ISR at branch A"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.saved_connections[0].memo.as_deref(),
+            Some("Cisco ISR at branch A")
         );
     }
 }

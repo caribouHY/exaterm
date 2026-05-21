@@ -812,6 +812,7 @@ fn list_connection_profiles_from_config(config: &AppConfig) -> Vec<McpConnection
         .iter()
         .filter_map(|profile| {
             let connection_type = normalize_profile_type(&profile.connection_type);
+            let memo = normalize_profile_string(profile.memo.as_deref());
             match connection_type.as_str() {
                 "ssh" => Some(McpConnectionProfile {
                     id: profile.id.clone(),
@@ -840,6 +841,7 @@ fn list_connection_profiles_from_config(config: &AppConfig) -> Vec<McpConnection
                             .is_some_and(|value| !value.is_empty()),
                     ),
                     jump_profile_id: normalize_profile_string(profile.jump_profile_id.as_deref()),
+                    memo,
                 }),
                 "telnet" => Some(McpConnectionProfile {
                     id: profile.id.clone(),
@@ -854,6 +856,7 @@ fn list_connection_profiles_from_config(config: &AppConfig) -> Vec<McpConnection
                     )),
                     private_key_configured: None,
                     jump_profile_id: None,
+                    memo,
                 }),
                 _ => None,
             }
@@ -1440,6 +1443,8 @@ struct McpConnectionProfile {
     private_key_configured: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     jump_profile_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    memo: Option<String>,
 }
 
 #[cfg(not(test))]
@@ -1928,6 +1933,7 @@ mod tests {
                 encoding: Some("shift-jis".into()),
                 terminal_mode: Some("cisco_ios".into()),
                 jump_profile_id: Some("bastion".into()),
+                memo: Some("Cisco ISR branch edge".into()),
             },
             SavedConnection {
                 id: "legacy".into(),
@@ -1935,6 +1941,7 @@ mod tests {
                 host: Some("192.0.2.20".into()),
                 port: None,
                 encoding: Some("euc-jp".into()),
+                memo: Some("  ".into()),
                 ..SavedConnection::default()
             },
             SavedConnection {
@@ -1950,9 +1957,12 @@ mod tests {
         assert_eq!(profiles[0].id, "dev");
         assert_eq!(profiles[0].private_key_configured, Some(true));
         assert_eq!(profiles[0].jump_profile_id.as_deref(), Some("bastion"));
+        assert_eq!(profiles[0].memo.as_deref(), Some("Cisco ISR branch edge"));
         assert_eq!(profiles[1].id, "legacy");
         assert_eq!(profiles[1].port, 23);
+        assert_eq!(profiles[1].memo, None);
         let serialized = serde_json::to_string(&profiles).unwrap();
+        assert!(serialized.contains("Cisco ISR branch edge"));
         assert!(!serialized.contains("private_key_path"));
         assert!(!serialized.contains("id_ed25519"));
     }
