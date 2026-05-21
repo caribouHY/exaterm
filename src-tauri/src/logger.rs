@@ -86,6 +86,16 @@ fn write_log_index(index_path: &PathBuf, sessions: &[LogSession]) -> Result<(), 
 
 fn upsert_log_session(index_path: &PathBuf, session: LogSession) -> Result<(), String> {
     let mut sessions = read_log_index(index_path)?;
+    if session.log_mode == "manual" {
+        sessions.push(session);
+    } else {
+        upsert_non_manual_log_session(&mut sessions, session);
+    }
+    sort_sessions_desc(&mut sessions);
+    write_log_index(index_path, &sessions)
+}
+
+fn upsert_non_manual_log_session(sessions: &mut Vec<LogSession>, session: LogSession) {
     if let Some(existing) = sessions
         .iter_mut()
         .find(|item| item.session_id == session.session_id && item.log_mode == session.log_mode)
@@ -94,8 +104,6 @@ fn upsert_log_session(index_path: &PathBuf, session: LogSession) -> Result<(), S
     } else {
         sessions.push(session);
     }
-    sort_sessions_desc(&mut sessions);
-    write_log_index(index_path, &sessions)
 }
 
 fn sort_sessions_desc(sessions: &mut [LogSession]) {
@@ -116,6 +124,7 @@ pub struct LogBulkDeleteResult {
 struct ActiveLogKey {
     session_id: String,
     log_mode: String,
+    file_path: String,
 }
 
 enum AutoLogFileDeleteResult {
@@ -128,22 +137,25 @@ fn is_session_active(session: &LogSession, active_keys: &HashSet<ActiveLogKey>) 
     active_keys.contains(&ActiveLogKey {
         session_id: session.session_id.clone(),
         log_mode: session.log_mode.clone(),
+        file_path: session.file_path.clone(),
     })
 }
 
 fn active_log_keys(targets: &HashMap<String, ActiveLogTargets>) -> HashSet<ActiveLogKey> {
     let mut active = HashSet::new();
     for (session_id, targets) in targets {
-        if targets.auto.is_some() {
+        if let Some(session) = &targets.auto {
             active.insert(ActiveLogKey {
                 session_id: session_id.clone(),
                 log_mode: "auto".into(),
+                file_path: session.file_path.clone(),
             });
         }
-        if targets.manual.is_some() {
+        if let Some(session) = &targets.manual {
             active.insert(ActiveLogKey {
                 session_id: session_id.clone(),
                 log_mode: "manual".into(),
+                file_path: session.file_path.clone(),
             });
         }
     }
@@ -664,6 +676,26 @@ mod tests {
     }
 
     #[test]
+    fn upsert_log_session_keeps_multiple_manual_entries_for_same_session() {
+        let path = temp_index_path();
+        let mut first = sample_session("session-1", "2026-04-25T10:00:00+09:00", "host");
+        first.log_mode = "manual".into();
+        first.file_path = "C:\\manual\\first.log".into();
+        let mut second = sample_session("session-1", "2026-04-25T11:00:00+09:00", "host");
+        second.log_mode = "manual".into();
+        second.file_path = "C:\\manual\\second.log".into();
+
+        upsert_log_session(&path, first).expect("first manual upsert should write");
+        upsert_log_session(&path, second).expect("second manual upsert should append");
+        let loaded = read_log_index(&path).expect("index should read");
+
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].file_path, "C:\\manual\\second.log");
+        assert_eq!(loaded[1].file_path, "C:\\manual\\first.log");
+        cleanup(&path);
+    }
+
+    #[test]
     fn append_to_log_sessions_writes_to_all_targets() {
         let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).expect("temp dir should be created");
@@ -999,10 +1031,12 @@ mod tests {
             ActiveLogKey {
                 session_id: "active".into(),
                 log_mode: "auto".into(),
+                file_path: auto_path.to_string_lossy().to_string(),
             },
             ActiveLogKey {
                 session_id: "active".into(),
                 log_mode: "manual".into(),
+                file_path: manual_path.to_string_lossy().to_string(),
             },
         ]);
 
@@ -1016,6 +1050,46 @@ mod tests {
         assert_eq!(loaded.len(), 2);
         assert!(auto_path.exists());
         assert!(manual_path.exists());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn bulk_delete_removes_old_manual_history_for_same_active_session() {
+        let path = temp_index_path();
+        let log_dir = path.parent().unwrap().to_path_buf();
+        fs::create_dir_all(&log_dir).expect("log dir should be created");
+        let old_path = log_dir.join("old_manual.log");
+        let active_path = log_dir.join("active_manual.log");
+        fs::write(&old_path, "old").expect("old manual file should be created");
+        fs::write(&active_path, "active").expect("active manual file should be created");
+        let old_manual = LogSession {
+            file_path: old_path.to_string_lossy().to_string(),
+            log_mode: "manual".into(),
+            ..sample_session("active", "2026-04-25T10:00:00+09:00", "host")
+        };
+        let active_manual = LogSession {
+            file_path: active_path.to_string_lossy().to_string(),
+            log_mode: "manual".into(),
+            ..sample_session("active", "2026-04-25T11:00:00+09:00", "host")
+        };
+        let active = HashSet::from([ActiveLogKey {
+            session_id: "active".into(),
+            log_mode: "manual".into(),
+            file_path: active_path.to_string_lossy().to_string(),
+        }]);
+
+        write_log_index(&path, &[old_manual, active_manual]).expect("index should write");
+        let result = bulk_delete_log_sessions(&path, &log_dir, &active, false)
+            .expect("bulk delete should succeed");
+        let loaded = read_log_index(&path).expect("index should read");
+
+        assert_eq!(result.removed_history_count, 1);
+        assert_eq!(result.skipped_active_count, 1);
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(
+            loaded[0].file_path,
+            active_path.to_string_lossy().to_string()
+        );
         cleanup(&path);
     }
 
