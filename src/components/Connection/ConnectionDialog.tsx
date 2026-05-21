@@ -52,6 +52,7 @@ interface SshCredentialPrompt {
   phase: "jump" | "target";
   host: string;
   port: number;
+  targetPort?: number;
   username: string;
   authMethod: SshAuthMethod;
   privateKeyPath: string;
@@ -423,12 +424,14 @@ export default function ConnectionDialog({
     sshPort: number,
     promptUsername: string,
     promptAuthMethod: SshAuthMethod,
-    promptPrivateKeyPath: string
+    promptPrivateKeyPath: string,
+    targetPort?: number
   ) => {
     setCredentialPrompt({
       phase,
       host: promptHost,
       port: sshPort,
+      targetPort,
       username: promptUsername,
       authMethod: promptAuthMethod,
       privateKeyPath: promptPrivateKeyPath,
@@ -464,6 +467,7 @@ export default function ConnectionDialog({
       jumpKeyPassphrase: jumpAuthMethod === "public_key" ? currentJumpCredential : "",
       cols: 120,
       rows: 30,
+      encoding,
     });
     if (autoLog) {
       await invoke("logger_start_auto", {
@@ -541,7 +545,8 @@ export default function ConnectionDialog({
         jumpPort,
         jumpUsername,
         jumpAuthMethod,
-        jumpPrivateKeyPath
+        jumpPrivateKeyPath,
+        sshPort
       );
       connectingRef.current = false;
       setConnecting(false);
@@ -558,7 +563,8 @@ export default function ConnectionDialog({
         jumpPort,
         jumpUsername,
         jumpAuthMethod,
-        jumpPrivateKeyPath
+        jumpPrivateKeyPath,
+        sshPort
       );
       connectingRef.current = false;
       setConnecting(false);
@@ -579,7 +585,10 @@ export default function ConnectionDialog({
       if (credentialPrompt.phase === "jump") {
         setCredentialPrompt(null);
         setJumpCredential(credentialPrompt.value);
-        await probeTargetHostKey(credentialPrompt.port, credentialPrompt.value);
+        await probeTargetHostKey(
+          credentialPrompt.targetPort ?? credentialPrompt.port,
+          credentialPrompt.value
+        );
         return;
       }
 
@@ -694,6 +703,7 @@ export default function ConnectionDialog({
           port: parsedTelnetPort,
           cols: 120,
           rows: 30,
+          encoding: telnetEncoding,
         });
         if (autoLog) {
           await invoke("logger_start_auto", {
@@ -722,6 +732,7 @@ export default function ConnectionDialog({
           stop_bits: Number.parseInt(stopBits, 10),
           flow_control: "none",
         },
+        encoding: "utf-8",
       });
       if (autoLog) {
         await invoke("logger_start_auto", {

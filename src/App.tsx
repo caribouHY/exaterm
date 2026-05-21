@@ -555,6 +555,7 @@ export default function App() {
 
   const handleEncodingChange = useCallback((id: string, encoding: Encoding) => {
     setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, encoding } : t)));
+    invoke("terminal_encoding_set", { sessionId: id, encoding }).catch(console.error);
   }, []);
 
   const handleTerminalModeChange = useCallback((id: string, terminalMode: TerminalMode) => {

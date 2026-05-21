@@ -66,7 +66,12 @@ interface LineRange {
 }
 
 interface TerminalOutputSnapshot {
+  session_id: string;
   output: string;
+  truncated: boolean;
+  available_chars: number;
+  start_cursor: number;
+  cursor: number;
 }
 
 const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
@@ -693,9 +698,19 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       }
     };
 
+    const maxInitialDeltaDrains = 5;
+    let bufferedInitialOutput: string[] = [];
+    let bufferedInitialOutputSeen = false;
+    let initialOutputSyncComplete = false;
+
     const handleData = (event: { payload: number[] }) => {
       const data = new Uint8Array(event.payload);
       const text = decoderRef.current.decode(data, { stream: true });
+      if (!initialOutputSyncComplete) {
+        bufferedInitialOutput.push(text);
+        bufferedInitialOutputSeen = true;
+        return;
+      }
       writeTerminalText(text);
     };
 
@@ -703,20 +718,52 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     let unlistenData: Promise<() => void> | null = null;
     let unlistenError: Promise<() => void> | null = null;
 
-    invoke<TerminalOutputSnapshot>("terminal_output_snapshot_get", {
-      sessionId,
-      maxChars: terminalConfig?.scrollback ?? 20000,
-    })
-      .then((snapshot) => {
-        if (!disposed) {
+    const dataListener = listen<number[]>(`${eventPrefix}/${sessionId}`, handleData);
+    const errorListener = listen<number[]>(`${errorPrefix}/${sessionId}`, handleData);
+    unlistenData = dataListener;
+    unlistenError = errorListener;
+
+    Promise.all([dataListener, errorListener])
+      .then(async () => {
+        if (disposed) return;
+        try {
+          const snapshot = await invoke<TerminalOutputSnapshot>("terminal_output_snapshot_get", {
+            sessionId,
+            maxChars: terminalConfig?.scrollback ?? 20000,
+          });
+          if (disposed) return;
+
           writeTerminalText(snapshot.output);
+          let cursor = snapshot.cursor;
+          for (let attempt = 0; attempt < maxInitialDeltaDrains; attempt += 1) {
+            bufferedInitialOutputSeen = false;
+            const delta = await invoke<TerminalOutputSnapshot>("terminal_output_delta_get", {
+              sessionId,
+              cursor,
+              maxChars: terminalConfig?.scrollback ?? 20000,
+            });
+            if (disposed) return;
+
+            writeTerminalText(delta.output);
+            cursor = delta.cursor;
+
+            if (!bufferedInitialOutputSeen) break;
+          }
+        } catch {
+          if (!disposed) {
+            bufferedInitialOutput.forEach((text) => writeTerminalText(text));
+          }
+        } finally {
+          bufferedInitialOutput = [];
+          initialOutputSyncComplete = true;
         }
       })
-      .catch(() => {})
-      .finally(() => {
-        if (disposed) return;
-        unlistenData = listen<number[]>(`${eventPrefix}/${sessionId}`, handleData);
-        unlistenError = listen<number[]>(`${errorPrefix}/${sessionId}`, handleData);
+      .catch(() => {
+        if (!disposed) {
+          bufferedInitialOutput.forEach((text) => writeTerminalText(text));
+          bufferedInitialOutput = [];
+          initialOutputSyncComplete = true;
+        }
       });
 
     // Resize handling

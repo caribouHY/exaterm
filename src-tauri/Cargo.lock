@@ -1405,6 +1405,7 @@ dependencies = [
  "axum",
  "chrono",
  "dirs",
+ "encoding_rs",
  "env_logger",
  "futures",
  "keyring",

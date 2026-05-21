@@ -137,6 +137,8 @@ pub fn run() {
             logger::logger_get_log_dir,
             mcp::mcp_credential_submit,
             mcp::mcp_log_control_submit,
+            terminal_control::terminal_encoding_set,
+            terminal_control::terminal_output_delta_get,
             terminal_control::terminal_output_snapshot_get,
             // Config
             config::config_load,
