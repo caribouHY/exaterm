@@ -35,3 +35,4 @@ env_logger = "0.11"
 serialport = "4"
 thiserror = "2"
 keyring = { version = "3", features = ["windows-native"] }
+encoding_rs = "0.8"

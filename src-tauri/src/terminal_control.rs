@@ -1,3 +1,4 @@
+use encoding_rs::{Decoder, Encoding, EUC_JP, SHIFT_JIS, UTF_8};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -26,6 +27,7 @@ pub struct TerminalSessionInfo {
     pub session_id: String,
     pub protocol: TerminalProtocol,
     pub target: String,
+    pub encoding: String,
     pub status: TerminalStatus,
 }
 
@@ -39,11 +41,11 @@ pub struct TerminalOutputSnapshot {
     pub cursor: usize,
 }
 
-#[derive(Debug, Clone)]
 struct TerminalSession {
     info: TerminalSessionInfo,
     output: String,
     dropped_chars: usize,
+    decoder: Decoder,
 }
 
 #[derive(Clone)]
@@ -71,38 +73,65 @@ impl TerminalControlState {
         }
     }
 
+    #[cfg(test)]
     pub async fn register_session(
         &self,
         session_id: String,
         protocol: TerminalProtocol,
         target: String,
     ) {
+        self.register_session_with_encoding(session_id, protocol, target, None)
+            .await;
+    }
+
+    pub async fn register_session_with_encoding(
+        &self,
+        session_id: String,
+        protocol: TerminalProtocol,
+        target: String,
+        encoding: Option<String>,
+    ) {
+        let (encoding_impl, encoding) = terminal_encoding(encoding.as_deref());
         let info = TerminalSessionInfo {
             session_id: session_id.clone(),
             protocol,
             target,
+            encoding: encoding.to_string(),
             status: TerminalStatus::Connected,
         };
         let session = TerminalSession {
             info,
             output: String::new(),
             dropped_chars: 0,
+            decoder: encoding_impl.new_decoder(),
         };
 
         self.sessions.lock().await.insert(session_id, session);
     }
 
     pub async fn append_output(&self, session_id: &str, data: &[u8]) {
-        let text = String::from_utf8_lossy(data);
         let mut sessions = self.sessions.lock().await;
         let Some(session) = sessions.get_mut(session_id) else {
             return;
         };
 
+        let text = decode_output(&mut session.decoder, data);
         session.output.push_str(&text);
         trim_to_recent_chars(session, self.output_limit);
         drop(sessions);
         self.output_notify.notify_waiters();
+    }
+
+    pub async fn set_encoding(&self, session_id: &str, encoding: &str) -> Result<(), String> {
+        let (encoding_impl, encoding) = terminal_encoding(Some(encoding));
+        let mut sessions = self.sessions.lock().await;
+        let session = sessions
+            .get_mut(session_id)
+            .ok_or_else(|| "セッションが見つかりません".to_string())?;
+
+        session.info.encoding = encoding.to_string();
+        session.decoder = encoding_impl.new_decoder();
+        Ok(())
     }
 
     pub async fn mark_disconnected(&self, session_id: &str) {
@@ -209,6 +238,25 @@ impl TerminalControlState {
     }
 }
 
+fn terminal_encoding(value: Option<&str>) -> (&'static Encoding, &'static str) {
+    match value.map(str::trim) {
+        Some("shift-jis") => (SHIFT_JIS, "shift-jis"),
+        Some("euc-jp") => (EUC_JP, "euc-jp"),
+        _ => (UTF_8, "utf-8"),
+    }
+}
+
+fn decode_output(decoder: &mut Decoder, data: &[u8]) -> String {
+    let mut text = String::new();
+    text.reserve(
+        decoder
+            .max_utf8_buffer_length(data.len())
+            .unwrap_or_else(|| data.len().saturating_mul(3).saturating_add(3)),
+    );
+    let _ = decoder.decode_to_string(data, &mut text, false);
+    text
+}
+
 fn trim_to_recent_chars(session: &mut TerminalSession, output_limit: usize) {
     let char_count = session.output.chars().count();
     if char_count <= output_limit {
@@ -237,6 +285,15 @@ fn tail_chars(input: &str, max_chars: usize) -> String {
 
 fn chars_from(input: &str, start: usize) -> String {
     input.chars().skip(start).collect()
+}
+
+#[tauri::command]
+pub async fn terminal_encoding_set(
+    state: tauri::State<'_, TerminalControlState>,
+    session_id: String,
+    encoding: String,
+) -> Result<(), String> {
+    state.set_encoding(&session_id, &encoding).await
 }
 
 #[tauri::command]
@@ -288,6 +345,112 @@ mod tests {
         assert_eq!(snapshot.available_chars, 5);
         assert_eq!(snapshot.start_cursor, 1);
         assert_eq!(snapshot.cursor, 6);
+    }
+
+    #[tokio::test]
+    async fn shift_jis_output_is_decoded_for_snapshots() {
+        let state = TerminalControlState::new();
+        state
+            .register_session_with_encoding(
+                "s1".into(),
+                TerminalProtocol::Ssh,
+                "host:22".into(),
+                Some("shift-jis".into()),
+            )
+            .await;
+
+        state
+            .append_output(
+                "s1",
+                &[0x82, 0xb1, 0x82, 0xf1, 0x82, 0xc9, 0x82, 0xbf, 0x82, 0xcd],
+            )
+            .await;
+
+        let snapshot = state.read_output("s1", 100).await.unwrap();
+        assert_eq!(snapshot.output, "こんにちは");
+        assert_eq!(snapshot.cursor, 5);
+    }
+
+    #[tokio::test]
+    async fn euc_jp_output_is_decoded_for_deltas() {
+        let state = TerminalControlState::new();
+        state
+            .register_session_with_encoding(
+                "s1".into(),
+                TerminalProtocol::Telnet,
+                "host:23".into(),
+                Some("euc-jp".into()),
+            )
+            .await;
+
+        state.append_output("s1", b"abc").await;
+        state
+            .append_output(
+                "s1",
+                &[0xa4, 0xb3, 0xa4, 0xf3, 0xa4, 0xcb, 0xa4, 0xc1, 0xa4, 0xcf],
+            )
+            .await;
+
+        let snapshot = state.read_output_delta("s1", 3, 100).await.unwrap();
+        assert_eq!(snapshot.output, "こんにちは");
+        assert_eq!(snapshot.start_cursor, 3);
+        assert_eq!(snapshot.cursor, 8);
+    }
+
+    #[tokio::test]
+    async fn split_multibyte_output_is_decoded_across_appends() {
+        let state = TerminalControlState::new();
+        state
+            .register_session_with_encoding(
+                "s1".into(),
+                TerminalProtocol::Ssh,
+                "host:22".into(),
+                Some("shift-jis".into()),
+            )
+            .await;
+
+        state.append_output("s1", &[0x82]).await;
+        state.append_output("s1", &[0xb1]).await;
+
+        let snapshot = state.read_output("s1", 100).await.unwrap();
+        assert_eq!(snapshot.output, "こ");
+        assert_eq!(snapshot.cursor, 1);
+    }
+
+    #[tokio::test]
+    async fn set_encoding_affects_future_output() {
+        let state = TerminalControlState::new();
+        state
+            .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+            .await;
+        state.append_output("s1", b"abc").await;
+        state.set_encoding("s1", "shift-jis").await.unwrap();
+        state.append_output("s1", &[0x82, 0xb1]).await;
+
+        let snapshot = state.read_output("s1", 100).await.unwrap();
+        assert_eq!(snapshot.output, "abcこ");
+        assert_eq!(
+            state.session_info("s1").await.unwrap().encoding,
+            "shift-jis"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_encoding_falls_back_to_utf8() {
+        let state = TerminalControlState::new();
+        state
+            .register_session_with_encoding(
+                "s1".into(),
+                TerminalProtocol::Ssh,
+                "host:22".into(),
+                Some("unknown".into()),
+            )
+            .await;
+        state.append_output("s1", "こんにちは".as_bytes()).await;
+
+        let snapshot = state.read_output("s1", 100).await.unwrap();
+        assert_eq!(snapshot.output, "こんにちは");
+        assert_eq!(state.session_info("s1").await.unwrap().encoding, "utf-8");
     }
 
     #[tokio::test]

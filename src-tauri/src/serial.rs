@@ -162,8 +162,18 @@ pub async fn serial_connect(
     logger: tauri::State<'_, LoggerState>,
     port: String,
     config: SerialConfig,
+    encoding: Option<String>,
 ) -> Result<String, String> {
-    connect(&app, &state, &terminals, Some(&logger), port, config).await
+    connect(
+        &app,
+        &state,
+        &terminals,
+        Some(&logger),
+        port,
+        config,
+        encoding,
+    )
+    .await
 }
 
 pub async fn connect(
@@ -173,6 +183,7 @@ pub async fn connect(
     logger_state: Option<&LoggerState>,
     port: String,
     config: SerialConfig,
+    encoding: Option<String>,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let running = Arc::new(AtomicBool::new(true));
@@ -202,7 +213,12 @@ pub async fn connect(
         .insert(session_id.clone(), session);
 
     terminals
-        .register_session(session_id.clone(), TerminalProtocol::Serial, port)
+        .register_session_with_encoding(
+            session_id.clone(),
+            TerminalProtocol::Serial,
+            port,
+            encoding,
+        )
         .await;
 
     let write_sid = session_id.clone();

@@ -246,6 +246,7 @@ pub async fn telnet_connect(
     port: u16,
     cols: u32,
     rows: u32,
+    encoding: Option<String>,
 ) -> Result<String, String> {
     connect(
         &app,
@@ -256,6 +257,7 @@ pub async fn telnet_connect(
         port,
         cols,
         rows,
+        encoding,
     )
     .await
 }
@@ -269,6 +271,7 @@ pub async fn connect(
     port: u16,
     cols: u32,
     rows: u32,
+    encoding: Option<String>,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let stream = TcpStream::connect((host.as_str(), port))
@@ -365,10 +368,11 @@ pub async fn connect(
     );
 
     terminals
-        .register_session(
+        .register_session_with_encoding(
             session_id.clone(),
             TerminalProtocol::Telnet,
             format!("{}:{}", host, port),
+            encoding,
         )
         .await;
 

@@ -270,6 +270,7 @@ pub struct SshConnectOptions {
     pub jump_key_passphrase: Option<String>,
     pub cols: u32,
     pub rows: u32,
+    pub encoding: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -835,6 +836,7 @@ pub async fn ssh_connect(
     jump_key_passphrase: Option<String>,
     cols: u32,
     rows: u32,
+    encoding: Option<String>,
 ) -> Result<SshConnectResult, String> {
     connect(
         &app,
@@ -854,6 +856,7 @@ pub async fn ssh_connect(
             jump_key_passphrase,
             cols,
             rows,
+            encoding,
         },
     )
     .await
@@ -946,10 +949,11 @@ pub async fn connect(
         .insert(session_id.clone(), Arc::new(Mutex::new(session)));
 
     terminals
-        .register_session(
+        .register_session_with_encoding(
             session_id.clone(),
             TerminalProtocol::Ssh,
             format!("{}:{}", options.host, options.port),
+            options.encoding,
         )
         .await;
 

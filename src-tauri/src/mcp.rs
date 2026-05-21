@@ -1062,6 +1062,7 @@ async fn connect_prepared_profile(
                     jump_key_passphrase,
                     cols: prepared.cols,
                     rows: prepared.rows,
+                    encoding: Some(prepared.encoding.clone()),
                 },
             )
             .await
@@ -1077,6 +1078,7 @@ async fn connect_prepared_profile(
             *port,
             prepared.cols,
             prepared.rows,
+            Some(prepared.encoding.clone()),
         )
         .await
         .map_err(invalid_params)?,
@@ -1206,6 +1208,7 @@ async fn connect_prepared_serial_console(
         runtime.logger.as_ref(),
         prepared.port.clone(),
         prepared.config,
+        Some(prepared.encoding.clone()),
     )
     .await
     .map_err(invalid_params)?;
@@ -2342,6 +2345,7 @@ mod tests {
         let result = service.list_terminal_sessions().await.unwrap();
         assert_eq!(result["sessions"][0]["session_id"], "s1");
         assert_eq!(result["sessions"][0]["protocol"], "ssh");
+        assert_eq!(result["sessions"][0]["encoding"], "utf-8");
         assert_eq!(result["sessions"][0]["status"], "connected");
     }
 
@@ -2397,6 +2401,38 @@ mod tests {
         assert_eq!(result["output"], "こんにちは");
         assert_eq!(result["start_cursor"], 3);
         assert_eq!(result["cursor"], 8);
+    }
+
+    #[tokio::test]
+    async fn service_reads_non_utf8_terminal_output() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session_with_encoding(
+                "s1".into(),
+                TerminalProtocol::Ssh,
+                "host:22".into(),
+                Some("shift-jis".into()),
+            )
+            .await;
+        runtime
+            .terminals
+            .append_output(
+                "s1",
+                &[0x82, 0xb1, 0x82, 0xf1, 0x82, 0xc9, 0x82, 0xbf, 0x82, 0xcd],
+            )
+            .await;
+        let service = McpTerminalService::new(runtime);
+
+        let result = service
+            .read_terminal_output(ReadTerminalOutputArgs {
+                session_id: "s1".into(),
+                max_chars: Some(100),
+            })
+            .await
+            .unwrap();
+        assert_eq!(result["output"], "こんにちは");
+        assert_eq!(result["cursor"], 5);
     }
 
     #[tokio::test]

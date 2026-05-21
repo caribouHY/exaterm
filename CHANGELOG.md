@@ -14,6 +14,7 @@
 - Fixed SSH jump-host connections so entering jump-host credentials preserves non-default target ports.
 - Fixed serial sessions so read and write errors mark the session disconnected in the UI and MCP state.
 - Fixed session log cleanup so closed SSH, Serial, and Telnet sessions no longer keep stale active log state during log history deletion.
+- Fixed terminal output snapshots and MCP output reads for Shift-JIS and EUC-JP sessions.
 
 ## v0.4.0
 

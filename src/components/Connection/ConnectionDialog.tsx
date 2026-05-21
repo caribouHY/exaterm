@@ -467,6 +467,7 @@ export default function ConnectionDialog({
       jumpKeyPassphrase: jumpAuthMethod === "public_key" ? currentJumpCredential : "",
       cols: 120,
       rows: 30,
+      encoding,
     });
     if (autoLog) {
       await invoke("logger_start_auto", {
@@ -702,6 +703,7 @@ export default function ConnectionDialog({
           port: parsedTelnetPort,
           cols: 120,
           rows: 30,
+          encoding: telnetEncoding,
         });
         if (autoLog) {
           await invoke("logger_start_auto", {
@@ -730,6 +732,7 @@ export default function ConnectionDialog({
           stop_bits: Number.parseInt(stopBits, 10),
           flow_control: "none",
         },
+        encoding: "utf-8",
       });
       if (autoLog) {
         await invoke("logger_start_auto", {
