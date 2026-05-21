@@ -253,6 +253,22 @@ pub async fn terminal_output_snapshot_get(
         .await
 }
 
+#[tauri::command]
+pub async fn terminal_output_delta_get(
+    state: tauri::State<'_, TerminalControlState>,
+    session_id: String,
+    cursor: usize,
+    max_chars: Option<usize>,
+) -> Result<TerminalOutputSnapshot, String> {
+    state
+        .read_output_delta(
+            &session_id,
+            cursor,
+            max_chars.unwrap_or(DEFAULT_SNAPSHOT_MAX_CHARS).max(1),
+        )
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
