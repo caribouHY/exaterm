@@ -490,6 +490,10 @@ pub async fn stop_manual_log(state: &LoggerState, session_id: &str) -> Result<()
     Ok(())
 }
 
+pub async fn clear_session_logs(state: &LoggerState, session_id: &str) {
+    state.sessions.lock().await.remove(session_id);
+}
+
 pub async fn manual_log_session(state: &LoggerState, session_id: &str) -> Option<LogSession> {
     let sessions = state.sessions.lock().await;
     sessions
@@ -833,6 +837,46 @@ mod tests {
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].log_mode, "manual");
         assert_eq!(loaded[0].file_path, file_path);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn clear_session_logs_removes_active_auto_and_manual_targets() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        let index_path = dir.join("index.json");
+        let state = LoggerState::with_paths(dir.clone(), index_path.clone());
+
+        start_auto_log(
+            &state,
+            "session-1".into(),
+            "ssh".into(),
+            "user@host:22".into(),
+        )
+        .await
+        .expect("auto log should start");
+        start_manual_log(
+            &state,
+            "session-1".into(),
+            "ssh".into(),
+            "user@host:22".into(),
+            None,
+            None,
+        )
+        .await
+        .expect("manual log should start");
+
+        clear_session_logs(&state, "session-1").await;
+        let active_keys = {
+            let sessions = state.sessions.lock().await;
+            active_log_keys(&sessions)
+        };
+        let result = bulk_delete_log_sessions(&index_path, &dir, &active_keys, false)
+            .expect("bulk delete should succeed");
+        let loaded = read_log_index(&index_path).expect("index should read");
+
+        assert_eq!(result.skipped_active_count, 0);
+        assert_eq!(result.removed_history_count, 2);
+        assert!(loaded.is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
 

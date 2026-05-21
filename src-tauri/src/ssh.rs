@@ -18,6 +18,7 @@ use crate::ssh_known_hosts::{
     HostKeyCheckResult, HostKeyCheckStatus,
 };
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+use crate::{logger, logger::LoggerState};
 
 /// SSH session state shared across async tasks
 struct SshSession {
@@ -153,6 +154,7 @@ struct SshClientHandler {
     sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
     host_verifier: HostKeyVerifier,
     terminals: TerminalControlState,
+    logger: Option<LoggerState>,
 }
 
 struct ProbeClientHandler {
@@ -242,6 +244,9 @@ impl SshClientHandler {
             }
             self.terminals.mark_disconnected(&self.session_id).await;
             let _ = self.app.emit("ssh://disconnected", &self.session_id);
+        }
+        if let Some(logger_state) = &self.logger {
+            logger::clear_session_logs(logger_state, &self.session_id).await;
         }
     }
 }
@@ -817,6 +822,7 @@ pub async fn ssh_connect(
     app: AppHandle,
     state: tauri::State<'_, SshState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    logger: tauri::State<'_, LoggerState>,
     host: String,
     port: u16,
     username: String,
@@ -834,6 +840,7 @@ pub async fn ssh_connect(
         &app,
         &state,
         &terminals,
+        Some(&logger),
         SshConnectOptions {
             host,
             port,
@@ -856,6 +863,7 @@ pub async fn connect(
     app: &AppHandle,
     state: &SshState,
     terminals: &TerminalControlState,
+    logger_state: Option<&LoggerState>,
     options: SshConnectOptions,
 ) -> Result<SshConnectResult, String> {
     let session_id = Uuid::new_v4().to_string();
@@ -875,6 +883,7 @@ pub async fn connect(
         sessions: state.sessions.clone(),
         host_verifier: host_verifier.clone(),
         terminals: terminals.clone(),
+        logger: logger_state.cloned(),
     };
 
     let (mut handle, jump_handle) = if let Some(jump_profile) = jump_profile {
@@ -1006,6 +1015,7 @@ pub async fn ssh_disconnect(
     app: AppHandle,
     state: tauri::State<'_, SshState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    logger: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<(), String> {
     let session = state.sessions.lock().await.remove(&session_id);
@@ -1024,6 +1034,7 @@ pub async fn ssh_disconnect(
         }
     }
     terminals.mark_disconnected(&session_id).await;
+    logger::clear_session_logs(&logger, &session_id).await;
     let _ = app.emit("ssh://disconnected", &session_id);
     Ok(())
 }

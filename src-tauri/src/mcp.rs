@@ -1048,6 +1048,7 @@ async fn connect_prepared_profile(
                 app,
                 &runtime.ssh,
                 &runtime.terminals,
+                runtime.logger.as_ref(),
                 ssh::SshConnectOptions {
                     host: host.clone(),
                     port: *port,
@@ -1071,6 +1072,7 @@ async fn connect_prepared_profile(
             app,
             &runtime.telnet,
             &runtime.terminals,
+            runtime.logger.as_ref(),
             host.clone(),
             *port,
             prepared.cols,
@@ -1201,6 +1203,7 @@ async fn connect_prepared_serial_console(
         app,
         &runtime.serial,
         &runtime.terminals,
+        runtime.logger.as_ref(),
         prepared.port.clone(),
         prepared.config,
     )
