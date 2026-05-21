@@ -117,7 +117,7 @@ export default function LogViewer() {
           </thead>
           <tbody>
             {sessions.map((s) => (
-              <tr key={`${s.session_id}-${s.log_mode}`}>
+              <tr key={`${s.session_id}-${s.log_mode}-${s.started_at}-${s.file_path}`}>
                 <td>
                   <span className={`log-table__type log-table__type--${s.connection_type}`}>
                     {s.connection_type}

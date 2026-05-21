@@ -130,6 +130,8 @@ When MCP is enabled, external clients can call these tools:
 - `wait_terminal_output`: waits until new output is written or a specified substring appears.
 - `send_terminal_input`: sends text to a connected session.
 - `run_terminal_command`: sends a command to a connected session, waits for output, and returns the output delta.
+- `start_terminal_log`: starts a manual plaintext log for a connected session. The log is saved under `%AppData%\ExaTerm\logs`, and the result returns the created file path.
+- `stop_terminal_log`: stops a manual plaintext log for a session after ExaTerm flushes pending displayed output to the log.
 
 When `mcp.connect_enabled` is also `true`, external clients can call these additional tools:
 
@@ -144,7 +146,7 @@ Output-reading tools return `start_cursor`, `cursor`, and `truncated`. Pass `cur
 
 MCP clients should call the Streamable HTTP endpoint with a normal `Host` header and an `Accept` header that includes both `application/json` and `text/event-stream`.
 
-The MCP server does not read saved credentials, expose API keys, or read log files directly. New MCP-created SSH/Telnet connections are limited to saved profiles, Serial connections require an explicit available port name, and all new MCP-created connections require `mcp.connect_enabled=true`. SSH connections still enforce the existing known-host checks. If an SSH profile uses `jump_profile_id`, MCP-created connections use the same one-hop jump host flow and request any required jump-host credential in the ExaTerm UI. Terminal output can contain sensitive information, so enable MCP only for trusted local clients.
+The MCP server does not read saved credentials, expose API keys, or read log files directly. MCP clients can explicitly start and stop session logs, but they receive only the log state and file path, not the log contents. New MCP-created SSH/Telnet connections are limited to saved profiles, Serial connections require an explicit available port name, and all new MCP-created connections require `mcp.connect_enabled=true`. SSH connections still enforce the existing known-host checks. If an SSH profile uses `jump_profile_id`, MCP-created connections use the same one-hop jump host flow and request any required jump-host credential in the ExaTerm UI. Terminal output and log files can contain sensitive information, so enable MCP and MCP-triggered logging only for trusted local clients.
 
 ## terminal
 

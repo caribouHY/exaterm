@@ -5,6 +5,11 @@
 ### Added
 
 - Added one-hop SSH jump host support for saved SSH profiles, including UI profile selection, host-key checks, MCP profile connections, and config documentation.
+- Added MCP tools to start and stop manual terminal session logs in ExaTerm's log directory without exposing log file contents through MCP.
+
+### Fixed
+
+- Fixed manual log history so repeated start/stop cycles in the same terminal session keep each log entry instead of replacing earlier entries.
 
 ## v0.4.0
 
