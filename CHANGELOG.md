@@ -11,6 +11,7 @@
 ### Fixed
 
 - Fixed manual log history so repeated start/stop cycles in the same terminal session keep each log entry instead of replacing earlier entries.
+- Fixed SSH jump-host connections so entering jump-host credentials preserves non-default target ports.
 
 ## v0.4.0
 
