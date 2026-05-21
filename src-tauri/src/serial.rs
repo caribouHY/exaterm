@@ -192,6 +192,10 @@ pub async fn connect(
         .await
         .insert(session_id.clone(), session);
 
+    terminals
+        .register_session(session_id.clone(), TerminalProtocol::Serial, port)
+        .await;
+
     let write_sid = session_id.clone();
     let write_app = app.clone();
     let write_sessions = state.sessions.clone();
@@ -270,10 +274,6 @@ pub async fn connect(
             }
         }
     });
-
-    terminals
-        .register_session(session_id.clone(), TerminalProtocol::Serial, port)
-        .await;
 
     let _ = app.emit("serial://connected", &session_id);
     Ok(session_id)
