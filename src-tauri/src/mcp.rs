@@ -28,7 +28,6 @@ use tokio::time;
 use uuid::Uuid;
 
 use crate::config::{self, AppConfig, McpConfig, SavedConnection};
-#[cfg(not(test))]
 use crate::logger::{self, LoggerState};
 use crate::serial::{self, SerialState};
 use crate::ssh::{self, SshState};
@@ -50,6 +49,8 @@ const DEFAULT_SERIAL_DATA_BITS: u8 = 8;
 const DEFAULT_SERIAL_STOP_BITS: u8 = 1;
 #[cfg(not(test))]
 const CREDENTIAL_REQUEST_TIMEOUT_MS: u64 = 5 * 60 * 1_000;
+#[cfg(not(test))]
+const LOG_CONTROL_REQUEST_TIMEOUT_MS: u64 = 30_000;
 
 #[derive(Clone)]
 pub struct McpRuntime {
@@ -60,8 +61,9 @@ pub struct McpRuntime {
     pub ssh: SshState,
     pub serial: SerialState,
     pub telnet: TelnetState,
-    #[cfg(not(test))]
     pub logger: Option<LoggerState>,
+    #[cfg_attr(test, allow(dead_code))]
+    pub log_control: Option<McpLogControlState>,
     #[cfg(not(test))]
     pub credentials: Option<McpCredentialState>,
 }
@@ -127,6 +129,79 @@ pub async fn mcp_credential_submit(
     credential: Option<String>,
 ) -> Result<(), String> {
     state.submit(request_id, credential).await
+}
+
+#[derive(Clone, Default)]
+pub struct McpLogControlState {
+    pending: Arc<Mutex<HashMap<String, oneshot::Sender<Result<McpLogControlAck, String>>>>>,
+}
+
+impl McpLogControlState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[cfg(not(test))]
+    async fn request(
+        &self,
+        app: &AppHandle,
+        event: &str,
+        payload: McpLogControlRequestPayload,
+    ) -> Result<McpLogControlAck, String> {
+        let request_id = payload.request_id.clone();
+        let (sender, receiver) = oneshot::channel();
+        self.pending.lock().await.insert(request_id.clone(), sender);
+
+        if let Err(error) = app.emit(event, &payload) {
+            self.pending.lock().await.remove(&request_id);
+            return Err(format!("MCPログ制御リクエスト送信エラー: {error}"));
+        }
+
+        match time::timeout(
+            Duration::from_millis(LOG_CONTROL_REQUEST_TIMEOUT_MS),
+            receiver,
+        )
+        .await
+        {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err("MCPログ制御リクエストが完了しませんでした".into()),
+            Err(_) => {
+                self.pending.lock().await.remove(&request_id);
+                Err("MCPログ制御リクエストがタイムアウトしました".into())
+            }
+        }
+    }
+
+    async fn submit(
+        &self,
+        request_id: String,
+        file_path: Option<String>,
+        error: Option<String>,
+    ) -> Result<(), String> {
+        let sender = self
+            .pending
+            .lock()
+            .await
+            .remove(&request_id)
+            .ok_or_else(|| "MCPログ制御リクエストが見つかりません".to_string())?;
+        let result = match error {
+            Some(error) => Err(error),
+            None => Ok(McpLogControlAck { file_path }),
+        };
+        sender
+            .send(result)
+            .map_err(|_| "MCPログ制御リクエストはすでに終了しています".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn mcp_log_control_submit(
+    state: tauri::State<'_, McpLogControlState>,
+    request_id: String,
+    file_path: Option<String>,
+    error: Option<String>,
+) -> Result<(), String> {
+    state.submit(request_id, file_path, error).await
 }
 
 #[derive(Clone)]
@@ -257,6 +332,81 @@ impl McpTerminalService {
         }))
     }
 
+    async fn start_terminal_log(&self, args: StartTerminalLogArgs) -> Result<Value, McpError> {
+        let info = self
+            .runtime
+            .terminals
+            .session_info(&args.session_id)
+            .await
+            .ok_or_else(|| invalid_params("セッションが見つかりません"))?;
+
+        if info.status != TerminalStatus::Connected {
+            return Err(invalid_params("セッションは切断済みです"));
+        }
+
+        let logger_state = self
+            .runtime
+            .logger
+            .as_ref()
+            .ok_or_else(|| internal_error("MCPログ開始に必要なロガー状態がありません"))?;
+        if let Some(session) = logger::manual_log_session(logger_state, &args.session_id).await {
+            return Ok(json!({
+                "session_id": args.session_id,
+                "started": false,
+                "already_active": true,
+                "file_path": session.file_path,
+                "log_mode": "manual",
+            }));
+        }
+
+        let file_path = request_manual_log_start(&self.runtime, &info)
+            .await
+            .map_err(internal_error)?;
+
+        Ok(json!({
+            "session_id": args.session_id,
+            "started": true,
+            "already_active": false,
+            "file_path": file_path,
+            "log_mode": "manual",
+        }))
+    }
+
+    async fn stop_terminal_log(&self, args: StopTerminalLogArgs) -> Result<Value, McpError> {
+        let info = self
+            .runtime
+            .terminals
+            .session_info(&args.session_id)
+            .await
+            .ok_or_else(|| invalid_params("セッションが見つかりません"))?;
+
+        let logger_state = self
+            .runtime
+            .logger
+            .as_ref()
+            .ok_or_else(|| internal_error("MCPログ停止に必要なロガー状態がありません"))?;
+        if logger::manual_log_session(logger_state, &args.session_id)
+            .await
+            .is_none()
+        {
+            return Ok(json!({
+                "session_id": args.session_id,
+                "stopped": false,
+                "already_inactive": true,
+            }));
+        }
+
+        request_manual_log_stop(&self.runtime, &info)
+            .await
+            .map_err(internal_error)?;
+
+        Ok(json!({
+            "session_id": args.session_id,
+            "stopped": true,
+            "already_inactive": false,
+        }))
+    }
+
     async fn run_terminal_command(&self, args: RunTerminalCommandArgs) -> Result<Value, McpError> {
         if args.command.trim().is_empty() {
             return Err(invalid_params("送信するコマンドが空です"));
@@ -320,6 +470,103 @@ impl McpTerminalService {
             "start_cursor": snapshot.start_cursor,
             "cursor": snapshot.cursor,
         }))
+    }
+}
+
+#[cfg(not(test))]
+async fn request_manual_log_start(
+    runtime: &McpRuntime,
+    info: &crate::terminal_control::TerminalSessionInfo,
+) -> Result<String, String> {
+    let app = runtime
+        .app
+        .as_ref()
+        .ok_or_else(|| "MCPログ開始に必要なアプリハンドルがありません".to_string())?;
+    let log_control = runtime
+        .log_control
+        .as_ref()
+        .ok_or_else(|| "MCPログ開始に必要なログ制御状態がありません".to_string())?;
+    let ack = log_control
+        .request(
+            app,
+            "mcp://log-start-request",
+            McpLogControlRequestPayload {
+                request_id: Uuid::new_v4().to_string(),
+                session_id: info.session_id.clone(),
+                connection_type: terminal_protocol_log_type(info.protocol).into(),
+                target: info.target.clone(),
+            },
+        )
+        .await?;
+    ack.file_path
+        .ok_or_else(|| "MCPログ開始応答にログファイルパスがありません".to_string())
+}
+
+#[cfg(test)]
+async fn request_manual_log_start(
+    runtime: &McpRuntime,
+    info: &crate::terminal_control::TerminalSessionInfo,
+) -> Result<String, String> {
+    let logger_state = runtime
+        .logger
+        .as_ref()
+        .ok_or_else(|| "MCPログ開始に必要なロガー状態がありません".to_string())?;
+    logger::start_manual_log(
+        logger_state,
+        info.session_id.clone(),
+        terminal_protocol_log_type(info.protocol).into(),
+        info.target.clone(),
+        None,
+        None,
+    )
+    .await
+}
+
+#[cfg(not(test))]
+async fn request_manual_log_stop(
+    runtime: &McpRuntime,
+    info: &crate::terminal_control::TerminalSessionInfo,
+) -> Result<(), String> {
+    let app = runtime
+        .app
+        .as_ref()
+        .ok_or_else(|| "MCPログ停止に必要なアプリハンドルがありません".to_string())?;
+    let log_control = runtime
+        .log_control
+        .as_ref()
+        .ok_or_else(|| "MCPログ停止に必要なログ制御状態がありません".to_string())?;
+    log_control
+        .request(
+            app,
+            "mcp://log-stop-request",
+            McpLogControlRequestPayload {
+                request_id: Uuid::new_v4().to_string(),
+                session_id: info.session_id.clone(),
+                connection_type: terminal_protocol_log_type(info.protocol).into(),
+                target: info.target.clone(),
+            },
+        )
+        .await
+        .map(|_| ())
+}
+
+#[cfg(test)]
+async fn request_manual_log_stop(
+    runtime: &McpRuntime,
+    info: &crate::terminal_control::TerminalSessionInfo,
+) -> Result<(), String> {
+    let logger_state = runtime
+        .logger
+        .as_ref()
+        .ok_or_else(|| "MCPログ停止に必要なロガー状態がありません".to_string())?;
+    logger::stop_manual_log(logger_state, &info.session_id).await
+}
+
+fn terminal_protocol_log_type(protocol: TerminalProtocol) -> &'static str {
+    match protocol {
+        TerminalProtocol::Ssh => "ssh",
+        TerminalProtocol::Serial => "serial",
+        TerminalProtocol::Telnet => "telnet",
     }
 }
 
@@ -565,6 +812,7 @@ fn list_connection_profiles_from_config(config: &AppConfig) -> Vec<McpConnection
         .iter()
         .filter_map(|profile| {
             let connection_type = normalize_profile_type(&profile.connection_type);
+            let memo = normalize_profile_string(profile.memo.as_deref());
             match connection_type.as_str() {
                 "ssh" => Some(McpConnectionProfile {
                     id: profile.id.clone(),
@@ -592,6 +840,8 @@ fn list_connection_profiles_from_config(config: &AppConfig) -> Vec<McpConnection
                             .map(str::trim)
                             .is_some_and(|value| !value.is_empty()),
                     ),
+                    jump_profile_id: normalize_profile_string(profile.jump_profile_id.as_deref()),
+                    memo,
                 }),
                 "telnet" => Some(McpConnectionProfile {
                     id: profile.id.clone(),
@@ -605,6 +855,8 @@ fn list_connection_profiles_from_config(config: &AppConfig) -> Vec<McpConnection
                         profile.terminal_mode.as_deref(),
                     )),
                     private_key_configured: None,
+                    jump_profile_id: None,
+                    memo,
                 }),
                 _ => None,
             }
@@ -650,6 +902,11 @@ fn prepare_saved_profile_connection(
                     "保存済みSSHプロファイルに秘密鍵ファイルが設定されていません".to_string(),
                 );
             }
+            let jump_profile = ssh::resolve_jump_profile(
+                config,
+                profile.jump_profile_id.as_deref(),
+                Some(profile.id.as_str()),
+            )?;
             let port = profile.port.unwrap_or(22);
             Ok(PreparedConnection {
                 kind: PreparedConnectionKind::Ssh {
@@ -658,6 +915,7 @@ fn prepare_saved_profile_connection(
                     username: username.clone(),
                     auth_method,
                     private_key_path,
+                    jump_profile,
                 },
                 profile_id: profile.id.clone(),
                 connection_type,
@@ -708,49 +966,89 @@ async fn connect_prepared_profile(
             username,
             auth_method,
             private_key_path,
+            jump_profile,
         } => {
-            ssh::verify_trusted_host_key(host, *port)
-                .await
-                .map_err(invalid_params)?;
-            let credential = if ssh_credential_required(auth_method, private_key_path.as_deref())
-                .map_err(invalid_params)?
-            {
-                let credentials = runtime
-                    .credentials
-                    .as_ref()
-                    .ok_or_else(|| internal_error("MCP認証入力に必要な状態がありません"))?;
-                Some(
-                    credentials
-                        .request_ssh_credential(
-                            app,
-                            McpCredentialRequestPayload {
-                                request_id: String::new(),
-                                profile_id: prepared.profile_id.clone(),
-                                host: host.clone(),
-                                port: *port,
-                                username: username.clone(),
-                                auth_method: auth_method.clone(),
-                                target: prepared.target.clone(),
-                                title: prepared.title.clone(),
-                            },
-                        )
-                        .await
-                        .map_err(invalid_params)?
-                        .ok_or_else(|| invalid_params("MCP認証入力がキャンセルされました"))?,
+            let credentials = runtime
+                .credentials
+                .as_ref()
+                .ok_or_else(|| internal_error("MCP認証入力に必要な状態がありません"))?;
+            let jump_credential = if let Some(jump_profile) = jump_profile {
+                ssh::verify_trusted_host_key(&jump_profile.host, jump_profile.port)
+                    .await
+                    .map_err(invalid_params)?;
+                request_profile_credential(
+                    credentials,
+                    app,
+                    &jump_profile.id,
+                    &jump_profile.host,
+                    jump_profile.port,
+                    &jump_profile.username,
+                    &jump_profile.auth_method,
+                    jump_profile.private_key_path.as_deref(),
+                    &format!(
+                        "{}@{}:{}",
+                        jump_profile.username, jump_profile.host, jump_profile.port
+                    ),
+                    &format!("{}@{}", jump_profile.username, jump_profile.host),
                 )
+                .await?
             } else {
                 None
             };
+
+            if let Some(jump_profile) = jump_profile {
+                let (jump_password, jump_key_passphrase) = if jump_profile.auth_method == "password"
+                {
+                    (jump_credential.clone(), None)
+                } else {
+                    (None, jump_credential.clone())
+                };
+                ssh::verify_trusted_host_key_via_jump(
+                    host,
+                    *port,
+                    jump_profile.clone(),
+                    jump_password,
+                    jump_key_passphrase,
+                )
+                .await
+                .map_err(invalid_params)?;
+            } else {
+                ssh::verify_trusted_host_key(host, *port)
+                    .await
+                    .map_err(invalid_params)?;
+            }
+
+            let credential = request_profile_credential(
+                credentials,
+                app,
+                &prepared.profile_id,
+                host,
+                *port,
+                username,
+                auth_method,
+                private_key_path.as_deref(),
+                &prepared.target,
+                &prepared.title,
+            )
+            .await?;
             let (password, key_passphrase) = if auth_method == "password" {
                 (credential.unwrap_or_default(), None)
             } else {
                 (String::new(), credential)
+            };
+            let (jump_password, jump_key_passphrase) = match jump_profile {
+                Some(jump_profile) if jump_profile.auth_method == "password" => {
+                    (jump_credential, None)
+                }
+                Some(_) => (None, jump_credential),
+                None => (None, None),
             };
 
             ssh::connect(
                 app,
                 &runtime.ssh,
                 &runtime.terminals,
+                runtime.logger.as_ref(),
                 ssh::SshConnectOptions {
                     host: host.clone(),
                     port: *port,
@@ -759,8 +1057,12 @@ async fn connect_prepared_profile(
                     auth_method: Some(auth_method.clone()),
                     private_key_path: private_key_path.clone(),
                     key_passphrase,
+                    jump_profile_id: jump_profile.as_ref().map(|profile| profile.id.clone()),
+                    jump_password,
+                    jump_key_passphrase,
                     cols: prepared.cols,
                     rows: prepared.rows,
+                    encoding: Some(prepared.encoding.clone()),
                 },
             )
             .await
@@ -771,10 +1073,12 @@ async fn connect_prepared_profile(
             app,
             &runtime.telnet,
             &runtime.terminals,
+            runtime.logger.as_ref(),
             host.clone(),
             *port,
             prepared.cols,
             prepared.rows,
+            Some(prepared.encoding.clone()),
         )
         .await
         .map_err(invalid_params)?,
@@ -791,6 +1095,44 @@ async fn connect_prepared_profile(
         prepared.terminal_mode,
     )
     .await
+}
+
+#[cfg(not(test))]
+#[allow(clippy::too_many_arguments)]
+async fn request_profile_credential(
+    credentials: &McpCredentialState,
+    app: &AppHandle,
+    profile_id: &str,
+    host: &str,
+    port: u16,
+    username: &str,
+    auth_method: &str,
+    private_key_path: Option<&str>,
+    target: &str,
+    title: &str,
+) -> Result<Option<String>, McpError> {
+    if !ssh_credential_required(auth_method, private_key_path).map_err(invalid_params)? {
+        return Ok(None);
+    }
+
+    credentials
+        .request_ssh_credential(
+            app,
+            McpCredentialRequestPayload {
+                request_id: String::new(),
+                profile_id: profile_id.to_string(),
+                host: host.to_string(),
+                port,
+                username: username.to_string(),
+                auth_method: auth_method.to_string(),
+                target: target.to_string(),
+                title: title.to_string(),
+            },
+        )
+        .await
+        .map_err(invalid_params)?
+        .map(Some)
+        .ok_or_else(|| invalid_params("MCP認証入力がキャンセルされました"))
 }
 
 #[cfg(not(test))]
@@ -863,8 +1205,10 @@ async fn connect_prepared_serial_console(
         app,
         &runtime.serial,
         &runtime.terminals,
+        runtime.logger.as_ref(),
         prepared.port.clone(),
         prepared.config,
+        Some(prepared.encoding.clone()),
     )
     .await
     .map_err(invalid_params)?;
@@ -1037,6 +1381,34 @@ impl ExaTermMcpServer {
     }
 
     #[tool(
+        name = "start_terminal_log",
+        description = "Start a manual plaintext log for an existing connected ExaTerm terminal session. The log is saved under ExaTerm's log directory and the file path is returned."
+    )]
+    async fn start_terminal_log(
+        &self,
+        Parameters(args): Parameters<StartTerminalLogArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.service
+            .start_terminal_log(args)
+            .await
+            .and_then(structured_tool_result)
+    }
+
+    #[tool(
+        name = "stop_terminal_log",
+        description = "Stop a manual plaintext log for an existing ExaTerm terminal session after flushing pending displayed output."
+    )]
+    async fn stop_terminal_log(
+        &self,
+        Parameters(args): Parameters<StopTerminalLogArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.service
+            .stop_terminal_log(args)
+            .await
+            .and_then(structured_tool_result)
+    }
+
+    #[tool(
         name = "run_terminal_command",
         description = "Send a command to an existing connected ExaTerm terminal session, wait for output, and return the output delta."
     )]
@@ -1075,6 +1447,10 @@ struct McpConnectionProfile {
     terminal_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     private_key_configured: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jump_profile_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    memo: Option<String>,
 }
 
 #[cfg(not(test))]
@@ -1100,6 +1476,20 @@ struct McpCredentialRequestPayload {
     auth_method: String,
     target: String,
     title: String,
+}
+
+#[cfg_attr(test, allow(dead_code))]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct McpLogControlRequestPayload {
+    request_id: String,
+    session_id: String,
+    connection_type: String,
+    target: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct McpLogControlAck {
+    file_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1217,6 +1607,7 @@ enum PreparedConnectionKind {
         username: String,
         auth_method: String,
         private_key_path: Option<String>,
+        jump_profile: Option<ssh::SshJumpProfile>,
     },
     Telnet {
         host: String,
@@ -1276,6 +1667,18 @@ struct SendTerminalInputArgs {
     session_id: String,
     /// Text to send to the terminal. Include newline characters when needed.
     data: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct StartTerminalLogArgs {
+    /// Session ID returned by list_terminal_sessions.
+    session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct StopTerminalLogArgs {
+    /// Session ID returned by list_terminal_sessions.
+    session_id: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1415,14 +1818,19 @@ mod tests {
     use super::*;
     use crate::terminal_control::TerminalProtocol;
     use axum::body::to_bytes;
+    use uuid::Uuid;
 
     fn test_runtime() -> McpRuntime {
+        let log_dir = std::env::temp_dir().join(format!("exaterm_mcp_log_test_{}", Uuid::new_v4()));
+        let index_path = log_dir.join("index.json");
         McpRuntime {
             config: McpConfig::default(),
             terminals: TerminalControlState::new(),
             ssh: SshState::new(),
             serial: SerialState::new(),
             telnet: TelnetState::new(),
+            logger: Some(LoggerState::with_paths(log_dir, index_path)),
+            log_control: Some(McpLogControlState::new()),
         }
     }
 
@@ -1530,6 +1938,8 @@ mod tests {
                 private_key_path: Some("C:\\Users\\me\\.ssh\\id_ed25519".into()),
                 encoding: Some("shift-jis".into()),
                 terminal_mode: Some("cisco_ios".into()),
+                jump_profile_id: Some("bastion".into()),
+                memo: Some("Cisco ISR branch edge".into()),
             },
             SavedConnection {
                 id: "legacy".into(),
@@ -1537,6 +1947,7 @@ mod tests {
                 host: Some("192.0.2.20".into()),
                 port: None,
                 encoding: Some("euc-jp".into()),
+                memo: Some("  ".into()),
                 ..SavedConnection::default()
             },
             SavedConnection {
@@ -1551,9 +1962,13 @@ mod tests {
         assert_eq!(profiles.len(), 2);
         assert_eq!(profiles[0].id, "dev");
         assert_eq!(profiles[0].private_key_configured, Some(true));
+        assert_eq!(profiles[0].jump_profile_id.as_deref(), Some("bastion"));
+        assert_eq!(profiles[0].memo.as_deref(), Some("Cisco ISR branch edge"));
         assert_eq!(profiles[1].id, "legacy");
         assert_eq!(profiles[1].port, 23);
+        assert_eq!(profiles[1].memo, None);
         let serialized = serde_json::to_string(&profiles).unwrap();
+        assert!(serialized.contains("Cisco ISR branch edge"));
         assert!(!serialized.contains("private_key_path"));
         assert!(!serialized.contains("id_ed25519"));
     }
@@ -1669,6 +2084,132 @@ mod tests {
         assert_eq!(prepared.terminal_mode, "cisco_ios");
         assert_eq!(prepared.cols, 80);
         assert_eq!(prepared.rows, 24);
+    }
+
+    #[test]
+    fn prepare_saved_profile_resolves_jump_profile() {
+        let mut config = AppConfig::default();
+        config.saved_connections = vec![
+            SavedConnection {
+                id: "bastion".into(),
+                connection_type: "ssh".into(),
+                host: Some("198.51.100.10".into()),
+                port: Some(2222),
+                username: Some("jump".into()),
+                auth_method: Some("password".into()),
+                ..SavedConnection::default()
+            },
+            SavedConnection {
+                id: "inside".into(),
+                connection_type: "ssh".into(),
+                host: Some("192.0.2.10".into()),
+                username: Some("admin".into()),
+                auth_method: Some("password".into()),
+                jump_profile_id: Some("bastion".into()),
+                ..SavedConnection::default()
+            },
+        ];
+
+        let prepared = prepare_saved_profile_connection(
+            &config,
+            ConnectSavedProfileArgs {
+                profile_id: "inside".into(),
+                cols: None,
+                rows: None,
+            },
+        )
+        .unwrap();
+
+        match prepared.kind {
+            PreparedConnectionKind::Ssh {
+                jump_profile: Some(jump_profile),
+                ..
+            } => {
+                assert_eq!(jump_profile.id, "bastion");
+                assert_eq!(jump_profile.host, "198.51.100.10");
+                assert_eq!(jump_profile.port, 2222);
+                assert_eq!(jump_profile.username, "jump");
+            }
+            other => panic!("expected SSH jump profile, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn prepare_saved_profile_rejects_invalid_jump_profiles() {
+        let mut config = AppConfig::default();
+        config.saved_connections = vec![
+            SavedConnection {
+                id: "inside".into(),
+                connection_type: "ssh".into(),
+                host: Some("192.0.2.10".into()),
+                username: Some("admin".into()),
+                auth_method: Some("password".into()),
+                jump_profile_id: Some("inside".into()),
+                ..SavedConnection::default()
+            },
+            SavedConnection {
+                id: "telnet-hop".into(),
+                connection_type: "telnet".into(),
+                host: Some("198.51.100.20".into()),
+                ..SavedConnection::default()
+            },
+            SavedConnection {
+                id: "nested-hop".into(),
+                connection_type: "ssh".into(),
+                host: Some("198.51.100.30".into()),
+                username: Some("jump".into()),
+                auth_method: Some("password".into()),
+                jump_profile_id: Some("other-hop".into()),
+                ..SavedConnection::default()
+            },
+        ];
+
+        let self_ref = prepare_saved_profile_connection(
+            &config,
+            ConnectSavedProfileArgs {
+                profile_id: "inside".into(),
+                cols: None,
+                rows: None,
+            },
+        )
+        .unwrap_err();
+        assert!(self_ref.contains("自分自身"));
+
+        config.saved_connections[0].jump_profile_id = Some("missing".into());
+        let missing = prepare_saved_profile_connection(
+            &config,
+            ConnectSavedProfileArgs {
+                profile_id: "inside".into(),
+                cols: None,
+                rows: None,
+            },
+        )
+        .unwrap_err();
+        assert!(missing.contains("見つかりません"));
+
+        config.saved_connections[0].jump_profile_id = Some("telnet-hop".into());
+        let telnet = prepare_saved_profile_connection(
+            &config,
+            ConnectSavedProfileArgs {
+                profile_id: "inside".into(),
+                cols: None,
+                rows: None,
+            },
+        )
+        .unwrap_err();
+        assert!(telnet.contains("SSHプロファイル"));
+
+        config.saved_connections[0].jump_profile_id = Some("nested-hop".into());
+        let nested = prepare_saved_profile_connection(
+            &config,
+            ConnectSavedProfileArgs {
+                profile_id: "inside".into(),
+                cols: None,
+                rows: None,
+            },
+        )
+        .unwrap_err();
+        assert!(nested.contains("多段"));
     }
 
     #[test]
@@ -1804,6 +2345,7 @@ mod tests {
         let result = service.list_terminal_sessions().await.unwrap();
         assert_eq!(result["sessions"][0]["session_id"], "s1");
         assert_eq!(result["sessions"][0]["protocol"], "ssh");
+        assert_eq!(result["sessions"][0]["encoding"], "utf-8");
         assert_eq!(result["sessions"][0]["status"], "connected");
     }
 
@@ -1859,6 +2401,38 @@ mod tests {
         assert_eq!(result["output"], "こんにちは");
         assert_eq!(result["start_cursor"], 3);
         assert_eq!(result["cursor"], 8);
+    }
+
+    #[tokio::test]
+    async fn service_reads_non_utf8_terminal_output() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session_with_encoding(
+                "s1".into(),
+                TerminalProtocol::Ssh,
+                "host:22".into(),
+                Some("shift-jis".into()),
+            )
+            .await;
+        runtime
+            .terminals
+            .append_output(
+                "s1",
+                &[0x82, 0xb1, 0x82, 0xf1, 0x82, 0xc9, 0x82, 0xbf, 0x82, 0xcd],
+            )
+            .await;
+        let service = McpTerminalService::new(runtime);
+
+        let result = service
+            .read_terminal_output(ReadTerminalOutputArgs {
+                session_id: "s1".into(),
+                max_chars: Some(100),
+            })
+            .await
+            .unwrap();
+        assert_eq!(result["output"], "こんにちは");
+        assert_eq!(result["cursor"], 5);
     }
 
     #[tokio::test]
@@ -1935,6 +2509,127 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.message.contains("切断済み"));
+    }
+
+    #[tokio::test]
+    async fn service_starts_terminal_log_for_connected_session() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+            .await;
+        let service = McpTerminalService::new(runtime);
+
+        let result = service
+            .start_terminal_log(StartTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result["session_id"], "s1");
+        assert_eq!(result["started"], true);
+        assert_eq!(result["already_active"], false);
+        assert_eq!(result["log_mode"], "manual");
+        assert!(result["file_path"].as_str().unwrap().ends_with(".log"));
+    }
+
+    #[tokio::test]
+    async fn service_start_terminal_log_rejects_missing_and_disconnected_sessions() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session("s1".into(), TerminalProtocol::Serial, "COM1".into())
+            .await;
+        runtime.terminals.mark_disconnected("s1").await;
+        let service = McpTerminalService::new(runtime);
+
+        let missing = service
+            .start_terminal_log(StartTerminalLogArgs {
+                session_id: "missing".into(),
+            })
+            .await
+            .unwrap_err();
+        assert!(missing.message.contains("見つかりません"));
+
+        let disconnected = service
+            .start_terminal_log(StartTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap_err();
+        assert!(disconnected.message.contains("切断済み"));
+    }
+
+    #[tokio::test]
+    async fn service_start_terminal_log_reports_already_active() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session("s1".into(), TerminalProtocol::Telnet, "host:23".into())
+            .await;
+        let service = McpTerminalService::new(runtime);
+
+        let first = service
+            .start_terminal_log(StartTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+        let second = service
+            .start_terminal_log(StartTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(second["started"], false);
+        assert_eq!(second["already_active"], true);
+        assert_eq!(second["file_path"], first["file_path"]);
+    }
+
+    #[tokio::test]
+    async fn service_stop_terminal_log_stops_active_and_reports_inactive() {
+        let runtime = test_runtime();
+        runtime
+            .terminals
+            .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+            .await;
+        let service = McpTerminalService::new(runtime);
+
+        let inactive = service
+            .stop_terminal_log(StopTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(inactive["stopped"], false);
+        assert_eq!(inactive["already_inactive"], true);
+
+        service
+            .start_terminal_log(StartTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+        service.runtime.terminals.mark_disconnected("s1").await;
+
+        let stopped = service
+            .stop_terminal_log(StopTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(stopped["stopped"], true);
+        assert_eq!(stopped["already_inactive"], false);
+
+        let inactive_again = service
+            .stop_terminal_log(StopTerminalLogArgs {
+                session_id: "s1".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(inactive_again["already_inactive"], true);
     }
 
     #[tokio::test]
@@ -2016,6 +2711,8 @@ mod tests {
                 "read_terminal_output_delta",
                 "run_terminal_command",
                 "send_terminal_input",
+                "start_terminal_log",
+                "stop_terminal_log",
                 "wait_terminal_output",
             ]
         );
@@ -2039,6 +2736,28 @@ mod tests {
         let timeout_schema = &wait_tool["inputSchema"]["properties"]["timeout_ms"];
         assert_eq!(timeout_schema["minimum"], 1);
         assert_eq!(timeout_schema["maximum"], MAX_WAIT_TIMEOUT_MS);
+
+        let start_log_tool = tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "start_terminal_log")
+            .unwrap();
+        let start_log_properties = start_log_tool["inputSchema"]["properties"]
+            .as_object()
+            .unwrap();
+        assert!(start_log_properties.contains_key("session_id"));
+
+        let stop_log_tool = tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "stop_terminal_log")
+            .unwrap();
+        let stop_log_properties = stop_log_tool["inputSchema"]["properties"]
+            .as_object()
+            .unwrap();
+        assert!(stop_log_properties.contains_key("session_id"));
 
         let connect_tool = tools["result"]["tools"]
             .as_array()

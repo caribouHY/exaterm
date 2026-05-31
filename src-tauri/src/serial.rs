@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+use crate::{logger, logger::LoggerState};
 
 const SERIAL_IO_TIMEOUT: Duration = Duration::from_millis(5);
 
@@ -86,6 +87,50 @@ fn to_flow_control(f: &str) -> serialport::FlowControl {
     }
 }
 
+async fn remove_session_from_state(
+    terminals: &TerminalControlState,
+    logger_state: Option<&LoggerState>,
+    sessions: &Arc<Mutex<HashMap<String, SerialSession>>>,
+    session_id: &str,
+) -> Option<SerialSession> {
+    let session = {
+        let mut sessions = sessions.lock().await;
+        sessions.remove(session_id)
+    };
+    if let Some(session) = &session {
+        session.running.store(false, Ordering::SeqCst);
+        terminals.mark_disconnected(session_id).await;
+    }
+    if let Some(logger_state) = logger_state {
+        logger::clear_session_logs(logger_state, session_id).await;
+    }
+    session
+}
+
+async fn remove_session(
+    app: &AppHandle,
+    terminals: &TerminalControlState,
+    logger_state: Option<&LoggerState>,
+    sessions: &Arc<Mutex<HashMap<String, SerialSession>>>,
+    session_id: &str,
+) -> Option<SerialSession> {
+    let session = remove_session_from_state(terminals, logger_state, sessions, session_id).await;
+    if session.is_some() {
+        let _ = app.emit("serial://disconnected", session_id);
+    }
+    session
+}
+
+async fn mark_disconnected(
+    app: &AppHandle,
+    terminals: &TerminalControlState,
+    logger_state: Option<&LoggerState>,
+    sessions: &Arc<Mutex<HashMap<String, SerialSession>>>,
+    session_id: &str,
+) {
+    let _ = remove_session(app, terminals, logger_state, sessions, session_id).await;
+}
+
 #[tauri::command]
 pub fn serial_list_ports() -> Result<Vec<PortInfo>, String> {
     let ports =
@@ -114,18 +159,31 @@ pub async fn serial_connect(
     app: AppHandle,
     state: tauri::State<'_, SerialState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    logger: tauri::State<'_, LoggerState>,
     port: String,
     config: SerialConfig,
+    encoding: Option<String>,
 ) -> Result<String, String> {
-    connect(&app, &state, &terminals, port, config).await
+    connect(
+        &app,
+        &state,
+        &terminals,
+        Some(&logger),
+        port,
+        config,
+        encoding,
+    )
+    .await
 }
 
 pub async fn connect(
     app: &AppHandle,
     state: &SerialState,
     terminals: &TerminalControlState,
+    logger_state: Option<&LoggerState>,
     port: String,
     config: SerialConfig,
+    encoding: Option<String>,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let running = Arc::new(AtomicBool::new(true));
@@ -154,12 +212,40 @@ pub async fn connect(
         .await
         .insert(session_id.clone(), session);
 
+    terminals
+        .register_session_with_encoding(
+            session_id.clone(),
+            TerminalProtocol::Serial,
+            port,
+            encoding,
+        )
+        .await;
+
     let write_sid = session_id.clone();
     let write_app = app.clone();
+    let write_sessions = state.sessions.clone();
+    let write_terminals = terminals.clone();
+    let write_logger = logger_state.cloned();
+    let write_runtime = tokio::runtime::Handle::current();
     tokio::task::spawn_blocking(move || {
         while let Ok(data) = write_rx.recv() {
             if let Err(e) = writer_port.write_all(&data) {
                 let _ = write_app.emit(&format!("serial://error/{}", write_sid), e.to_string());
+                let disconnect_app = write_app.clone();
+                let disconnect_sessions = write_sessions.clone();
+                let disconnect_terminals = write_terminals.clone();
+                let disconnect_logger = write_logger.clone();
+                let disconnect_sid = write_sid.clone();
+                write_runtime.spawn(async move {
+                    mark_disconnected(
+                        &disconnect_app,
+                        &disconnect_terminals,
+                        disconnect_logger.as_ref(),
+                        &disconnect_sessions,
+                        &disconnect_sid,
+                    )
+                    .await;
+                });
                 break;
             }
         }
@@ -169,6 +255,10 @@ pub async fn connect(
     let sid = session_id.clone();
     let app_clone = app.clone();
     let run_flag = running.clone();
+    let read_sessions = state.sessions.clone();
+    let read_terminals = terminals.clone();
+    let read_logger = logger_state.cloned();
+    let read_runtime = tokio::runtime::Handle::current();
     let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
     let output_terminals = terminals.clone();
     let output_sid = session_id.clone();
@@ -194,16 +284,27 @@ pub async fn connect(
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
                 Err(e) => {
                     let _ = app_clone.emit(&format!("serial://error/{}", sid), e.to_string());
+                    let disconnect_app = app_clone.clone();
+                    let disconnect_sessions = read_sessions.clone();
+                    let disconnect_terminals = read_terminals.clone();
+                    let disconnect_logger = read_logger.clone();
+                    let disconnect_sid = sid.clone();
+                    read_runtime.spawn(async move {
+                        mark_disconnected(
+                            &disconnect_app,
+                            &disconnect_terminals,
+                            disconnect_logger.as_ref(),
+                            &disconnect_sessions,
+                            &disconnect_sid,
+                        )
+                        .await;
+                    });
                     break;
                 }
                 _ => {}
             }
         }
     });
-
-    terminals
-        .register_session(session_id.clone(), TerminalProtocol::Serial, port)
-        .await;
 
     let _ = app.emit("serial://connected", &session_id);
     Ok(session_id)
@@ -238,13 +339,117 @@ pub async fn serial_disconnect(
     app: AppHandle,
     state: tauri::State<'_, SerialState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    logger: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<(), String> {
-    let mut sessions = state.sessions.lock().await;
-    if let Some(session) = sessions.remove(&session_id) {
-        session.running.store(false, Ordering::SeqCst);
-    }
-    terminals.mark_disconnected(&session_id).await;
-    let _ = app.emit("serial://disconnected", &session_id);
+    let _ = remove_session(
+        &app,
+        &terminals,
+        Some(&logger),
+        &state.sessions,
+        &session_id,
+    )
+    .await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::logger::{manual_log_session, start_auto_log, start_manual_log, LoggerState};
+    use crate::terminal_control::{TerminalControlState, TerminalStatus};
+
+    async fn register_fake_session(
+        state: &SerialState,
+        terminals: &TerminalControlState,
+    ) -> (String, Arc<AtomicBool>) {
+        let session_id = Uuid::new_v4().to_string();
+        let running = Arc::new(AtomicBool::new(true));
+        let (writer, _rx) = mpsc::channel();
+        state.sessions.lock().await.insert(
+            session_id.clone(),
+            SerialSession {
+                running: running.clone(),
+                writer,
+            },
+        );
+        terminals
+            .register_session(session_id.clone(), TerminalProtocol::Serial, "COM1".into())
+            .await;
+
+        (session_id, running)
+    }
+
+    #[tokio::test]
+    async fn remove_session_marks_terminal_disconnected_and_stops_running_flag() {
+        let state = SerialState::new();
+        let terminals = TerminalControlState::new();
+        let (session_id, running) = register_fake_session(&state, &terminals).await;
+
+        let removed =
+            remove_session_from_state(&terminals, None, &state.sessions, &session_id).await;
+
+        assert!(removed.is_some());
+        assert!(!running.load(Ordering::SeqCst));
+        assert!(state.sessions.lock().await.get(&session_id).is_none());
+        assert_eq!(
+            terminals.session_info(&session_id).await.unwrap().status,
+            TerminalStatus::Disconnected
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_session_is_idempotent() {
+        let state = SerialState::new();
+        let terminals = TerminalControlState::new();
+        let (session_id, _running) = register_fake_session(&state, &terminals).await;
+
+        assert!(
+            remove_session_from_state(&terminals, None, &state.sessions, &session_id)
+                .await
+                .is_some()
+        );
+        assert!(
+            remove_session_from_state(&terminals, None, &state.sessions, &session_id)
+                .await
+                .is_none()
+        );
+        assert_eq!(
+            terminals.session_info(&session_id).await.unwrap().status,
+            TerminalStatus::Disconnected
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_session_clears_logger_state() {
+        let state = SerialState::new();
+        let terminals = TerminalControlState::new();
+        let (session_id, _running) = register_fake_session(&state, &terminals).await;
+        let dir =
+            std::env::temp_dir().join(format!("exaterm_serial_logger_test_{}", Uuid::new_v4()));
+        let logger = LoggerState::with_paths(dir.clone(), dir.join("index.json"));
+
+        start_auto_log(&logger, session_id.clone(), "serial".into(), "COM1".into())
+            .await
+            .expect("auto log should start");
+        start_manual_log(
+            &logger,
+            session_id.clone(),
+            "serial".into(),
+            "COM1".into(),
+            None,
+            None,
+        )
+        .await
+        .expect("manual log should start");
+
+        assert!(manual_log_session(&logger, &session_id).await.is_some());
+        let removed =
+            remove_session_from_state(&terminals, Some(&logger), &state.sessions, &session_id)
+                .await;
+
+        assert!(removed.is_some());
+        assert!(manual_log_session(&logger, &session_id).await.is_none());
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

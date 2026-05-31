@@ -12,17 +12,19 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::config::{config_load, SshConfig};
+use crate::config::{config_load, AppConfig, SavedConnection, SshConfig};
 use crate::ssh_known_hosts::{
     endpoint_cache_key, inspect_host_key_with_path, known_hosts_path, write_trusted_host,
     HostKeyCheckResult, HostKeyCheckStatus,
 };
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+use crate::{logger, logger::LoggerState};
 
 /// SSH session state shared across async tasks
 struct SshSession {
     handle: russh::client::Handle<SshClientHandler>,
     channel: russh::Channel<russh::client::Msg>,
+    jump_handle: Option<russh::client::Handle<ProbeClientHandler>>,
 }
 
 #[derive(Clone)]
@@ -152,6 +154,7 @@ struct SshClientHandler {
     sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
     host_verifier: HostKeyVerifier,
     terminals: TerminalControlState,
+    logger: Option<LoggerState>,
 }
 
 struct ProbeClientHandler {
@@ -231,15 +234,19 @@ impl russh::client::Handler for SshClientHandler {
 
 impl SshClientHandler {
     async fn mark_disconnected(&self) {
-        let was_connected = self
-            .sessions
-            .lock()
-            .await
-            .remove(&self.session_id)
-            .is_some();
-        if was_connected {
+        let removed_session = self.sessions.lock().await.remove(&self.session_id);
+        if let Some(session) = removed_session {
+            let session = session.lock().await;
+            if let Some(jump_handle) = &session.jump_handle {
+                let _ = jump_handle
+                    .disconnect(Disconnect::ByApplication, "Target disconnected", "en")
+                    .await;
+            }
             self.terminals.mark_disconnected(&self.session_id).await;
             let _ = self.app.emit("ssh://disconnected", &self.session_id);
+        }
+        if let Some(logger_state) = &self.logger {
+            logger::clear_session_logs(logger_state, &self.session_id).await;
         }
     }
 }
@@ -258,8 +265,22 @@ pub struct SshConnectOptions {
     pub auth_method: Option<String>,
     pub private_key_path: Option<String>,
     pub key_passphrase: Option<String>,
+    pub jump_profile_id: Option<String>,
+    pub jump_password: Option<String>,
+    pub jump_key_passphrase: Option<String>,
     pub cols: u32,
     pub rows: u32,
+    pub encoding: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SshJumpProfile {
+    pub id: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth_method: String,
+    pub private_key_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -304,6 +325,78 @@ fn build_auth_request(
         }
         _ => Err("SSH認証方式が不正です".to_string()),
     }
+}
+
+fn normalize_profile_string(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn normalize_profile_auth_method(value: Option<&str>) -> Result<String, String> {
+    match value.map(str::trim).filter(|value| !value.is_empty()) {
+        None | Some("password") => Ok("password".into()),
+        Some("public_key") => Ok("public_key".into()),
+        Some(_) => Err("SSH認証方式が不正です".into()),
+    }
+}
+
+fn normalize_connection_type(profile: &SavedConnection) -> String {
+    profile.connection_type.trim().to_ascii_lowercase()
+}
+
+pub fn resolve_jump_profile(
+    config: &AppConfig,
+    jump_profile_id: Option<&str>,
+    target_profile_id: Option<&str>,
+) -> Result<Option<SshJumpProfile>, String> {
+    let Some(jump_profile_id) =
+        jump_profile_id.and_then(|value| normalize_profile_string(Some(value)))
+    else {
+        return Ok(None);
+    };
+
+    if target_profile_id
+        .and_then(|value| normalize_profile_string(Some(value)))
+        .as_deref()
+        == Some(jump_profile_id.as_str())
+    {
+        return Err("SSH踏み台プロファイルに自分自身は指定できません".into());
+    }
+
+    let profile = config
+        .saved_connections
+        .iter()
+        .find(|profile| profile.id == jump_profile_id)
+        .ok_or_else(|| "SSH踏み台プロファイルが見つかりません".to_string())?;
+
+    if normalize_connection_type(profile) != "ssh" {
+        return Err("SSH踏み台にはSSHプロファイルのみ指定できます".into());
+    }
+
+    if normalize_profile_string(profile.jump_profile_id.as_deref()).is_some() {
+        return Err("SSH踏み台の多段指定には対応していません".into());
+    }
+
+    let host = normalize_profile_string(profile.host.as_deref())
+        .ok_or_else(|| "SSH踏み台プロファイルにホストが設定されていません".to_string())?;
+    let username = normalize_profile_string(profile.username.as_deref())
+        .ok_or_else(|| "SSH踏み台プロファイルにユーザー名が設定されていません".to_string())?;
+    let auth_method = normalize_profile_auth_method(profile.auth_method.as_deref())?;
+    let private_key_path = normalize_profile_string(profile.private_key_path.as_deref());
+    if auth_method == "public_key" && private_key_path.is_none() {
+        return Err("SSH踏み台プロファイルに秘密鍵ファイルが設定されていません".to_string());
+    }
+
+    Ok(Some(SshJumpProfile {
+        id: profile.id.clone(),
+        host,
+        port: profile.port.unwrap_or(22),
+        username,
+        auth_method,
+        private_key_path,
+    }))
 }
 
 fn expand_percent_env_vars(path: &str) -> String {
@@ -439,7 +532,7 @@ fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<Key
 }
 
 async fn authenticate_ssh(
-    handle: &mut russh::client::Handle<SshClientHandler>,
+    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
     username: &str,
     auth: SshAuthRequest,
 ) -> Result<(), String> {
@@ -548,23 +641,91 @@ fn load_client_config() -> Result<russh::client::Config, String> {
     Ok(build_client_config(&app_config.ssh))
 }
 
+async fn connect_jump_profile(
+    config: Arc<russh::client::Config>,
+    jump_profile: SshJumpProfile,
+    target_host: &str,
+    target_port: u16,
+    jump_password: Option<String>,
+    jump_key_passphrase: Option<String>,
+) -> Result<
+    (
+        russh::client::Handle<ProbeClientHandler>,
+        russh::Channel<russh::client::Msg>,
+    ),
+    String,
+> {
+    let auth = build_auth_request(
+        Some(jump_profile.auth_method.clone()),
+        jump_password.unwrap_or_default(),
+        jump_profile.private_key_path.clone(),
+        jump_key_passphrase,
+    )?;
+    let jump_verifier = HostKeyVerifier::enforce(jump_profile.host.clone(), jump_profile.port);
+    let handler = ProbeClientHandler {
+        host_verifier: jump_verifier.clone(),
+    };
+    let mut handle = russh::client::connect(
+        config,
+        (jump_profile.host.as_str(), jump_profile.port),
+        handler,
+    )
+    .await
+    .map_err(|error| map_connect_error(error, &jump_verifier))?;
+
+    authenticate_ssh(&mut handle, &jump_profile.username, auth).await?;
+
+    let channel = handle
+        .channel_open_direct_tcpip(target_host, u32::from(target_port), "127.0.0.1", 0)
+        .await
+        .map_err(|error| format!("SSH踏み台チャネルオープンエラー: {}", error))?;
+
+    Ok((handle, channel))
+}
+
 async fn run_host_key_probe(
     host: &str,
     port: u16,
+    jump_profile: Option<SshJumpProfile>,
+    jump_password: Option<String>,
+    jump_key_passphrase: Option<String>,
 ) -> Result<(HostKeyCheckResult, PendingHostKey), String> {
-    let config = load_client_config()?;
+    let config = Arc::new(load_client_config()?);
     let verifier = HostKeyVerifier::probe(host.to_string(), port);
     let handler = ProbeClientHandler {
         host_verifier: verifier.clone(),
     };
 
-    let handle = russh::client::connect(Arc::new(config), (host, port), handler)
-        .await
-        .map_err(|error| format!("SSH接続エラー: {}", error))?;
+    let (handle, jump_handle) = if let Some(jump_profile) = jump_profile {
+        let (jump_handle, jump_channel) = connect_jump_profile(
+            config.clone(),
+            jump_profile,
+            host,
+            port,
+            jump_password,
+            jump_key_passphrase,
+        )
+        .await?;
+        let stream = jump_channel.into_stream();
+        let handle = russh::client::connect_stream(config, stream, handler)
+            .await
+            .map_err(|error| format!("SSH接続エラー: {}", error))?;
+        (handle, Some(jump_handle))
+    } else {
+        let handle = russh::client::connect(config, (host, port), handler)
+            .await
+            .map_err(|error| format!("SSH接続エラー: {}", error))?;
+        (handle, None)
+    };
 
     let _ = handle
         .disconnect(Disconnect::ByApplication, "Host key probe completed", "en")
         .await;
+    if let Some(jump_handle) = jump_handle {
+        let _ = jump_handle
+            .disconnect(Disconnect::ByApplication, "Host key probe completed", "en")
+            .await;
+    }
 
     let result = verifier
         .last_result()
@@ -578,7 +739,30 @@ async fn run_host_key_probe(
 
 #[cfg(not(test))]
 pub async fn verify_trusted_host_key(host: &str, port: u16) -> Result<(), String> {
-    let (result, _) = run_host_key_probe(host, port).await?;
+    let (result, _) = run_host_key_probe(host, port, None, None, None).await?;
+    if result.status == HostKeyCheckStatus::Trusted {
+        Ok(())
+    } else {
+        Err(host_key_error_message(&result))
+    }
+}
+
+#[cfg(not(test))]
+pub async fn verify_trusted_host_key_via_jump(
+    host: &str,
+    port: u16,
+    jump_profile: SshJumpProfile,
+    jump_password: Option<String>,
+    jump_key_passphrase: Option<String>,
+) -> Result<(), String> {
+    let (result, _) = run_host_key_probe(
+        host,
+        port,
+        Some(jump_profile),
+        jump_password,
+        jump_key_passphrase,
+    )
+    .await?;
     if result.status == HostKeyCheckStatus::Trusted {
         Ok(())
     } else {
@@ -591,8 +775,20 @@ pub async fn ssh_probe_host_key(
     state: tauri::State<'_, SshState>,
     host: String,
     port: u16,
+    jump_profile_id: Option<String>,
+    jump_password: Option<String>,
+    jump_key_passphrase: Option<String>,
 ) -> Result<HostKeyCheckResult, String> {
-    let (result, pending_key) = run_host_key_probe(&host, port).await?;
+    let config = config_load()?;
+    let jump_profile = resolve_jump_profile(&config, jump_profile_id.as_deref(), None)?;
+    let (result, pending_key) = run_host_key_probe(
+        &host,
+        port,
+        jump_profile,
+        jump_password,
+        jump_key_passphrase,
+    )
+    .await?;
     state
         .pending_host_keys
         .lock()
@@ -627,6 +823,7 @@ pub async fn ssh_connect(
     app: AppHandle,
     state: tauri::State<'_, SshState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    logger: tauri::State<'_, LoggerState>,
     host: String,
     port: u16,
     username: String,
@@ -634,13 +831,18 @@ pub async fn ssh_connect(
     auth_method: Option<String>,
     private_key_path: Option<String>,
     key_passphrase: Option<String>,
+    jump_profile_id: Option<String>,
+    jump_password: Option<String>,
+    jump_key_passphrase: Option<String>,
     cols: u32,
     rows: u32,
+    encoding: Option<String>,
 ) -> Result<SshConnectResult, String> {
     connect(
         &app,
         &state,
         &terminals,
+        Some(&logger),
         SshConnectOptions {
             host,
             port,
@@ -649,8 +851,12 @@ pub async fn ssh_connect(
             auth_method,
             private_key_path,
             key_passphrase,
+            jump_profile_id,
+            jump_password,
+            jump_key_passphrase,
             cols,
             rows,
+            encoding,
         },
     )
     .await
@@ -660,16 +866,19 @@ pub async fn connect(
     app: &AppHandle,
     state: &SshState,
     terminals: &TerminalControlState,
+    logger_state: Option<&LoggerState>,
     options: SshConnectOptions,
 ) -> Result<SshConnectResult, String> {
     let session_id = Uuid::new_v4().to_string();
     let auth = build_auth_request(
-        options.auth_method,
-        options.password,
-        options.private_key_path,
-        options.key_passphrase,
+        options.auth_method.clone(),
+        options.password.clone(),
+        options.private_key_path.clone(),
+        options.key_passphrase.clone(),
     )?;
-    let config = load_client_config()?;
+    let app_config = config_load()?;
+    let jump_profile = resolve_jump_profile(&app_config, options.jump_profile_id.as_deref(), None)?;
+    let config = Arc::new(build_client_config(&app_config.ssh));
     let host_verifier = HostKeyVerifier::enforce(options.host.clone(), options.port);
     let handler = SshClientHandler {
         app: app.clone(),
@@ -677,15 +886,30 @@ pub async fn connect(
         sessions: state.sessions.clone(),
         host_verifier: host_verifier.clone(),
         terminals: terminals.clone(),
+        logger: logger_state.cloned(),
     };
 
-    let mut handle = russh::client::connect(
-        Arc::new(config),
-        (options.host.as_str(), options.port),
-        handler,
-    )
-    .await
-    .map_err(|error| map_connect_error(error, &host_verifier))?;
+    let (mut handle, jump_handle) = if let Some(jump_profile) = jump_profile {
+        let (jump_handle, jump_channel) = connect_jump_profile(
+            config.clone(),
+            jump_profile,
+            &options.host,
+            options.port,
+            options.jump_password.clone(),
+            options.jump_key_passphrase.clone(),
+        )
+        .await?;
+        let stream = jump_channel.into_stream();
+        let handle = russh::client::connect_stream(config, stream, handler)
+            .await
+            .map_err(|error| map_connect_error(error, &host_verifier))?;
+        (handle, Some(jump_handle))
+    } else {
+        let handle = russh::client::connect(config, (options.host.as_str(), options.port), handler)
+            .await
+            .map_err(|error| map_connect_error(error, &host_verifier))?;
+        (handle, None)
+    };
 
     authenticate_ssh(&mut handle, &options.username, auth).await?;
 
@@ -712,7 +936,11 @@ pub async fn connect(
         .await
         .map_err(|_| "シェルリクエストエラー".to_string())?;
 
-    let session = SshSession { handle, channel };
+    let session = SshSession {
+        handle,
+        channel,
+        jump_handle,
+    };
 
     state
         .sessions
@@ -721,10 +949,11 @@ pub async fn connect(
         .insert(session_id.clone(), Arc::new(Mutex::new(session)));
 
     terminals
-        .register_session(
+        .register_session_with_encoding(
             session_id.clone(),
             TerminalProtocol::Ssh,
             format!("{}:{}", options.host, options.port),
+            options.encoding,
         )
         .await;
 
@@ -790,6 +1019,7 @@ pub async fn ssh_disconnect(
     app: AppHandle,
     state: tauri::State<'_, SshState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    logger: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<(), String> {
     let session = state.sessions.lock().await.remove(&session_id);
@@ -801,8 +1031,14 @@ pub async fn ssh_disconnect(
             .handle
             .disconnect(Disconnect::ByApplication, "User disconnected", "en")
             .await;
+        if let Some(jump_handle) = &session.jump_handle {
+            let _ = jump_handle
+                .disconnect(Disconnect::ByApplication, "User disconnected", "en")
+                .await;
+        }
     }
     terminals.mark_disconnected(&session_id).await;
+    logger::clear_session_logs(&logger, &session_id).await;
     let _ = app.emit("ssh://disconnected", &session_id);
     Ok(())
 }

@@ -196,6 +196,10 @@ pub struct SavedConnection {
     pub auth_method: Option<String>,
     #[serde(default)]
     pub private_key_path: Option<String>,
+    #[serde(default)]
+    pub jump_profile_id: Option<String>,
+    #[serde(default)]
+    pub memo: Option<String>,
 }
 
 impl Default for SavedConnection {
@@ -210,6 +214,8 @@ impl Default for SavedConnection {
             terminal_mode: None,
             auth_method: None,
             private_key_path: None,
+            jump_profile_id: None,
+            memo: None,
         }
     }
 }
@@ -329,6 +335,8 @@ mod tests {
         assert_eq!(cfg.saved_connections[0].terminal_mode, None);
         assert_eq!(cfg.saved_connections[0].auth_method, None);
         assert_eq!(cfg.saved_connections[0].private_key_path, None);
+        assert_eq!(cfg.saved_connections[0].jump_profile_id, None);
+        assert_eq!(cfg.saved_connections[0].memo, None);
     }
 
     #[test]
@@ -413,6 +421,44 @@ mod tests {
         assert_eq!(
             cfg.saved_connections[0].private_key_path.as_deref(),
             Some("C:\\Users\\me\\.ssh\\id_ed25519")
+        );
+    }
+
+    #[test]
+    fn saved_connection_preserves_jump_profile_id() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "saved_connections": [{
+                    "id": "inside",
+                    "connection_type": "ssh",
+                    "jump_profile_id": "bastion"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.saved_connections[0].jump_profile_id.as_deref(),
+            Some("bastion")
+        );
+    }
+
+    #[test]
+    fn saved_connection_preserves_memo() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "saved_connections": [{
+                    "id": "edge-router",
+                    "connection_type": "ssh",
+                    "memo": "Cisco ISR at branch A"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.saved_connections[0].memo.as_deref(),
+            Some("Cisco ISR at branch A")
         );
     }
 }

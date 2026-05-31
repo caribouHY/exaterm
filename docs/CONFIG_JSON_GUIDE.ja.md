@@ -130,6 +130,8 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
 - `wait_terminal_output`: 新しい出力、または指定した文字列が出力に現れるまで待機します。
 - `send_terminal_input`: 接続中のセッションへテキストを送信します。
 - `run_terminal_command`: 接続中のセッションへコマンドを送信し、出力待機後に差分出力を返します。
+- `start_terminal_log`: 接続中セッションの手動平文ログを開始します。ログは `%AppData%\ExaTerm\logs` 配下に保存され、返却値には作成されたファイルパスが含まれます。
+- `stop_terminal_log`: ExaTerm が表示済み出力をログへ flush した後、セッションの手動平文ログを停止します。
 
 `mcp.connect_enabled` も `true` の場合、外部クライアントは次の追加ツールを呼び出せます。
 
@@ -144,7 +146,7 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
 
 MCP クライアントは Streamable HTTP エンドポイントを呼び出すときに、通常の `Host` ヘッダーと、`application/json` と `text/event-stream` の両方を含む `Accept` ヘッダーを送信してください。
 
-MCP サーバーは保存済み認証情報の読み取り、API キーの公開、ログファイルの直接読み取りを行いません。MCP 経由の SSH/Telnet 新規接続は保存済みプロファイルに限定され、シリアル接続は明示的に指定した利用可能ポート名だけを対象にし、すべての MCP 新規接続には `mcp.connect_enabled=true` が必要です。SSH では既存の known_hosts 検証もそのまま適用されます。ターミナル出力自体に機密情報が含まれる可能性があるため、信頼できるローカルクライアントに対してのみ有効化してください。
+MCP サーバーは保存済み認証情報の読み取り、API キーの公開、ログファイルの直接読み取りを行いません。MCP クライアントはセッションログを明示的に開始・停止できますが、受け取るのはログ状態とファイルパスだけで、ログ本文ではありません。MCP 経由の SSH/Telnet 新規接続は保存済みプロファイルに限定され、シリアル接続は明示的に指定した利用可能ポート名だけを対象にし、すべての MCP 新規接続には `mcp.connect_enabled=true` が必要です。SSH では既存の known_hosts 検証もそのまま適用されます。SSH プロファイルに `jump_profile_id` がある場合、MCP 経由の新規接続でも同じ 1 段の踏み台フローを使用し、必要な踏み台認証情報は ExaTerm UI で入力します。ターミナル出力やログファイルには機密情報が含まれる可能性があるため、MCP と MCP 経由のログ開始は信頼できるローカルクライアントに対してのみ有効化してください。
 
 ## terminal
 
@@ -204,7 +206,7 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
 
 ## saved_connections
 
-`saved_connections` は保存済み SSH/Telnet 接続プロファイルを表す配列です。プロファイルは接続ダイアログから管理できます。シリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズ、その他の認証情報はこのセクションには保存されません。
+`saved_connections` は保存済み SSH/Telnet 接続プロファイルを表す配列です。プロファイルは接続ダイアログから管理できます。シリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズ、その他の認証情報はこのセクションには保存されません。プロファイルのメモは平文で保存され、MCP のプロファイル接続が有効な場合は `list_connection_profiles` で返る可能性があるため、秘密情報は入力しないでください。
 
 | パラメータ         | 型                 | 説明                                                                                                                                                                |
 | ------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -217,6 +219,8 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
 | `terminal_mode`    | string または null | このプロファイルで接続したときのターミナルモードです。指定できる値は `"general"` と `"cisco_ios"` です。未設定の場合は `"general"` として扱われます。               |
 | `auth_method`      | string または null | SSH 認証方式です。指定できる値は `"password"` と `"public_key"` です。未設定の場合は `"password"` として扱われます。Telnet プロファイルでは使用しません。           |
 | `private_key_path` | string または null | SSH の `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                        |
+| `jump_profile_id`  | string または null | SSH 踏み台プロファイルの ID です。参照先は保存済み SSH プロファイルである必要があります。踏み台は 1 段のみ対応し、多段指定は拒否されます。                          |
+| `memo`             | string または null | 任意の平文メモです。機種名、用途、作業時の注意などを記録できます。空でないメモは MCP のプロファイル一覧で返る場合があります。                                       |
 
 例:
 
@@ -229,10 +233,14 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
   "username": "admin",
   "auth_method": "public_key",
   "private_key_path": "C:\\Users\\user\\.ssh\\id_ed25519",
+  "jump_profile_id": "bastion",
   "encoding": "shift-jis",
-  "terminal_mode": "cisco_ios"
+  "terminal_mode": "cisco_ios",
+  "memo": "Cisco ISR branch edge"
 }
 ```
+
+`jump_profile_id` を設定すると、ExaTerm は参照先の SSH プロファイルへ先に接続し、その踏み台経由で接続先への SSH 接続を開きます。踏み台プロファイルからさらに別の踏み台を参照することはできず、自分自身を踏み台に指定することもできません。踏み台と接続先の SSH パスワードや暗号化鍵パスフレーズは ExaTerm UI で入力し、`config.json` には保存されません。
 
 Telnet の例:
 
@@ -243,7 +251,8 @@ Telnet の例:
   "host": "192.168.1.20",
   "port": 23,
   "encoding": "euc-jp",
-  "terminal_mode": "cisco_ios"
+  "terminal_mode": "cisco_ios",
+  "memo": "Legacy access switch"
 }
 ```
 

@@ -49,11 +49,20 @@ const SSH_AUTH_METHODS: { labelKey: string; value: SshAuthMethod }[] = [
 const PRIVATE_KEY_PLACEHOLDER = "C:\\Users\\user\\.ssh\\id_ed25519";
 
 interface SshCredentialPrompt {
+  phase: "jump" | "target";
+  host: string;
   port: number;
+  targetPort?: number;
+  username: string;
   authMethod: SshAuthMethod;
+  privateKeyPath: string;
   value: string;
   error: string;
 }
+
+type SshHostKeyCheck = HostKeyCheckResult & {
+  phase: "jump" | "target";
+};
 
 const normalizeEncoding = (encoding: string | null | undefined): Encoding => {
   return SSH_ENCODINGS.some((entry) => entry.value === encoding) ? (encoding as Encoding) : "utf-8";
@@ -61,6 +70,11 @@ const normalizeEncoding = (encoding: string | null | undefined): Encoding => {
 
 const normalizeSshAuthMethod = (authMethod: string | null | undefined): SshAuthMethod => {
   return authMethod === "public_key" ? "public_key" : "password";
+};
+
+const normalizeProfileMemo = (memo: string): string | null => {
+  const trimmed = memo.trim();
+  return trimmed ? trimmed : null;
 };
 
 export default function ConnectionDialog({
@@ -76,7 +90,7 @@ export default function ConnectionDialog({
   const [tab, setTab] = useState<ConnectionType>("ssh");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
-  const [hostKeyCheck, setHostKeyCheck] = useState<HostKeyCheckResult | null>(null);
+  const [hostKeyCheck, setHostKeyCheck] = useState<SshHostKeyCheck | null>(null);
   const [credentialPrompt, setCredentialPrompt] = useState<SshCredentialPrompt | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [selectedProfileIds, setSelectedProfileIds] = useState({ ssh: "", telnet: "" });
@@ -90,14 +104,18 @@ export default function ConnectionDialog({
   const [username, setUsername] = useState("admin");
   const [authMethod, setAuthMethod] = useState<SshAuthMethod>("password");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
+  const [jumpProfileId, setJumpProfileId] = useState("");
+  const [jumpCredential, setJumpCredential] = useState("");
   const [encoding, setEncoding] = useState<Encoding>("utf-8");
   const [sshTerminalMode, setSshTerminalMode] = useState<TerminalMode>(DEFAULT_TERMINAL_MODE);
+  const [sshMemo, setSshMemo] = useState("");
 
   // Telnet fields
   const [telnetHost, setTelnetHost] = useState("192.168.1.1");
   const [telnetPort, setTelnetPort] = useState("23");
   const [telnetEncoding, setTelnetEncoding] = useState<Encoding>("utf-8");
   const [telnetTerminalMode, setTelnetTerminalMode] = useState<TerminalMode>(DEFAULT_TERMINAL_MODE);
+  const [telnetMemo, setTelnetMemo] = useState("");
 
   // Serial fields
   const [ports, setPorts] = useState<PortInfo[]>([]);
@@ -136,9 +154,21 @@ export default function ConnectionDialog({
   const sshProfiles = (config?.saved_connections ?? []).filter(
     (connection) => connection.connection_type === "ssh"
   );
+  const jumpProfileOptions = sshProfiles.filter((profile) => profile.id !== selectedProfileIds.ssh);
   const telnetProfiles = (config?.saved_connections ?? []).filter(
     (connection) => connection.connection_type === "telnet"
   );
+
+  useEffect(() => {
+    if (!jumpProfileId) return;
+    if (jumpProfileId === selectedProfileIds.ssh) {
+      setJumpProfileId("");
+      return;
+    }
+    if (!sshProfiles.some((profile) => profile.id === jumpProfileId)) {
+      setJumpProfileId("");
+    }
+  }, [jumpProfileId, selectedProfileIds.ssh, sshProfiles]);
 
   const getAutoLogPreference = async () => {
     try {
@@ -161,8 +191,11 @@ export default function ConnectionDialog({
     setUsername(profile.username ?? "");
     setAuthMethod(normalizeSshAuthMethod(profile.auth_method));
     setPrivateKeyPath(profile.private_key_path ?? "");
+    setJumpProfileId(profile.jump_profile_id ?? "");
+    setJumpCredential("");
     setEncoding(normalizeEncoding(profile.encoding));
     setSshTerminalMode(normalizeTerminalMode(profile.terminal_mode));
+    setSshMemo(profile.memo ?? "");
   }, []);
 
   const applyTelnetProfile = useCallback(
@@ -173,6 +206,7 @@ export default function ConnectionDialog({
       setTelnetPort(String(overridePort ?? profile.port ?? 23));
       setTelnetEncoding(normalizeEncoding(profile.encoding));
       setTelnetTerminalMode(normalizeTerminalMode(profile.terminal_mode));
+      setTelnetMemo(profile.memo ?? "");
     },
     []
   );
@@ -183,8 +217,11 @@ export default function ConnectionDialog({
       setSshProfileName("");
       setAuthMethod("password");
       setPrivateKeyPath("");
+      setJumpProfileId("");
+      setJumpCredential("");
       setEncoding("utf-8");
       setSshTerminalMode(DEFAULT_TERMINAL_MODE);
+      setSshMemo("");
       return;
     }
 
@@ -200,6 +237,7 @@ export default function ConnectionDialog({
       setTelnetProfileName("");
       setTelnetEncoding("utf-8");
       setTelnetTerminalMode(DEFAULT_TERMINAL_MODE);
+      setTelnetMemo("");
       return;
     }
 
@@ -224,6 +262,9 @@ export default function ConnectionDialog({
       if (!id) {
         throw new Error(t("connection.profile_name_required"));
       }
+      if (jumpProfileId && jumpProfileId === id) {
+        throw new Error(t("connection.jump_profile_self"));
+      }
       const nextProfile: SavedConnection = {
         id,
         connection_type: "ssh",
@@ -232,8 +273,10 @@ export default function ConnectionDialog({
         username: trimmedUsername,
         auth_method: authMethod,
         private_key_path: authMethod === "public_key" ? privateKeyPath.trim() : null,
+        jump_profile_id: jumpProfileId || null,
         encoding,
         terminal_mode: sshTerminalMode,
+        memo: normalizeProfileMemo(sshMemo),
       };
       const existingConnections = loaded.saved_connections ?? [];
       const duplicateProfile = existingConnections.some(
@@ -289,6 +332,7 @@ export default function ConnectionDialog({
         port: parsedTelnetPort,
         encoding: telnetEncoding,
         terminal_mode: telnetTerminalMode,
+        memo: normalizeProfileMemo(telnetMemo),
       };
       const existingConnections = loaded.saved_connections ?? [];
       const duplicateProfile = existingConnections.some(
@@ -345,10 +389,14 @@ export default function ConnectionDialog({
         setSshProfileName("");
         setAuthMethod("password");
         setPrivateKeyPath("");
+        setJumpProfileId("");
+        setJumpCredential("");
         setSshTerminalMode(DEFAULT_TERMINAL_MODE);
+        setSshMemo("");
       } else {
         setTelnetProfileName("");
         setTelnetTerminalMode(DEFAULT_TERMINAL_MODE);
+        setTelnetMemo("");
       }
     } catch (e: unknown) {
       const message =
@@ -370,10 +418,23 @@ export default function ConnectionDialog({
     }
   };
 
-  const openCredentialPrompt = (sshPort: number) => {
+  const openCredentialPrompt = (
+    phase: "jump" | "target",
+    promptHost: string,
+    sshPort: number,
+    promptUsername: string,
+    promptAuthMethod: SshAuthMethod,
+    promptPrivateKeyPath: string,
+    targetPort?: number
+  ) => {
     setCredentialPrompt({
+      phase,
+      host: promptHost,
       port: sshPort,
-      authMethod,
+      targetPort,
+      username: promptUsername,
+      authMethod: promptAuthMethod,
+      privateKeyPath: promptPrivateKeyPath,
       value: "",
       error: "",
     });
@@ -388,8 +449,11 @@ export default function ConnectionDialog({
     autoLog: boolean,
     sshPort: number,
     credential: string,
-    promptAuthMethod: SshAuthMethod
+    promptAuthMethod: SshAuthMethod,
+    currentJumpCredential: string
   ) => {
+    const jumpProfile = sshProfiles.find((profile) => profile.id === jumpProfileId);
+    const jumpAuthMethod = normalizeSshAuthMethod(jumpProfile?.auth_method);
     const result = await invoke<{ session_id: string }>("ssh_connect", {
       host,
       port: sshPort,
@@ -398,8 +462,12 @@ export default function ConnectionDialog({
       authMethod: promptAuthMethod,
       privateKeyPath,
       keyPassphrase: promptAuthMethod === "public_key" ? credential : "",
+      jumpProfileId: jumpProfileId || null,
+      jumpPassword: jumpAuthMethod === "password" ? currentJumpCredential : "",
+      jumpKeyPassphrase: jumpAuthMethod === "public_key" ? currentJumpCredential : "",
       cols: 120,
       rows: 30,
+      encoding,
     });
     if (autoLog) {
       await invoke("logger_start_auto", {
@@ -411,9 +479,9 @@ export default function ConnectionDialog({
     onConnect("ssh", result.session_id, `${username}@${host}`, autoLog, encoding, sshTerminalMode);
   };
 
-  const continueSshConnect = async (sshPort: number) => {
+  const continueSshConnect = async (sshPort: number, currentJumpCredential = jumpCredential) => {
     if (authMethod === "password") {
-      openCredentialPrompt(sshPort);
+      openCredentialPrompt("target", host, sshPort, username, authMethod, privateKeyPath);
       connectingRef.current = false;
       setConnecting(false);
       return;
@@ -423,14 +491,88 @@ export default function ConnectionDialog({
       privateKeyPath,
     });
     if (requiresPassphrase) {
-      openCredentialPrompt(sshPort);
+      openCredentialPrompt("target", host, sshPort, username, authMethod, privateKeyPath);
       connectingRef.current = false;
       setConnecting(false);
       return;
     }
 
     const autoLog = await getAutoLogPreference();
-    await performSshConnect(autoLog, sshPort, "", "public_key");
+    await performSshConnect(autoLog, sshPort, "", "public_key", currentJumpCredential);
+  };
+
+  const probeTargetHostKey = async (sshPort: number, currentJumpCredential = jumpCredential) => {
+    const jumpProfile = sshProfiles.find((profile) => profile.id === jumpProfileId);
+    const jumpAuthMethod = normalizeSshAuthMethod(jumpProfile?.auth_method);
+    const result = await invoke<HostKeyCheckResult>("ssh_probe_host_key", {
+      host,
+      port: sshPort,
+      jumpProfileId: jumpProfileId || null,
+      jumpPassword: jumpAuthMethod === "password" ? currentJumpCredential : "",
+      jumpKeyPassphrase: jumpAuthMethod === "public_key" ? currentJumpCredential : "",
+    });
+
+    if (result.status === "trusted") {
+      await continueSshConnect(sshPort, currentJumpCredential);
+      return;
+    }
+
+    setJumpCredential(currentJumpCredential);
+    setHostKeyCheck({ ...result, phase: "target" });
+    connectingRef.current = false;
+    setConnecting(false);
+  };
+
+  const continueAfterJumpTrusted = async (sshPort: number) => {
+    const jumpProfile = sshProfiles.find((profile) => profile.id === jumpProfileId);
+    if (!jumpProfileId || !jumpProfile) {
+      await probeTargetHostKey(sshPort, "");
+      return;
+    }
+
+    const jumpPort = jumpProfile.port ?? 22;
+    const jumpUsername = jumpProfile.username ?? "";
+    const jumpPrivateKeyPath = jumpProfile.private_key_path ?? "";
+    const jumpAuthMethod = normalizeSshAuthMethod(jumpProfile.auth_method);
+    if (!jumpProfile.host || !jumpUsername) {
+      throw new Error(t("connection.jump_profile_incomplete", { profile: jumpProfileId }));
+    }
+
+    if (jumpAuthMethod === "password") {
+      openCredentialPrompt(
+        "jump",
+        jumpProfile.host,
+        jumpPort,
+        jumpUsername,
+        jumpAuthMethod,
+        jumpPrivateKeyPath,
+        sshPort
+      );
+      connectingRef.current = false;
+      setConnecting(false);
+      return;
+    }
+
+    const requiresPassphrase = await invoke<boolean>("ssh_private_key_requires_passphrase", {
+      privateKeyPath: jumpPrivateKeyPath,
+    });
+    if (requiresPassphrase) {
+      openCredentialPrompt(
+        "jump",
+        jumpProfile.host,
+        jumpPort,
+        jumpUsername,
+        jumpAuthMethod,
+        jumpPrivateKeyPath,
+        sshPort
+      );
+      connectingRef.current = false;
+      setConnecting(false);
+      return;
+    }
+
+    setJumpCredential("");
+    await probeTargetHostKey(sshPort, "");
   };
 
   const handleCredentialSubmit = async () => {
@@ -440,12 +582,23 @@ export default function ConnectionDialog({
     connectingRef.current = true;
     setConnecting(true);
     try {
+      if (credentialPrompt.phase === "jump") {
+        setCredentialPrompt(null);
+        setJumpCredential(credentialPrompt.value);
+        await probeTargetHostKey(
+          credentialPrompt.targetPort ?? credentialPrompt.port,
+          credentialPrompt.value
+        );
+        return;
+      }
+
       const autoLog = await getAutoLogPreference();
       await performSshConnect(
         autoLog,
         credentialPrompt.port,
         credentialPrompt.value,
-        credentialPrompt.authMethod
+        credentialPrompt.authMethod,
+        jumpCredential
       );
       setCredentialPrompt(null);
     } catch (e: unknown) {
@@ -473,8 +626,14 @@ export default function ConnectionDialog({
         port: hostKeyCheck.port,
         replace,
       });
+      const phase = hostKeyCheck.phase;
+      const checkedPort = hostKeyCheck.port;
       setHostKeyCheck(null);
-      await continueSshConnect(hostKeyCheck.port);
+      if (phase === "jump") {
+        await continueAfterJumpTrusted(Number.parseInt(port, 10));
+      } else {
+        await continueSshConnect(checkedPort);
+      }
     } catch (e: unknown) {
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");
@@ -497,19 +656,37 @@ export default function ConnectionDialog({
           throw new Error(t("connection.error"));
         }
 
-        const result = await invoke<HostKeyCheckResult>("ssh_probe_host_key", {
-          host,
-          port: sshPort,
-        });
-
-        if (result.status === "trusted") {
-          await continueSshConnect(sshPort);
+        setJumpCredential("");
+        if (jumpProfileId) {
+          const jumpProfile = sshProfiles.find((profile) => profile.id === jumpProfileId);
+          if (!jumpProfile) {
+            throw new Error(t("connection.jump_profile_not_found", { profile: jumpProfileId }));
+          }
+          if (jumpProfile.jump_profile_id) {
+            throw new Error(t("connection.jump_profile_nested"));
+          }
+          if (!jumpProfile.host || !jumpProfile.username) {
+            throw new Error(t("connection.jump_profile_incomplete", { profile: jumpProfileId }));
+          }
+          const jumpPort = jumpProfile.port ?? 22;
+          const jumpResult = await invoke<HostKeyCheckResult>("ssh_probe_host_key", {
+            host: jumpProfile.host,
+            port: jumpPort,
+            jumpProfileId: null,
+            jumpPassword: "",
+            jumpKeyPassphrase: "",
+          });
+          if (jumpResult.status === "trusted") {
+            await continueAfterJumpTrusted(sshPort);
+            return;
+          }
+          setHostKeyCheck({ ...jumpResult, phase: "jump" });
+          connectingRef.current = false;
+          setConnecting(false);
           return;
         }
 
-        setHostKeyCheck(result);
-        connectingRef.current = false;
-        setConnecting(false);
+        await probeTargetHostKey(sshPort, "");
         return;
       }
 
@@ -526,6 +703,7 @@ export default function ConnectionDialog({
           port: parsedTelnetPort,
           cols: 120,
           rows: 30,
+          encoding: telnetEncoding,
         });
         if (autoLog) {
           await invoke("logger_start_auto", {
@@ -554,6 +732,7 @@ export default function ConnectionDialog({
           stop_bits: Number.parseInt(stopBits, 10),
           flow_control: "none",
         },
+        encoding: "utf-8",
       });
       if (autoLog) {
         await invoke("logger_start_auto", {
@@ -619,6 +798,8 @@ export default function ConnectionDialog({
       setPort(String(startupRequest.port ?? 22));
       setAuthMethod("password");
       setPrivateKeyPath("");
+      setJumpProfileId("");
+      setJumpCredential("");
       setEncoding("utf-8");
       setSshTerminalMode(DEFAULT_TERMINAL_MODE);
       if (!startupRequest.host || !startupRequest.username) {
@@ -759,7 +940,7 @@ export default function ConnectionDialog({
           </div>
           <div className="connection-credential-modal__body">
             <div className="connection-credential-modal__target">
-              {username}@{host}:{credentialPrompt.port}
+              {credentialPrompt.username}@{credentialPrompt.host}:{credentialPrompt.port}
             </div>
             <div className="connection-credential-modal__description">{credentialDescription}</div>
             <div>
@@ -1002,6 +1183,22 @@ export default function ConnectionDialog({
                 </>
               )}
               <div>
+                <label className="label">{t("connection.jump_profile")}</label>
+                <select
+                  className="select"
+                  style={{ width: "100%" }}
+                  value={jumpProfileId}
+                  onChange={(e) => setJumpProfileId(e.target.value)}
+                >
+                  <option value="">{t("connection.jump_profile_none")}</option>
+                  {jumpProfileOptions.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {getProfileDisplayName(profile)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="label">{t("connection.encoding")}</label>
                 <select
                   className="select"
@@ -1030,6 +1227,18 @@ export default function ConnectionDialog({
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="label">{t("connection.profile_memo")}</label>
+                <textarea
+                  className="input connection-dialog__memo"
+                  value={sshMemo}
+                  onChange={(e) => setSshMemo(e.target.value)}
+                  placeholder={t("connection.profile_memo_placeholder")}
+                />
+                <div className="connection-dialog__field-help">
+                  {t("connection.profile_memo_mcp_notice")}
+                </div>
               </div>
               <div className="connection-dialog__profile-actions">
                 <button className="btn btn-ghost btn-sm" onClick={handleSaveSshProfile}>
@@ -1126,6 +1335,18 @@ export default function ConnectionDialog({
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="label">{t("connection.profile_memo")}</label>
+                <textarea
+                  className="input connection-dialog__memo"
+                  value={telnetMemo}
+                  onChange={(e) => setTelnetMemo(e.target.value)}
+                  placeholder={t("connection.profile_memo_placeholder")}
+                />
+                <div className="connection-dialog__field-help">
+                  {t("connection.profile_memo_mcp_notice")}
+                </div>
               </div>
               <div className="connection-dialog__profile-actions">
                 <button className="btn btn-ghost btn-sm" onClick={handleSaveTelnetProfile}>

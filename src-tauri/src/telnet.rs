@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+use crate::{logger, logger::LoggerState};
 
 const IAC: u8 = 255;
 const DONT: u8 = 254;
@@ -210,6 +211,7 @@ fn escape_iac_bytes(data: Vec<u8>) -> Vec<u8> {
 async fn remove_session(
     app: &AppHandle,
     terminals: &TerminalControlState,
+    logger_state: Option<&LoggerState>,
     sessions: &Arc<Mutex<HashMap<String, TelnetSession>>>,
     session_id: &str,
 ) -> Option<TelnetSession> {
@@ -218,16 +220,20 @@ async fn remove_session(
         terminals.mark_disconnected(session_id).await;
         let _ = app.emit("telnet://disconnected", session_id);
     }
+    if let Some(logger_state) = logger_state {
+        logger::clear_session_logs(logger_state, session_id).await;
+    }
     session
 }
 
 async fn mark_disconnected(
     app: &AppHandle,
     terminals: &TerminalControlState,
+    logger_state: Option<&LoggerState>,
     sessions: &Arc<Mutex<HashMap<String, TelnetSession>>>,
     session_id: &str,
 ) {
-    let _ = remove_session(app, terminals, sessions, session_id).await;
+    let _ = remove_session(app, terminals, logger_state, sessions, session_id).await;
 }
 
 #[tauri::command]
@@ -235,22 +241,37 @@ pub async fn telnet_connect(
     app: AppHandle,
     state: tauri::State<'_, TelnetState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    logger: tauri::State<'_, LoggerState>,
     host: String,
     port: u16,
     cols: u32,
     rows: u32,
+    encoding: Option<String>,
 ) -> Result<String, String> {
-    connect(&app, &state, &terminals, host, port, cols, rows).await
+    connect(
+        &app,
+        &state,
+        &terminals,
+        Some(&logger),
+        host,
+        port,
+        cols,
+        rows,
+        encoding,
+    )
+    .await
 }
 
 pub async fn connect(
     app: &AppHandle,
     state: &TelnetState,
     terminals: &TerminalControlState,
+    logger_state: Option<&LoggerState>,
     host: String,
     port: u16,
     cols: u32,
     rows: u32,
+    encoding: Option<String>,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let stream = TcpStream::connect((host.as_str(), port))
@@ -263,11 +284,19 @@ pub async fn connect(
     let write_app = app.clone();
     let write_sessions = state.sessions.clone();
     let write_terminals = terminals.clone();
+    let write_logger = logger_state.cloned();
     let write_task = tokio::spawn(async move {
         while let Some(data) = write_rx.recv().await {
             if let Err(e) = writer_stream.write_all(&data).await {
                 let _ = write_app.emit(&format!("telnet://error/{}", write_sid), e.to_string());
-                mark_disconnected(&write_app, &write_terminals, &write_sessions, &write_sid).await;
+                mark_disconnected(
+                    &write_app,
+                    &write_terminals,
+                    write_logger.as_ref(),
+                    &write_sessions,
+                    &write_sid,
+                )
+                .await;
                 break;
             }
         }
@@ -277,6 +306,7 @@ pub async fn connect(
     let read_app = app.clone();
     let read_sessions = state.sessions.clone();
     let read_terminals = terminals.clone();
+    let read_logger = logger_state.cloned();
     let read_task = tokio::spawn(async move {
         let mut parser = TelnetParser::new(cols, rows);
         let mut buf = [0u8; 4096];
@@ -284,7 +314,14 @@ pub async fn connect(
         loop {
             match reader.read(&mut buf).await {
                 Ok(0) => {
-                    mark_disconnected(&read_app, &read_terminals, &read_sessions, &read_sid).await;
+                    mark_disconnected(
+                        &read_app,
+                        &read_terminals,
+                        read_logger.as_ref(),
+                        &read_sessions,
+                        &read_sid,
+                    )
+                    .await;
                     break;
                 }
                 Ok(n) => {
@@ -307,7 +344,14 @@ pub async fn connect(
                 }
                 Err(e) => {
                     let _ = read_app.emit(&format!("telnet://error/{}", read_sid), e.to_string());
-                    mark_disconnected(&read_app, &read_terminals, &read_sessions, &read_sid).await;
+                    mark_disconnected(
+                        &read_app,
+                        &read_terminals,
+                        read_logger.as_ref(),
+                        &read_sessions,
+                        &read_sid,
+                    )
+                    .await;
                     break;
                 }
             }
@@ -324,10 +368,11 @@ pub async fn connect(
     );
 
     terminals
-        .register_session(
+        .register_session_with_encoding(
             session_id.clone(),
             TerminalProtocol::Telnet,
             format!("{}:{}", host, port),
+            encoding,
         )
         .await;
 
@@ -387,9 +432,18 @@ pub async fn telnet_disconnect(
     app: AppHandle,
     state: tauri::State<'_, TelnetState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    logger: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<(), String> {
-    if let Some(session) = remove_session(&app, &terminals, &state.sessions, &session_id).await {
+    if let Some(session) = remove_session(
+        &app,
+        &terminals,
+        Some(&logger),
+        &state.sessions,
+        &session_id,
+    )
+    .await
+    {
         session.read_task.abort();
         session.write_task.abort();
     }
