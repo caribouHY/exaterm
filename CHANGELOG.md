@@ -2,18 +2,18 @@
 
 ## Unreleased
 
+## v0.5.0
+
 ### Added
 
-- Added plaintext memos for saved SSH/Telnet profiles and exposed non-empty memos through MCP profile listing.
+- Added memos for saved SSH and Telnet profiles, including MCP profile listing support for non-empty memos.
 - Added one-hop SSH jump host support for saved SSH profiles, including UI profile selection, host-key checks, MCP profile connections, and config documentation.
-- Added MCP tools to start and stop manual terminal session logs in ExaTerm's log directory without exposing log file contents through MCP.
+- Added MCP tools to start and stop manual terminal session logs in ExaTerm's log directory while keeping log file contents private.
 
 ### Fixed
 
-- Fixed manual log history so repeated start/stop cycles in the same terminal session keep each log entry instead of replacing earlier entries.
-- Fixed SSH jump-host connections so entering jump-host credentials preserves non-default target ports.
-- Fixed serial sessions so read and write errors mark the session disconnected in the UI and MCP state.
-- Fixed session log cleanup so closed SSH, Serial, and Telnet sessions no longer keep stale active log state during log history deletion.
+- Improved manual log history and cleanup so repeated manual logging and closed sessions keep accurate log state.
+- Improved serial sessions so read and write errors reliably show the session as disconnected in the UI and MCP state.
 - Fixed terminal output snapshots and MCP output reads for Shift-JIS and EUC-JP sessions.
 
 ## v0.4.0
