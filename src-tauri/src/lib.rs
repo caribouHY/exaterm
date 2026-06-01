@@ -16,6 +16,7 @@ use mcp::{spawn_mcp_server, McpCredentialState, McpLogControlState, McpRuntime};
 use serial::SerialState;
 use ssh::SshState;
 use std::sync::Mutex;
+use tauri::Manager;
 use telnet::TelnetState;
 use terminal_control::TerminalControlState;
 use workspace::WorkspaceState;
@@ -72,28 +73,56 @@ pub fn run() {
         .manage(logger_state.clone())
         .manage(mcp_credential_state.clone())
         .manage(mcp_log_control_state.clone())
+        .on_window_event({
+            let workspace_state = workspace_state.clone();
+            move |window, event| match event {
+                tauri::WindowEvent::Focused(true) => {
+                    let app = window.app_handle().clone();
+                    let workspace_state = workspace_state.clone();
+                    let window_id = window.label().to_string();
+                    tauri::async_runtime::spawn(async move {
+                        let snapshot = workspace_state.focus_window(window_id).await;
+                        workspace::emit_workspace_updated(&app, &snapshot);
+                    });
+                }
+                tauri::WindowEvent::Destroyed => {
+                    let app = window.app_handle().clone();
+                    let workspace_state = workspace_state.clone();
+                    let window_id = window.label().to_string();
+                    tauri::async_runtime::spawn(async move {
+                        let result = workspace_state.unregister_window(window_id).await;
+                        workspace::emit_workspace_updates(&app, &result.snapshots);
+                        workspace::emit_workspace_window_closed(&app, &result);
+                    });
+                }
+                _ => {}
+            }
+        })
         .setup(move |app| {
             #[cfg(test)]
             let _ = app;
 
             match config::config_load() {
-                Ok(cfg) if cfg.mcp.enabled => {
-                    spawn_mcp_server(McpRuntime {
-                        config: cfg.mcp,
-                        #[cfg(not(test))]
-                        app: Some(app.handle().clone()),
-                        terminals: terminal_control_state.clone(),
-                        workspace: workspace_state.clone(),
-                        ssh: ssh_state.clone(),
-                        serial: serial_state.clone(),
-                        telnet: telnet_state.clone(),
-                        logger: Some(logger_state.clone()),
-                        log_control: Some(mcp_log_control_state.clone()),
-                        #[cfg(not(test))]
-                        credentials: Some(mcp_credential_state.clone()),
-                    });
+                Ok(cfg) => {
+                    terminal_control_state
+                        .set_output_limit_from_scrollback(cfg.terminal.scrollback);
+                    if cfg.mcp.enabled {
+                        spawn_mcp_server(McpRuntime {
+                            config: cfg.mcp,
+                            #[cfg(not(test))]
+                            app: Some(app.handle().clone()),
+                            terminals: terminal_control_state.clone(),
+                            workspace: workspace_state.clone(),
+                            ssh: ssh_state.clone(),
+                            serial: serial_state.clone(),
+                            telnet: telnet_state.clone(),
+                            logger: Some(logger_state.clone()),
+                            log_control: Some(mcp_log_control_state.clone()),
+                            #[cfg(not(test))]
+                            credentials: Some(mcp_credential_state.clone()),
+                        });
+                    }
                 }
-                Ok(_) => {}
                 Err(error) => {
                     log::warn!(
                         "MCP server not started because config could not be loaded: {error}"
@@ -147,12 +176,15 @@ pub fn run() {
             terminal_control::terminal_output_snapshot_get,
             workspace::workspace_snapshot_get,
             workspace::workspace_tab_activate,
+            workspace::workspace_tab_move,
             workspace::workspace_tab_register,
             workspace::workspace_tab_remove,
             workspace::workspace_tab_reorder,
             workspace::workspace_tab_update_metadata,
+            workspace::workspace_window_create,
             workspace::workspace_window_focus,
             workspace::workspace_window_register,
+            workspace::workspace_window_unregister,
             // Config
             config::config_load,
             config::config_save,

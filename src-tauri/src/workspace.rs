@@ -2,8 +2,9 @@ use crate::terminal_control::TerminalProtocol;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 const MAIN_WINDOW_ID: &str = "main";
 
@@ -12,6 +13,19 @@ pub struct WorkspaceSnapshot {
     pub window_id: String,
     pub window: WindowWorkspace,
     pub tabs: Vec<WorkspaceTab>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct WorkspaceWindowCreateResult {
+    pub window_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct WorkspaceWindowCloseResult {
+    pub window_id: String,
+    pub rehome_window_id: Option<String>,
+    pub remaining_window_count: usize,
+    pub snapshots: Vec<WorkspaceSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -56,6 +70,7 @@ struct WorkspaceModel {
     windows: HashMap<String, WindowWorkspace>,
     tabs: HashMap<String, WorkspaceTab>,
     last_focused_window: Option<String>,
+    focused_window_order: Vec<String>,
 }
 
 #[derive(Clone, Default)]
@@ -88,7 +103,7 @@ impl WorkspaceState {
                 active_tab_id: None,
             });
         if focused {
-            model.last_focused_window = Some(window_id.clone());
+            set_focused_window(&mut model, &window_id);
         }
         snapshot_for_locked(&model, &window_id)
     }
@@ -96,8 +111,64 @@ impl WorkspaceState {
     pub async fn focus_window(&self, window_id: String) -> WorkspaceSnapshot {
         let mut model = self.model.lock().await;
         ensure_window(&mut model, &window_id, &window_id);
-        model.last_focused_window = Some(window_id.clone());
+        set_focused_window(&mut model, &window_id);
         snapshot_for_locked(&model, &window_id)
+    }
+
+    pub async fn unregister_window(&self, window_id: String) -> WorkspaceWindowCloseResult {
+        let mut model = self.model.lock().await;
+        let removed_window = model.windows.remove(&window_id);
+        remove_focused_window(&mut model, &window_id);
+
+        let mut snapshots = Vec::new();
+        let mut rehome_window_id = None;
+
+        if let Some(removed_window) = removed_window {
+            if !model.windows.is_empty() && !removed_window.tab_order.is_empty() {
+                let destination_window_id = choose_rehome_window(&model);
+                if let Some(destination_window_id) = destination_window_id {
+                    let moved_tab_ids = removed_window
+                        .tab_order
+                        .into_iter()
+                        .filter(|tab_id| model.tabs.contains_key(tab_id))
+                        .collect::<Vec<_>>();
+
+                    if !moved_tab_ids.is_empty() {
+                        {
+                            let destination = model
+                                .windows
+                                .get_mut(&destination_window_id)
+                                .expect("rehome destination is selected from registered windows");
+                            let had_active_tab = destination.active_tab_id.is_some();
+                            for tab_id in &moved_tab_ids {
+                                if !destination.tab_order.contains(tab_id) {
+                                    destination.tab_order.push(tab_id.clone());
+                                }
+                            }
+                            if !had_active_tab {
+                                destination.active_tab_id = moved_tab_ids.first().cloned();
+                            }
+                        }
+
+                        for tab_id in &moved_tab_ids {
+                            if let Some(tab) = model.tabs.get_mut(tab_id) {
+                                tab.owner_window_id = destination_window_id.clone();
+                            }
+                        }
+                    }
+
+                    rehome_window_id = Some(destination_window_id.clone());
+                    snapshots.push(snapshot_for_locked(&model, &destination_window_id));
+                }
+            }
+        }
+
+        WorkspaceWindowCloseResult {
+            window_id,
+            rehome_window_id,
+            remaining_window_count: model.windows.len(),
+            snapshots,
+        }
     }
 
     pub async fn snapshot_for_window(&self, window_id: String) -> WorkspaceSnapshot {
@@ -199,6 +270,74 @@ impl WorkspaceState {
         Ok(snapshot_for_locked(&model, &window_id))
     }
 
+    pub async fn move_tab(
+        &self,
+        tab_id: String,
+        from_window_id: String,
+        to_window_id: String,
+        target_index: usize,
+    ) -> Result<Vec<WorkspaceSnapshot>, String> {
+        let mut model = self.model.lock().await;
+        if !model.windows.contains_key(&to_window_id) {
+            return Err("移動先ウィンドウが見つかりません".to_string());
+        }
+
+        let source_window = model
+            .windows
+            .get(&from_window_id)
+            .ok_or_else(|| "移動元ウィンドウが見つかりません".to_string())?;
+        if !source_window.tab_order.contains(&tab_id) {
+            return Err("移動元タブが見つかりません".to_string());
+        }
+
+        let tab = model
+            .tabs
+            .get_mut(&tab_id)
+            .ok_or_else(|| "タブが見つかりません".to_string())?;
+        if tab.owner_window_id != from_window_id {
+            return Err("タブの所有ウィンドウが一致しません".to_string());
+        }
+        tab.owner_window_id = to_window_id.clone();
+
+        if from_window_id == to_window_id {
+            let window = model
+                .windows
+                .get_mut(&from_window_id)
+                .ok_or_else(|| "ウィンドウが見つかりません".to_string())?;
+            window.tab_order.retain(|id| id != &tab_id);
+            let insert_index = target_index.min(window.tab_order.len());
+            window.tab_order.insert(insert_index, tab_id);
+            return Ok(vec![snapshot_for_locked(&model, &from_window_id)]);
+        }
+
+        {
+            let source = model
+                .windows
+                .get_mut(&from_window_id)
+                .ok_or_else(|| "移動元ウィンドウが見つかりません".to_string())?;
+            source.tab_order.retain(|id| id != &tab_id);
+            if source.active_tab_id.as_deref() == Some(tab_id.as_str()) {
+                source.active_tab_id = source.tab_order.last().cloned();
+            }
+        }
+
+        {
+            let destination = model
+                .windows
+                .get_mut(&to_window_id)
+                .ok_or_else(|| "移動先ウィンドウが見つかりません".to_string())?;
+            destination.tab_order.retain(|id| id != &tab_id);
+            let insert_index = target_index.min(destination.tab_order.len());
+            destination.tab_order.insert(insert_index, tab_id.clone());
+            destination.active_tab_id = Some(tab_id);
+        }
+
+        Ok(vec![
+            snapshot_for_locked(&model, &from_window_id),
+            snapshot_for_locked(&model, &to_window_id),
+        ])
+    }
+
     pub async fn remove_tab(
         &self,
         window_id: String,
@@ -293,15 +432,61 @@ fn apply_metadata_patch(tab: &mut WorkspaceTab, patch: WorkspaceTabMetadataPatch
 fn choose_owner_window(model: &mut WorkspaceModel, requested_window_id: Option<&str>) -> String {
     if let Some(window_id) = requested_window_id {
         ensure_window(model, window_id, window_id);
-        model.last_focused_window = Some(window_id.to_string());
+        set_focused_window(model, window_id);
         return window_id.to_string();
     }
-    if let Some(window_id) = model.last_focused_window.clone() {
+    if let Some(window_id) = last_focused_existing_window(model) {
         ensure_window(model, &window_id, &window_id);
         return window_id;
     }
     ensure_window(model, MAIN_WINDOW_ID, MAIN_WINDOW_ID);
     MAIN_WINDOW_ID.to_string()
+}
+
+fn set_focused_window(model: &mut WorkspaceModel, window_id: &str) {
+    model.last_focused_window = Some(window_id.to_string());
+    model
+        .focused_window_order
+        .retain(|focused_window_id| focused_window_id != window_id);
+    model.focused_window_order.push(window_id.to_string());
+}
+
+fn remove_focused_window(model: &mut WorkspaceModel, window_id: &str) {
+    model
+        .focused_window_order
+        .retain(|focused_window_id| focused_window_id != window_id);
+    model.last_focused_window = last_focused_existing_window(model);
+}
+
+fn last_focused_existing_window(model: &WorkspaceModel) -> Option<String> {
+    model
+        .focused_window_order
+        .iter()
+        .rev()
+        .find(|window_id| model.windows.contains_key(*window_id))
+        .cloned()
+        .or_else(|| {
+            model
+                .last_focused_window
+                .as_ref()
+                .filter(|window_id| model.windows.contains_key(*window_id))
+                .cloned()
+        })
+}
+
+fn choose_rehome_window(model: &WorkspaceModel) -> Option<String> {
+    last_focused_existing_window(model)
+        .or_else(|| {
+            model
+                .windows
+                .contains_key(MAIN_WINDOW_ID)
+                .then(|| MAIN_WINDOW_ID.to_string())
+        })
+        .or_else(|| {
+            let mut window_ids = model.windows.keys().cloned().collect::<Vec<_>>();
+            window_ids.sort();
+            window_ids.into_iter().next()
+        })
 }
 
 fn ensure_window(model: &mut WorkspaceModel, window_id: &str, label: &str) {
@@ -355,6 +540,42 @@ pub fn emit_workspace_updated(app: &AppHandle, snapshot: &WorkspaceSnapshot) {
     }
 }
 
+pub fn emit_workspace_updates(app: &AppHandle, snapshots: &[WorkspaceSnapshot]) {
+    for snapshot in snapshots {
+        emit_workspace_updated(app, snapshot);
+    }
+}
+
+pub fn emit_workspace_window_closed(app: &AppHandle, result: &WorkspaceWindowCloseResult) {
+    if let Err(error) = app.emit("workspace://window-closed", result) {
+        log::warn!("Workspace window closed event failed: {error}");
+    }
+}
+
+#[tauri::command]
+pub async fn workspace_window_create(
+    app: AppHandle,
+) -> Result<WorkspaceWindowCreateResult, String> {
+    let window_id = format!("workspace-{}", Uuid::new_v4().simple());
+    WebviewWindowBuilder::new(&app, &window_id, WebviewUrl::default())
+        .title("ExaTerm")
+        .inner_size(1280.0, 800.0)
+        .min_inner_size(320.0, 240.0)
+        .decorations(false)
+        .transparent(false)
+        .focused(true)
+        .build()
+        .map_err(|error| format!("ウィンドウ作成エラー: {error}"))?;
+
+    if let Some(window) = app.get_webview_window(&window_id) {
+        if let Err(error) = window.set_focus() {
+            log::warn!("New workspace window focus failed: {error}");
+        }
+    }
+
+    Ok(WorkspaceWindowCreateResult { window_id })
+}
+
 #[tauri::command]
 pub async fn workspace_window_register(
     app: AppHandle,
@@ -369,6 +590,18 @@ pub async fn workspace_window_register(
 }
 
 #[tauri::command]
+pub async fn workspace_window_unregister(
+    app: AppHandle,
+    state: tauri::State<'_, WorkspaceState>,
+    window_id: String,
+) -> Result<WorkspaceWindowCloseResult, String> {
+    let result = state.unregister_window(window_id).await;
+    emit_workspace_updates(&app, &result.snapshots);
+    emit_workspace_window_closed(&app, &result);
+    Ok(result)
+}
+
+#[tauri::command]
 pub async fn workspace_window_focus(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
@@ -377,6 +610,25 @@ pub async fn workspace_window_focus(
     let snapshot = state.focus_window(window_id).await;
     emit_workspace_updated(&app, &snapshot);
     Ok(snapshot)
+}
+
+#[tauri::command]
+pub async fn workspace_tab_move(
+    app: AppHandle,
+    state: tauri::State<'_, WorkspaceState>,
+    tab_id: String,
+    from_window_id: String,
+    to_window_id: String,
+    target_index: usize,
+) -> Result<WorkspaceSnapshot, String> {
+    let snapshots = state
+        .move_tab(tab_id, from_window_id, to_window_id.clone(), target_index)
+        .await?;
+    emit_workspace_updates(&app, &snapshots);
+    snapshots
+        .into_iter()
+        .find(|snapshot| snapshot.window_id == to_window_id)
+        .ok_or_else(|| "移動先スナップショットが見つかりません".to_string())
 }
 
 #[tauri::command]
@@ -549,6 +801,137 @@ mod tests {
             .tabs
             .iter()
             .all(|tab| tab.owner_window_id == "main"));
+    }
+
+    #[tokio::test]
+    async fn tab_move_updates_source_destination_and_owner() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state
+            .register_window("other".into(), "other".into(), true)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+        state.register_tab(input("s2", Some("other"))).await;
+
+        let snapshots = state
+            .move_tab("s1".into(), "main".into(), "other".into(), 0)
+            .await
+            .unwrap();
+        let main = snapshots
+            .iter()
+            .find(|snapshot| snapshot.window_id == "main")
+            .unwrap();
+        let other = snapshots
+            .iter()
+            .find(|snapshot| snapshot.window_id == "other")
+            .unwrap();
+
+        assert!(main.window.tab_order.is_empty());
+        assert_eq!(other.window.tab_order, vec!["s1", "s2"]);
+        assert_eq!(other.tabs[0].owner_window_id, "other");
+        assert_eq!(other.window.active_tab_id.as_deref(), Some("s1"));
+    }
+
+    #[tokio::test]
+    async fn tab_move_to_missing_destination_fails_without_rehoming() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+
+        let error = state
+            .move_tab("s1".into(), "main".into(), "missing".into(), 0)
+            .await
+            .unwrap_err();
+        let main = state.snapshot_for_window("main".into()).await;
+
+        assert!(error.contains("移動先ウィンドウ"));
+        assert_eq!(main.window.tab_order, vec!["s1"]);
+        assert_eq!(main.tabs[0].owner_window_id, "main");
+        assert!(main.tabs[0].is_connected);
+    }
+
+    #[tokio::test]
+    async fn closing_non_last_window_rehomes_tabs_to_last_focused_window() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state
+            .register_window("other".into(), "other".into(), true)
+            .await;
+        state
+            .register_window("third".into(), "third".into(), true)
+            .await;
+        state.focus_window("main".into()).await;
+        state.register_tab(input("s1", Some("other"))).await;
+
+        let result = state.unregister_window("other".into()).await;
+        let main = state.snapshot_for_window("main".into()).await;
+
+        assert_eq!(result.rehome_window_id.as_deref(), Some("main"));
+        assert_eq!(result.remaining_window_count, 2);
+        assert_eq!(main.window.tab_order, vec!["s1"]);
+        assert_eq!(main.tabs[0].owner_window_id, "main");
+        assert!(main.tabs[0].is_connected);
+    }
+
+    #[tokio::test]
+    async fn closing_last_window_does_not_rehome() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+
+        let result = state.unregister_window("main".into()).await;
+
+        assert_eq!(result.rehome_window_id, None);
+        assert_eq!(result.remaining_window_count, 0);
+        assert!(result.snapshots.is_empty());
+    }
+
+    #[tokio::test]
+    async fn rehome_preserves_log_metadata() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state
+            .register_window("other".into(), "other".into(), true)
+            .await;
+        state.register_tab(input("s1", Some("other"))).await;
+        state
+            .update_tab_metadata(
+                "s1".into(),
+                WorkspaceTabMetadataPatch {
+                    title: None,
+                    encoding: None,
+                    terminal_mode: None,
+                    is_connected: None,
+                    is_auto_logging: Some(true),
+                    is_manual_logging: Some(true),
+                    is_logging_paused: Some(true),
+                    manual_log_file_path: Some("C:\\logs\\s1.log".into()),
+                },
+            )
+            .await
+            .unwrap();
+        state.focus_window("main".into()).await;
+
+        state.unregister_window("other".into()).await;
+        let main = state.snapshot_for_window("main".into()).await;
+
+        assert!(main.tabs[0].is_auto_logging);
+        assert!(main.tabs[0].is_manual_logging);
+        assert!(main.tabs[0].is_logging_paused);
+        assert_eq!(
+            main.tabs[0].manual_log_file_path.as_deref(),
+            Some("C:\\logs\\s1.log")
+        );
     }
 
     #[tokio::test]

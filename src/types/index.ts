@@ -212,6 +212,17 @@ export interface WorkspaceSnapshot {
   tabs: WorkspaceTabInfo[];
 }
 
+export interface WorkspaceWindowCreateResult {
+  window_id: string;
+}
+
+export interface WorkspaceWindowCloseResult {
+  window_id: string;
+  rehome_window_id?: string | null;
+  remaining_window_count: number;
+  snapshots: WorkspaceSnapshot[];
+}
+
 export interface UtilityTabInfo {
   kind: UtilityTabKind;
   id: UtilityTabKind;

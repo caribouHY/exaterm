@@ -18,6 +18,7 @@ import type {
   ManualLogWriteMode,
   WorkspaceSnapshot,
   WorkspaceTabInfo,
+  WorkspaceWindowCreateResult,
 } from "./types";
 import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
@@ -676,6 +677,13 @@ export default function App() {
     void loadConnectionDialog();
     setShowConnection(true);
   }, []);
+
+  const openWindow = useCallback(() => {
+    invoke<WorkspaceWindowCreateResult>("workspace_window_create").catch((error) => {
+      console.error("Failed to create workspace window:", error);
+    });
+  }, []);
+
   const toggleAiPanel = useCallback(() => {
     setShowAiPanel((current) => {
       if (!current) {
@@ -689,7 +697,10 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey) {
         const key = e.key.toLowerCase();
-        if (key === "n" || key === "t") {
+        if (key === "n" && e.shiftKey) {
+          e.preventDefault();
+          openWindow();
+        } else if (key === "n" || key === "t") {
           e.preventDefault();
           openConnection();
         } else if (key === ",") {
@@ -702,7 +713,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [openConnection, openUtilityTab]);
+  }, [openConnection, openUtilityTab, openWindow]);
 
   const refreshConfig = useCallback(async () => {
     try {
@@ -773,6 +784,7 @@ export default function App() {
         showAiPanel={showAiPanel}
         onViewChange={handleViewChange}
         onOpenConnection={openConnection}
+        onOpenWindow={openWindow}
         onToggleAiPanel={toggleAiPanel}
       />
       <div className="app__body">
