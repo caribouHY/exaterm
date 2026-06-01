@@ -28,6 +28,32 @@ pub struct WorkspaceWindowCloseResult {
     pub snapshots: Vec<WorkspaceSnapshot>,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+pub struct WorkspacePointerPosition {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct WorkspaceDragPreview {
+    pub active: bool,
+    pub tab_id: Option<String>,
+    pub source_window_id: Option<String>,
+    pub pointer_screen_position: Option<WorkspacePointerPosition>,
+    pub target_window_id: Option<String>,
+    pub target_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct WorkspaceDragDropResult {
+    pub action: String,
+    pub tab_id: String,
+    pub source_window_id: String,
+    pub target_window_id: Option<String>,
+    pub created_window_id: Option<String>,
+    pub snapshots: Vec<WorkspaceSnapshot>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct WindowWorkspace {
     pub window_id: String,
@@ -71,6 +97,24 @@ struct WorkspaceModel {
     tabs: HashMap<String, WorkspaceTab>,
     last_focused_window: Option<String>,
     focused_window_order: Vec<String>,
+    drag: Option<WorkspaceDragSession>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct WorkspaceDragSession {
+    tab_id: String,
+    source_window_id: String,
+    pointer_screen_position: WorkspacePointerPosition,
+    target_window_id: Option<String>,
+    target_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct WorkspaceDragDropIntent {
+    tab_id: String,
+    source_window_id: String,
+    target_window_id: Option<String>,
+    target_index: usize,
 }
 
 #[derive(Clone, Default)]
@@ -388,6 +432,100 @@ impl WorkspaceState {
             })?;
         Some(snapshot_for_locked(&model, &owner_window_id))
     }
+
+    pub async fn drag_start(
+        &self,
+        window_id: String,
+        tab_id: String,
+        pointer_screen_position: WorkspacePointerPosition,
+    ) -> Result<WorkspaceDragPreview, String> {
+        let mut model = self.model.lock().await;
+        let window = model
+            .windows
+            .get(&window_id)
+            .ok_or_else(|| "ウィンドウが見つかりません".to_string())?;
+        if !window.tab_order.contains(&tab_id) {
+            return Err("タブがこのウィンドウにありません".to_string());
+        }
+        let tab = model
+            .tabs
+            .get(&tab_id)
+            .ok_or_else(|| "タブが見つかりません".to_string())?;
+        if tab.owner_window_id != window_id {
+            return Err("タブの所有ウィンドウが一致しません".to_string());
+        }
+
+        model.drag = Some(WorkspaceDragSession {
+            tab_id,
+            source_window_id: window_id,
+            pointer_screen_position,
+            target_window_id: None,
+            target_index: None,
+        });
+
+        Ok(drag_preview_for_locked(&model))
+    }
+
+    pub async fn drag_update(
+        &self,
+        pointer_screen_position: WorkspacePointerPosition,
+    ) -> WorkspaceDragPreview {
+        let mut model = self.model.lock().await;
+        if let Some(drag) = model.drag.as_mut() {
+            drag.pointer_screen_position = pointer_screen_position;
+        }
+        drag_preview_for_locked(&model)
+    }
+
+    pub async fn drag_hover(
+        &self,
+        window_id: String,
+        target_index: Option<usize>,
+    ) -> WorkspaceDragPreview {
+        let mut model = self.model.lock().await;
+        let window_exists = model.windows.contains_key(&window_id);
+        if let Some(drag) = model.drag.as_mut() {
+            if window_exists && target_index.is_some() {
+                drag.target_window_id = Some(window_id);
+                drag.target_index = target_index;
+            } else if drag.target_window_id.as_deref() == Some(&window_id) {
+                drag.target_window_id = None;
+                drag.target_index = None;
+            }
+        }
+        drag_preview_for_locked(&model)
+    }
+
+    pub async fn drag_cancel(&self) -> WorkspaceDragPreview {
+        let mut model = self.model.lock().await;
+        model.drag = None;
+        drag_preview_for_locked(&model)
+    }
+
+    async fn drag_drop_prepare(
+        &self,
+        pointer_screen_position: WorkspacePointerPosition,
+    ) -> Result<WorkspaceDragDropIntent, String> {
+        let mut model = self.model.lock().await;
+        let mut drag = model
+            .drag
+            .take()
+            .ok_or_else(|| "ドラッグ中のタブがありません".to_string())?;
+        drag.pointer_screen_position = pointer_screen_position;
+        if !model.tabs.contains_key(&drag.tab_id) {
+            return Err("タブが見つかりません".to_string());
+        }
+        if !model.windows.contains_key(&drag.source_window_id) {
+            return Err("移動元ウィンドウが見つかりません".to_string());
+        }
+
+        Ok(WorkspaceDragDropIntent {
+            tab_id: drag.tab_id,
+            source_window_id: drag.source_window_id,
+            target_window_id: drag.target_window_id,
+            target_index: drag.target_index.unwrap_or(0),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -534,6 +672,28 @@ fn snapshot_for_locked(model: &WorkspaceModel, window_id: &str) -> WorkspaceSnap
     }
 }
 
+fn drag_preview_for_locked(model: &WorkspaceModel) -> WorkspaceDragPreview {
+    if let Some(drag) = &model.drag {
+        WorkspaceDragPreview {
+            active: true,
+            tab_id: Some(drag.tab_id.clone()),
+            source_window_id: Some(drag.source_window_id.clone()),
+            pointer_screen_position: Some(drag.pointer_screen_position),
+            target_window_id: drag.target_window_id.clone(),
+            target_index: drag.target_index,
+        }
+    } else {
+        WorkspaceDragPreview {
+            active: false,
+            tab_id: None,
+            source_window_id: None,
+            pointer_screen_position: None,
+            target_window_id: None,
+            target_index: None,
+        }
+    }
+}
+
 pub fn emit_workspace_updated(app: &AppHandle, snapshot: &WorkspaceSnapshot) {
     if let Err(error) = app.emit("workspace://updated", snapshot) {
         log::warn!("Workspace update event failed: {error}");
@@ -552,12 +712,14 @@ pub fn emit_workspace_window_closed(app: &AppHandle, result: &WorkspaceWindowClo
     }
 }
 
-#[tauri::command]
-pub async fn workspace_window_create(
-    app: AppHandle,
-) -> Result<WorkspaceWindowCreateResult, String> {
-    let window_id = format!("workspace-{}", Uuid::new_v4().simple());
-    WebviewWindowBuilder::new(&app, &window_id, WebviewUrl::default())
+pub fn emit_workspace_drag_preview(app: &AppHandle, preview: &WorkspaceDragPreview) {
+    if let Err(error) = app.emit("workspace://drag-preview", preview) {
+        log::warn!("Workspace drag preview event failed: {error}");
+    }
+}
+
+fn create_workspace_window(app: &AppHandle, window_id: &str) -> Result<(), String> {
+    WebviewWindowBuilder::new(app, window_id, WebviewUrl::default())
         .title("ExaTerm")
         .inner_size(1280.0, 800.0)
         .min_inner_size(320.0, 240.0)
@@ -567,11 +729,21 @@ pub async fn workspace_window_create(
         .build()
         .map_err(|error| format!("ウィンドウ作成エラー: {error}"))?;
 
-    if let Some(window) = app.get_webview_window(&window_id) {
+    if let Some(window) = app.get_webview_window(window_id) {
         if let Err(error) = window.set_focus() {
             log::warn!("New workspace window focus failed: {error}");
         }
     }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn workspace_window_create(
+    app: AppHandle,
+) -> Result<WorkspaceWindowCreateResult, String> {
+    let window_id = format!("workspace-{}", Uuid::new_v4().simple());
+    create_workspace_window(&app, &window_id)?;
 
     Ok(WorkspaceWindowCreateResult { window_id })
 }
@@ -629,6 +801,116 @@ pub async fn workspace_tab_move(
         .into_iter()
         .find(|snapshot| snapshot.window_id == to_window_id)
         .ok_or_else(|| "移動先スナップショットが見つかりません".to_string())
+}
+
+#[tauri::command]
+pub async fn workspace_tab_drag_start(
+    app: AppHandle,
+    state: tauri::State<'_, WorkspaceState>,
+    window_id: String,
+    tab_id: String,
+    pointer_screen_position: WorkspacePointerPosition,
+) -> Result<WorkspaceDragPreview, String> {
+    let preview = state
+        .drag_start(window_id, tab_id, pointer_screen_position)
+        .await?;
+    emit_workspace_drag_preview(&app, &preview);
+    Ok(preview)
+}
+
+#[tauri::command]
+pub async fn workspace_tab_drag_update(
+    app: AppHandle,
+    state: tauri::State<'_, WorkspaceState>,
+    pointer_screen_position: WorkspacePointerPosition,
+) -> Result<WorkspaceDragPreview, String> {
+    let preview = state.drag_update(pointer_screen_position).await;
+    emit_workspace_drag_preview(&app, &preview);
+    Ok(preview)
+}
+
+#[tauri::command]
+pub async fn workspace_tab_drag_hover(
+    app: AppHandle,
+    state: tauri::State<'_, WorkspaceState>,
+    window_id: String,
+    target_index: Option<usize>,
+) -> Result<WorkspaceDragPreview, String> {
+    let preview = state.drag_hover(window_id, target_index).await;
+    emit_workspace_drag_preview(&app, &preview);
+    Ok(preview)
+}
+
+#[tauri::command]
+pub async fn workspace_tab_drag_drop(
+    app: AppHandle,
+    state: tauri::State<'_, WorkspaceState>,
+    pointer_screen_position: WorkspacePointerPosition,
+) -> Result<WorkspaceDragDropResult, String> {
+    let intent = match state.drag_drop_prepare(pointer_screen_position).await {
+        Ok(intent) => intent,
+        Err(error) => {
+            let preview = state.drag_cancel().await;
+            emit_workspace_drag_preview(&app, &preview);
+            return Err(error);
+        }
+    };
+
+    let mut created_window_id = None;
+    let target_window_id = match intent.target_window_id {
+        Some(window_id) => window_id,
+        None => {
+            let window_id = format!("workspace-{}", Uuid::new_v4().simple());
+            if let Err(error) = create_workspace_window(&app, &window_id) {
+                let preview = state.drag_cancel().await;
+                emit_workspace_drag_preview(&app, &preview);
+                return Err(error);
+            }
+            let snapshot = state
+                .register_window(window_id.clone(), window_id.clone(), true)
+                .await;
+            emit_workspace_updated(&app, &snapshot);
+            created_window_id = Some(window_id.clone());
+            window_id
+        }
+    };
+
+    let move_result = state
+        .move_tab(
+            intent.tab_id.clone(),
+            intent.source_window_id.clone(),
+            target_window_id.clone(),
+            intent.target_index,
+        )
+        .await;
+    let preview = state.drag_cancel().await;
+    emit_workspace_drag_preview(&app, &preview);
+
+    let snapshots = move_result?;
+    emit_workspace_updates(&app, &snapshots);
+
+    Ok(WorkspaceDragDropResult {
+        action: if created_window_id.is_some() {
+            "detach".to_string()
+        } else {
+            "move".to_string()
+        },
+        tab_id: intent.tab_id,
+        source_window_id: intent.source_window_id,
+        target_window_id: Some(target_window_id),
+        created_window_id,
+        snapshots,
+    })
+}
+
+#[tauri::command]
+pub async fn workspace_tab_drag_cancel(
+    app: AppHandle,
+    state: tauri::State<'_, WorkspaceState>,
+) -> Result<WorkspaceDragPreview, String> {
+    let preview = state.drag_cancel().await;
+    emit_workspace_drag_preview(&app, &preview);
+    Ok(preview)
 }
 
 #[tauri::command]
@@ -852,6 +1134,89 @@ mod tests {
         assert_eq!(main.window.tab_order, vec!["s1"]);
         assert_eq!(main.tabs[0].owner_window_id, "main");
         assert!(main.tabs[0].is_connected);
+    }
+
+    #[tokio::test]
+    async fn drag_start_hover_and_cancel_manage_preview_state() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state
+            .register_window("other".into(), "other".into(), true)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+
+        let preview = state
+            .drag_start(
+                "main".into(),
+                "s1".into(),
+                WorkspacePointerPosition { x: 10.0, y: 20.0 },
+            )
+            .await
+            .unwrap();
+
+        assert!(preview.active);
+        assert_eq!(preview.tab_id.as_deref(), Some("s1"));
+        assert_eq!(preview.source_window_id.as_deref(), Some("main"));
+
+        let preview = state.drag_hover("other".into(), Some(1)).await;
+
+        assert_eq!(preview.target_window_id.as_deref(), Some("other"));
+        assert_eq!(preview.target_index, Some(1));
+
+        let preview = state.drag_hover("main".into(), None).await;
+
+        assert_eq!(preview.target_window_id.as_deref(), Some("other"));
+        assert_eq!(preview.target_index, Some(1));
+
+        let preview = state.drag_hover("other".into(), None).await;
+
+        assert_eq!(preview.target_window_id, None);
+        assert_eq!(preview.target_index, None);
+
+        let preview = state.drag_cancel().await;
+
+        assert!(!preview.active);
+        assert_eq!(preview.tab_id, None);
+    }
+
+    #[tokio::test]
+    async fn drag_drop_prepare_clears_drag_without_moving_tab() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state
+            .register_window("other".into(), "other".into(), true)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+
+        state
+            .drag_start(
+                "main".into(),
+                "s1".into(),
+                WorkspacePointerPosition { x: 10.0, y: 20.0 },
+            )
+            .await
+            .unwrap();
+        state.drag_hover("other".into(), Some(0)).await;
+
+        let intent = state
+            .drag_drop_prepare(WorkspacePointerPosition { x: 30.0, y: 40.0 })
+            .await
+            .unwrap();
+        let main = state.snapshot_for_window("main".into()).await;
+        let preview = state
+            .drag_update(WorkspacePointerPosition { x: 50.0, y: 60.0 })
+            .await;
+
+        assert_eq!(intent.tab_id, "s1");
+        assert_eq!(intent.source_window_id, "main");
+        assert_eq!(intent.target_window_id.as_deref(), Some("other"));
+        assert_eq!(intent.target_index, 0);
+        assert_eq!(main.window.tab_order, vec!["s1"]);
+        assert!(!preview.active);
     }
 
     #[tokio::test]

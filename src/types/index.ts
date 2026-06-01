@@ -216,6 +216,29 @@ export interface WorkspaceWindowCreateResult {
   window_id: string;
 }
 
+export interface WorkspacePointerPosition {
+  x: number;
+  y: number;
+}
+
+export interface WorkspaceDragPreview {
+  active: boolean;
+  tab_id?: string | null;
+  source_window_id?: string | null;
+  pointer_screen_position?: WorkspacePointerPosition | null;
+  target_window_id?: string | null;
+  target_index?: number | null;
+}
+
+export interface WorkspaceDragDropResult {
+  action: "move" | "detach" | string;
+  tab_id: string;
+  source_window_id: string;
+  target_window_id?: string | null;
+  created_window_id?: string | null;
+  snapshots: WorkspaceSnapshot[];
+}
+
 export interface WorkspaceWindowCloseResult {
   window_id: string;
   rehome_window_id?: string | null;

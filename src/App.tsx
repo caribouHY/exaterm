@@ -16,6 +16,9 @@ import type {
   TerminalMode,
   StartupCliRequest,
   ManualLogWriteMode,
+  WorkspaceDragDropResult,
+  WorkspaceDragPreview,
+  WorkspacePointerPosition,
   WorkspaceSnapshot,
   WorkspaceTabInfo,
   WorkspaceWindowCreateResult,
@@ -119,6 +122,9 @@ export default function App() {
   const [aiSelectedModel, setAiSelectedModel] = useState("");
   const [startupCliRequest, setStartupCliRequest] = useState<StartupCliRequest | null>(null);
   const [mcpCredentialPrompts, setMcpCredentialPrompts] = useState<McpCredentialPromptState[]>([]);
+  const [workspaceDragPreview, setWorkspaceDragPreview] = useState<WorkspaceDragPreview | null>(
+    null
+  );
   const activeTerminalBuffer = useRef("");
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
@@ -269,6 +275,12 @@ export default function App() {
     const unlistenWorkspace = listen<WorkspaceSnapshot>("workspace://updated", (event) => {
       applyWorkspaceSnapshot(event.payload);
     });
+    const unlistenWorkspaceDrag = listen<WorkspaceDragPreview>(
+      "workspace://drag-preview",
+      (event) => {
+        setWorkspaceDragPreview(event.payload.active ? event.payload : null);
+      }
+    );
     const handleFocus = () => {
       invoke<WorkspaceSnapshot>("workspace_window_focus", {
         windowId: windowIdRef.current,
@@ -280,6 +292,7 @@ export default function App() {
     window.addEventListener("focus", handleFocus);
     return () => {
       unlistenWorkspace.then((fn) => fn());
+      unlistenWorkspaceDrag.then((fn) => fn());
       window.removeEventListener("focus", handleFocus);
     };
   }, [applyWorkspaceSnapshot]);
@@ -525,6 +538,76 @@ export default function App() {
       setTabOrder(nextOrder);
     },
     [appTabs, applyWorkspaceSnapshot]
+  );
+
+  const handleCrossWindowDragStart = useCallback(
+    (tabId: string, pointerScreenPosition: WorkspacePointerPosition) => {
+      invoke<WorkspaceDragPreview>("workspace_tab_drag_start", {
+        windowId: windowIdRef.current,
+        tabId,
+        pointerScreenPosition,
+      })
+        .then((preview) => setWorkspaceDragPreview(preview.active ? preview : null))
+        .catch((error) => console.error("Failed to start workspace tab drag:", error));
+    },
+    []
+  );
+
+  const handleCrossWindowDragUpdate = useCallback(
+    (pointerScreenPosition: WorkspacePointerPosition) => {
+      invoke<WorkspaceDragPreview>("workspace_tab_drag_update", {
+        pointerScreenPosition,
+      }).catch((error) => console.error("Failed to update workspace tab drag:", error));
+    },
+    []
+  );
+
+  const handleCrossWindowDragHover = useCallback((targetIndex: number | null) => {
+    invoke<WorkspaceDragPreview>("workspace_tab_drag_hover", {
+      windowId: windowIdRef.current,
+      targetIndex,
+    }).catch((error) => console.error("Failed to update workspace tab drag hover:", error));
+  }, []);
+
+  const handleCrossWindowDragCancel = useCallback(() => {
+    invoke<WorkspaceDragPreview>("workspace_tab_drag_cancel")
+      .then(() => setWorkspaceDragPreview(null))
+      .catch((error) => console.error("Failed to cancel workspace tab drag:", error));
+  }, []);
+
+  const handleCrossWindowDragDrop = useCallback(
+    async (tabId: string, pointerScreenPosition: WorkspacePointerPosition) => {
+      if (tabId) {
+        try {
+          await terminalViewRefs.current.get(tabId)?.flushLogBuffersForMove();
+        } catch (error) {
+          console.warn("Failed to flush terminal log buffers before tab move:", error);
+        }
+      }
+
+      try {
+        const result = await invoke<WorkspaceDragDropResult>("workspace_tab_drag_drop", {
+          pointerScreenPosition,
+        });
+        result.snapshots.forEach(applyWorkspaceSnapshot);
+        setWorkspaceDragPreview(null);
+        const sourceSnapshot = result.snapshots.find(
+          (snapshot) => snapshot.window_id === windowIdRef.current
+        );
+        if (
+          result.source_window_id === windowIdRef.current &&
+          result.target_window_id !== windowIdRef.current &&
+          sourceSnapshot?.window.tab_order.length === 0 &&
+          utilityTabs.length === 0
+        ) {
+          await getCurrentWindow().close();
+        }
+      } catch (error) {
+        console.error("Failed to drop workspace tab drag:", error);
+        handleCrossWindowDragCancel();
+      }
+    },
+    [applyWorkspaceSnapshot, handleCrossWindowDragCancel, utilityTabs.length]
   );
 
   const handleTerminalData = useCallback((tabId: string, data: string) => {
@@ -799,6 +882,13 @@ export default function App() {
                 onCloseTab={handleCloseTab}
                 onAddTab={openConnection}
                 onReorderTabs={handleReorderTabs}
+                windowId={windowIdRef.current}
+                dragPreview={workspaceDragPreview}
+                onCrossWindowDragStart={handleCrossWindowDragStart}
+                onCrossWindowDragUpdate={handleCrossWindowDragUpdate}
+                onCrossWindowDragDrop={handleCrossWindowDragDrop}
+                onCrossWindowDragCancel={handleCrossWindowDragCancel}
+                onCrossWindowDragHover={handleCrossWindowDragHover}
               />
               <div
                 className={`app__terminal-area ${activeView !== "terminal" ? "app__hidden" : ""}`}

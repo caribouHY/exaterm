@@ -6,6 +6,7 @@
 
 - Moved terminal tab projection state into a backend workspace model as the foundation for future multi-window tab movement.
 - Added the multi-window shell foundation, including new ExaTerm windows, backend window lifecycle tracking, and terminal tab rehoming when a non-last window closes.
+- Added drag-first terminal tab movement across ExaTerm windows, including detach-to-new-window drops.
 
 ## v0.5.0
 

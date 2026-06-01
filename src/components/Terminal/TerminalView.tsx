@@ -32,6 +32,7 @@ interface TerminalViewProps {
 export interface TerminalViewHandle {
   insertText: (text: string) => void;
   flushManualLogBuffer: () => Promise<void>;
+  flushLogBuffersForMove: () => Promise<void>;
 }
 
 interface PromptDecorationSet {
@@ -568,6 +569,35 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           logMode: "manual",
           data: logText,
         });
+      },
+      flushLogBuffersForMove: async () => {
+        if (!sessionId) return;
+        const appendTasks: Promise<unknown>[] = [];
+        if (isAutoLoggingRef.current) {
+          const logText = autoLogSanitizerRef.current.flush();
+          if (logText) {
+            appendTasks.push(
+              invoke("logger_append_to_mode", {
+                sessionId,
+                logMode: "auto",
+                data: logText,
+              })
+            );
+          }
+        }
+        if (isManualLoggingRef.current) {
+          const logText = manualLogSanitizerRef.current.flush();
+          if (logText) {
+            appendTasks.push(
+              invoke("logger_append_to_mode", {
+                sessionId,
+                logMode: "manual",
+                data: logText,
+              })
+            );
+          }
+        }
+        await Promise.all(appendTasks);
       },
     }),
     [sessionId]
