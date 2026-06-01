@@ -1,5 +1,5 @@
 use encoding_rs::{Decoder, Encoding, EUC_JP, SHIFT_JIS, UTF_8};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{futures::Notified, Mutex, Notify};
@@ -7,7 +7,7 @@ use tokio::sync::{futures::Notified, Mutex, Notify};
 const DEFAULT_OUTPUT_LIMIT: usize = 64 * 1024;
 const DEFAULT_SNAPSHOT_MAX_CHARS: usize = 20_000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TerminalProtocol {
     Ssh,

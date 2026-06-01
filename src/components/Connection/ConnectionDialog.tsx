@@ -32,7 +32,7 @@ interface ConnectionDialogProps {
     isAutoLogging: boolean,
     encoding?: Encoding,
     terminalMode?: TerminalMode
-  ) => void;
+  ) => void | Promise<void>;
 }
 
 const SSH_ENCODINGS: { label: string; value: Encoding }[] = [
@@ -476,7 +476,14 @@ export default function ConnectionDialog({
         target: `${username}@${host}:${sshPort}`,
       });
     }
-    onConnect("ssh", result.session_id, `${username}@${host}`, autoLog, encoding, sshTerminalMode);
+    await onConnect(
+      "ssh",
+      result.session_id,
+      `${username}@${host}`,
+      autoLog,
+      encoding,
+      sshTerminalMode
+    );
   };
 
   const continueSshConnect = async (sshPort: number, currentJumpCredential = jumpCredential) => {
@@ -712,7 +719,7 @@ export default function ConnectionDialog({
             target: `${telnetHost}:${parsedTelnetPort}`,
           });
         }
-        onConnect(
+        await onConnect(
           "telnet",
           sessionId,
           `${telnetHost}:${parsedTelnetPort}`,
@@ -741,7 +748,7 @@ export default function ConnectionDialog({
           target: selectedPort,
         });
       }
-      onConnect("serial", sessionId, selectedPort, autoLog, "utf-8", serialTerminalMode);
+      await onConnect("serial", sessionId, selectedPort, autoLog, "utf-8", serialTerminalMode);
     } catch (e: unknown) {
       const message =
         typeof e === "string" ? e : e instanceof Error ? e.message : t("connection.error");

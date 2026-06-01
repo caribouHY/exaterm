@@ -33,6 +33,9 @@ use crate::serial::{self, SerialState};
 use crate::ssh::{self, SshState};
 use crate::telnet::{self, TelnetState};
 use crate::terminal_control::{TerminalControlState, TerminalProtocol, TerminalStatus};
+use crate::workspace::WorkspaceState;
+#[cfg(not(test))]
+use crate::workspace::{emit_workspace_updated, WorkspaceTabRegisterInput};
 
 const DEFAULT_READ_CHARS: usize = 2_000;
 const MAX_READ_CHARS: usize = 20_000;
@@ -58,6 +61,8 @@ pub struct McpRuntime {
     #[cfg(not(test))]
     pub app: Option<AppHandle>,
     pub terminals: TerminalControlState,
+    #[cfg_attr(test, allow(dead_code))]
+    pub workspace: WorkspaceState,
     pub ssh: SshState,
     pub serial: SerialState,
     pub telnet: TelnetState,
@@ -570,6 +575,16 @@ fn terminal_protocol_log_type(protocol: TerminalProtocol) -> &'static str {
     }
 }
 
+#[cfg(not(test))]
+fn terminal_protocol_from_log_type(value: &str) -> Result<TerminalProtocol, String> {
+    match value {
+        "ssh" => Ok(TerminalProtocol::Ssh),
+        "serial" => Ok(TerminalProtocol::Serial),
+        "telnet" => Ok(TerminalProtocol::Telnet),
+        _ => Err(format!("不明な接続種別: {value}")),
+    }
+}
+
 async fn send_terminal_input_to_runtime(
     runtime: &McpRuntime,
     session_id: &str,
@@ -1048,6 +1063,7 @@ async fn connect_prepared_profile(
                 app,
                 &runtime.ssh,
                 &runtime.terminals,
+                &runtime.workspace,
                 runtime.logger.as_ref(),
                 ssh::SshConnectOptions {
                     host: host.clone(),
@@ -1073,6 +1089,7 @@ async fn connect_prepared_profile(
             app,
             &runtime.telnet,
             &runtime.terminals,
+            &runtime.workspace,
             runtime.logger.as_ref(),
             host.clone(),
             *port,
@@ -1173,19 +1190,31 @@ async fn finish_created_session(
         false
     };
 
+    let protocol = terminal_protocol_from_log_type(&connection_type).map_err(invalid_params)?;
     let payload = McpConnectionCreatedPayload {
-        session_id,
-        connection_type,
+        session_id: session_id.clone(),
+        connection_type: connection_type.clone(),
         target,
-        title,
-        encoding,
-        terminal_mode,
+        title: title.clone(),
+        encoding: encoding.clone(),
+        terminal_mode: terminal_mode.clone(),
         auto_logging,
     };
 
-    if let Err(error) = app.emit("terminal://created", &payload) {
-        log::warn!("MCP terminal created event failed: {error}");
-    }
+    let snapshot = runtime
+        .workspace
+        .register_tab(WorkspaceTabRegisterInput {
+            window_id: None,
+            tab_id: None,
+            session_id,
+            connection_type: protocol,
+            title,
+            encoding,
+            terminal_mode,
+            is_auto_logging: auto_logging,
+        })
+        .await;
+    emit_workspace_updated(app, &snapshot);
 
     Ok(json!(payload))
 }
@@ -1205,6 +1234,7 @@ async fn connect_prepared_serial_console(
         app,
         &runtime.serial,
         &runtime.terminals,
+        &runtime.workspace,
         runtime.logger.as_ref(),
         prepared.port.clone(),
         prepared.config,
@@ -1826,6 +1856,7 @@ mod tests {
         McpRuntime {
             config: McpConfig::default(),
             terminals: TerminalControlState::new(),
+            workspace: WorkspaceState::new(),
             ssh: SshState::new(),
             serial: SerialState::new(),
             telnet: TelnetState::new(),

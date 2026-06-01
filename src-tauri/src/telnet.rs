@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+use crate::workspace::{emit_workspace_updated, WorkspaceState};
 use crate::{logger, logger::LoggerState};
 
 const IAC: u8 = 255;
@@ -211,6 +212,7 @@ fn escape_iac_bytes(data: Vec<u8>) -> Vec<u8> {
 async fn remove_session(
     app: &AppHandle,
     terminals: &TerminalControlState,
+    workspace: &WorkspaceState,
     logger_state: Option<&LoggerState>,
     sessions: &Arc<Mutex<HashMap<String, TelnetSession>>>,
     session_id: &str,
@@ -218,6 +220,9 @@ async fn remove_session(
     let session = sessions.lock().await.remove(session_id);
     if session.is_some() {
         terminals.mark_disconnected(session_id).await;
+        if let Some(snapshot) = workspace.mark_disconnected(session_id).await {
+            emit_workspace_updated(app, &snapshot);
+        }
         let _ = app.emit("telnet://disconnected", session_id);
     }
     if let Some(logger_state) = logger_state {
@@ -229,11 +234,20 @@ async fn remove_session(
 async fn mark_disconnected(
     app: &AppHandle,
     terminals: &TerminalControlState,
+    workspace: &WorkspaceState,
     logger_state: Option<&LoggerState>,
     sessions: &Arc<Mutex<HashMap<String, TelnetSession>>>,
     session_id: &str,
 ) {
-    let _ = remove_session(app, terminals, logger_state, sessions, session_id).await;
+    let _ = remove_session(
+        app,
+        terminals,
+        workspace,
+        logger_state,
+        sessions,
+        session_id,
+    )
+    .await;
 }
 
 #[tauri::command]
@@ -241,6 +255,7 @@ pub async fn telnet_connect(
     app: AppHandle,
     state: tauri::State<'_, TelnetState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
     host: String,
     port: u16,
@@ -252,6 +267,7 @@ pub async fn telnet_connect(
         &app,
         &state,
         &terminals,
+        &workspace,
         Some(&logger),
         host,
         port,
@@ -266,6 +282,7 @@ pub async fn connect(
     app: &AppHandle,
     state: &TelnetState,
     terminals: &TerminalControlState,
+    workspace: &WorkspaceState,
     logger_state: Option<&LoggerState>,
     host: String,
     port: u16,
@@ -284,6 +301,7 @@ pub async fn connect(
     let write_app = app.clone();
     let write_sessions = state.sessions.clone();
     let write_terminals = terminals.clone();
+    let write_workspace = workspace.clone();
     let write_logger = logger_state.cloned();
     let write_task = tokio::spawn(async move {
         while let Some(data) = write_rx.recv().await {
@@ -292,6 +310,7 @@ pub async fn connect(
                 mark_disconnected(
                     &write_app,
                     &write_terminals,
+                    &write_workspace,
                     write_logger.as_ref(),
                     &write_sessions,
                     &write_sid,
@@ -306,6 +325,7 @@ pub async fn connect(
     let read_app = app.clone();
     let read_sessions = state.sessions.clone();
     let read_terminals = terminals.clone();
+    let read_workspace = workspace.clone();
     let read_logger = logger_state.cloned();
     let read_task = tokio::spawn(async move {
         let mut parser = TelnetParser::new(cols, rows);
@@ -317,6 +337,7 @@ pub async fn connect(
                     mark_disconnected(
                         &read_app,
                         &read_terminals,
+                        &read_workspace,
                         read_logger.as_ref(),
                         &read_sessions,
                         &read_sid,
@@ -347,6 +368,7 @@ pub async fn connect(
                     mark_disconnected(
                         &read_app,
                         &read_terminals,
+                        &read_workspace,
                         read_logger.as_ref(),
                         &read_sessions,
                         &read_sid,
@@ -432,12 +454,14 @@ pub async fn telnet_disconnect(
     app: AppHandle,
     state: tauri::State<'_, TelnetState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<(), String> {
     if let Some(session) = remove_session(
         &app,
         &terminals,
+        &workspace,
         Some(&logger),
         &state.sessions,
         &session_id,

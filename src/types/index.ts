@@ -184,6 +184,34 @@ export interface TabInfo {
   manualLogFilePath?: string;
 }
 
+export interface WorkspaceTabInfo {
+  tab_id: string;
+  session_id: string;
+  connection_type: ConnectionType;
+  title: string;
+  owner_window_id: string;
+  encoding: Encoding;
+  terminal_mode: TerminalMode;
+  is_connected: boolean;
+  is_auto_logging: boolean;
+  is_manual_logging: boolean;
+  is_logging_paused: boolean;
+  manual_log_file_path?: string | null;
+}
+
+export interface WindowWorkspaceSnapshot {
+  window_id: string;
+  label: string;
+  tab_order: string[];
+  active_tab_id?: string | null;
+}
+
+export interface WorkspaceSnapshot {
+  window_id: string;
+  window: WindowWorkspaceSnapshot;
+  tabs: WorkspaceTabInfo[];
+}
+
 export interface UtilityTabInfo {
   kind: UtilityTabKind;
   id: UtilityTabKind;

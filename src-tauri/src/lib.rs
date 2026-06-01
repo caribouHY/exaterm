@@ -8,6 +8,7 @@ mod ssh;
 mod ssh_known_hosts;
 mod telnet;
 mod terminal_control;
+mod workspace;
 
 use cli::{CliAction, StartupCliRequest};
 use logger::LoggerState;
@@ -17,6 +18,7 @@ use ssh::SshState;
 use std::sync::Mutex;
 use telnet::TelnetState;
 use terminal_control::TerminalControlState;
+use workspace::WorkspaceState;
 
 pub struct StartupCliState {
     request: Mutex<Option<StartupCliRequest>>,
@@ -53,6 +55,7 @@ pub fn run() {
     let serial_state = SerialState::new();
     let telnet_state = TelnetState::new();
     let terminal_control_state = TerminalControlState::new();
+    let workspace_state = WorkspaceState::new();
     let logger_state = LoggerState::new();
     let mcp_credential_state = McpCredentialState::new();
     let mcp_log_control_state = McpLogControlState::new();
@@ -65,6 +68,7 @@ pub fn run() {
         .manage(serial_state.clone())
         .manage(telnet_state.clone())
         .manage(terminal_control_state.clone())
+        .manage(workspace_state.clone())
         .manage(logger_state.clone())
         .manage(mcp_credential_state.clone())
         .manage(mcp_log_control_state.clone())
@@ -79,6 +83,7 @@ pub fn run() {
                         #[cfg(not(test))]
                         app: Some(app.handle().clone()),
                         terminals: terminal_control_state.clone(),
+                        workspace: workspace_state.clone(),
                         ssh: ssh_state.clone(),
                         serial: serial_state.clone(),
                         telnet: telnet_state.clone(),
@@ -140,6 +145,14 @@ pub fn run() {
             terminal_control::terminal_encoding_set,
             terminal_control::terminal_output_delta_get,
             terminal_control::terminal_output_snapshot_get,
+            workspace::workspace_snapshot_get,
+            workspace::workspace_tab_activate,
+            workspace::workspace_tab_register,
+            workspace::workspace_tab_remove,
+            workspace::workspace_tab_reorder,
+            workspace::workspace_tab_update_metadata,
+            workspace::workspace_window_focus,
+            workspace::workspace_window_register,
             // Config
             config::config_load,
             config::config_save,

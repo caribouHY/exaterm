@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Moved terminal tab projection state into a backend workspace model as the foundation for future multi-window tab movement.
+
 ## v0.5.0
 
 ### Added

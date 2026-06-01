@@ -18,6 +18,7 @@ use crate::ssh_known_hosts::{
     HostKeyCheckResult, HostKeyCheckStatus,
 };
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+use crate::workspace::{emit_workspace_updated, WorkspaceState};
 use crate::{logger, logger::LoggerState};
 
 /// SSH session state shared across async tasks
@@ -154,6 +155,7 @@ struct SshClientHandler {
     sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
     host_verifier: HostKeyVerifier,
     terminals: TerminalControlState,
+    workspace: WorkspaceState,
     logger: Option<LoggerState>,
 }
 
@@ -243,6 +245,9 @@ impl SshClientHandler {
                     .await;
             }
             self.terminals.mark_disconnected(&self.session_id).await;
+            if let Some(snapshot) = self.workspace.mark_disconnected(&self.session_id).await {
+                emit_workspace_updated(&self.app, &snapshot);
+            }
             let _ = self.app.emit("ssh://disconnected", &self.session_id);
         }
         if let Some(logger_state) = &self.logger {
@@ -823,6 +828,7 @@ pub async fn ssh_connect(
     app: AppHandle,
     state: tauri::State<'_, SshState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
     host: String,
     port: u16,
@@ -842,6 +848,7 @@ pub async fn ssh_connect(
         &app,
         &state,
         &terminals,
+        &workspace,
         Some(&logger),
         SshConnectOptions {
             host,
@@ -866,6 +873,7 @@ pub async fn connect(
     app: &AppHandle,
     state: &SshState,
     terminals: &TerminalControlState,
+    workspace: &WorkspaceState,
     logger_state: Option<&LoggerState>,
     options: SshConnectOptions,
 ) -> Result<SshConnectResult, String> {
@@ -886,6 +894,7 @@ pub async fn connect(
         sessions: state.sessions.clone(),
         host_verifier: host_verifier.clone(),
         terminals: terminals.clone(),
+        workspace: workspace.clone(),
         logger: logger_state.cloned(),
     };
 
@@ -1019,6 +1028,7 @@ pub async fn ssh_disconnect(
     app: AppHandle,
     state: tauri::State<'_, SshState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<(), String> {
@@ -1038,6 +1048,9 @@ pub async fn ssh_disconnect(
         }
     }
     terminals.mark_disconnected(&session_id).await;
+    if let Some(snapshot) = workspace.mark_disconnected(&session_id).await {
+        emit_workspace_updated(&app, &snapshot);
+    }
     logger::clear_session_logs(&logger, &session_id).await;
     let _ = app.emit("ssh://disconnected", &session_id);
     Ok(())
