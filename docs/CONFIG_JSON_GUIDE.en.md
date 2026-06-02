@@ -44,6 +44,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
   "mcp": {
     "enabled": false,
     "connect_enabled": false,
+    "stdio_enabled": false,
     "host": "127.0.0.1",
     "port": 8765
   },
@@ -117,6 +118,7 @@ Set `ai.debug_log_enabled` to `true` only when you need to troubleshoot AI chat 
 | --------------------- | ------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mcp.enabled`         | boolean | `false`       | When set to `true`, ExaTerm starts a local MCP Streamable HTTP endpoint at `/mcp` for external AI agents. Existing terminal-control tools expose terminal sessions opened in ExaTerm.                                                                                                         |
 | `mcp.connect_enabled` | boolean | `false`       | When set to `true`, trusted MCP clients can list saved SSH/Telnet profiles, open new ExaTerm tabs from those profiles, list Serial ports, and open Serial consoles. SSH passwords and encrypted key passphrases are entered in the ExaTerm UI and are not exposed to the MCP client or saved. |
+| `mcp.stdio_enabled`   | boolean | `false`       | When set to `true` with `mcp.enabled=true`, the `exaterm-mcp` stdio proxy can be used by local MCP clients. The proxy forwards tool calls to the running ExaTerm GUI through a current-user local control plane.                                                                              |
 | `mcp.host`            | string  | `"127.0.0.1"` | Bind address for the MCP server. Keep this on a loopback address unless you fully understand the security impact of exposing terminal control to another machine.                                                                                                                             |
 | `mcp.port`            | number  | `8765`        | TCP port for the MCP server. If the port is already in use, the MCP server fails to start and the rest of ExaTerm continues running.                                                                                                                                                          |
 

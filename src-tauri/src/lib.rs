@@ -12,7 +12,9 @@ mod workspace;
 
 use cli::{CliAction, StartupCliRequest};
 use logger::LoggerState;
-use mcp::{spawn_mcp_server, McpCredentialState, McpLogControlState, McpRuntime};
+use mcp::{
+    spawn_gui_control_plane, spawn_mcp_server, McpCredentialState, McpLogControlState, McpRuntime,
+};
 use serial::SerialState;
 use ssh::SshState;
 use std::sync::Mutex;
@@ -20,6 +22,8 @@ use tauri::Manager;
 use telnet::TelnetState;
 use terminal_control::TerminalControlState;
 use workspace::WorkspaceState;
+
+pub use mcp::run_stdio_proxy;
 
 pub struct StartupCliState {
     request: Mutex<Option<StartupCliRequest>>,
@@ -107,7 +111,7 @@ pub fn run() {
                     terminal_control_state
                         .set_output_limit_from_scrollback(cfg.terminal.scrollback);
                     if cfg.mcp.enabled {
-                        spawn_mcp_server(McpRuntime {
+                        let runtime = McpRuntime {
                             config: cfg.mcp,
                             #[cfg(not(test))]
                             app: Some(app.handle().clone()),
@@ -120,7 +124,9 @@ pub fn run() {
                             log_control: Some(mcp_log_control_state.clone()),
                             #[cfg(not(test))]
                             credentials: Some(mcp_credential_state.clone()),
-                        });
+                        };
+                        spawn_gui_control_plane(runtime.clone());
+                        spawn_mcp_server(runtime);
                     }
                 }
                 Err(error) => {

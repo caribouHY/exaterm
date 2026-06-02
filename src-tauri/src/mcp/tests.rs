@@ -8,8 +8,12 @@ use axum::{
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpService,
 };
+use rmcp::ServiceExt;
 use serde_json::{json, Value};
-use tokio::time;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    time,
+};
 use uuid::Uuid;
 
 use super::backend::*;
@@ -157,6 +161,198 @@ async fn control_service_rejects_unknown_tools() {
         .unwrap_err();
 
     assert!(error.message.contains("Unknown MCP tool"));
+}
+
+#[tokio::test]
+async fn control_plane_rejects_unknown_protocol_version() {
+    let (server_stream, client_stream) = tokio::io::duplex(4096);
+    let control = McpControlService::in_process(test_runtime());
+    tokio::spawn(async move {
+        handle_control_connection(control, server_stream)
+            .await
+            .expect("control connection should close cleanly");
+    });
+    let (read_half, mut write_half) = tokio::io::split(client_stream);
+    let mut reader = BufReader::new(read_half);
+
+    write_json_line_for_test(
+        &mut write_half,
+        json!({
+            "protocol_version": CONTROL_PROTOCOL_VERSION + 1
+        }),
+    )
+    .await;
+    let response = read_json_line_for_test(&mut reader).await;
+
+    assert_eq!(response["protocol_version"], CONTROL_PROTOCOL_VERSION);
+    assert!(response["session_nonce"].is_null());
+    assert!(response["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported"));
+}
+
+#[tokio::test]
+async fn control_plane_rejects_missing_and_wrong_nonce() {
+    let (server_stream, client_stream) = tokio::io::duplex(4096);
+    let control = McpControlService::in_process(test_runtime());
+    tokio::spawn(async move {
+        handle_control_connection(control, server_stream)
+            .await
+            .expect("control connection should close cleanly");
+    });
+    let (read_half, mut write_half) = tokio::io::split(client_stream);
+    let mut reader = BufReader::new(read_half);
+
+    write_json_line_for_test(
+        &mut write_half,
+        json!({
+            "protocol_version": CONTROL_PROTOCOL_VERSION
+        }),
+    )
+    .await;
+    let handshake = read_json_line_for_test(&mut reader).await;
+    assert!(handshake["session_nonce"].as_str().is_some());
+
+    write_json_line_for_test(
+        &mut write_half,
+        json!({
+            "protocol_version": CONTROL_PROTOCOL_VERSION,
+            "request_id": "missing",
+            "tool_name": "list_terminal_sessions",
+            "args": {}
+        }),
+    )
+    .await;
+    let response = read_json_line_for_test(&mut reader).await;
+    assert_eq!(response["request_id"], "missing");
+    assert!(response["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("nonce"));
+
+    write_json_line_for_test(
+        &mut write_half,
+        json!({
+            "protocol_version": CONTROL_PROTOCOL_VERSION,
+            "request_id": "wrong",
+            "session_nonce": "wrong-nonce",
+            "tool_name": "list_terminal_sessions",
+            "args": {}
+        }),
+    )
+    .await;
+    let response = read_json_line_for_test(&mut reader).await;
+    assert_eq!(response["request_id"], "wrong");
+    assert!(response["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("nonce"));
+}
+
+#[tokio::test]
+async fn proxy_control_call_preserves_structured_result() {
+    let runtime = test_runtime();
+    runtime
+        .terminals
+        .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+        .await;
+    let (server_stream, client_stream) = tokio::io::duplex(4096);
+    let control = McpControlService::in_process(runtime);
+    tokio::spawn(async move {
+        handle_control_connection(control, server_stream)
+            .await
+            .expect("control connection should close cleanly");
+    });
+
+    let result = control_call_over_stream(client_stream, "list_terminal_sessions", json!({}))
+        .await
+        .unwrap();
+
+    assert_eq!(result["sessions"][0]["session_id"], "s1");
+    assert_eq!(result["sessions"][0]["protocol"], "ssh");
+}
+
+#[tokio::test]
+async fn stdio_server_smoke_initialize_and_tools_list() {
+    let (server_transport, client_transport) = tokio::io::duplex(16 * 1024);
+    let control = McpControlService::in_process(test_runtime());
+    tokio::spawn(async move {
+        let server = ExaTermMcpServer::with_control(control)
+            .serve(server_transport)
+            .await
+            .expect("stdio server should initialize");
+        let _ = server.waiting().await;
+    });
+    let (read_half, mut write_half) = tokio::io::split(client_transport);
+    let mut reader = BufReader::new(read_half);
+
+    write_json_line_for_test(
+        &mut write_half,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "exaterm-test",
+                    "version": "1.0"
+                }
+            }
+        }),
+    )
+    .await;
+    let initialize = read_json_line_for_test(&mut reader).await;
+    assert_eq!(initialize["id"], 1);
+    assert_eq!(initialize["result"]["serverInfo"]["name"], "exaterm");
+
+    write_json_line_for_test(
+        &mut write_half,
+        json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        }),
+    )
+    .await;
+    write_json_line_for_test(
+        &mut write_half,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list"
+        }),
+    )
+    .await;
+    let tools = read_json_line_for_test(&mut reader).await;
+    assert_eq!(tools["id"], 2);
+    assert!(tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|tool| tool["name"] == "list_terminal_sessions"));
+}
+
+async fn write_json_line_for_test<W>(writer: &mut W, value: Value)
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    writer
+        .write_all(value.to_string().as_bytes())
+        .await
+        .unwrap();
+    writer.write_all(b"\n").await.unwrap();
+    writer.flush().await.unwrap();
+}
+
+async fn read_json_line_for_test<R>(reader: &mut R) -> Value
+where
+    R: tokio::io::AsyncBufRead + Unpin,
+{
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    serde_json::from_str(&line).unwrap()
 }
 
 #[test]

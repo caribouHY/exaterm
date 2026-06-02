@@ -19,6 +19,7 @@ use crate::logger::{self, LoggerState};
 #[cfg(not(test))]
 use crate::mcp::control::McpCredentialState;
 use crate::mcp::control::McpLogControlState;
+use crate::mcp::stdio::McpControlClient;
 use crate::serial::{self, SerialState};
 use crate::ssh::{self, SshState};
 use crate::telnet::{self, TelnetState};
@@ -77,12 +78,26 @@ impl McpTerminalService {
     }
 
     fn ensure_connect_enabled(&self) -> Result<(), McpError> {
-        if self.runtime.config.connect_enabled {
+        if self.connect_enabled_now()? {
             Ok(())
         } else {
             Err(invalid_params(
-                "MCP新規接続は無効です。mcp.connect_enabled=true にして再起動してください",
+                "MCP新規接続は無効です。mcp.connect_enabled=true にしてください",
             ))
+        }
+    }
+
+    fn connect_enabled_now(&self) -> Result<bool, McpError> {
+        #[cfg(test)]
+        {
+            Ok(self.runtime.config.connect_enabled)
+        }
+
+        #[cfg(not(test))]
+        {
+            config::config_read()
+                .map(|config| config.mcp.connect_enabled)
+                .map_err(|error| internal_error(format!("設定読み込みエラー: {error}")))
         }
     }
 
@@ -414,6 +429,24 @@ impl McpBackend for InProcessMcpBackend {
             }
             _ => Err(invalid_params(format!("Unknown MCP tool: {name}"))),
         }
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct ProxyMcpBackend {
+    client: McpControlClient,
+}
+
+impl ProxyMcpBackend {
+    pub(super) fn new(client: McpControlClient) -> Self {
+        Self { client }
+    }
+}
+
+#[async_trait]
+impl McpBackend for ProxyMcpBackend {
+    async fn call_tool(&self, name: &str, args: Value) -> Result<Value, McpError> {
+        self.client.call_tool(name, args).await
     }
 }
 

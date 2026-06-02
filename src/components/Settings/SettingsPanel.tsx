@@ -18,6 +18,7 @@ const MASKED_VALUE = "••••••••";
 const DEFAULT_MCP_CONFIG = {
   enabled: false,
   connect_enabled: false,
+  stdio_enabled: false,
   host: "127.0.0.1",
   port: 8765,
 };

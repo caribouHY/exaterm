@@ -8,6 +8,7 @@
 - Added the multi-window shell foundation, including new ExaTerm windows, backend window lifecycle tracking, and terminal tab rehoming when a non-last window closes.
 - Added drag-first terminal tab movement across ExaTerm windows, including detach-to-new-window drops.
 - Split MCP tool execution from the HTTP transport behind backend and GUI control service boundaries.
+- Added the stdio MCP proxy sidecar foundation and GUI-local control plane for external MCP clients.
 
 ## v0.5.0
 
