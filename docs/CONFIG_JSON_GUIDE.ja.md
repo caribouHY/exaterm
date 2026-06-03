@@ -114,11 +114,11 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 
 | パラメータ            | 型      | 既定値  | 説明                                                                                                                                                                                                                                                                                                 |
 | --------------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mcp.enabled`         | boolean | `false` | ローカル MCP アクセスのマスター許可です。外部 MCP クライアントを使用するには、対応トランスポートの設定とあわせて有効化します。                                                                                                                                                                       |
+| `mcp.enabled`         | boolean | `false` | ローカル MCP アクセスのマスター許可です。`false` の場合、すべての MCP トランスポートは無効です。`true` にしても stdio は自動では有効にならないため、`mcp.stdio_enabled` などのトランスポート設定を別途有効化してください。                                                                           |
 | `mcp.connect_enabled` | boolean | `false` | `true` にすると、信頼済み MCP クライアントが保存済み SSH/Telnet プロファイルの一覧取得、そのプロファイルからの新規タブ作成、シリアルポート一覧取得、シリアルコンソール接続を行えます。SSH パスワードや暗号化鍵のパスフレーズは ExaTerm UI で入力し、MCP クライアントへは公開されず保存もされません。 |
 | `mcp.stdio_enabled`   | boolean | `false` | `mcp.enabled=true` と併用して `true` にすると、ローカル MCP クライアントから `exaterm-mcp` stdio proxy を使用できます。proxy は current-user ローカル control plane 経由で、実際のツール呼び出しを起動中の ExaTerm GUI へ転送します。                                                                |
 
-HTTP MCP transport は削除されました。古い設定ファイルに残っている HTTP 専用の host と port の値は無視され、次に ExaTerm が設定を保存したときに出力されなくなります。以前 HTTP MCP を使用していた場合は、`mcp.enabled=true` と `mcp.stdio_enabled=true` を設定し、MCP クライアント側で `exaterm-mcp` を起動するよう手動で設定してください。
+HTTP MCP transport は削除されました。古い設定ファイルに残っている HTTP 専用の `mcp.host` と `mcp.port` の値は無視され、次に ExaTerm が設定を保存したときに出力されなくなります。以前 HTTP MCP を使用していた場合は、`mcp.enabled=true` と `mcp.stdio_enabled=true` を手動で設定し、MCP クライアント側で `exaterm-mcp` を起動するよう設定してください。
 
 ### MCP ツール
 

@@ -354,6 +354,20 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         </div>
         <div className="settings-toggle-row">
           <div className="settings-toggle-label">
+            <span>{t("settings.mcp_stdio_enabled")}</span>
+            <small>{t("settings.mcp_stdio_enabled_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(config.mcp?.stdio_enabled)}
+              onChange={(e) => update("mcp.stdio_enabled", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
             <span>{t("settings.mcp_connect_enabled")}</span>
             <small>{t("settings.mcp_connect_enabled_desc")}</small>
           </div>
