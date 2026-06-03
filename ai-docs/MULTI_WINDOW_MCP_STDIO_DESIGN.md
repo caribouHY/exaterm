@@ -13,10 +13,11 @@ Accepted product direction:
 - Tabs use single ownership: one terminal tab is visible in exactly one window at a time.
 - Cross-window movement is drag-first.
 - stdio MCP uses an executable proxy that can be launched by MCP clients.
-- HTTP MCP must move out of the GUI process into a sibling proxy/sidecar.
+- HTTP MCP is removed instead of being moved to a proxy/sidecar.
 - The proxy auto-starts the GUI in normal visible mode when needed.
 - The GUI process remains the owner of terminal sessions, logs, credentials, and UI prompts.
-- The GUI process must not host an HTTP MCP listener in the target architecture.
+- The GUI process must not host an HTTP MCP listener in the target architecture, and no
+  external HTTP MCP listener is planned.
 - Future extensibility is more important than preserving the smallest possible change set.
 
 ## Goals
@@ -26,10 +27,8 @@ Accepted product direction:
 - Preserve terminal output buffers, connection lifecycle, logging state, encoding, terminal
   mode, and MCP visibility during tab moves.
 - Add stdio MCP support for local MCP clients that expect to spawn a command.
-- Replace the GUI-hosted HTTP MCP server with an external HTTP MCP proxy while preserving
-  existing URL and tool compatibility.
+- Remove the GUI-hosted HTTP MCP server and do not replace it with an HTTP proxy.
 - Avoid making users manually start ExaTerm before using MCP.
-- Keep HTTP MCP client compatibility through the external proxy.
 - Create boundaries that can later support daemon mode, additional transports, workspace
   persistence, and richer MCP tools.
 
@@ -39,10 +38,9 @@ Accepted product direction:
 - Do not expose saved secrets, API keys, or log file contents through MCP.
 - Do not move Settings or Logs utility tabs between windows in v1.
 - Do not require a frontend framework rewrite before the feature can ship.
-- Do not make HTTP MCP depend on stdio MCP.
-- Do not keep an in-GUI HTTP MCP server as a long-term fallback.
-- Do not let an external HTTP MCP process own SSH, Serial, Telnet, logging, or credential
-  state directly.
+- Do not preserve HTTP MCP client compatibility in v1.
+- Do not introduce `exaterm-mcp-http.exe`.
+- Do not keep an in-GUI HTTP MCP server as a fallback.
 
 ## Current Constraints
 
@@ -276,62 +274,23 @@ must use a current-user named mutex so only one process launches the GUI. Proxie
 not hold the mutex wait for the control plane to appear. Timeout errors return MCP
 `internal_error` with the message `ExaTerm GUI control plane is unavailable`.
 
-### MCP HTTP Proxy
+### HTTP MCP Removal
 
-HTTP MCP must be externalized into a sibling proxy/sidecar process instead of being hosted
-inside the GUI process.
+HTTP MCP is removed instead of being externalized. The target architecture has no
+GUI-hosted HTTP MCP listener, no `exaterm-mcp-http.exe`, and no `/mcp` URL compatibility
+requirement.
 
-v1 command name:
+Removal behavior:
 
-- `exaterm-mcp-http.exe`
-- distribution: Tauri sidecar in user-facing builds
+- remove GUI startup of the Streamable HTTP server
+- remove HTTP transport modules and tests once stdio proxy behavior is covered
+- remove or ignore `mcp.host` and `mcp.port` as HTTP-only settings
+- do not add `mcp.http_enabled` or `mcp.http_autostart_enabled`
+- do not automatically enable stdio MCP for existing configs that previously enabled HTTP
 
-Recommended behavior:
-
-1. listen on the configured HTTP address, such as `127.0.0.1:8765`
-2. expose the same Streamable HTTP `/mcp` endpoint and tool schema as the legacy in-GUI
-   HTTP server
-3. try to discover a running ExaTerm GUI control endpoint for up to 2 seconds
-4. start `exaterm.exe` in normal visible mode if no endpoint is available
-5. wait up to 30 seconds for the GUI control endpoint after launching the GUI
-6. forward MCP tool calls to the GUI control endpoint
-7. return HTTP MCP responses with the same compatibility expectations as the current server
-
-The HTTP proxy must not own terminal sessions directly. It is a network-facing MCP
-transport adapter over the GUI control plane.
-
-HTTP proxy discovery uses the same 250 ms retry interval, current-user named mutex, and
-`ExaTerm GUI control plane is unavailable` error message as the stdio proxy.
-
-Important difference from stdio:
-
-- stdio MCP clients usually spawn the configured command, so `exaterm-mcp.exe` can solve
-  startup by being the command.
-- HTTP MCP clients usually connect to an already listening URL, so `exaterm-mcp-http.exe`
-  uses user-level autostart to remove the manual-start requirement.
-
-Required startup behavior:
-
-- `mcp.http_enabled=true` means ExaTerm must provide HTTP MCP through `exaterm-mcp-http.exe`.
-- Add `mcp.http_autostart_enabled`; default it to the effective value of
-  `mcp.http_enabled`.
-- When `mcp.http_autostart_enabled=true`, register user-level login startup for
-  `exaterm-mcp-http.exe`.
-- When `mcp.http_autostart_enabled=false`, do not register login startup; HTTP MCP still
-  works when the proxy is launched manually or by the GUI.
-- When the GUI starts and `mcp.http_enabled=true`, it must start the HTTP proxy if the
-  proxy is not already running. Login autostart remains the primary way to make HTTP MCP
-  available before the GUI is manually launched.
-- If autostart registration fails during migration or Settings save, show a Settings
-  warning and keep the GUI running.
-
-Implementation order:
-
-- Implement stdio proxy first because MCP clients can spawn it directly.
-- Implement HTTP proxy second using the same GUI control plane and remove the GUI-hosted
-  HTTP listener in the same migration.
-- Preserve client-facing compatibility through the external HTTP proxy, not by keeping the
-  GUI process as an HTTP server.
+Existing users who relied on HTTP MCP must opt in to stdio MCP by setting
+`mcp.enabled=true` and `mcp.stdio_enabled=true` and by configuring their MCP client to
+launch `exaterm-mcp.exe`.
 
 ### GUI Control Plane
 
@@ -385,23 +344,20 @@ v1 module shape:
 
 - `mcp/service.rs`: `ExaTermMcpServer`, tool definitions, shared result shaping
 - `mcp/backend.rs`: trait implemented by in-process and proxy backends
-- `mcp/http_transport.rs`: Streamable HTTP server and HTTP response compatibility helpers
-  used by the external proxy
 - `mcp/stdio.rs`: stdio proxy server
-- `mcp/http_proxy.rs`: external HTTP MCP proxy/sidecar
 - `mcp/control.rs`: GUI local control plane
 
 Backend variants:
 
 - `InProcessMcpBackend`: used by the GUI control plane only
-- `ProxyMcpBackend`: used by `exaterm-mcp.exe` and `exaterm-mcp-http.exe` to call the
-  GUI control plane
+- `ProxyMcpBackend`: used by `exaterm-mcp.exe` to call the GUI control plane
 
-Tool names and JSON result shapes must stay identical across HTTP and stdio.
+Tool names and JSON result shapes should stay compatible with the previous MCP tool
+contract where practical, but HTTP transport compatibility is not preserved.
 
-Both proxy executables are distributed as Tauri sidecars in user-facing builds. Development
-and test builds can also expose Cargo bins, but end-user documentation and MCP client
-examples must use the bundled sidecar paths.
+`exaterm-mcp.exe` is distributed as a Tauri sidecar in user-facing builds. Development and
+test builds can also expose Cargo bins, but end-user documentation and MCP client examples
+must use the bundled sidecar path.
 
 ### Config Evolution
 
@@ -426,12 +382,8 @@ Target:
 {
   "mcp": {
     "enabled": false,
-    "http_enabled": false,
-    "http_autostart_enabled": false,
     "stdio_enabled": false,
-    "connect_enabled": false,
-    "host": "127.0.0.1",
-    "port": 8765
+    "connect_enabled": false
   }
 }
 ```
@@ -439,32 +391,24 @@ Target:
 Migration default:
 
 - Existing `mcp.enabled` remains the master MCP permission flag.
-- Existing installs keep HTTP behavior by treating missing `http_enabled` as the old
-  `enabled` behavior, but the serving process changes from GUI-hosted HTTP to the external
-  HTTP proxy during migration.
-- Missing `http_autostart_enabled` defaults to the effective value of `http_enabled`.
-- Existing configs do not automatically enable `stdio_enabled`; users must opt in.
-- New installs default to `mcp.enabled=false`, `http_enabled=false`,
-  `http_autostart_enabled=false`, and `stdio_enabled=false`.
-- Settings UI must describe transport-specific behavior and restart requirements.
-- Enabling the MCP master flag in Settings must not automatically enable HTTP or stdio.
+- Existing configs do not automatically enable `stdio_enabled`; users must opt in even if
+  they previously had HTTP MCP enabled.
+- Existing `mcp.host` and `mcp.port` are HTTP-only fields and become removal targets.
+- New installs default to `mcp.enabled=false` and `stdio_enabled=false`.
+- Settings UI must describe stdio proxy behavior and any restart requirements.
+- Enabling the MCP master flag in Settings must not automatically enable stdio.
 
 Transport gating rules:
 
-- `mcp.enabled=false` disables all MCP transports.
-- `mcp.enabled=true` permits MCP generally, but each transport still needs its own flag.
-- `mcp.http_enabled=false` disables only HTTP MCP and must not disable stdio MCP.
-- `mcp.http_autostart_enabled=false` disables only login startup for the HTTP proxy and must
-  not disable HTTP MCP itself.
-- `mcp.stdio_enabled=false` disables only stdio MCP and must not disable HTTP MCP.
+- `mcp.enabled=false` disables MCP.
+- `mcp.enabled=true` permits MCP generally, but stdio still needs its own flag.
+- `mcp.stdio_enabled=false` disables stdio MCP.
 - `mcp.connect_enabled` gates new connection tools for every transport; it is intentionally
   shared because it controls tool capability, not transport startup.
 
 ### Security and Privacy
 
 - stdio proxy must not log JSON-RPC payloads by default.
-- HTTP proxy must preserve current Host and Origin protections and must not widen the bind
-  address by default.
 - GUI control plane must accept only current-user local clients.
 - MCP-created connections must keep the existing `mcp.connect_enabled` gate.
 - SSH credentials and key passphrases must still be entered in the GUI.
@@ -501,7 +445,7 @@ Transport gating rules:
 - Split MCP tool logic from HTTP transport.
 - Add backend trait and in-process implementation.
 - Move GUI-owned tool execution behind the GUI control plane.
-- Keep HTTP MCP tool schemas and client-visible result behavior unchanged.
+- Keep MCP tool names and JSON result shapes stable for stdio where practical.
 
 ### Phase 5: stdio Proxy and Control Plane
 
@@ -512,16 +456,14 @@ Transport gating rules:
   post-launch timeout, 250 ms retry interval, current-user launch lock, and proxy forwarding.
 - Add smoke tests for stdio initialize and tools/list.
 
-### Phase 6: External HTTP Proxy
+### Phase 6: Remove HTTP MCP
 
-- Add `exaterm-mcp-http.exe` sidecar/bin.
-- Move HTTP serving into the external proxy when `mcp.http_enabled=true`.
-- Reuse `ProxyMcpBackend` and the GUI control plane.
-- Preserve the existing `/mcp` Streamable HTTP behavior, allowed-host behavior, and JSON
-  response compatibility.
-- Add `mcp.http_autostart_enabled` and user-level autostart registration for the HTTP proxy.
 - Remove `spawn_mcp_server` startup from the GUI process and ensure the GUI no longer binds
   the HTTP MCP port.
+- Remove HTTP transport code, HTTP-only config validation, and HTTP-only tests.
+- Remove `mcp.host` and `mcp.port` from the target config shape and Settings UI.
+- Do not add HTTP replacement flags, sidecars, or autostart registration.
+- Document that HTTP MCP users must move to stdio MCP manually.
 
 ### Phase 7: Documentation and Settings
 
@@ -542,13 +484,10 @@ Rust unit tests:
 - closing a non-last window rehomes tabs to last focused window
 - disconnected status updates appear in the owning window projection
 - MCP backend returns identical results through in-process and proxy backends where practical
-- config migration preserves HTTP client behavior by setting `http_enabled=true` and
-  `http_autostart_enabled=true` for old `mcp.enabled=true` configs
-- existing configs do not auto-enable `stdio_enabled`
+- existing configs do not auto-enable `stdio_enabled`, including configs that previously
+  enabled HTTP MCP
 - GUI startup no longer binds the HTTP MCP port
-- HTTP proxy preserves current `/mcp` compatibility and Host/Origin protections
-- HTTP proxy returns a clear MCP/HTTP error if the GUI cannot start or the control plane is
-  unavailable
+- HTTP transport code and HTTP-only settings are absent from the target implementation
 - control plane rejects missing nonce, wrong protocol version, and non-current-user clients
 - proxy launch lock prevents duplicate GUI launches when multiple proxies start together
 
@@ -569,9 +508,6 @@ Manual MCP scenarios:
 - GUI not running: MCP client launches `exaterm-mcp.exe`, GUI starts normally visible, tools/list
   succeeds
 - GUI running: proxy attaches to existing GUI control endpoint
-- HTTP MCP remains available when configured
-- HTTP proxy listening before GUI startup can start the GUI and forward tool calls
-- `mcp.http_autostart_enabled=false` avoids login startup but does not disable HTTP MCP
 - `mcp.connect_enabled=false` still blocks new connection tools
 - proxy timeout returns a clear MCP error if GUI cannot start or cannot expose control plane
 

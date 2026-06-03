@@ -118,7 +118,7 @@ read saved credentials, expose API keys, or read log file contents directly.
 - Plaintext logs stay under `%AppData%/ExaTerm/logs`.
 - Log contents may include secrets and must not be exposed through MCP.
 
-### MCP HTTP
+### MCP HTTP Removal
 
 Current behavior:
 
@@ -129,11 +129,11 @@ Current behavior:
 
 Target behavior:
 
+- HTTP MCP is removed rather than moved to a sidecar.
 - The GUI process no longer hosts or binds the HTTP MCP listener.
-- `exaterm-mcp-http.exe` hosts `/mcp` and forwards tool calls through the local GUI control
-  plane.
-- `mcp.http_autostart_enabled=true` registers user-level login startup for the HTTP proxy,
-  while `mcp.http_enabled=true` controls whether HTTP MCP is available at all.
+- No `exaterm-mcp-http.exe` sidecar is planned.
+- Existing HTTP MCP settings are treated as removal targets and are not migrated to stdio
+  automatically.
 - The GUI process remains the owner of terminal sessions, logs, credentials, and UI prompts.
 
 ## State Ownership Rules
@@ -165,16 +165,12 @@ The intended end state is:
 - drag-first tab movement across windows, with command/menu fallbacks allowed later
 - a stdio MCP proxy executable that can be launched by MCP clients, starts the GUI normally
   when needed, and forwards MCP calls through a local GUI control plane
-- an external HTTP MCP proxy/sidecar that replaces the GUI-hosted HTTP listener, listens on
-  the configured `/mcp` URL, and forwards calls through the same GUI control plane
-- Tauri sidecar distribution for `exaterm-mcp.exe` and `exaterm-mcp-http.exe` in
-  user-facing builds
-- shared MCP tool definitions across HTTP and stdio transports
-- independent transport enablement, where disabling HTTP MCP does not disable stdio MCP and
-  disabling stdio MCP does not disable HTTP MCP
+- Tauri sidecar distribution for `exaterm-mcp.exe` in user-facing builds
+- shared MCP tool definitions behind the stdio proxy and GUI control plane
+- removal of GUI-hosted HTTP MCP and any planned external HTTP MCP sidecar
 
 This direction keeps the GUI as the single owner of terminal sessions while removing the
-need for users to manually start the app before using MCP from a local client.
+need for users to manually start the app before using MCP from a local stdio client.
 
 ## Documentation Model
 
