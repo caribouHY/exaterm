@@ -37,10 +37,6 @@ pub struct McpConfig {
     pub connect_enabled: bool,
     #[serde(default)]
     pub stdio_enabled: bool,
-    #[serde(default = "default_mcp_host")]
-    pub host: String,
-    #[serde(default = "default_mcp_port")]
-    pub port: u16,
 }
 
 impl Default for McpConfig {
@@ -49,18 +45,8 @@ impl Default for McpConfig {
             enabled: false,
             connect_enabled: false,
             stdio_enabled: false,
-            host: default_mcp_host(),
-            port: default_mcp_port(),
         }
     }
-}
-
-fn default_mcp_host() -> String {
-    "127.0.0.1".into()
-}
-
-fn default_mcp_port() -> u16 {
-    8765
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

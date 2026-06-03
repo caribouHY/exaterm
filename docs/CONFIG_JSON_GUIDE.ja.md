@@ -44,9 +44,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
   "mcp": {
     "enabled": false,
     "connect_enabled": false,
-    "stdio_enabled": false,
-    "host": "127.0.0.1",
-    "port": 8765
+    "stdio_enabled": false
   },
   "terminal": {
     "font_size": 14,
@@ -71,7 +69,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | `config_version`    | number | `1`      | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。 |
 | `language`          | string | `"en"`   | 画面表示言語です。`"en"` は英語、`"ja"` は日本語です。                                                               |
 | `ai`                | object | 下記参照 | AI アシスタント関連の設定です。                                                                                      |
-| `mcp`               | object | 下記参照 | 外部 AI エージェントからターミナルを制御するためのローカル MCP サーバー設定です。                                    |
+| `mcp`               | object | 下記参照 | 外部 AI エージェントからターミナルを制御するためのローカル MCP 設定です。                                            |
 | `terminal`          | object | 下記参照 | ターミナル表示とログ関連の設定です。                                                                                 |
 | `ssh`               | object | 下記参照 | SSH 接続の互換性設定です。                                                                                           |
 | `saved_connections` | array  | `[]`     | 保存済み SSH/Telnet 接続プロファイルです。プロファイルは接続ダイアログから作成、選択、削除できます。                 |
@@ -114,13 +112,13 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 
 ## mcp
 
-| パラメータ            | 型      | 既定値        | 説明                                                                                                                                                                                                                                                                                                 |
-| --------------------- | ------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mcp.enabled`         | boolean | `false`       | `true` にすると、外部 AI エージェント向けにローカル MCP Streamable HTTP エンドポイント `/mcp` を起動します。既存のターミナル制御ツールは ExaTerm 上で開かれたセッションを公開します。                                                                                                                |
-| `mcp.connect_enabled` | boolean | `false`       | `true` にすると、信頼済み MCP クライアントが保存済み SSH/Telnet プロファイルの一覧取得、そのプロファイルからの新規タブ作成、シリアルポート一覧取得、シリアルコンソール接続を行えます。SSH パスワードや暗号化鍵のパスフレーズは ExaTerm UI で入力し、MCP クライアントへは公開されず保存もされません。 |
-| `mcp.stdio_enabled`   | boolean | `false`       | `mcp.enabled=true` と併用して `true` にすると、ローカル MCP クライアントから `exaterm-mcp` stdio proxy を使用できます。proxy は current-user ローカル control plane 経由で、実際のツール呼び出しを起動中の ExaTerm GUI へ転送します。                                                                |
-| `mcp.host`            | string  | `"127.0.0.1"` | MCP サーバーの待ち受けアドレスです。他の端末からターミナル制御を受け付けるリスクを理解している場合を除き、ループバックアドレスのままにしてください。                                                                                                                                                 |
-| `mcp.port`            | number  | `8765`        | MCP サーバーの TCP ポートです。ポートが使用中の場合、MCP サーバーの起動に失敗しますが、ExaTerm 本体は起動を続けます。                                                                                                                                                                                |
+| パラメータ            | 型      | 既定値  | 説明                                                                                                                                                                                                                                                                                                 |
+| --------------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mcp.enabled`         | boolean | `false` | ローカル MCP アクセスのマスター許可です。外部 MCP クライアントを使用するには、対応トランスポートの設定とあわせて有効化します。                                                                                                                                                                       |
+| `mcp.connect_enabled` | boolean | `false` | `true` にすると、信頼済み MCP クライアントが保存済み SSH/Telnet プロファイルの一覧取得、そのプロファイルからの新規タブ作成、シリアルポート一覧取得、シリアルコンソール接続を行えます。SSH パスワードや暗号化鍵のパスフレーズは ExaTerm UI で入力し、MCP クライアントへは公開されず保存もされません。 |
+| `mcp.stdio_enabled`   | boolean | `false` | `mcp.enabled=true` と併用して `true` にすると、ローカル MCP クライアントから `exaterm-mcp` stdio proxy を使用できます。proxy は current-user ローカル control plane 経由で、実際のツール呼び出しを起動中の ExaTerm GUI へ転送します。                                                                |
+
+HTTP MCP transport は削除されました。古い設定ファイルに残っている HTTP 専用の host と port の値は無視され、次に ExaTerm が設定を保存したときに出力されなくなります。以前 HTTP MCP を使用していた場合は、`mcp.enabled=true` と `mcp.stdio_enabled=true` を設定し、MCP クライアント側で `exaterm-mcp` を起動するよう手動で設定してください。
 
 ### MCP ツール
 
@@ -145,8 +143,6 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
 出力読み取り系ツールは `start_cursor`、`cursor`、`truncated` を返します。`cursor` は次回の `read_terminal_output_delta` や `wait_terminal_output` に渡せます。古い出力が内部バッファから切り詰められている場合、`truncated` は `true` になります。
 
 `wait_terminal_output` と `run_terminal_command` の待機時間は最大 60 秒です。`run_terminal_command` は既存の接続済みセッションだけを対象とします。保存済みプロファイルからの新規接続には、明示的に有効化した `connect_saved_profile` を使用します。
-
-MCP クライアントは Streamable HTTP エンドポイントを呼び出すときに、通常の `Host` ヘッダーと、`application/json` と `text/event-stream` の両方を含む `Accept` ヘッダーを送信してください。
 
 MCP サーバーは保存済み認証情報の読み取り、API キーの公開、ログファイルの直接読み取りを行いません。MCP クライアントはセッションログを明示的に開始・停止できますが、受け取るのはログ状態とファイルパスだけで、ログ本文ではありません。MCP 経由の SSH/Telnet 新規接続は保存済みプロファイルに限定され、シリアル接続は明示的に指定した利用可能ポート名だけを対象にし、すべての MCP 新規接続には `mcp.connect_enabled=true` が必要です。SSH では既存の known_hosts 検証もそのまま適用されます。SSH プロファイルに `jump_profile_id` がある場合、MCP 経由の新規接続でも同じ 1 段の踏み台フローを使用し、必要な踏み台認証情報は ExaTerm UI で入力します。ターミナル出力やログファイルには機密情報が含まれる可能性があるため、MCP と MCP 経由のログ開始は信頼できるローカルクライアントに対してのみ有効化してください。
 

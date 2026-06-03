@@ -12,9 +12,7 @@ mod workspace;
 
 use cli::{CliAction, StartupCliRequest};
 use logger::LoggerState;
-use mcp::{
-    spawn_gui_control_plane, spawn_mcp_server, McpCredentialState, McpLogControlState, McpRuntime,
-};
+use mcp::{spawn_gui_control_plane, McpCredentialState, McpLogControlState, McpRuntime};
 use serial::SerialState;
 use ssh::SshState;
 use std::sync::Mutex;
@@ -125,13 +123,12 @@ pub fn run() {
                             #[cfg(not(test))]
                             credentials: Some(mcp_credential_state.clone()),
                         };
-                        spawn_gui_control_plane(runtime.clone());
-                        spawn_mcp_server(runtime);
+                        spawn_gui_control_plane(runtime);
                     }
                 }
                 Err(error) => {
                     log::warn!(
-                        "MCP server not started because config could not be loaded: {error}"
+                        "MCP runtime not started because config could not be loaded: {error}"
                     );
                 }
             }

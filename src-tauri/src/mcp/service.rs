@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 use crate::mcp::backend::{
     internal_error, structured_tool_result, ConnectSavedProfileArgs, ConnectSerialConsoleArgs,
-    McpRuntime, ReadTerminalOutputArgs, ReadTerminalOutputDeltaArgs, RunTerminalCommandArgs,
+    ReadTerminalOutputArgs, ReadTerminalOutputDeltaArgs, RunTerminalCommandArgs,
     SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs, WaitTerminalOutputArgs,
 };
 use crate::mcp::control::McpControlService;
@@ -21,10 +21,6 @@ pub(super) struct ExaTermMcpServer {
 
 #[tool_router]
 impl ExaTermMcpServer {
-    pub(super) fn new(runtime: McpRuntime) -> Self {
-        Self::with_control(McpControlService::in_process(runtime))
-    }
-
     pub(super) fn with_control(control: McpControlService) -> Self {
         Self {
             control,

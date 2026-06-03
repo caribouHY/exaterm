@@ -99,8 +99,6 @@ export interface McpConfig {
   enabled: boolean;
   connect_enabled: boolean;
   stdio_enabled: boolean;
-  host: string;
-  port: number;
 }
 
 export interface AiConfig {

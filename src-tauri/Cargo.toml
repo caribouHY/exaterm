@@ -4,6 +4,7 @@ version = "0.5.0"
 description = "ExaTerm - AI-native network terminal"
 authors = ["caribouHY"]
 edition = "2021"
+default-run = "exaterm"
 
 [lib]
 name = "exaterm_lib"
@@ -22,9 +23,8 @@ tokio = { version = "1", features = ["full"] }
 russh = "0.46"
 russh-keys = "0.46"
 async-trait = "0.1"
-axum = "0.8"
 reqwest = { version = "0.12", features = ["json", "stream"] }
-rmcp = { version = "1.6.0", default-features = false, features = ["server", "macros", "schemars", "transport-io", "transport-streamable-http-server"] }
+rmcp = { version = "1.6.0", default-features = false, features = ["server", "macros", "schemars", "transport-io"] }
 schemars = "1.2.1"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"

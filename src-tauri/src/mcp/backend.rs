@@ -44,6 +44,7 @@ const DEFAULT_SERIAL_STOP_BITS: u8 = 1;
 
 #[derive(Clone)]
 pub struct McpRuntime {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub config: McpConfig,
     #[cfg(not(test))]
     pub app: Option<AppHandle>,

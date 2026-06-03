@@ -1,13 +1,5 @@
-use std::sync::Arc;
 use std::time::Duration;
 
-use axum::{
-    body::{to_bytes, Body},
-    http::{HeaderMap, Request, StatusCode},
-};
-use rmcp::transport::streamable_http_server::{
-    session::local::LocalSessionManager, StreamableHttpService,
-};
 use rmcp::ServiceExt;
 use serde_json::{json, Value};
 use tokio::{
@@ -18,7 +10,6 @@ use uuid::Uuid;
 
 use super::backend::*;
 use super::control::*;
-use super::http_transport::*;
 use super::service::*;
 use crate::config::{AppConfig, McpConfig, SavedConnection};
 use crate::logger::LoggerState;
@@ -41,59 +32,6 @@ fn test_runtime() -> McpRuntime {
         logger: Some(LoggerState::with_paths(log_dir, index_path)),
         log_control: Some(McpLogControlState::new()),
     }
-}
-
-fn test_http_service(runtime: McpRuntime) -> ExaTermMcpHttpService {
-    let mcp_runtime = runtime.clone();
-    StreamableHttpService::new(
-        move || Ok(ExaTermMcpServer::new(mcp_runtime.clone())),
-        Arc::new(LocalSessionManager::default()),
-        mcp_server_config(&runtime.config.host),
-    )
-}
-
-async fn post_mcp(service: ExaTermMcpHttpService, body: Value) -> (StatusCode, Value) {
-    let request = Request::builder()
-        .method("POST")
-        .uri("/mcp")
-        .header("host", "127.0.0.1:8765")
-        .header("content-type", "application/json")
-        .header("accept", "application/json, text/event-stream")
-        .body(Body::from(body.to_string()))
-        .unwrap();
-    let response = service.handle(request).await.map(Body::new);
-    let status = response.status();
-    let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
-    let value = serde_json::from_slice(&body).unwrap_or_else(|error| {
-        panic!(
-            "MCP response was not JSON: status={status}, error={error}, body={:?}",
-            String::from_utf8_lossy(&body)
-        )
-    });
-    (status, value)
-}
-
-#[test]
-fn rejects_non_local_origins() {
-    let mut headers = HeaderMap::new();
-    headers.insert("origin", "https://example.com".parse().unwrap());
-    assert!(!origin_is_allowed(&headers));
-
-    headers.insert("origin", "http://127.0.0.1:8765".parse().unwrap());
-    assert!(origin_is_allowed(&headers));
-
-    headers.insert("origin", "http://localhost.evil.test".parse().unwrap());
-    assert!(!origin_is_allowed(&headers));
-
-    headers.insert("origin", "http://[::1]:8765".parse().unwrap());
-    assert!(origin_is_allowed(&headers));
-}
-
-#[test]
-fn mcp_server_config_uses_stateless_json_responses() {
-    let config = mcp_server_config("127.0.0.1");
-    assert!(!config.stateful_mode);
-    assert!(config.json_response);
 }
 
 #[tokio::test]
@@ -1086,144 +1024,4 @@ async fn service_rejects_empty_run_terminal_command() {
         .unwrap_err();
 
     assert!(error.message.contains("空"));
-}
-
-#[tokio::test]
-async fn rmcp_http_service_handles_initialize_and_tools_list() {
-    let service = test_http_service(test_runtime());
-
-    let (status, initialize) = post_mcp(
-        service.clone(),
-        json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-06-18",
-                "capabilities": {},
-                "clientInfo": {
-                    "name": "test-client",
-                    "version": "0.0.0"
-                }
-            }
-        }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(initialize["result"]["serverInfo"]["name"], "exaterm");
-
-    let (status, tools) = post_mcp(
-        service,
-        json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/list",
-            "params": {}
-        }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-
-    let names = tools["result"]["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|tool| tool["name"].as_str().unwrap())
-        .collect::<Vec<_>>();
-    assert_eq!(
-        names,
-        vec![
-            "connect_saved_profile",
-            "connect_serial_console",
-            "list_connection_profiles",
-            "list_serial_ports",
-            "list_terminal_sessions",
-            "read_terminal_output",
-            "read_terminal_output_delta",
-            "run_terminal_command",
-            "send_terminal_input",
-            "start_terminal_log",
-            "stop_terminal_log",
-            "wait_terminal_output",
-        ]
-    );
-
-    let read_tool = tools["result"]["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|tool| tool["name"] == "read_terminal_output")
-        .unwrap();
-    let max_chars_schema = &read_tool["inputSchema"]["properties"]["max_chars"];
-    assert_eq!(max_chars_schema["minimum"], 1);
-    assert_eq!(max_chars_schema["maximum"], MAX_READ_CHARS);
-
-    let wait_tool = tools["result"]["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|tool| tool["name"] == "wait_terminal_output")
-        .unwrap();
-    let timeout_schema = &wait_tool["inputSchema"]["properties"]["timeout_ms"];
-    assert_eq!(timeout_schema["minimum"], 1);
-    assert_eq!(timeout_schema["maximum"], MAX_WAIT_TIMEOUT_MS);
-
-    let start_log_tool = tools["result"]["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|tool| tool["name"] == "start_terminal_log")
-        .unwrap();
-    let start_log_properties = start_log_tool["inputSchema"]["properties"]
-        .as_object()
-        .unwrap();
-    assert!(start_log_properties.contains_key("session_id"));
-
-    let stop_log_tool = tools["result"]["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|tool| tool["name"] == "stop_terminal_log")
-        .unwrap();
-    let stop_log_properties = stop_log_tool["inputSchema"]["properties"]
-        .as_object()
-        .unwrap();
-    assert!(stop_log_properties.contains_key("session_id"));
-
-    let connect_tool = tools["result"]["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|tool| tool["name"] == "connect_saved_profile")
-        .unwrap();
-    let connect_properties = connect_tool["inputSchema"]["properties"]
-        .as_object()
-        .unwrap();
-    assert!(connect_properties.contains_key("profile_id"));
-    assert!(!connect_properties.contains_key("credential"));
-
-    let serial_connect_tool = tools["result"]["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|tool| tool["name"] == "connect_serial_console")
-        .unwrap();
-    let serial_properties = serial_connect_tool["inputSchema"]["properties"]
-        .as_object()
-        .unwrap();
-    for property in [
-        "port",
-        "baud_rate",
-        "data_bits",
-        "parity",
-        "stop_bits",
-        "flow_control",
-        "terminal_mode",
-        "cols",
-        "rows",
-    ] {
-        assert!(serial_properties.contains_key(property));
-    }
-    assert_eq!(serial_properties["cols"]["maximum"], MAX_CONNECT_DIMENSION);
-    assert_eq!(serial_properties["rows"]["maximum"], MAX_CONNECT_DIMENSION);
 }
