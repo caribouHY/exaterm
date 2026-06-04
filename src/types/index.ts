@@ -98,8 +98,7 @@ export interface AppConfig {
 export interface McpConfig {
   enabled: boolean;
   connect_enabled: boolean;
-  host: string;
-  port: number;
+  stdio_enabled: boolean;
 }
 
 export interface AiConfig {
@@ -182,6 +181,68 @@ export interface TabInfo {
   isManualLogging?: boolean;
   isLoggingPaused?: boolean;
   manualLogFilePath?: string;
+}
+
+export interface WorkspaceTabInfo {
+  tab_id: string;
+  session_id: string;
+  connection_type: ConnectionType;
+  title: string;
+  owner_window_id: string;
+  encoding: Encoding;
+  terminal_mode: TerminalMode;
+  is_connected: boolean;
+  is_auto_logging: boolean;
+  is_manual_logging: boolean;
+  is_logging_paused: boolean;
+  manual_log_file_path?: string | null;
+}
+
+export interface WindowWorkspaceSnapshot {
+  window_id: string;
+  label: string;
+  tab_order: string[];
+  active_tab_id?: string | null;
+}
+
+export interface WorkspaceSnapshot {
+  window_id: string;
+  window: WindowWorkspaceSnapshot;
+  tabs: WorkspaceTabInfo[];
+}
+
+export interface WorkspaceWindowCreateResult {
+  window_id: string;
+}
+
+export interface WorkspacePointerPosition {
+  x: number;
+  y: number;
+}
+
+export interface WorkspaceDragPreview {
+  active: boolean;
+  tab_id?: string | null;
+  source_window_id?: string | null;
+  pointer_screen_position?: WorkspacePointerPosition | null;
+  target_window_id?: string | null;
+  target_index?: number | null;
+}
+
+export interface WorkspaceDragDropResult {
+  action: "move" | "detach" | string;
+  tab_id: string;
+  source_window_id: string;
+  target_window_id?: string | null;
+  created_window_id?: string | null;
+  snapshots: WorkspaceSnapshot[];
+}
+
+export interface WorkspaceWindowCloseResult {
+  window_id: string;
+  rehome_window_id?: string | null;
+  remaining_window_count: number;
+  snapshots: WorkspaceSnapshot[];
 }
 
 export interface UtilityTabInfo {

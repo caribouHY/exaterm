@@ -44,8 +44,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
   "mcp": {
     "enabled": false,
     "connect_enabled": false,
-    "host": "127.0.0.1",
-    "port": 8765
+    "stdio_enabled": false
   },
   "terminal": {
     "font_size": 14,
@@ -70,7 +69,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | `config_version`    | number | `1`       | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version. |
 | `language`          | string | `"en"`    | Display language. Use `"en"` for English or `"ja"` for Japanese.                                                                           |
 | `ai`                | object | See below | AI assistant settings.                                                                                                                     |
-| `mcp`               | object | See below | Local MCP server settings for external AI agent terminal control.                                                                          |
+| `mcp`               | object | See below | Local MCP settings for external AI agent terminal control.                                                                                 |
 | `terminal`          | object | See below | Terminal display and logging settings.                                                                                                     |
 | `ssh`               | object | See below | SSH connection compatibility settings.                                                                                                     |
 | `saved_connections` | array  | `[]`      | Saved SSH and Telnet connection profiles. Profiles can be created, selected, and deleted from the connection dialog.                       |
@@ -113,12 +112,13 @@ Set `ai.debug_log_enabled` to `true` only when you need to troubleshoot AI chat 
 
 ## mcp
 
-| Parameter             | Type    | Default       | Description                                                                                                                                                                                                                                                                                   |
-| --------------------- | ------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mcp.enabled`         | boolean | `false`       | When set to `true`, ExaTerm starts a local MCP Streamable HTTP endpoint at `/mcp` for external AI agents. Existing terminal-control tools expose terminal sessions opened in ExaTerm.                                                                                                         |
-| `mcp.connect_enabled` | boolean | `false`       | When set to `true`, trusted MCP clients can list saved SSH/Telnet profiles, open new ExaTerm tabs from those profiles, list Serial ports, and open Serial consoles. SSH passwords and encrypted key passphrases are entered in the ExaTerm UI and are not exposed to the MCP client or saved. |
-| `mcp.host`            | string  | `"127.0.0.1"` | Bind address for the MCP server. Keep this on a loopback address unless you fully understand the security impact of exposing terminal control to another machine.                                                                                                                             |
-| `mcp.port`            | number  | `8765`        | TCP port for the MCP server. If the port is already in use, the MCP server fails to start and the rest of ExaTerm continues running.                                                                                                                                                          |
+| Parameter             | Type    | Default | Description                                                                                                                                                                                                                                                                                   |
+| --------------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mcp.enabled`         | boolean | `false` | Master permission for local MCP access. When this is `false`, all MCP transports are disabled. Setting it to `true` does not enable stdio by itself; enable a transport such as `mcp.stdio_enabled` separately.                                                                               |
+| `mcp.connect_enabled` | boolean | `false` | When set to `true`, trusted MCP clients can list saved SSH/Telnet profiles, open new ExaTerm tabs from those profiles, list Serial ports, and open Serial consoles. SSH passwords and encrypted key passphrases are entered in the ExaTerm UI and are not exposed to the MCP client or saved. |
+| `mcp.stdio_enabled`   | boolean | `false` | When set to `true` with `mcp.enabled=true`, the `exaterm-mcp` stdio proxy can be used by local MCP clients. The proxy forwards tool calls to the running ExaTerm GUI through a current-user local control plane.                                                                              |
+
+The HTTP MCP transport has been removed. Existing HTTP-only `mcp.host` and `mcp.port` values in older config files are ignored and will be omitted the next time ExaTerm saves the settings. Users who previously used HTTP MCP must manually enable `mcp.enabled=true` and `mcp.stdio_enabled=true`, then configure their MCP client to launch `exaterm-mcp`.
 
 ### MCP Tools
 
@@ -143,8 +143,6 @@ When `mcp.connect_enabled` is also `true`, external clients can call these addit
 Output-reading tools return `start_cursor`, `cursor`, and `truncated`. Pass `cursor` to `read_terminal_output_delta` or `wait_terminal_output` to continue reading from the same point. If older output has been trimmed from the internal buffer, `truncated` is `true`.
 
 `wait_terminal_output` and `run_terminal_command` wait for up to 60 seconds. `run_terminal_command` targets only existing connected sessions; use `connect_saved_profile` for the opt-in saved-profile connection flow.
-
-MCP clients should call the Streamable HTTP endpoint with a normal `Host` header and an `Accept` header that includes both `application/json` and `text/event-stream`.
 
 The MCP server does not read saved credentials, expose API keys, or read log files directly. MCP clients can explicitly start and stop session logs, but they receive only the log state and file path, not the log contents. New MCP-created SSH/Telnet connections are limited to saved profiles, Serial connections require an explicit available port name, and all new MCP-created connections require `mcp.connect_enabled=true`. SSH connections still enforce the existing known-host checks. If an SSH profile uses `jump_profile_id`, MCP-created connections use the same one-hop jump host flow and request any required jump-host credential in the ExaTerm UI. Terminal output and log files can contain sensitive information, so enable MCP and MCP-triggered logging only for trusted local clients.
 

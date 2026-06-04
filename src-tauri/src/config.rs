@@ -3,6 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::ai::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
+use crate::terminal_control::TerminalControlState;
 
 const CURRENT_CONFIG_VERSION: u32 = 1;
 
@@ -34,10 +35,8 @@ pub struct McpConfig {
     pub enabled: bool,
     #[serde(default)]
     pub connect_enabled: bool,
-    #[serde(default = "default_mcp_host")]
-    pub host: String,
-    #[serde(default = "default_mcp_port")]
-    pub port: u16,
+    #[serde(default)]
+    pub stdio_enabled: bool,
 }
 
 impl Default for McpConfig {
@@ -45,18 +44,9 @@ impl Default for McpConfig {
         Self {
             enabled: false,
             connect_enabled: false,
-            host: default_mcp_host(),
-            port: default_mcp_port(),
+            stdio_enabled: false,
         }
     }
-}
-
-fn default_mcp_host() -> String {
-    "127.0.0.1".into()
-}
-
-fn default_mcp_port() -> u16 {
-    8765
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -253,7 +243,7 @@ fn config_path() -> PathBuf {
 #[tauri::command]
 pub fn config_load() -> Result<AppConfig, String> {
     let cfg = config_read()?;
-    config_save(cfg.clone())?;
+    config_write(&cfg)?;
     Ok(cfg)
 }
 
@@ -269,12 +259,21 @@ pub(crate) fn config_read() -> Result<AppConfig, String> {
 }
 
 #[tauri::command]
-pub fn config_save(config: AppConfig) -> Result<(), String> {
+pub fn config_save(
+    terminals: tauri::State<'_, TerminalControlState>,
+    config: AppConfig,
+) -> Result<(), String> {
+    config_write(&config)?;
+    terminals.set_output_limit_from_scrollback(config.terminal.scrollback);
+    Ok(())
+}
+
+fn config_write(config: &AppConfig) -> Result<(), String> {
     let path = config_path();
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    let data = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    let data = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
     fs::write(&path, data).map_err(|e| e.to_string())
 }
 
@@ -295,6 +294,7 @@ mod tests {
         assert!(!cfg.ai.azure_openai_enabled);
         assert!(!cfg.mcp.enabled);
         assert!(!cfg.mcp.connect_enabled);
+        assert!(!cfg.mcp.stdio_enabled);
         assert_eq!(cfg.ai.azure_openai_endpoint, "");
         assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.terminal.font_size, 14);

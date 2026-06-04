@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Added
+
+- Added early multi-window support so terminal tabs can be moved between ExaTerm windows.
+- Added drag-and-drop terminal tab detaching to open a tab in a new ExaTerm window.
+- Added a Settings option for enabling the local stdio MCP proxy transport.
+
+### Changed
+
+- Improved terminal tab handling so tabs are preserved and reassigned safely when secondary windows are closed.
+- Reworked local MCP integration to use a stdio proxy instead of the previous GUI-hosted HTTP server.
+
+### Removed
+
+- Removed the HTTP-only MCP host and port settings because the GUI no longer hosts the local HTTP MCP transport.
+
+### Fixed
+
+- Fixed intermittent stdio MCP proxy startup failures on Windows after a previous ExaTerm launch left stale lock files behind.
+
 ## v0.5.0
 
 ### Added

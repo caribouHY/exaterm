@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+use crate::workspace::{emit_workspace_updated, WorkspaceState};
 use crate::{logger, logger::LoggerState};
 
 const SERIAL_IO_TIMEOUT: Duration = Duration::from_millis(5);
@@ -110,12 +111,16 @@ async fn remove_session_from_state(
 async fn remove_session(
     app: &AppHandle,
     terminals: &TerminalControlState,
+    workspace: &WorkspaceState,
     logger_state: Option<&LoggerState>,
     sessions: &Arc<Mutex<HashMap<String, SerialSession>>>,
     session_id: &str,
 ) -> Option<SerialSession> {
     let session = remove_session_from_state(terminals, logger_state, sessions, session_id).await;
     if session.is_some() {
+        if let Some(snapshot) = workspace.mark_disconnected(session_id).await {
+            emit_workspace_updated(app, &snapshot);
+        }
         let _ = app.emit("serial://disconnected", session_id);
     }
     session
@@ -124,11 +129,20 @@ async fn remove_session(
 async fn mark_disconnected(
     app: &AppHandle,
     terminals: &TerminalControlState,
+    workspace: &WorkspaceState,
     logger_state: Option<&LoggerState>,
     sessions: &Arc<Mutex<HashMap<String, SerialSession>>>,
     session_id: &str,
 ) {
-    let _ = remove_session(app, terminals, logger_state, sessions, session_id).await;
+    let _ = remove_session(
+        app,
+        terminals,
+        workspace,
+        logger_state,
+        sessions,
+        session_id,
+    )
+    .await;
 }
 
 #[tauri::command]
@@ -159,6 +173,7 @@ pub async fn serial_connect(
     app: AppHandle,
     state: tauri::State<'_, SerialState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
     port: String,
     config: SerialConfig,
@@ -168,6 +183,7 @@ pub async fn serial_connect(
         &app,
         &state,
         &terminals,
+        &workspace,
         Some(&logger),
         port,
         config,
@@ -180,6 +196,7 @@ pub async fn connect(
     app: &AppHandle,
     state: &SerialState,
     terminals: &TerminalControlState,
+    workspace: &WorkspaceState,
     logger_state: Option<&LoggerState>,
     port: String,
     config: SerialConfig,
@@ -225,6 +242,7 @@ pub async fn connect(
     let write_app = app.clone();
     let write_sessions = state.sessions.clone();
     let write_terminals = terminals.clone();
+    let write_workspace = workspace.clone();
     let write_logger = logger_state.cloned();
     let write_runtime = tokio::runtime::Handle::current();
     tokio::task::spawn_blocking(move || {
@@ -234,12 +252,14 @@ pub async fn connect(
                 let disconnect_app = write_app.clone();
                 let disconnect_sessions = write_sessions.clone();
                 let disconnect_terminals = write_terminals.clone();
+                let disconnect_workspace = write_workspace.clone();
                 let disconnect_logger = write_logger.clone();
                 let disconnect_sid = write_sid.clone();
                 write_runtime.spawn(async move {
                     mark_disconnected(
                         &disconnect_app,
                         &disconnect_terminals,
+                        &disconnect_workspace,
                         disconnect_logger.as_ref(),
                         &disconnect_sessions,
                         &disconnect_sid,
@@ -257,6 +277,7 @@ pub async fn connect(
     let run_flag = running.clone();
     let read_sessions = state.sessions.clone();
     let read_terminals = terminals.clone();
+    let read_workspace = workspace.clone();
     let read_logger = logger_state.cloned();
     let read_runtime = tokio::runtime::Handle::current();
     let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -287,12 +308,14 @@ pub async fn connect(
                     let disconnect_app = app_clone.clone();
                     let disconnect_sessions = read_sessions.clone();
                     let disconnect_terminals = read_terminals.clone();
+                    let disconnect_workspace = read_workspace.clone();
                     let disconnect_logger = read_logger.clone();
                     let disconnect_sid = sid.clone();
                     read_runtime.spawn(async move {
                         mark_disconnected(
                             &disconnect_app,
                             &disconnect_terminals,
+                            &disconnect_workspace,
                             disconnect_logger.as_ref(),
                             &disconnect_sessions,
                             &disconnect_sid,
@@ -339,12 +362,14 @@ pub async fn serial_disconnect(
     app: AppHandle,
     state: tauri::State<'_, SerialState>,
     terminals: tauri::State<'_, TerminalControlState>,
+    workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<(), String> {
     let _ = remove_session(
         &app,
         &terminals,
+        &workspace,
         Some(&logger),
         &state.sessions,
         &session_id,
