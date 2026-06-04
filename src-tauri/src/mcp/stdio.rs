@@ -1,9 +1,11 @@
 use std::{
-    fs::{self, File, OpenOptions},
     path::PathBuf,
     process::{Command, Stdio},
     time::Duration,
 };
+
+#[cfg(not(windows))]
+use std::fs::{self, File, OpenOptions};
 
 use rmcp::{transport, ServiceExt};
 use serde_json::Value;
@@ -168,11 +170,68 @@ fn gui_executable_names() -> Vec<&'static str> {
     vec!["exaterm", "ExaTerm"]
 }
 
+#[cfg(windows)]
+struct LaunchLock {
+    handle: windows_sys::Win32::Foundation::HANDLE,
+    acquired: bool,
+}
+
+#[cfg(not(windows))]
 struct LaunchLock {
     path: PathBuf,
     _file: File,
 }
 
+#[cfg(windows)]
+impl LaunchLock {
+    fn acquire() -> Result<Option<Self>, String> {
+        use windows_sys::Win32::{
+            Foundation::{
+                CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, WAIT_ABANDONED, WAIT_OBJECT_0,
+                WAIT_TIMEOUT,
+            },
+            System::Threading::{CreateMutexW, WaitForSingleObject},
+        };
+
+        let name = launch_lock_name();
+        let handle = unsafe { CreateMutexW(std::ptr::null_mut(), 1, name.as_ptr()) };
+        if handle.is_null() {
+            return Err("Cannot create MCP launch mutex".into());
+        }
+
+        let already_exists = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+        if !already_exists {
+            return Ok(Some(Self {
+                handle,
+                acquired: true,
+            }));
+        }
+
+        let wait_result = unsafe { WaitForSingleObject(handle, 0) };
+        match wait_result {
+            WAIT_OBJECT_0 | WAIT_ABANDONED => Ok(Some(Self {
+                handle,
+                acquired: true,
+            })),
+            WAIT_TIMEOUT => {
+                unsafe {
+                    CloseHandle(handle);
+                }
+                Ok(None)
+            }
+            other => {
+                unsafe {
+                    CloseHandle(handle);
+                }
+                Err(format!(
+                    "Cannot acquire MCP launch mutex: wait result {other}"
+                ))
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
 impl LaunchLock {
     fn acquire() -> Result<Option<Self>, String> {
         let path = launch_lock_path();
@@ -189,12 +248,36 @@ impl LaunchLock {
     }
 }
 
+#[cfg(windows)]
+impl Drop for LaunchLock {
+    fn drop(&mut self) {
+        use windows_sys::Win32::{Foundation::CloseHandle, System::Threading::ReleaseMutex};
+
+        unsafe {
+            if self.acquired {
+                ReleaseMutex(self.handle);
+            }
+            CloseHandle(self.handle);
+        }
+    }
+}
+
+#[cfg(not(windows))]
 impl Drop for LaunchLock {
     fn drop(&mut self) {
         let _ = fs::remove_file(&self.path);
     }
 }
 
+#[cfg(windows)]
+fn launch_lock_name() -> Vec<u16> {
+    format!(r"Local\ExaTermMcpLaunch-{}", current_user_scope_hash())
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect()
+}
+
+#[cfg(not(windows))]
 fn launch_lock_path() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))

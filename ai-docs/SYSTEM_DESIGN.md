@@ -74,9 +74,17 @@ frontend tabs, protocol sessions, terminal output buffers, logger state, and MCP
 
 ### MCP Runtime
 
-`src-tauri/src/mcp.rs` currently exposes an in-process MCP Streamable HTTP endpoint when
-`mcp.enabled` is true. The server uses `rmcp` with HTTP transport and shares the same
-backend states as the GUI.
+`src-tauri/src/mcp.rs` wires the MCP module tree. The current external entry point is the
+`exaterm-mcp` stdio proxy, implemented in `src-tauri/src/bin/exaterm-mcp.rs` and
+`src-tauri/src/mcp/stdio.rs`. The proxy is launched by local MCP clients, starts or
+discovers the normal ExaTerm GUI process, and forwards tool calls through the GUI-local
+control plane.
+
+The GUI process owns the in-process MCP backend state. When `mcp.enabled` is true, startup
+spawns the local control plane; the stdio proxy additionally requires
+`mcp.stdio_enabled=true` before it serves MCP over stdio. Windows proxy launch
+coordination uses a current-user named mutex so an abnormal proxy exit cannot leave a stale
+lock file that blocks later GUI startup attempts.
 
 Current MCP tools include:
 
@@ -119,15 +127,6 @@ read saved credentials, expose API keys, or read log file contents directly.
 - Log contents may include secrets and must not be exposed through MCP.
 
 ### MCP HTTP Removal
-
-Current behavior:
-
-1. App startup loads config.
-2. If `mcp.enabled` is true, the GUI backend spawns the Streamable HTTP server.
-3. MCP tools call the same protocol, terminal-control, config, and logger state used by UI.
-4. Tools that need UI input emit Tauri events and wait for a frontend submit command.
-
-Target behavior:
 
 - HTTP MCP is removed rather than moved to a sidecar.
 - The GUI process no longer hosts or binds the HTTP MCP listener.

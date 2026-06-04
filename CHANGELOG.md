@@ -12,6 +12,10 @@
 - Added Settings UI controls for explicitly enabling the stdio MCP proxy transport.
 - Removed the GUI-hosted HTTP MCP transport and HTTP-only MCP host/port settings.
 
+### Fixed
+
+- Fixed intermittent stdio MCP proxy startup failures caused by stale GUI launch lock files on Windows.
+
 ## v0.5.0
 
 ### Added

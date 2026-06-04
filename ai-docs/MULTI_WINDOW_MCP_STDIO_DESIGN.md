@@ -274,6 +274,14 @@ must use a current-user named mutex so only one process launches the GUI. Proxie
 not hold the mutex wait for the control plane to appear. Timeout errors return MCP
 `internal_error` with the message `ExaTerm GUI control plane is unavailable`.
 
+Current implementation note:
+
+- `src-tauri/src/mcp/stdio.rs` uses a Windows `Local\ExaTermMcpLaunch-*` named mutex for
+  GUI launch coordination. Do not replace it with a persistent lock file on Windows;
+  stale files can prevent later MCP proxy launches after an abnormal exit.
+- The non-Windows fallback currently uses an app-data lock file because the Windows beta
+  path is the primary target.
+
 ### HTTP MCP Removal
 
 HTTP MCP is removed instead of being externalized. The target architecture has no
@@ -453,7 +461,8 @@ Transport gating rules:
 - Add `rmcp` `transport-io` feature.
 - Add GUI control plane with current-user local transport.
 - Implement GUI discovery, normal visible auto-start, 2-second discovery timeout, 30-second
-  post-launch timeout, 250 ms retry interval, current-user launch lock, and proxy forwarding.
+  post-launch timeout, 250 ms retry interval, current-user Windows named mutex launch lock,
+  and proxy forwarding.
 - Add smoke tests for stdio initialize and tools/list.
 
 ### Phase 6: Remove HTTP MCP
@@ -490,6 +499,8 @@ Rust unit tests:
 - HTTP transport code and HTTP-only settings are absent from the target implementation
 - control plane rejects missing nonce, wrong protocol version, and non-current-user clients
 - proxy launch lock prevents duplicate GUI launches when multiple proxies start together
+- stale launch lock artifacts cannot prevent future Windows proxy launches after an
+  abnormal proxy exit
 
 Frontend tests or manual verification:
 
