@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FolderOpen, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, FolderOpen, X } from "lucide-react";
 import type {
   AppConfig,
   ConnectionType,
@@ -64,6 +65,22 @@ type SshHostKeyCheck = HostKeyCheckResult & {
   phase: "jump" | "target";
 };
 
+interface SshDiagnosticEvent {
+  level: "info" | "error";
+  message: string;
+}
+
+type SshDiagnosticEntry = SshDiagnosticEvent & {
+  id: number;
+  time: string;
+};
+
+const createRequestId = () => {
+  return (
+    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  );
+};
+
 const normalizeEncoding = (encoding: string | null | undefined): Encoding => {
   return SSH_ENCODINGS.some((entry) => entry.value === encoding) ? (encoding as Encoding) : "utf-8";
 };
@@ -87,6 +104,9 @@ export default function ConnectionDialog({
   const overlayMouseDownStartedRef = useRef(false);
   const connectingRef = useRef(false);
   const startupRequestHandledRef = useRef(false);
+  const sshDiagnosticRequestIdRef = useRef<string | null>(null);
+  const sshDiagnosticUnlistenRef = useRef<UnlistenFn | null>(null);
+  const sshDiagnosticEntryIdRef = useRef(0);
   const [tab, setTab] = useState<ConnectionType>("ssh");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
@@ -97,6 +117,9 @@ export default function ConnectionDialog({
   const [sshProfileName, setSshProfileName] = useState("");
   const [telnetProfileName, setTelnetProfileName] = useState("");
   const [pendingStartupConnect, setPendingStartupConnect] = useState(false);
+  const [sshDiagnosticLogs, setSshDiagnosticLogs] = useState<SshDiagnosticEntry[]>([]);
+  const [sshDiagnosticsExpanded, setSshDiagnosticsExpanded] = useState(false);
+  const [sshDiagnosticsCopied, setSshDiagnosticsCopied] = useState(false);
 
   // SSH fields
   const [host, setHost] = useState("192.168.1.1");
@@ -177,6 +200,58 @@ export default function ConnectionDialog({
     } catch {
       return false;
     }
+  };
+
+  const stopSshDiagnostics = useCallback(() => {
+    sshDiagnosticRequestIdRef.current = null;
+    sshDiagnosticUnlistenRef.current?.();
+    sshDiagnosticUnlistenRef.current = null;
+  }, []);
+
+  const startSshDiagnostics = useCallback(async () => {
+    stopSshDiagnostics();
+    const requestId = createRequestId();
+    sshDiagnosticRequestIdRef.current = requestId;
+    sshDiagnosticEntryIdRef.current = 0;
+    setSshDiagnosticLogs([]);
+    setSshDiagnosticsCopied(false);
+
+    const unlisten = await listen<SshDiagnosticEvent>(
+      `ssh://connect-diagnostic/${requestId}`,
+      (event) => {
+        const entryId = sshDiagnosticEntryIdRef.current + 1;
+        sshDiagnosticEntryIdRef.current = entryId;
+        setSshDiagnosticLogs((current) => [
+          ...current,
+          {
+            id: entryId,
+            level: event.payload.level,
+            message: event.payload.message,
+            time: new Date().toLocaleTimeString(),
+          },
+        ]);
+      }
+    );
+    sshDiagnosticUnlistenRef.current = unlisten;
+    return requestId;
+  }, [stopSshDiagnostics]);
+
+  useEffect(() => {
+    return () => {
+      stopSshDiagnostics();
+    };
+  }, [stopSshDiagnostics]);
+
+  const currentSshRequestId = () => sshDiagnosticRequestIdRef.current;
+
+  const copySshDiagnostics = async () => {
+    if (sshDiagnosticLogs.length === 0) return;
+    if (!navigator.clipboard) return;
+    const text = sshDiagnosticLogs
+      .map((entry) => `[${entry.time}] ${entry.level}: ${entry.message}`)
+      .join("\n");
+    await navigator.clipboard.writeText(text);
+    setSshDiagnosticsCopied(true);
   };
 
   const getProfileDisplayName = (profile: SavedConnection) => {
@@ -468,6 +543,7 @@ export default function ConnectionDialog({
       cols: 120,
       rows: 30,
       encoding,
+      requestId: currentSshRequestId(),
     });
     if (autoLog) {
       await invoke("logger_start_auto", {
@@ -517,6 +593,8 @@ export default function ConnectionDialog({
       jumpProfileId: jumpProfileId || null,
       jumpPassword: jumpAuthMethod === "password" ? currentJumpCredential : "",
       jumpKeyPassphrase: jumpAuthMethod === "public_key" ? currentJumpCredential : "",
+      requestId: currentSshRequestId(),
+      diagnosticRole: "target",
     });
 
     if (result.status === "trusted") {
@@ -658,6 +736,7 @@ export default function ConnectionDialog({
     setConnecting(true);
     try {
       if (tab === "ssh") {
+        await startSshDiagnostics();
         const sshPort = Number.parseInt(port, 10);
         if (Number.isNaN(sshPort)) {
           throw new Error(t("connection.error"));
@@ -682,6 +761,8 @@ export default function ConnectionDialog({
             jumpProfileId: null,
             jumpPassword: "",
             jumpKeyPassphrase: "",
+            requestId: currentSshRequestId(),
+            diagnosticRole: "jump",
           });
           if (jumpResult.status === "trusted") {
             await continueAfterJumpTrusted(sshPort);
@@ -698,6 +779,7 @@ export default function ConnectionDialog({
       }
 
       const autoLog = await getAutoLogPreference();
+      stopSshDiagnostics();
 
       if (tab === "telnet") {
         const parsedTelnetPort = Number.parseInt(telnetPort, 10);
@@ -929,6 +1011,48 @@ export default function ConnectionDialog({
     credentialPrompt?.authMethod === "public_key"
       ? t("connection.key_passphrase_prompt_desc")
       : t("connection.password_prompt_desc");
+  const renderSshDiagnostics = () => {
+    if (sshDiagnosticLogs.length === 0) return null;
+
+    return (
+      <div className="connection-dialog__diagnostics">
+        <div className="connection-dialog__diagnostics-header">
+          <button
+            className="connection-dialog__diagnostics-toggle"
+            type="button"
+            onClick={() => setSshDiagnosticsExpanded((current) => !current)}
+          >
+            {sshDiagnosticsExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <span>{t("connection.ssh_diagnostics")}</span>
+          </button>
+          <button
+            className="btn btn-ghost btn-sm connection-dialog__diagnostics-copy"
+            type="button"
+            onClick={() => void copySshDiagnostics()}
+            title={t("connection.ssh_diagnostics_copy")}
+          >
+            <Copy size={13} />
+            {sshDiagnosticsCopied
+              ? t("connection.ssh_diagnostics_copied")
+              : t("connection.ssh_diagnostics_copy")}
+          </button>
+        </div>
+        {sshDiagnosticsExpanded && (
+          <div className="connection-dialog__diagnostics-log" role="log" aria-live="polite">
+            {sshDiagnosticLogs.map((entry) => (
+              <div
+                key={entry.id}
+                className={`connection-dialog__diagnostics-line connection-dialog__diagnostics-line--${entry.level}`}
+              >
+                <span className="connection-dialog__diagnostics-time">{entry.time}</span>
+                <span>{entry.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (credentialPrompt) {
     return (
@@ -975,6 +1099,7 @@ export default function ConnectionDialog({
             {credentialPrompt.error && (
               <div className="connection-dialog__error">{credentialPrompt.error}</div>
             )}
+            {renderSshDiagnostics()}
           </div>
           <div className="connection-dialog__footer">
             {connecting ? (
@@ -1469,6 +1594,7 @@ export default function ConnectionDialog({
             </>
           )}
           {error && <div className="connection-dialog__error">{error}</div>}
+          {tab === "ssh" && renderSshDiagnostics()}
         </div>
 
         <div className="connection-dialog__footer">

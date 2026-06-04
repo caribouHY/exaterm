@@ -13,6 +13,7 @@ export interface SshConnectParams {
   jump_profile_id?: string | null;
   jump_password?: string | null;
   jump_key_passphrase?: string | null;
+  request_id?: string | null;
   cols: number;
   rows: number;
 }
