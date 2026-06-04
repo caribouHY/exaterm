@@ -33,6 +33,58 @@ struct PendingHostKey {
     key: PublicKey,
 }
 
+#[derive(Clone)]
+struct SshDiagnostic {
+    app: AppHandle,
+    request_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct SshDiagnosticEvent {
+    level: &'static str,
+    message: String,
+}
+
+fn ssh_diagnostic_event_name(request_id: &str) -> String {
+    format!("ssh://connect-diagnostic/{request_id}")
+}
+
+fn emit_ssh_diagnostic(
+    app: &AppHandle,
+    request_id: Option<&str>,
+    level: &'static str,
+    message: impl Into<String>,
+) {
+    let Some(request_id) = request_id else {
+        return;
+    };
+
+    let _ = app.emit(
+        &ssh_diagnostic_event_name(request_id),
+        SshDiagnosticEvent {
+            level,
+            message: message.into(),
+        },
+    );
+}
+
+impl SshDiagnostic {
+    fn new(app: &AppHandle, request_id: Option<String>) -> Self {
+        Self {
+            app: app.clone(),
+            request_id,
+        }
+    }
+
+    fn info(&self, message: impl Into<String>) {
+        emit_ssh_diagnostic(&self.app, self.request_id.as_deref(), "info", message);
+    }
+
+    fn error(&self, message: impl Into<String>) {
+        emit_ssh_diagnostic(&self.app, self.request_id.as_deref(), "error", message);
+    }
+}
+
 /// Global SSH session store
 #[derive(Clone)]
 pub struct SshState {
@@ -276,6 +328,7 @@ pub struct SshConnectOptions {
     pub cols: u32,
     pub rows: u32,
     pub encoding: Option<String>,
+    pub request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -601,6 +654,41 @@ fn map_connect_error(error: russh::Error, verifier: &HostKeyVerifier) -> String 
     format!("SSH接続エラー: {}", error)
 }
 
+fn emit_host_key_diagnostic(diagnostic: &SshDiagnostic, result: &HostKeyCheckResult) {
+    diagnostic.info(format!(
+        "target: host key received {} SHA256:{}",
+        result.algorithm, result.fingerprint
+    ));
+    match result.status {
+        HostKeyCheckStatus::Trusted => diagnostic.info("target: host key trusted"),
+        HostKeyCheckStatus::Unknown => diagnostic.info("target: host key unknown"),
+        HostKeyCheckStatus::Mismatch => diagnostic.info("target: host key mismatch"),
+    }
+}
+
+fn normalize_diagnostic_role(value: Option<String>) -> &'static str {
+    match value.as_deref() {
+        Some("jump") => "jump",
+        _ => "target",
+    }
+}
+
+fn emit_host_key_diagnostic_for_role(
+    diagnostic: &SshDiagnostic,
+    role: &str,
+    result: &HostKeyCheckResult,
+) {
+    diagnostic.info(format!(
+        "{role}: host key received {} SHA256:{}",
+        result.algorithm, result.fingerprint
+    ));
+    match result.status {
+        HostKeyCheckStatus::Trusted => diagnostic.info(format!("{role}: host key trusted")),
+        HostKeyCheckStatus::Unknown => diagnostic.info(format!("{role}: host key unknown")),
+        HostKeyCheckStatus::Mismatch => diagnostic.info(format!("{role}: host key mismatch")),
+    }
+}
+
 fn append_missing<T: Copy + PartialEq>(items: &mut Vec<T>, item: T) {
     if !items.contains(&item) {
         items.push(item);
@@ -653,6 +741,7 @@ async fn connect_jump_profile(
     target_port: u16,
     jump_password: Option<String>,
     jump_key_passphrase: Option<String>,
+    diagnostic: Option<&SshDiagnostic>,
 ) -> Result<
     (
         russh::client::Handle<ProbeClientHandler>,
@@ -670,20 +759,54 @@ async fn connect_jump_profile(
     let handler = ProbeClientHandler {
         host_verifier: jump_verifier.clone(),
     };
+    if let Some(diagnostic) = diagnostic {
+        diagnostic.info("jump: connecting");
+    }
     let mut handle = russh::client::connect(
         config,
         (jump_profile.host.as_str(), jump_profile.port),
         handler,
     )
     .await
-    .map_err(|error| map_connect_error(error, &jump_verifier))?;
+    .map_err(|error| {
+        if let Some(diagnostic) = diagnostic {
+            diagnostic.error("error: jump SSH handshake failed");
+        }
+        map_connect_error(error, &jump_verifier)
+    })?;
 
-    authenticate_ssh(&mut handle, &jump_profile.username, auth).await?;
+    if let Some(diagnostic) = diagnostic {
+        diagnostic.info("jump: host key accepted");
+        diagnostic.info("jump: authentication started");
+    }
+
+    authenticate_ssh(&mut handle, &jump_profile.username, auth)
+        .await
+        .map_err(|error| {
+            if let Some(diagnostic) = diagnostic {
+                diagnostic.error("error: jump authentication failed");
+            }
+            error
+        })?;
+
+    if let Some(diagnostic) = diagnostic {
+        diagnostic.info("jump: authentication succeeded");
+        diagnostic.info("jump: opening direct-tcpip channel");
+    }
 
     let channel = handle
         .channel_open_direct_tcpip(target_host, u32::from(target_port), "127.0.0.1", 0)
         .await
-        .map_err(|error| format!("SSH踏み台チャネルオープンエラー: {}", error))?;
+        .map_err(|error| {
+            if let Some(diagnostic) = diagnostic {
+                diagnostic.error("error: jump direct-tcpip channel failed");
+            }
+            format!("SSH踏み台チャネルオープンエラー: {}", error)
+        })?;
+
+    if let Some(diagnostic) = diagnostic {
+        diagnostic.info("jump: direct-tcpip channel opened");
+    }
 
     Ok((handle, channel))
 }
@@ -694,6 +817,8 @@ async fn run_host_key_probe(
     jump_profile: Option<SshJumpProfile>,
     jump_password: Option<String>,
     jump_key_passphrase: Option<String>,
+    diagnostic: Option<SshDiagnostic>,
+    role: &'static str,
 ) -> Result<(HostKeyCheckResult, PendingHostKey), String> {
     let config = Arc::new(load_client_config()?);
     let verifier = HostKeyVerifier::probe(host.to_string(), port);
@@ -709,17 +834,34 @@ async fn run_host_key_probe(
             port,
             jump_password,
             jump_key_passphrase,
+            diagnostic.as_ref(),
         )
         .await?;
         let stream = jump_channel.into_stream();
+        if let Some(diagnostic) = &diagnostic {
+            diagnostic.info(format!("{role}: starting SSH handshake"));
+        }
         let handle = russh::client::connect_stream(config, stream, handler)
             .await
-            .map_err(|error| format!("SSH接続エラー: {}", error))?;
+            .map_err(|error| {
+                if let Some(diagnostic) = &diagnostic {
+                    diagnostic.error(format!("error: {role} SSH handshake failed"));
+                }
+                format!("SSH接続エラー: {}", error)
+            })?;
         (handle, Some(jump_handle))
     } else {
+        if let Some(diagnostic) = &diagnostic {
+            diagnostic.info(format!("{role}: starting SSH handshake"));
+        }
         let handle = russh::client::connect(config, (host, port), handler)
             .await
-            .map_err(|error| format!("SSH接続エラー: {}", error))?;
+            .map_err(|error| {
+                if let Some(diagnostic) = &diagnostic {
+                    diagnostic.error(format!("error: {role} SSH handshake failed"));
+                }
+                format!("SSH接続エラー: {}", error)
+            })?;
         (handle, None)
     };
 
@@ -739,12 +881,16 @@ async fn run_host_key_probe(
         .observed_key()
         .ok_or_else(|| "SSHホスト鍵を取得できませんでした".to_string())?;
 
+    if let Some(diagnostic) = &diagnostic {
+        emit_host_key_diagnostic_for_role(diagnostic, role, &result);
+    }
+
     Ok((result, observed_key))
 }
 
 #[cfg(not(test))]
 pub async fn verify_trusted_host_key(host: &str, port: u16) -> Result<(), String> {
-    let (result, _) = run_host_key_probe(host, port, None, None, None).await?;
+    let (result, _) = run_host_key_probe(host, port, None, None, None, None, "target").await?;
     if result.status == HostKeyCheckStatus::Trusted {
         Ok(())
     } else {
@@ -766,6 +912,8 @@ pub async fn verify_trusted_host_key_via_jump(
         Some(jump_profile),
         jump_password,
         jump_key_passphrase,
+        None,
+        "target",
     )
     .await?;
     if result.status == HostKeyCheckStatus::Trusted {
@@ -777,21 +925,28 @@ pub async fn verify_trusted_host_key_via_jump(
 
 #[tauri::command]
 pub async fn ssh_probe_host_key(
+    app: AppHandle,
     state: tauri::State<'_, SshState>,
     host: String,
     port: u16,
     jump_profile_id: Option<String>,
     jump_password: Option<String>,
     jump_key_passphrase: Option<String>,
+    request_id: Option<String>,
+    diagnostic_role: Option<String>,
 ) -> Result<HostKeyCheckResult, String> {
     let config = config_load()?;
     let jump_profile = resolve_jump_profile(&config, jump_profile_id.as_deref(), None)?;
+    let diagnostic = SshDiagnostic::new(&app, request_id);
+    let role = normalize_diagnostic_role(diagnostic_role);
     let (result, pending_key) = run_host_key_probe(
         &host,
         port,
         jump_profile,
         jump_password,
         jump_key_passphrase,
+        Some(diagnostic),
+        role,
     )
     .await?;
     state
@@ -843,6 +998,7 @@ pub async fn ssh_connect(
     cols: u32,
     rows: u32,
     encoding: Option<String>,
+    request_id: Option<String>,
 ) -> Result<SshConnectResult, String> {
     connect(
         &app,
@@ -864,6 +1020,7 @@ pub async fn ssh_connect(
             cols,
             rows,
             encoding,
+            request_id,
         },
     )
     .await
@@ -878,6 +1035,7 @@ pub async fn connect(
     options: SshConnectOptions,
 ) -> Result<SshConnectResult, String> {
     let session_id = Uuid::new_v4().to_string();
+    let diagnostic = SshDiagnostic::new(app, options.request_id.clone());
     let auth = build_auth_request(
         options.auth_method.clone(),
         options.password.clone(),
@@ -906,27 +1064,54 @@ pub async fn connect(
             options.port,
             options.jump_password.clone(),
             options.jump_key_passphrase.clone(),
+            Some(&diagnostic),
         )
         .await?;
         let stream = jump_channel.into_stream();
+        diagnostic.info("target: starting SSH handshake");
         let handle = russh::client::connect_stream(config, stream, handler)
             .await
-            .map_err(|error| map_connect_error(error, &host_verifier))?;
+            .map_err(|error| {
+                if let Some(result) = host_verifier.last_result() {
+                    emit_host_key_diagnostic(&diagnostic, &result);
+                }
+                diagnostic.error("error: target SSH handshake failed");
+                map_connect_error(error, &host_verifier)
+            })?;
         (handle, Some(jump_handle))
     } else {
+        diagnostic.info("target: starting SSH handshake");
         let handle = russh::client::connect(config, (options.host.as_str(), options.port), handler)
             .await
-            .map_err(|error| map_connect_error(error, &host_verifier))?;
+            .map_err(|error| {
+                if let Some(result) = host_verifier.last_result() {
+                    emit_host_key_diagnostic(&diagnostic, &result);
+                }
+                diagnostic.error("error: target SSH handshake failed");
+                map_connect_error(error, &host_verifier)
+            })?;
         (handle, None)
     };
 
-    authenticate_ssh(&mut handle, &options.username, auth).await?;
-
-    let channel = handle
-        .channel_open_session()
+    if let Some(result) = host_verifier.last_result() {
+        emit_host_key_diagnostic(&diagnostic, &result);
+    }
+    diagnostic.info("target: authentication started");
+    authenticate_ssh(&mut handle, &options.username, auth)
         .await
-        .map_err(|e| format!("SSHチャネルオープンエラー: {}", e))?;
+        .map_err(|error| {
+            diagnostic.error("error: target authentication failed");
+            error
+        })?;
+    diagnostic.info("target: authentication succeeded");
 
+    diagnostic.info("target: opening session channel");
+    let channel = handle.channel_open_session().await.map_err(|e| {
+        diagnostic.error("error: target session channel failed");
+        format!("SSHチャネルオープンエラー: {}", e)
+    })?;
+
+    diagnostic.info("target: requesting pty");
     channel
         .request_pty(
             false,
@@ -938,12 +1123,16 @@ pub async fn connect(
             &[],
         )
         .await
-        .map_err(|_| "PTYリクエストエラー".to_string())?;
+        .map_err(|_| {
+            diagnostic.error("error: target pty request failed");
+            "PTYリクエストエラー".to_string()
+        })?;
 
-    channel
-        .request_shell(false)
-        .await
-        .map_err(|_| "シェルリクエストエラー".to_string())?;
+    diagnostic.info("target: requesting shell");
+    channel.request_shell(false).await.map_err(|_| {
+        diagnostic.error("error: target shell request failed");
+        "シェルリクエストエラー".to_string()
+    })?;
 
     let session = SshSession {
         handle,
@@ -967,6 +1156,7 @@ pub async fn connect(
         .await;
 
     let _ = app.emit("ssh://connected", &session_id);
+    diagnostic.info("target: session ready");
 
     Ok(SshConnectResult { session_id })
 }
@@ -1083,6 +1273,25 @@ mod tests {
         let path = dir.join("id_ed25519");
         fs::write(&path, contents).unwrap();
         path
+    }
+
+    #[test]
+    fn diagnostic_event_name_scopes_to_request_id() {
+        assert_eq!(
+            ssh_diagnostic_event_name("request-1"),
+            "ssh://connect-diagnostic/request-1"
+        );
+    }
+
+    #[test]
+    fn diagnostic_role_only_allows_known_roles() {
+        assert_eq!(normalize_diagnostic_role(Some("jump".into())), "jump");
+        assert_eq!(normalize_diagnostic_role(Some("target".into())), "target");
+        assert_eq!(
+            normalize_diagnostic_role(Some("host.example.com".into())),
+            "target"
+        );
+        assert_eq!(normalize_diagnostic_role(None), "target");
     }
 
     fn generate_temp_private_key(passphrase: &str) -> PathBuf {

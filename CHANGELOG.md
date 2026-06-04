@@ -7,6 +7,7 @@
 - Added early multi-window support so terminal tabs can be moved between ExaTerm windows.
 - Added drag-and-drop terminal tab detaching to open a tab in a new ExaTerm window.
 - Added a Settings option for enabling the local stdio MCP proxy transport.
+- Added SSH connection diagnostics in the connection dialog to help identify where jump-host connections stall.
 
 ### Changed
 

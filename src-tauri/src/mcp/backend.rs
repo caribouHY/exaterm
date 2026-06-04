@@ -1062,6 +1062,7 @@ async fn connect_prepared_profile(
                     cols: prepared.cols,
                     rows: prepared.rows,
                     encoding: Some(prepared.encoding.clone()),
+                    request_id: None,
                 },
             )
             .await
