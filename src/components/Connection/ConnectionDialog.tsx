@@ -94,6 +94,10 @@ const normalizeProfileMemo = (memo: string): string | null => {
   return trimmed ? trimmed : null;
 };
 
+const normalizeProfileMcpEnabled = (enabled: boolean | null | undefined): boolean => {
+  return enabled ?? true;
+};
+
 export default function ConnectionDialog({
   startupRequest,
   onStartupRequestHandled,
@@ -132,6 +136,7 @@ export default function ConnectionDialog({
   const [encoding, setEncoding] = useState<Encoding>("utf-8");
   const [sshTerminalMode, setSshTerminalMode] = useState<TerminalMode>(DEFAULT_TERMINAL_MODE);
   const [sshMemo, setSshMemo] = useState("");
+  const [sshMcpEnabled, setSshMcpEnabled] = useState(true);
 
   // Telnet fields
   const [telnetHost, setTelnetHost] = useState("192.168.1.1");
@@ -139,6 +144,7 @@ export default function ConnectionDialog({
   const [telnetEncoding, setTelnetEncoding] = useState<Encoding>("utf-8");
   const [telnetTerminalMode, setTelnetTerminalMode] = useState<TerminalMode>(DEFAULT_TERMINAL_MODE);
   const [telnetMemo, setTelnetMemo] = useState("");
+  const [telnetMcpEnabled, setTelnetMcpEnabled] = useState(true);
 
   // Serial fields
   const [ports, setPorts] = useState<PortInfo[]>([]);
@@ -271,6 +277,7 @@ export default function ConnectionDialog({
     setEncoding(normalizeEncoding(profile.encoding));
     setSshTerminalMode(normalizeTerminalMode(profile.terminal_mode));
     setSshMemo(profile.memo ?? "");
+    setSshMcpEnabled(normalizeProfileMcpEnabled(profile.mcp_enabled));
   }, []);
 
   const applyTelnetProfile = useCallback(
@@ -282,6 +289,7 @@ export default function ConnectionDialog({
       setTelnetEncoding(normalizeEncoding(profile.encoding));
       setTelnetTerminalMode(normalizeTerminalMode(profile.terminal_mode));
       setTelnetMemo(profile.memo ?? "");
+      setTelnetMcpEnabled(normalizeProfileMcpEnabled(profile.mcp_enabled));
     },
     []
   );
@@ -297,6 +305,7 @@ export default function ConnectionDialog({
       setEncoding("utf-8");
       setSshTerminalMode(DEFAULT_TERMINAL_MODE);
       setSshMemo("");
+      setSshMcpEnabled(true);
       return;
     }
 
@@ -313,6 +322,7 @@ export default function ConnectionDialog({
       setTelnetEncoding("utf-8");
       setTelnetTerminalMode(DEFAULT_TERMINAL_MODE);
       setTelnetMemo("");
+      setTelnetMcpEnabled(true);
       return;
     }
 
@@ -352,6 +362,7 @@ export default function ConnectionDialog({
         encoding,
         terminal_mode: sshTerminalMode,
         memo: normalizeProfileMemo(sshMemo),
+        mcp_enabled: sshMcpEnabled,
       };
       const existingConnections = loaded.saved_connections ?? [];
       const duplicateProfile = existingConnections.some(
@@ -408,6 +419,7 @@ export default function ConnectionDialog({
         encoding: telnetEncoding,
         terminal_mode: telnetTerminalMode,
         memo: normalizeProfileMemo(telnetMemo),
+        mcp_enabled: telnetMcpEnabled,
       };
       const existingConnections = loaded.saved_connections ?? [];
       const duplicateProfile = existingConnections.some(
@@ -1372,6 +1384,17 @@ export default function ConnectionDialog({
                   {t("connection.profile_memo_mcp_notice")}
                 </div>
               </div>
+              <label className="connection-dialog__checkbox">
+                <input
+                  type="checkbox"
+                  checked={sshMcpEnabled}
+                  onChange={(e) => setSshMcpEnabled(e.target.checked)}
+                />
+                <span>{t("connection.profile_mcp_enabled")}</span>
+              </label>
+              <div className="connection-dialog__field-help">
+                {t("connection.profile_mcp_enabled_help")}
+              </div>
               <div className="connection-dialog__profile-actions">
                 <button className="btn btn-ghost btn-sm" onClick={handleSaveSshProfile}>
                   {selectedProfileIds.ssh
@@ -1479,6 +1502,17 @@ export default function ConnectionDialog({
                 <div className="connection-dialog__field-help">
                   {t("connection.profile_memo_mcp_notice")}
                 </div>
+              </div>
+              <label className="connection-dialog__checkbox">
+                <input
+                  type="checkbox"
+                  checked={telnetMcpEnabled}
+                  onChange={(e) => setTelnetMcpEnabled(e.target.checked)}
+                />
+                <span>{t("connection.profile_mcp_enabled")}</span>
+              </label>
+              <div className="connection-dialog__field-help">
+                {t("connection.profile_mcp_enabled_help")}
               </div>
               <div className="connection-dialog__profile-actions">
                 <button className="btn btn-ghost btn-sm" onClick={handleSaveTelnetProfile}>

@@ -309,6 +309,7 @@ fn list_connection_profiles_returns_only_ssh_telnet_without_secret_paths() {
             terminal_mode: Some("cisco_ios".into()),
             jump_profile_id: Some("bastion".into()),
             memo: Some("Cisco ISR branch edge".into()),
+            ..SavedConnection::default()
         },
         SavedConnection {
             id: "legacy".into(),
@@ -343,6 +344,31 @@ fn list_connection_profiles_returns_only_ssh_telnet_without_secret_paths() {
 }
 
 #[test]
+fn list_connection_profiles_skips_mcp_disabled_profiles() {
+    let mut config = AppConfig::default();
+    config.saved_connections = vec![
+        SavedConnection {
+            id: "ssh-enabled".into(),
+            connection_type: "ssh".into(),
+            host: Some("192.0.2.10".into()),
+            ..SavedConnection::default()
+        },
+        SavedConnection {
+            id: "telnet-disabled".into(),
+            connection_type: "telnet".into(),
+            host: Some("192.0.2.20".into()),
+            mcp_enabled: false,
+            ..SavedConnection::default()
+        },
+    ];
+
+    let profiles = list_connection_profiles_from_config(&config);
+
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(profiles[0].id, "ssh-enabled");
+}
+
+#[test]
 fn prepare_saved_profile_rejects_missing_and_unsupported_profiles() {
     let mut config = AppConfig::default();
     config.saved_connections = vec![SavedConnection {
@@ -373,6 +399,32 @@ fn prepare_saved_profile_rejects_missing_and_unsupported_profiles() {
     )
     .unwrap_err();
     assert!(unsupported.contains("SSH/Telnet"));
+}
+
+#[test]
+fn prepare_saved_profile_rejects_mcp_disabled_profiles() {
+    let mut config = AppConfig::default();
+    config.saved_connections = vec![SavedConnection {
+        id: "disabled".into(),
+        connection_type: "ssh".into(),
+        host: Some("192.0.2.10".into()),
+        username: Some("admin".into()),
+        auth_method: Some("password".into()),
+        mcp_enabled: false,
+        ..SavedConnection::default()
+    }];
+
+    let error = prepare_saved_profile_connection(
+        &config,
+        ConnectSavedProfileArgs {
+            profile_id: "disabled".into(),
+            cols: None,
+            rows: None,
+        },
+    )
+    .unwrap_err();
+
+    assert!(error.contains("MCP"));
 }
 
 #[test]
@@ -421,6 +473,31 @@ fn prepare_saved_profile_rejects_incomplete_ssh_profiles() {
 }
 
 #[test]
+fn prepare_saved_profile_allows_profiles_without_explicit_mcp_flag() {
+    let mut config = AppConfig::default();
+    config.saved_connections = vec![SavedConnection {
+        id: "default-enabled".into(),
+        connection_type: "ssh".into(),
+        host: Some("192.0.2.10".into()),
+        username: Some("admin".into()),
+        auth_method: Some("password".into()),
+        ..SavedConnection::default()
+    }];
+
+    let prepared = prepare_saved_profile_connection(
+        &config,
+        ConnectSavedProfileArgs {
+            profile_id: "default-enabled".into(),
+            cols: None,
+            rows: None,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(prepared.profile_id, "default-enabled");
+}
+
+#[test]
 fn prepare_saved_profile_builds_connection_metadata() {
     let mut config = AppConfig::default();
     config.saved_connections = vec![SavedConnection {
@@ -453,6 +530,50 @@ fn prepare_saved_profile_builds_connection_metadata() {
     assert_eq!(prepared.terminal_mode, "cisco_ios");
     assert_eq!(prepared.cols, 80);
     assert_eq!(prepared.rows, 24);
+}
+
+#[test]
+fn prepare_saved_profile_allows_disabled_jump_profile_when_target_is_enabled() {
+    let mut config = AppConfig::default();
+    config.saved_connections = vec![
+        SavedConnection {
+            id: "bastion".into(),
+            connection_type: "ssh".into(),
+            host: Some("198.51.100.10".into()),
+            port: Some(2222),
+            username: Some("jump".into()),
+            auth_method: Some("password".into()),
+            mcp_enabled: false,
+            ..SavedConnection::default()
+        },
+        SavedConnection {
+            id: "inside".into(),
+            connection_type: "ssh".into(),
+            host: Some("192.0.2.10".into()),
+            username: Some("admin".into()),
+            auth_method: Some("password".into()),
+            jump_profile_id: Some("bastion".into()),
+            ..SavedConnection::default()
+        },
+    ];
+
+    let prepared = prepare_saved_profile_connection(
+        &config,
+        ConnectSavedProfileArgs {
+            profile_id: "inside".into(),
+            cols: None,
+            rows: None,
+        },
+    )
+    .unwrap();
+
+    match prepared.kind {
+        PreparedConnectionKind::Ssh {
+            jump_profile: Some(jump_profile),
+            ..
+        } => assert_eq!(jump_profile.id, "bastion"),
+        other => panic!("expected SSH jump profile, got {other:?}"),
+    }
 }
 
 #[test]

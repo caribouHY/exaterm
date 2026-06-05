@@ -144,6 +144,19 @@
   line-height: 1.4;
 }
 
+.connection-dialog__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.connection-dialog__checkbox input {
+  margin: 0;
+}
+
 .connection-dialog__footer {
   display: flex;
   flex-shrink: 0;

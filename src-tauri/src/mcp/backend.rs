@@ -689,6 +689,10 @@ pub(super) fn normalize_profile_string(value: Option<&str>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+pub(super) fn profile_mcp_enabled(profile: &SavedConnection) -> bool {
+    profile.mcp_enabled
+}
+
 pub(super) fn normalize_profile_encoding(value: Option<&str>) -> String {
     match value.map(str::trim) {
         Some("shift-jis") => "shift-jis".into(),
@@ -809,6 +813,9 @@ pub(super) fn list_connection_profiles_from_config(
         .saved_connections
         .iter()
         .filter_map(|profile| {
+            if !profile_mcp_enabled(profile) {
+                return None;
+            }
             let connection_type = normalize_profile_type(&profile.connection_type);
             let memo = normalize_profile_string(profile.memo.as_deref());
             match connection_type.as_str() {
@@ -876,6 +883,9 @@ pub(super) fn prepare_saved_profile_connection(
         .iter()
         .find(|profile| profile.id == profile_id)
         .ok_or_else(|| "保存済みプロファイルが見つかりません".to_string())?;
+    if !profile_mcp_enabled(profile) {
+        return Err("この保存済みプロファイルは MCP からの利用が無効です".into());
+    }
     let connection_type = normalize_profile_type(&profile.connection_type);
     let host = normalize_profile_host(profile);
     if host.is_empty() {

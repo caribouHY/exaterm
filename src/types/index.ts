@@ -143,6 +143,7 @@ export interface SavedConnection {
   private_key_path?: string | null;
   jump_profile_id?: string | null;
   memo?: string | null;
+  mcp_enabled?: boolean | null;
 }
 
 export type ConnectionType = "ssh" | "serial" | "telnet";

@@ -166,6 +166,10 @@ fn default_terminal_include_log_header() -> bool {
     true
 }
 
+fn default_saved_connection_mcp_enabled() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedConnection {
     #[serde(default)]
@@ -190,6 +194,8 @@ pub struct SavedConnection {
     pub jump_profile_id: Option<String>,
     #[serde(default)]
     pub memo: Option<String>,
+    #[serde(default = "default_saved_connection_mcp_enabled")]
+    pub mcp_enabled: bool,
 }
 
 impl Default for SavedConnection {
@@ -206,6 +212,7 @@ impl Default for SavedConnection {
             private_key_path: None,
             jump_profile_id: None,
             memo: None,
+            mcp_enabled: default_saved_connection_mcp_enabled(),
         }
     }
 }
@@ -337,6 +344,7 @@ mod tests {
         assert_eq!(cfg.saved_connections[0].private_key_path, None);
         assert_eq!(cfg.saved_connections[0].jump_profile_id, None);
         assert_eq!(cfg.saved_connections[0].memo, None);
+        assert!(cfg.saved_connections[0].mcp_enabled);
     }
 
     #[test]
@@ -460,5 +468,36 @@ mod tests {
             cfg.saved_connections[0].memo.as_deref(),
             Some("Cisco ISR at branch A")
         );
+    }
+
+    #[test]
+    fn saved_connection_defaults_mcp_enabled_to_true() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "saved_connections": [{
+                    "id": "edge-router",
+                    "connection_type": "ssh"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        assert!(cfg.saved_connections[0].mcp_enabled);
+    }
+
+    #[test]
+    fn saved_connection_preserves_mcp_enabled_false() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "saved_connections": [{
+                    "id": "edge-router",
+                    "connection_type": "ssh",
+                    "mcp_enabled": false
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        assert!(!cfg.saved_connections[0].mcp_enabled);
     }
 }
