@@ -135,7 +135,7 @@ When MCP is enabled, external clients can call these tools:
 
 When `mcp.connect_enabled` is also `true`, external clients can call these additional tools:
 
-- `list_connection_profiles`: lists saved SSH/Telnet profiles. Private key paths and credentials are not returned.
+- `list_connection_profiles`: lists saved SSH/Telnet profiles that individually allow MCP access. Private key paths and credentials are not returned.
 - `connect_saved_profile`: opens a new SSH/Telnet session from a saved profile and shows it as a tab in ExaTerm. SSH passwords and encrypted key passphrases are requested in the ExaTerm UI, not accepted from the MCP tool arguments.
 - `list_serial_ports`: lists currently available Serial ports.
 - `connect_serial_console`: opens a new Serial console session from explicit port and line settings and shows it as a tab in ExaTerm. The port name must match an available Serial port exactly.
@@ -144,7 +144,7 @@ Output-reading tools return `start_cursor`, `cursor`, and `truncated`. Pass `cur
 
 `wait_terminal_output` and `run_terminal_command` wait for up to 60 seconds. `run_terminal_command` targets only existing connected sessions; use `connect_saved_profile` for the opt-in saved-profile connection flow.
 
-The MCP server does not read saved credentials, expose API keys, or read log files directly. MCP clients can explicitly start and stop session logs, but they receive only the log state and file path, not the log contents. New MCP-created SSH/Telnet connections are limited to saved profiles, Serial connections require an explicit available port name, and all new MCP-created connections require `mcp.connect_enabled=true`. SSH connections still enforce the existing known-host checks. If an SSH profile uses `jump_profile_id`, MCP-created connections use the same one-hop jump host flow and request any required jump-host credential in the ExaTerm UI. Terminal output and log files can contain sensitive information, so enable MCP and MCP-triggered logging only for trusted local clients.
+The MCP server does not read saved credentials, expose API keys, or read log files directly. MCP clients can explicitly start and stop session logs, but they receive only the log state and file path, not the log contents. New MCP-created SSH/Telnet connections are limited to saved profiles, Serial connections require an explicit available port name, and all new MCP-created connections require `mcp.connect_enabled=true`. Saved SSH/Telnet profiles can also individually opt out of MCP listing and MCP-created connections with `saved_connections[*].mcp_enabled=false`. SSH connections still enforce the existing known-host checks. If an SSH profile uses `jump_profile_id`, MCP-created connections use the same one-hop jump host flow and request any required jump-host credential in the ExaTerm UI. Terminal output and log files can contain sensitive information, so enable MCP and MCP-triggered logging only for trusted local clients.
 
 ## terminal
 
@@ -204,7 +204,7 @@ Internal SSH extension markers, such as strict key exchange and extension info m
 
 ## saved_connections
 
-`saved_connections` is an array of saved SSH and Telnet connection profiles. Profiles can be managed from the connection dialog. Serial profiles are not currently supported. Passwords, private key contents, key passphrases, and other credentials are not stored in this section. Profile memos are stored as plaintext and may be returned by `list_connection_profiles` when MCP profile connections are enabled, so do not put secrets in them.
+`saved_connections` is an array of saved SSH and Telnet connection profiles. Profiles can be managed from the connection dialog. Serial profiles are not currently supported. Passwords, private key contents, key passphrases, and other credentials are not stored in this section. Profile memos are stored as plaintext and may be returned by `list_connection_profiles` when MCP profile connections are enabled, so do not put secrets in them. Existing profiles treat a missing `mcp_enabled` value as `true`.
 
 | Parameter          | Type           | Description                                                                                                                                            |
 | ------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -219,6 +219,7 @@ Internal SSH extension markers, such as strict key exchange and extension info m
 | `private_key_path` | string or null | Private key file path used with SSH `"public_key"` authentication, such as an `id_ed25519` file. The file contents and passphrase are not stored.      |
 | `jump_profile_id`  | string or null | SSH jump host profile ID. The referenced profile must be a saved SSH profile. Only one jump host is supported; nested jump hosts are rejected.         |
 | `memo`             | string or null | Optional plaintext profile memo, such as the device model, role, or operational notes. Non-empty memos may be returned by MCP profile listing.         |
+| `mcp_enabled`      | boolean        | Whether trusted MCP clients may list and open this saved profile. Missing values default to `true`.                                                    |
 
 Example:
 

@@ -81,6 +81,8 @@
   "connection.profile_memo": "メモ",
   "connection.profile_memo_placeholder": "機種名、用途、作業時の注意など",
   "connection.profile_memo_mcp_notice": "メモは MCP のプロファイル一覧に含まれる場合があります。",
+  "connection.profile_mcp_enabled": "MCP から利用可能にする",
+  "connection.profile_mcp_enabled_help": "有効にすると、グローバルな MCP 接続許可も有効な場合に、信頼済み MCP クライアントがこの保存済みプロファイルを一覧取得して接続できます。",
   "connection.profile_duplicate": "同じ名前のプロファイルがすでに存在します。",
   "connection.profile_name_required": "プロファイル名を入力してください。",
   "connection.profile_password_notice": "認証情報は保存されません。",
