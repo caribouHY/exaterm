@@ -1,12 +1,14 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 
+use russh::keys::decode_secret_key;
+use russh::keys::key::PrivateKeyWithHashAlg;
+use russh::keys::{Algorithm, PrivateKey, PublicKey};
 use russh::*;
-use russh_keys::decode_secret_key;
-use russh_keys::key::{KeyPair, PublicKey};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
@@ -215,96 +217,141 @@ struct ProbeClientHandler {
     host_verifier: HostKeyVerifier,
 }
 
-#[async_trait::async_trait]
 impl russh::client::Handler for ProbeClientHandler {
     type Error = russh::Error;
 
-    async fn check_server_key(
+    fn check_server_key(
         &mut self,
         server_public_key: &PublicKey,
-    ) -> Result<bool, Self::Error> {
-        self.host_verifier.check_key(server_public_key)
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
+        let result = self.host_verifier.check_key(server_public_key);
+        async move { result }
     }
 }
 
-#[async_trait::async_trait]
 impl russh::client::Handler for SshClientHandler {
     type Error = russh::Error;
 
-    async fn check_server_key(
+    fn check_server_key(
         &mut self,
         server_public_key: &PublicKey,
-    ) -> Result<bool, Self::Error> {
-        self.host_verifier.check_key(server_public_key)
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
+        let result = self.host_verifier.check_key(server_public_key);
+        async move { result }
     }
 
-    async fn data(
+    fn data(
         &mut self,
         _channel: ChannelId,
         data: &[u8],
         _session: &mut russh::client::Session,
-    ) -> Result<(), Self::Error> {
-        self.terminals.append_output(&self.session_id, data).await;
-        let _ = self
-            .app
-            .emit(&format!("ssh://data/{}", self.session_id), data.to_vec());
-        Ok(())
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let terminals = self.terminals.clone();
+        let session_id = self.session_id.clone();
+        let app = self.app.clone();
+        let data = data.to_vec();
+        async move {
+            terminals.append_output(&session_id, &data).await;
+            let _ = app.emit(&format!("ssh://data/{session_id}"), data);
+            Ok(())
+        }
     }
 
-    async fn extended_data(
+    fn extended_data(
         &mut self,
         _channel: ChannelId,
         _ext: u32,
         data: &[u8],
         _session: &mut russh::client::Session,
-    ) -> Result<(), Self::Error> {
-        self.terminals.append_output(&self.session_id, data).await;
-        let _ = self
-            .app
-            .emit(&format!("ssh://error/{}", self.session_id), data.to_vec());
-        Ok(())
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let terminals = self.terminals.clone();
+        let session_id = self.session_id.clone();
+        let app = self.app.clone();
+        let data = data.to_vec();
+        async move {
+            terminals.append_output(&session_id, &data).await;
+            let _ = app.emit(&format!("ssh://error/{session_id}"), data);
+            Ok(())
+        }
     }
 
-    async fn channel_close(
+    fn channel_close(
         &mut self,
         _channel: ChannelId,
         _session: &mut russh::client::Session,
-    ) -> Result<(), Self::Error> {
-        self.mark_disconnected().await;
-        Ok(())
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let app = self.app.clone();
+        let session_id = self.session_id.clone();
+        let sessions = self.sessions.clone();
+        let terminals = self.terminals.clone();
+        let workspace = self.workspace.clone();
+        let logger = self.logger.clone();
+        async move {
+            mark_disconnected_impl(
+                &app,
+                &session_id,
+                &sessions,
+                &terminals,
+                &workspace,
+                logger.as_ref(),
+            )
+            .await;
+            Ok(())
+        }
     }
 
-    async fn disconnected(
+    fn disconnected(
         &mut self,
         reason: russh::client::DisconnectReason<Self::Error>,
-    ) -> Result<(), Self::Error> {
-        self.mark_disconnected().await;
-        match reason {
-            russh::client::DisconnectReason::ReceivedDisconnect(_) => Ok(()),
-            russh::client::DisconnectReason::Error(error) => Err(error),
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let app = self.app.clone();
+        let session_id = self.session_id.clone();
+        let sessions = self.sessions.clone();
+        let terminals = self.terminals.clone();
+        let workspace = self.workspace.clone();
+        let logger = self.logger.clone();
+        async move {
+            mark_disconnected_impl(
+                &app,
+                &session_id,
+                &sessions,
+                &terminals,
+                &workspace,
+                logger.as_ref(),
+            )
+            .await;
+            match reason {
+                russh::client::DisconnectReason::ReceivedDisconnect(_) => Ok(()),
+                russh::client::DisconnectReason::Error(error) => Err(error),
+            }
         }
     }
 }
 
-impl SshClientHandler {
-    async fn mark_disconnected(&self) {
-        let removed_session = self.sessions.lock().await.remove(&self.session_id);
-        if let Some(session) = removed_session {
-            let session = session.lock().await;
-            if let Some(jump_handle) = &session.jump_handle {
-                let _ = jump_handle
-                    .disconnect(Disconnect::ByApplication, "Target disconnected", "en")
-                    .await;
-            }
-            self.terminals.mark_disconnected(&self.session_id).await;
-            if let Some(snapshot) = self.workspace.mark_disconnected(&self.session_id).await {
-                emit_workspace_updated(&self.app, &snapshot);
-            }
-            let _ = self.app.emit("ssh://disconnected", &self.session_id);
+async fn mark_disconnected_impl(
+    app: &AppHandle,
+    session_id: &str,
+    sessions: &Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
+    terminals: &TerminalControlState,
+    workspace: &WorkspaceState,
+    logger: Option<&LoggerState>,
+) {
+    let removed_session = sessions.lock().await.remove(session_id);
+    if let Some(session) = removed_session {
+        let session = session.lock().await;
+        if let Some(jump_handle) = &session.jump_handle {
+            let _ = jump_handle
+                .disconnect(Disconnect::ByApplication, "Target disconnected", "en")
+                .await;
         }
-        if let Some(logger_state) = &self.logger {
-            logger::clear_session_logs(logger_state, &self.session_id).await;
+        terminals.mark_disconnected(session_id).await;
+        if let Some(snapshot) = workspace.mark_disconnected(session_id).await {
+            emit_workspace_updated(app, &snapshot);
         }
+        let _ = app.emit("ssh://disconnected", session_id);
+    }
+    if let Some(logger_state) = logger {
+        logger::clear_session_logs(logger_state, session_id).await;
     }
 }
 
@@ -559,8 +606,8 @@ pub fn private_key_requires_passphrase(path: &str) -> Result<bool, String> {
     private_key_format_hint(&secret)?;
     match decode_secret_key(&secret, None) {
         Ok(_) => Ok(false),
-        Err(russh_keys::Error::KeyIsEncrypted) => Ok(true),
-        Err(russh_keys::Error::CouldNotReadKey) => Err(
+        Err(russh::keys::Error::KeyIsEncrypted) => Ok(true),
+        Err(russh::keys::Error::CouldNotReadKey) => Err(
             "秘密鍵を読み込めません。鍵形式、パスフレーズ、またはファイル内容を確認してください"
                 .to_string(),
         ),
@@ -574,14 +621,14 @@ pub fn ssh_private_key_requires_passphrase(private_key_path: String) -> Result<b
         .map_err(|error| format!("SSH公開鍵認証エラー: {}", error))
 }
 
-fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<KeyPair, String> {
+fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<PrivateKey, String> {
     let (_path, secret) = read_private_key_secret(path)?;
     private_key_format_hint(&secret)?;
     decode_secret_key(&secret, passphrase).map_err(|error| match error {
-        russh_keys::Error::KeyIsEncrypted => {
+        russh::keys::Error::KeyIsEncrypted => {
             "秘密鍵はパスフレーズで暗号化されています。鍵パスフレーズを入力してください".to_string()
         }
-        russh_keys::Error::CouldNotReadKey => {
+        russh::keys::Error::CouldNotReadKey => {
             "秘密鍵を読み込めません。鍵形式、パスフレーズ、またはファイル内容を確認してください"
                 .to_string()
         }
@@ -611,7 +658,10 @@ async fn authenticate_ssh(
 
             (
                 handle
-                    .authenticate_publickey(username, Arc::new(key))
+                    .authenticate_publickey(
+                        username,
+                        PrivateKeyWithHashAlg::new(Arc::new(key), None),
+                    )
                     .await
                     .map_err(|e| format!("SSH公開鍵認証エラー: {}", e))?,
                 "SSH公開鍵認証失敗: ユーザー名、秘密鍵、公開鍵の登録状態、またはパスフレーズを確認してください",
@@ -619,7 +669,7 @@ async fn authenticate_ssh(
         }
     };
 
-    if !auth_result {
+    if !auth_result.success() {
         return Err(failure_message.to_string());
     }
 
@@ -689,7 +739,7 @@ fn emit_host_key_diagnostic_for_role(
     }
 }
 
-fn append_missing<T: Copy + PartialEq>(items: &mut Vec<T>, item: T) {
+fn append_missing<T: Clone + PartialEq>(items: &mut Vec<T>, item: T) {
     if !items.contains(&item) {
         items.push(item);
     }
@@ -717,7 +767,7 @@ fn build_client_config(ssh_config: &SshConfig) -> russh::client::Config {
     append_missing(&mut mac, russh::mac::HMAC_SHA1_ETM);
 
     let mut key = default_preferred.key.to_vec();
-    append_missing(&mut key, russh::keys::key::SSH_RSA);
+    append_missing(&mut key, Algorithm::Rsa { hash: None });
 
     config.preferred = russh::Preferred {
         kex: Cow::Owned(kex),
@@ -1264,7 +1314,7 @@ mod tests {
     }
 
     fn read_test_key(base64: &str) -> PublicKey {
-        russh_keys::parse_public_key_base64(base64).unwrap()
+        russh::keys::parse_public_key_base64(base64).unwrap()
     }
 
     fn write_temp_private_key(contents: &str) -> PathBuf {

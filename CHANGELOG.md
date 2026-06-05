@@ -21,6 +21,7 @@
 ### Fixed
 
 - Fixed intermittent stdio MCP proxy startup failures on Windows after a previous ExaTerm launch left stale lock files behind.
+- Updated the bundled SSH client stack to a current russh release so SSH-1.99 servers can complete handshake negotiation without an app-side workaround.
 
 ## v0.5.0
 
