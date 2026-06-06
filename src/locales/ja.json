@@ -2,6 +2,7 @@
   "settings.title": "設定",
   "settings.loading": "読み込み中...",
   "settings.language": "言語 (Language)",
+  "settings.language_system": "システム",
   "settings.ai_provider": "AI プロバイダ設定",
   "settings.default_provider": "デフォルトプロバイダ",
   "settings.openai_key": "OpenAI API キー",

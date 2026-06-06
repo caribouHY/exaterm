@@ -2,6 +2,7 @@
   "settings.title": "Settings",
   "settings.loading": "Loading...",
   "settings.language": "Language",
+  "settings.language_system": "System",
   "settings.ai_provider": "AI Provider Settings",
   "settings.default_provider": "Default Provider",
   "settings.openai_key": "OpenAI API Key",
