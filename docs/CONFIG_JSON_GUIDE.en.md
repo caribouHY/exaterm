@@ -30,7 +30,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 ```json
 {
   "config_version": 1,
-  "language": "en",
+  "language": "system",
   "ai": {
     "azure_openai_enabled": false,
     "azure_openai_endpoint": "",
@@ -64,15 +64,15 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 ## Root Fields
 
-| Parameter           | Type   | Default   | Description                                                                                                                                |
-| ------------------- | ------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `config_version`    | number | `1`       | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version. |
-| `language`          | string | `"en"`    | Display language. Use `"en"` for English or `"ja"` for Japanese.                                                                           |
-| `ai`                | object | See below | AI assistant settings.                                                                                                                     |
-| `mcp`               | object | See below | Local MCP settings for external AI agent terminal control.                                                                                 |
-| `terminal`          | object | See below | Terminal display and logging settings.                                                                                                     |
-| `ssh`               | object | See below | SSH connection compatibility settings.                                                                                                     |
-| `saved_connections` | array  | `[]`      | Saved SSH and Telnet connection profiles. Profiles can be created, selected, and deleted from the connection dialog.                       |
+| Parameter           | Type   | Default    | Description                                                                                                                                                |
+| ------------------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config_version`    | number | `1`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
+| `language`          | string | `"system"` | Display language. Use `"system"` to follow the OS language, `"en"` for English, or `"ja"` for Japanese. Unsupported system languages fall back to English. |
+| `ai`                | object | See below  | AI assistant settings.                                                                                                                                     |
+| `mcp`               | object | See below  | Local MCP settings for external AI agent terminal control.                                                                                                 |
+| `terminal`          | object | See below  | Terminal display and logging settings.                                                                                                                     |
+| `ssh`               | object | See below  | SSH connection compatibility settings.                                                                                                                     |
+| `saved_connections` | array  | `[]`       | Saved SSH and Telnet connection profiles. Profiles can be created, selected, and deleted from the connection dialog.                                       |
 
 ## ai
 
@@ -261,6 +261,12 @@ Telnet example:
 
 ```json
 "language": "ja"
+```
+
+### Follow the system language
+
+```json
+"language": "system"
 ```
 
 ### Enable Ollama

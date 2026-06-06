@@ -14,6 +14,7 @@
 
 - Improved terminal tab handling so tabs are preserved and reassigned safely when secondary windows are closed.
 - Reworked local MCP integration to use a stdio proxy instead of the previous GUI-hosted HTTP server.
+- Changed the default UI language setting to follow the system language, with English fallback when the OS language is unsupported.
 
 ### Removed
 

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Check } from "lucide-react";
 import type { AppConfig, AiSecretStatus } from "../../types";
 import { useTranslation } from "react-i18next";
+import { resolveAppLanguage } from "../../i18n";
 import "./SettingsPanel.css";
 
 interface SettingsPanelProps {
@@ -13,6 +14,11 @@ type SecretKey = "openai" | "azure_openai" | "anthropic" | "gemini" | "openroute
 type SecretProvider = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini" | "OpenRouter";
 
 type SecretEdits = Record<SecretKey, string>;
+type LanguageOption = {
+  value: AppConfig["language"];
+  label?: string;
+  labelKey?: "settings.language_system";
+};
 
 const MASKED_VALUE = "••••••••";
 const DEFAULT_MCP_CONFIG = {
@@ -36,6 +42,12 @@ const EMPTY_SECRET_EDITS: SecretEdits = {
   gemini: "",
   openrouter: "",
 };
+
+const LANGUAGE_OPTIONS: LanguageOption[] = [
+  { value: "system", labelKey: "settings.language_system" },
+  { value: "en", label: "English" },
+  { value: "ja", label: "日本語" },
+];
 
 function normalizeMcpConfig(config: AppConfig): AppConfig {
   return {
@@ -122,8 +134,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       });
       await refreshSecretStatus();
 
-      if (normalizedConfig.language !== i18n.language) {
-        i18n.changeLanguage(normalizedConfig.language);
+      const resolvedLanguage = resolveAppLanguage(normalizedConfig.language);
+      if (resolvedLanguage !== i18n.language) {
+        i18n.changeLanguage(resolvedLanguage);
       }
       setSaved(true);
       if (onSave) onSave();
@@ -239,8 +252,11 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               value={config.language}
               onChange={(e) => update("language", e.target.value)}
             >
-              <option value="en">English</option>
-              <option value="ja">日本語</option>
+              {LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.labelKey ? t(option.labelKey) : option.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>

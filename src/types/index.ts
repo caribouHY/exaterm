@@ -88,7 +88,7 @@ export type ManualLogWriteMode = "overwrite" | "append";
 
 export interface AppConfig {
   config_version: number;
-  language: string;
+  language: "system" | "en" | "ja" | (string & {});
   ai: AiConfig;
   mcp: McpConfig;
   terminal: TerminalConfig;

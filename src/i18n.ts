@@ -10,9 +10,23 @@ const resources = {
   ja: { translation: ja },
 };
 
+export type AppLanguage = "system" | "en" | "ja";
+
+function resolveSystemLanguage(systemLanguage: string | undefined): "en" | "ja" {
+  return systemLanguage?.toLowerCase().startsWith("ja") ? "ja" : "en";
+}
+
+export function resolveAppLanguage(language: string | undefined): "en" | "ja" {
+  if (language === "ja" || language === "en") {
+    return language;
+  }
+
+  return resolveSystemLanguage(globalThis.navigator?.language);
+}
+
 i18n.use(initReactI18next).init({
   resources,
-  lng: "en", // default language
+  lng: resolveAppLanguage("system"),
   fallbackLng: "en",
   interpolation: {
     escapeValue: false,
@@ -23,7 +37,7 @@ i18n.use(initReactI18next).init({
 invoke<any>("config_load")
   .then((config) => {
     if (config && config.language) {
-      i18n.changeLanguage(config.language);
+      i18n.changeLanguage(resolveAppLanguage(config.language));
     }
   })
   .catch(console.error);

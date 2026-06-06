@@ -26,7 +26,7 @@ pub struct AppConfig {
 }
 
 fn default_language() -> String {
-    "en".into()
+    "system".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -499,5 +499,12 @@ mod tests {
         .unwrap();
 
         assert!(!cfg.saved_connections[0].mcp_enabled);
+    }
+
+    #[test]
+    fn default_config_uses_system_language() {
+        let cfg = AppConfig::default();
+
+        assert_eq!(cfg.language, "system");
     }
 }
