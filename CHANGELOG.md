@@ -2,29 +2,6 @@
 
 ## Unreleased
 
-### Added
-
-- Added early multi-window support so terminal tabs can be moved between ExaTerm windows.
-- Added drag-and-drop terminal tab detaching to open a tab in a new ExaTerm window.
-- Added a Settings option for enabling the local stdio MCP proxy transport.
-- Added SSH connection diagnostics in the connection dialog to help identify where jump-host connections stall.
-- Added per-profile MCP access controls for saved SSH and Telnet profiles.
-
-### Changed
-
-- Improved terminal tab handling so tabs are preserved and reassigned safely when secondary windows are closed.
-- Reworked local MCP integration to use a stdio proxy instead of the previous GUI-hosted HTTP server.
-- Changed the default UI language setting to follow the system language, with English fallback when the OS language is unsupported.
-
-### Removed
-
-- Removed the HTTP-only MCP host and port settings because the GUI no longer hosts the local HTTP MCP transport.
-
-### Fixed
-
-- Fixed intermittent stdio MCP proxy startup failures on Windows after a previous ExaTerm launch left stale lock files behind.
-- Updated the bundled SSH client stack to a current russh release so SSH-1.99 servers can complete handshake negotiation without an app-side workaround.
-
 ## v0.5.0
 
 ### Added
