@@ -5,7 +5,7 @@ Use this checklist before and after code changes. It is intentionally short and 
 ## Before Changing Code
 
 - Identify whether the change touches frontend only, backend only, or the Tauri command boundary.
-- Read `docs/DEVELOPMENT_GUIDE.en.md` before code changes or Git operations so branch, commit, and PR rules are followed.
+- Read `docs/DEVELOPMENT_GUIDE.en.md` before code changes or Git operations so commit and PR rules are followed.
 - Check whether active terminal sessions, tabs, scrollback, or terminal buffers could be lost.
 - Check whether the change touches logs, secrets, connection details, terminal output, prompts, or API keys.
 - For config changes, inspect both `src-tauri/src/config.rs` and `src/types/index.ts`.
