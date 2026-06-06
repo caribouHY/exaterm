@@ -144,6 +144,19 @@
   line-height: 1.4;
 }
 
+.connection-dialog__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.connection-dialog__checkbox input {
+  margin: 0;
+}
+
 .connection-dialog__footer {
   display: flex;
   flex-shrink: 0;
@@ -174,6 +187,79 @@
   gap: 8px;
   color: var(--text-secondary);
   font-size: 13px;
+}
+
+.connection-dialog__diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.connection-dialog__diagnostics-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.connection-dialog__diagnostics-toggle {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.connection-dialog__diagnostics-toggle:hover {
+  color: var(--text-primary);
+}
+
+.connection-dialog__diagnostics-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.connection-dialog__diagnostics-log {
+  max-height: 152px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.connection-dialog__diagnostics-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.connection-dialog__diagnostics-line span:last-child {
+  overflow-wrap: anywhere;
+}
+
+.connection-dialog__diagnostics-line--error {
+  color: var(--accent-red);
+}
+
+.connection-dialog__diagnostics-time {
+  color: var(--text-secondary);
+  opacity: 0.75;
+  white-space: nowrap;
 }
 
 .connection-dialog__spinner {
