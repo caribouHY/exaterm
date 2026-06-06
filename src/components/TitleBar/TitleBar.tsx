@@ -11,7 +11,6 @@ interface TitleBarProps {
   showAiPanel: boolean;
   onViewChange: (view: ViewMode) => void;
   onOpenConnection: () => void;
-  onOpenWindow: () => void;
   onToggleAiPanel: () => void;
 }
 
@@ -20,7 +19,6 @@ export default function TitleBar({
   showAiPanel,
   onViewChange,
   onOpenConnection,
-  onOpenWindow,
   onToggleAiPanel,
 }: TitleBarProps) {
   const { t } = useTranslation();
@@ -63,13 +61,6 @@ export default function TitleBar({
       shortcut: "Ctrl+N",
       active: false,
       action: onOpenConnection,
-    },
-    {
-      key: "new_window",
-      label: t("titlebar.menu.new_window"),
-      shortcut: "Ctrl+Shift+N",
-      active: false,
-      action: onOpenWindow,
     },
     { key: "separator-new-ai", separator: true },
     {

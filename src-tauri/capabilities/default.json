@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "identifier": "default",
-  "description": "Capability for ExaTerm workspace windows",
-  "windows": ["main", "workspace-*"],
+  "description": "Capability for the main window",
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "dialog:default",

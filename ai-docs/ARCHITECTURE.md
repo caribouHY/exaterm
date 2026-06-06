@@ -3,10 +3,6 @@
 This document is AI-facing implementation context. Do not treat it as user documentation.
 User-facing documentation belongs in `docs/`.
 
-For the durable system-wide design and future direction, also read
-`ai-docs/SYSTEM_DESIGN.md`. For the planned multi-window tab move and external MCP design,
-read `ai-docs/MULTI_WINDOW_MCP_STDIO_DESIGN.md`.
-
 ## Top-Level Shape
 
 ExaTerm is a Tauri v2 app:

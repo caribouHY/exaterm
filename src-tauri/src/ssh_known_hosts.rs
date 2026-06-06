@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use russh::keys::{HashAlg, PublicKey, PublicKeyBase64};
+use russh_keys::{key::PublicKey, PublicKeyBase64};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -34,13 +34,6 @@ pub fn endpoint_cache_key(host: &str, port: u16) -> String {
     format!("{}:{}", host, port)
 }
 
-fn sha256_fingerprint(key: &PublicKey) -> String {
-    key.fingerprint(HashAlg::Sha256)
-        .to_string()
-        .trim_start_matches("SHA256:")
-        .to_string()
-}
-
 pub fn inspect_host_key_with_path<P: AsRef<Path>>(
     host: &str,
     port: u16,
@@ -59,11 +52,11 @@ pub fn inspect_host_key_with_path<P: AsRef<Path>>(
             continue;
         }
 
-        let parsed_key = match russh::keys::parse_public_key_base64(parsed.key_data) {
+        let parsed_key = match russh_keys::parse_public_key_base64(parsed.key_data) {
             Ok(parsed_key) => parsed_key,
             Err(_) => continue,
         };
-        let fingerprint = sha256_fingerprint(&parsed_key);
+        let fingerprint = parsed_key.fingerprint();
         if parsed_key == *key {
             trusted = true;
             matched_fingerprint = Some(fingerprint);
@@ -87,7 +80,7 @@ pub fn inspect_host_key_with_path<P: AsRef<Path>>(
         host: host.to_string(),
         port,
         algorithm: public_key_algorithm_name(key),
-        fingerprint: sha256_fingerprint(key),
+        fingerprint: key.fingerprint(),
         known_fingerprint: if trusted { None } else { matched_fingerprint },
     })
 }
@@ -127,7 +120,11 @@ pub fn write_trusted_host_with_path<P: AsRef<Path>>(
 }
 
 pub fn public_key_algorithm_name(key: &PublicKey) -> String {
-    key.algorithm().as_str().to_string()
+    match key {
+        PublicKey::Ed25519(_) => "ssh-ed25519".to_string(),
+        PublicKey::RSA { .. } => "ssh-rsa".to_string(),
+        PublicKey::EC { key } => key.algorithm().to_string(),
+    }
 }
 
 fn read_known_hosts_lines(path: &Path) -> Result<Vec<String>, String> {
@@ -225,7 +222,7 @@ mod tests {
     }
 
     fn read_test_key(base64: &str) -> PublicKey {
-        russh::keys::parse_public_key_base64(base64).unwrap()
+        russh_keys::parse_public_key_base64(base64).unwrap()
     }
 
     fn ed25519_key() -> PublicKey {
@@ -270,7 +267,7 @@ mod tests {
 
         let result = inspect_host_key_with_path("example.com", 22, &key, &path).unwrap();
         assert_eq!(result.status, HostKeyCheckStatus::Mismatch);
-        assert_eq!(result.known_fingerprint, Some(sha256_fingerprint(&other)));
+        assert_eq!(result.known_fingerprint, Some(other.fingerprint()));
     }
 
     #[test]
