@@ -489,7 +489,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           <label className="toggle">
             <input
               type="checkbox"
-              checked={config.terminal.include_log_header ?? true}
+              checked={config.terminal.include_log_header ?? false}
               onChange={(e) => update("terminal.include_log_header", e.target.checked)}
             />
             <span className="toggle-track" />
