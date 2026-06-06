@@ -53,7 +53,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "scrollback": 10000,
     "auto_session_log": false,
     "log_format": "display",
-    "include_log_header": true
+    "include_log_header": false
   },
   "ssh": {
     "allow_legacy_algorithms": false
@@ -156,7 +156,7 @@ The MCP server does not read saved credentials, expose API keys, or read log fil
 | `terminal.scrollback`         | number  | `10000`                                | Number of terminal scrollback lines. Larger values keep more history but may increase memory usage.                                                          |
 | `terminal.auto_session_log`   | boolean | `false`                                | When set to `true`, SSH, serial, and Telnet terminal input/output is saved as plaintext logs.                                                                |
 | `terminal.log_format`         | string  | `"display"`                            | Session log formatting mode. `"display"` saves text closer to the terminal screen; `"strip_controls"` removes control sequences.                             |
-| `terminal.include_log_header` | boolean | `true`                                 | When set to `true`, new session log files start with an ExaTerm header containing the connection type, target, log mode, and start time.                     |
+| `terminal.include_log_header` | boolean | `false`                                | When set to `true`, new session log files start with an ExaTerm header containing the connection type, target, log mode, and start time.                     |
 
 ### Session Log Notice
 

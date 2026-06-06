@@ -53,24 +53,6 @@ Run Cargo commands from `src-tauri` unless the command uses an explicit manifest
 
 When editing code, create a working branch from the latest `dev` branch. Do not commit directly to `dev`; merge changes through pull requests.
 
-Prefix working branch names with the type of change:
-
-- `feature/`: new features
-- `fix/`: bug fixes
-- `refactor/`: behavior-preserving improvements
-- `docs/`: documentation updates
-- `test/`: test additions or updates
-- `chore/`: build, dependency, or development environment maintenance
-
-Examples:
-
-```text
-feature/add-ssh-profile-import
-fix/terminal-resize-glitch
-refactor/config-validation
-docs/update-development-guide
-```
-
 Write commit messages in English and prefix them with the change type:
 
 ```text
