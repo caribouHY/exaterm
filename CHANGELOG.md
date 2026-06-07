@@ -2,29 +2,29 @@
 
 ## Unreleased
 
+## v0.6.0
+
 ### Added
 
-- Added early multi-window support so terminal tabs can be moved between ExaTerm windows.
-- Added drag-and-drop terminal tab detaching to open a tab in a new ExaTerm window.
-- Added a Settings option for enabling the local stdio MCP proxy transport.
+- Added drag-and-drop tab detaching so terminal tabs can be opened in separate ExaTerm windows.
+- Added opt-in stdio MCP support for local MCP clients, including launching ExaTerm when needed.
 - Added SSH connection diagnostics in the connection dialog to help identify where jump-host connections stall.
 - Added per-profile MCP access controls for saved SSH and Telnet profiles.
 
 ### Changed
 
-- Improved terminal tab handling so tabs are preserved and reassigned safely when secondary windows are closed.
-- Reworked local MCP integration to use a stdio proxy instead of the previous GUI-hosted HTTP server.
+- Terminal tabs are now preserved and returned to another ExaTerm window when a secondary window is closed.
 - Changed the default UI language setting to follow the system language, with English fallback when the OS language is unsupported.
-- Changed the default terminal session log settings so automatic logging stays off and new logs omit the ExaTerm header unless enabled.
+- Changed the default session log settings so automatic logging stays off and new logs omit the ExaTerm header unless explicitly enabled.
 
 ### Removed
 
-- Removed the HTTP-only MCP host and port settings because the GUI no longer hosts the local HTTP MCP transport.
+- Removed HTTP MCP support. Existing HTTP MCP users must enable stdio MCP and configure their MCP client to launch `exaterm-mcp`.
 
 ### Fixed
 
-- Fixed intermittent stdio MCP proxy startup failures on Windows after a previous ExaTerm launch left stale lock files behind.
-- Updated the bundled SSH client stack to a current russh release so SSH-1.99 servers can complete handshake negotiation without an app-side workaround.
+- Fixed intermittent MCP startup failures on Windows after ExaTerm did not shut down cleanly.
+- Improved connection compatibility with SSH-1.99 servers.
 
 ## v0.5.0
 
