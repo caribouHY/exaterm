@@ -53,24 +53,6 @@ cargo test
 
 コード編集を行うときは、最新の `dev` ブランチを起点に作業ブランチを作成します。`dev` へ直接コミットせず、変更は Pull Request 経由で取り込みます。
 
-作業ブランチ名には、変更内容を表す prefix を付けます。
-
-- `feature/`: 新機能追加
-- `fix/`: 不具合修正
-- `refactor/`: 挙動を変えない改善
-- `docs/`: ドキュメント更新
-- `test/`: テスト追加・修正
-- `chore/`: ビルド設定、依存関係、開発環境などの保守作業
-
-例:
-
-```text
-feature/add-ssh-profile-import
-fix/terminal-resize-glitch
-refactor/config-validation
-docs/update-development-guide
-```
-
 コミットメッセージは英語で作成し、変更種別を表す prefix を付けます。
 
 ```text

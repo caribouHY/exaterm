@@ -173,7 +173,7 @@ fn default_terminal_log_format() -> String {
 }
 
 fn default_terminal_include_log_header() -> bool {
-    true
+    false
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -299,8 +299,9 @@ mod tests {
         assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.terminal.font_size, 14);
         assert_eq!(cfg.terminal.scrollback, 10000);
+        assert!(!cfg.terminal.auto_session_log);
         assert_eq!(cfg.terminal.log_format, "display");
-        assert!(cfg.terminal.include_log_header);
+        assert!(!cfg.terminal.include_log_header);
         assert!(!cfg.ssh.allow_legacy_algorithms);
         assert!(cfg.saved_connections.is_empty());
     }
@@ -328,7 +329,7 @@ mod tests {
         assert_eq!(cfg.terminal.font_size, 14);
         assert!(cfg.terminal.auto_session_log);
         assert_eq!(cfg.terminal.log_format, "display");
-        assert!(cfg.terminal.include_log_header);
+        assert!(!cfg.terminal.include_log_header);
         assert!(cfg.ssh.allow_legacy_algorithms);
         assert_eq!(cfg.saved_connections[0].id, "dev box");
         assert_eq!(cfg.saved_connections[0].encoding, None);

@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## v0.6.0
+
+### Added
+
+- Added drag-and-drop tab detaching so terminal tabs can be opened in separate ExaTerm windows.
+- Added opt-in stdio MCP support for local MCP clients, including launching ExaTerm when needed.
+- Added SSH connection diagnostics in the connection dialog to help identify where jump-host connections stall.
+- Added per-profile MCP access controls for saved SSH and Telnet profiles.
+
+### Changed
+
+- Terminal tabs are now preserved and returned to another ExaTerm window when a secondary window is closed.
+- Changed the default UI language setting to follow the system language, with English fallback when the OS language is unsupported.
+- Changed the default session log settings so automatic logging stays off and new logs omit the ExaTerm header unless explicitly enabled.
+
+### Removed
+
+- Removed HTTP MCP support. Existing HTTP MCP users must enable stdio MCP and configure their MCP client to launch `exaterm-mcp`.
+
+### Fixed
+
+- Fixed intermittent MCP startup failures on Windows after ExaTerm did not shut down cleanly.
+- Improved connection compatibility with SSH-1.99 servers.
+
 ## v0.5.0
 
 ### Added

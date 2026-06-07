@@ -54,7 +54,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "scrollback": 10000,
     "auto_session_log": false,
     "log_format": "display",
-    "include_log_header": true
+    "include_log_header": false
   },
   "ssh": {
     "allow_legacy_algorithms": false
@@ -158,7 +158,7 @@ MCP サーバーは保存済み認証情報の読み取り、API キーの公開
 | `terminal.scrollback`         | number  | `10000`                                | ターミナルのスクロールバック行数です。値を大きくすると過去ログを多く保持できますが、メモリ使用量が増える可能性があります。                                      |
 | `terminal.auto_session_log`   | boolean | `false`                                | `true` にすると、SSH/シリアル/Telnet 接続のターミナル入出力を平文ログとして保存します。                                                                         |
 | `terminal.log_format`         | string  | `"display"`                            | セッションログの整形方式です。`"display"` は画面表示に近い内容、`"strip_controls"` は制御文字を除去した内容を保存します。                                       |
-| `terminal.include_log_header` | boolean | `true`                                 | `true` にすると、新しいセッションログの先頭に ExaTerm ヘッダとして種別、接続先、ログモード、開始時刻を記録します。                                              |
+| `terminal.include_log_header` | boolean | `false`                                | `true` にすると、新しいセッションログの先頭に ExaTerm ヘッダとして種別、接続先、ログモード、開始時刻を記録します。                                              |
 
 ### セッションログの注意
 
