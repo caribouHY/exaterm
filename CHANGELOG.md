@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v0.6.0
+## v0.6.1
 
 ### Added
 
@@ -25,6 +25,10 @@
 
 - Fixed intermittent MCP startup failures on Windows after ExaTerm did not shut down cleanly.
 - Improved connection compatibility with SSH-1.99 servers.
+
+## v0.6.0
+
+Release error: v0.5.0 was mistakenly released as v0.6.0.
 
 ## v0.5.0
 
