@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Check } from "lucide-react";
 import type { AppConfig, AiSecretStatus } from "../../types";
 import { useTranslation } from "react-i18next";
+import { resolveAppLanguage } from "../../i18n";
 import "./SettingsPanel.css";
 
 interface SettingsPanelProps {
@@ -13,13 +14,17 @@ type SecretKey = "openai" | "azure_openai" | "anthropic" | "gemini" | "openroute
 type SecretProvider = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini" | "OpenRouter";
 
 type SecretEdits = Record<SecretKey, string>;
+type LanguageOption = {
+  value: AppConfig["language"];
+  label?: string;
+  labelKey?: "settings.language_system";
+};
 
 const MASKED_VALUE = "••••••••";
 const DEFAULT_MCP_CONFIG = {
   enabled: false,
   connect_enabled: false,
-  host: "127.0.0.1",
-  port: 8765,
+  stdio_enabled: false,
 };
 
 const EMPTY_SECRET_STATUS: AiSecretStatus = {
@@ -38,14 +43,18 @@ const EMPTY_SECRET_EDITS: SecretEdits = {
   openrouter: "",
 };
 
+const LANGUAGE_OPTIONS: LanguageOption[] = [
+  { value: "system", labelKey: "settings.language_system" },
+  { value: "en", label: "English" },
+  { value: "ja", label: "日本語" },
+];
+
 function normalizeMcpConfig(config: AppConfig): AppConfig {
   return {
     ...config,
     mcp: {
       ...DEFAULT_MCP_CONFIG,
       ...(config.mcp ?? {}),
-      host: (config.mcp?.host ?? DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
-      port: Number(config.mcp?.port ?? DEFAULT_MCP_CONFIG.port),
     },
   };
 }
@@ -87,14 +96,6 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     try {
       setError("");
       const normalizedConfig = normalizeMcpConfig(config);
-      if (
-        !Number.isInteger(normalizedConfig.mcp.port) ||
-        normalizedConfig.mcp.port < 1 ||
-        normalizedConfig.mcp.port > 65535
-      ) {
-        setError(t("settings.mcp_port_error"));
-        return;
-      }
       setConfig(normalizedConfig);
       await invoke("config_save", { config: normalizedConfig });
 
@@ -133,8 +134,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       });
       await refreshSecretStatus();
 
-      if (normalizedConfig.language !== i18n.language) {
-        i18n.changeLanguage(normalizedConfig.language);
+      const resolvedLanguage = resolveAppLanguage(normalizedConfig.language);
+      if (resolvedLanguage !== i18n.language) {
+        i18n.changeLanguage(resolvedLanguage);
       }
       setSaved(true);
       if (onSave) onSave();
@@ -250,8 +252,11 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               value={config.language}
               onChange={(e) => update("language", e.target.value)}
             >
-              <option value="en">English</option>
-              <option value="ja">日本語</option>
+              {LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.labelKey ? t(option.labelKey) : option.label}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -365,6 +370,20 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         </div>
         <div className="settings-toggle-row">
           <div className="settings-toggle-label">
+            <span>{t("settings.mcp_stdio_enabled")}</span>
+            <small>{t("settings.mcp_stdio_enabled_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(config.mcp?.stdio_enabled)}
+              onChange={(e) => update("mcp.stdio_enabled", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
             <span>{t("settings.mcp_connect_enabled")}</span>
             <small>{t("settings.mcp_connect_enabled_desc")}</small>
           </div>
@@ -376,29 +395,6 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             />
             <span className="toggle-track" />
           </label>
-        </div>
-        <div className="settings-row">
-          <div>
-            <label className="label">{t("settings.mcp_host")}</label>
-            <input
-              className="input"
-              type="text"
-              value={config.mcp?.host ?? DEFAULT_MCP_CONFIG.host}
-              onChange={(e) => update("mcp.host", e.target.value)}
-              placeholder={DEFAULT_MCP_CONFIG.host}
-            />
-          </div>
-          <div>
-            <label className="label">{t("settings.mcp_port")}</label>
-            <input
-              className="input"
-              type="number"
-              value={config.mcp?.port ?? DEFAULT_MCP_CONFIG.port}
-              onChange={(e) => update("mcp.port", Number(e.target.value))}
-              min={1}
-              max={65535}
-            />
-          </div>
         </div>
         <p className="settings-help">{t("settings.mcp_restart_notice")}</p>
         {t("settings.mcp_loopback_warning") && (
