@@ -1,13 +1,17 @@
 use encoding_rs::{Decoder, Encoding, EUC_JP, SHIFT_JIS, UTF_8};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{futures::Notified, Mutex, Notify};
 
 const DEFAULT_OUTPUT_LIMIT: usize = 64 * 1024;
+const MIN_OUTPUT_LIMIT: usize = 64 * 1024;
+const MAX_OUTPUT_LIMIT: usize = 2 * 1024 * 1024;
+const ESTIMATED_CHARS_PER_SCROLLBACK_LINE: usize = 160;
 const DEFAULT_SNAPSHOT_MAX_CHARS: usize = 20_000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TerminalProtocol {
     Ssh,
@@ -52,7 +56,7 @@ struct TerminalSession {
 pub struct TerminalControlState {
     sessions: Arc<Mutex<HashMap<String, TerminalSession>>>,
     output_notify: Arc<Notify>,
-    output_limit: usize,
+    output_limit: Arc<AtomicUsize>,
 }
 
 impl TerminalControlState {
@@ -60,7 +64,7 @@ impl TerminalControlState {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             output_notify: Arc::new(Notify::new()),
-            output_limit: DEFAULT_OUTPUT_LIMIT,
+            output_limit: Arc::new(AtomicUsize::new(DEFAULT_OUTPUT_LIMIT)),
         }
     }
 
@@ -69,8 +73,19 @@ impl TerminalControlState {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             output_notify: Arc::new(Notify::new()),
-            output_limit,
+            output_limit: Arc::new(AtomicUsize::new(output_limit)),
         }
+    }
+
+    pub fn set_output_limit_from_scrollback(&self, scrollback: u32) {
+        self.set_output_limit(output_limit_from_scrollback(scrollback));
+    }
+
+    fn set_output_limit(&self, output_limit: usize) {
+        self.output_limit.store(
+            output_limit.clamp(MIN_OUTPUT_LIMIT, MAX_OUTPUT_LIMIT),
+            Ordering::Relaxed,
+        );
     }
 
     #[cfg(test)]
@@ -117,7 +132,7 @@ impl TerminalControlState {
 
         let text = decode_output(&mut session.decoder, data);
         session.output.push_str(&text);
-        trim_to_recent_chars(session, self.output_limit);
+        trim_to_recent_chars(session, self.output_limit.load(Ordering::Relaxed));
         drop(sessions);
         self.output_notify.notify_waiters();
     }
@@ -244,6 +259,12 @@ fn terminal_encoding(value: Option<&str>) -> (&'static Encoding, &'static str) {
         Some("euc-jp") => (EUC_JP, "euc-jp"),
         _ => (UTF_8, "utf-8"),
     }
+}
+
+fn output_limit_from_scrollback(scrollback: u32) -> usize {
+    (scrollback as usize)
+        .saturating_mul(ESTIMATED_CHARS_PER_SCROLLBACK_LINE)
+        .clamp(MIN_OUTPUT_LIMIT, MAX_OUTPUT_LIMIT)
 }
 
 fn decode_output(decoder: &mut Decoder, data: &[u8]) -> String {
@@ -544,5 +565,12 @@ mod tests {
         let error = state.read_output_delta("s1", 1, 100).await.unwrap_err();
 
         assert!(error.contains("カーソル"));
+    }
+
+    #[test]
+    fn scrollback_output_limit_is_bounded() {
+        assert_eq!(output_limit_from_scrollback(1), MIN_OUTPUT_LIMIT);
+        assert_eq!(output_limit_from_scrollback(1_000), 160_000);
+        assert_eq!(output_limit_from_scrollback(u32::MAX), MAX_OUTPUT_LIMIT);
     }
 }
