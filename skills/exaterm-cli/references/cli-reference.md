@@ -76,26 +76,35 @@ After connecting:
 
    ```powershell
    $initial = exaterm-cli terminal output --session-id $sessionId `
-     --mode recent --max-chars 4000 | ConvertFrom-Json
+     --mode recent --max-chars 2000 | ConvertFrom-Json
    $cursor = $initial.cursor
    ```
 
 4. Inspect whether the output shows a normal prompt, a login prompt, an incomplete banner,
    or no output.
-5. If readiness is unclear, wait from the retained cursor:
+5. If an exact normal prompt is observed, retain it for later operations:
+
+   ```powershell
+   $verifiedPrompt = "the exact prompt observed in this session"
+   ```
+
+   Do not assign this variable from generic characters such as `#`, `$`, or `>`.
+
+6. If readiness is unclear, wait from the retained cursor without guessing a prompt:
 
    ```powershell
    $ready = exaterm-cli terminal output --session-id $sessionId `
      --mode wait --cursor $cursor --timeout-ms 30000 `
-     --max-chars 4000 | ConvertFrom-Json
+     --max-chars 2000 | ConvertFrom-Json
    ```
 
 MUST NOT send the requested command until a normal prompt or another explicit readiness
 marker has been observed. A successful connection result alone does not establish readiness.
 
-Use `--contains` only when a reliable expected prompt is known. Some serial consoles remain
-silent until input is sent. Sending an empty line changes the remote interaction, so follow
-the host agent's normal approval policy before doing so.
+Use `--contains $verifiedPrompt` only after the exact prompt has been observed in the current
+session. If it remains unknown, omit `--contains` and inspect the output returned by each
+wait. Some serial consoles remain silent until input is sent. Sending an empty line changes
+the remote interaction, so follow the host agent's normal approval policy before doing so.
 
 ## Serial Connections
 
@@ -145,8 +154,15 @@ Wait for new output or a substring:
 
 ```powershell
 $result = exaterm-cli terminal output --session-id $sessionId `
-  --mode wait --cursor $cursor --contains "router#" `
+  --mode wait --cursor $cursor --contains $verifiedPrompt `
   --timeout-ms 30000 | ConvertFrom-Json
+```
+
+If no exact prompt or command-specific marker has been verified, omit `--contains`:
+
+```powershell
+$result = exaterm-cli terminal output --session-id $sessionId `
+  --mode wait --cursor $cursor --timeout-ms 30000 | ConvertFrom-Json
 ```
 
 - `recent` rejects `--cursor`, `--contains`, and `--timeout-ms`.
@@ -163,6 +179,8 @@ depending on property order.
 
 `terminal send` writes input without waiting for a result. Use it for interactive input such
 as confirmation responses or control sequences that cannot be expressed as a normal command.
+Before using it, verify the target session and the expected interaction state shown in recent
+output. The valid state may be a normal prompt, login prompt, or confirmation question.
 
 ```powershell
 "show version`n" |
@@ -173,9 +191,12 @@ as confirmation responses or control sequences that cannot be expressed as a nor
 
 ```powershell
 $result = exaterm-cli terminal run --session-id $sessionId `
-  --command "show version" --wait-contains "#" `
-  --timeout-ms 30000 --max-chars 4000 | ConvertFrom-Json
+  --command "show version" --wait-contains $verifiedPrompt `
+  --timeout-ms 30000 --max-chars 2000 | ConvertFrom-Json
 ```
+
+Use `--wait-contains` only when `$verifiedPrompt` or a command-specific completion marker has
+been established from terminal evidence. Otherwise omit it and inspect the returned output.
 
 - Input is limited to 20,000 characters.
 - Passing `-` to `--data` or `--command` reads the value from stdin.
@@ -193,8 +214,10 @@ For a command that may take longer, send it once and continue observing from the
 cursor.
 
 ```powershell
+$completionMarker = $verifiedPrompt
+
 $result = exaterm-cli terminal run --session-id $sessionId `
-  --command "long-running-command" --wait-contains "router#" `
+  --command "long-running-command" --wait-contains $completionMarker `
   --timeout-ms 60000 --max-chars 20000 | ConvertFrom-Json
 
 $cursor = $result.cursor
@@ -202,12 +225,14 @@ $deadline = (Get-Date).AddMinutes(10)
 
 while ($result.timed_out -and (Get-Date) -lt $deadline) {
   $result = exaterm-cli terminal output --session-id $sessionId `
-    --mode wait --cursor $cursor --contains "router#" `
+    --mode wait --cursor $cursor --contains $completionMarker `
     --timeout-ms 60000 --max-chars 20000 | ConvertFrom-Json
   $cursor = $result.cursor
 }
 ```
 
+- Set `$completionMarker` only to the exact verified prompt or a command-specific completion
+  marker. If neither is known, omit the contains arguments and inspect each result.
 - MUST NOT resend the command after a wait timeout. Continue from the returned cursor.
 - Update the cursor after every result, including timeouts.
 - Treat the expected prompt or another command-specific completion marker as completion.
@@ -241,15 +266,15 @@ $cursor = $beforePrompt.cursor
 "" | exaterm-cli terminal send --session-id $sessionId --data -
 
 $prompt = exaterm-cli terminal output --session-id $sessionId `
-  --mode wait --cursor $cursor --contains "router#" `
+  --mode wait --cursor $cursor --contains $verifiedPrompt `
   --timeout-ms 30000 --max-chars 2000 | ConvertFrom-Json
 ```
 
 MUST NOT run the requested command until the fresh prompt is observed. Capture the cursor
-before sending the empty line so that a quickly redrawn prompt is not missed. Replace
-`router#` with a verified prompt; omit `--contains` when it is unknown and inspect the
-returned output. If the terminal does not redraw its prompt after an empty line, report that
-the initial prompt may be absent from the log.
+before sending the empty line so that a quickly redrawn prompt is not missed. Reuse the exact
+prompt retained during connection readiness. If it is unknown, omit `--contains` and inspect
+the returned output. If the terminal does not redraw its prompt after an empty line, report
+that the initial prompt may be absent from the log.
 
 ## JSON and Exit Codes
 
