@@ -299,7 +299,7 @@ export default function App() {
 
   useEffect(() => {
     const unlistenCredential = listen<McpCredentialRequestPayload>(
-      "mcp://credential-request",
+      "external-control://credential-request",
       (event) => {
         setMcpCredentialPrompts((prev) => [
           ...prev,
@@ -332,7 +332,7 @@ export default function App() {
       error: string | null
     ) => {
       try {
-        await invoke("mcp_log_control_submit", {
+        await invoke("external_control_log_control_submit", {
           requestId,
           filePath,
           error,
@@ -343,7 +343,7 @@ export default function App() {
     };
 
     const unlistenStart = listen<McpLogControlRequestPayload>(
-      "mcp://log-start-request",
+      "external-control://log-start-request",
       async (event) => {
         const payload = event.payload;
         const tab = tabsRef.current.find((item) => item.sessionId === payload.session_id);
@@ -387,7 +387,7 @@ export default function App() {
     );
 
     const unlistenStop = listen<McpLogControlRequestPayload>(
-      "mcp://log-stop-request",
+      "external-control://log-stop-request",
       async (event) => {
         const payload = event.payload;
         const tab = tabsRef.current.find((item) => item.sessionId === payload.session_id);
@@ -635,7 +635,7 @@ export default function App() {
 
       updateActiveMcpCredentialPrompt({ error: "", submitting: true });
       try {
-        await invoke("mcp_credential_submit", {
+        await invoke("external_control_credential_submit", {
           requestId: activeMcpCredentialPrompt.request_id,
           credential,
         });

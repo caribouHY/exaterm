@@ -6,10 +6,9 @@ use rmcp::{
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::mcp::backend::{
-    internal_error, structured_tool_result, ConnectSavedProfileArgs, ConnectSerialConsoleArgs,
-    ReadTerminalOutputArgs, RunTerminalCommandArgs, SendTerminalInputArgs, StartTerminalLogArgs,
-    StopTerminalLogArgs,
+use crate::external_control::{
+    ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ReadTerminalOutputArgs,
+    RunTerminalCommandArgs, SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs,
 };
 use crate::mcp::control::McpControlService;
 
@@ -39,8 +38,9 @@ impl ExaTermMcpServer {
     where
         T: Serialize,
     {
-        let args = serde_json::to_value(args)
-            .map_err(|error| internal_error(format!("Serialize MCP tool args failed: {error}")))?;
+        let args = serde_json::to_value(args).map_err(|error| {
+            McpError::internal_error(format!("Serialize MCP tool args failed: {error}"), None)
+        })?;
         self.call_tool(name, args).await
     }
 
@@ -146,6 +146,15 @@ impl ExaTermMcpServer {
     ) -> Result<CallToolResult, McpError> {
         self.call_tool_with_args("run_terminal_command", args).await
     }
+}
+
+fn structured_tool_result(value: Value) -> Result<CallToolResult, McpError> {
+    let text = serde_json::to_string_pretty(&value).map_err(|error| {
+        McpError::internal_error(format!("Serialize MCP tool result failed: {error}"), None)
+    })?;
+    let mut result = CallToolResult::structured(value);
+    result.content = vec![rmcp::model::Content::text(text)];
+    Ok(result)
 }
 
 #[tool_handler(router = self.tool_router)]

@@ -11,7 +11,14 @@ use uuid::Uuid;
 use super::backend::*;
 use super::control::*;
 use super::service::*;
-use crate::config::{AppConfig, McpConfig, SavedConnection};
+use crate::config::{AppConfig, SavedConnection};
+use crate::external_control::protocol::{
+    external_control_call_over_stream, handle_control_connection, CONTROL_PROTOCOL_VERSION,
+};
+use crate::external_control::service::*;
+use crate::external_control::{
+    ExternalControlLogControlState, ExternalControlRuntime, ExternalControlService,
+};
 use crate::logger::LoggerState;
 use crate::serial::{self, SerialState};
 use crate::ssh::SshState;
@@ -19,11 +26,17 @@ use crate::telnet::TelnetState;
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 use crate::workspace::WorkspaceState;
 
-fn test_runtime() -> McpRuntime {
+type McpTerminalService = ExternalControlService;
+type McpLogControlState = ExternalControlLogControlState;
+type McpSerialParity = ExternalControlSerialParity;
+type McpSerialFlowControl = ExternalControlSerialFlowControl;
+type McpTerminalMode = ExternalControlTerminalMode;
+
+fn test_runtime() -> ExternalControlRuntime {
     let log_dir = std::env::temp_dir().join(format!("exaterm_mcp_log_test_{}", Uuid::new_v4()));
     let index_path = log_dir.join("index.json");
-    McpRuntime {
-        config: McpConfig::default(),
+    ExternalControlRuntime {
+        config: ExternalControlPermissions::default(),
         terminals: TerminalControlState::new(),
         workspace: WorkspaceState::new(),
         ssh: SshState::new(),
@@ -42,7 +55,8 @@ async fn connection_tools_require_connect_enabled() {
         .list_connection_profiles(ListConnectionProfilesArgs::default())
         .await
         .unwrap_err();
-    assert!(error.message.contains("connect_enabled"));
+    assert!(matches!(&error, ExternalControlError::PermissionDenied(_)));
+    assert!(error.message().contains("connect_enabled"));
 
     let error = service
         .connect_saved_profile(ConnectSavedProfileArgs {
@@ -53,10 +67,10 @@ async fn connection_tools_require_connect_enabled() {
         })
         .await
         .unwrap_err();
-    assert!(error.message.contains("connect_enabled"));
+    assert!(error.message().contains("connect_enabled"));
 
     let error = service.list_serial_ports().await.unwrap_err();
-    assert!(error.message.contains("connect_enabled"));
+    assert!(error.message().contains("connect_enabled"));
 
     let error = service
         .connect_serial_console(ConnectSerialConsoleArgs {
@@ -72,7 +86,7 @@ async fn connection_tools_require_connect_enabled() {
         })
         .await
         .unwrap_err();
-    assert!(error.message.contains("connect_enabled"));
+    assert!(error.message().contains("connect_enabled"));
 }
 
 #[tokio::test]
@@ -108,9 +122,9 @@ async fn control_service_rejects_unknown_tools() {
 #[tokio::test]
 async fn control_plane_rejects_unknown_protocol_version() {
     let (server_stream, client_stream) = tokio::io::duplex(4096);
-    let control = McpControlService::in_process(test_runtime());
+    let service = ExternalControlService::new(test_runtime());
     tokio::spawn(async move {
-        handle_control_connection(control, server_stream)
+        handle_control_connection(service, server_stream)
             .await
             .expect("control connection should close cleanly");
     });
@@ -127,6 +141,7 @@ async fn control_plane_rejects_unknown_protocol_version() {
     let response = read_json_line_for_test(&mut reader).await;
 
     assert_eq!(response["protocol_version"], CONTROL_PROTOCOL_VERSION);
+    assert_eq!(CONTROL_PROTOCOL_VERSION, 2);
     assert!(response["session_nonce"].is_null());
     assert!(response["error"]["message"]
         .as_str()
@@ -137,9 +152,9 @@ async fn control_plane_rejects_unknown_protocol_version() {
 #[tokio::test]
 async fn control_plane_rejects_missing_and_wrong_nonce() {
     let (server_stream, client_stream) = tokio::io::duplex(4096);
-    let control = McpControlService::in_process(test_runtime());
+    let service = ExternalControlService::new(test_runtime());
     tokio::spawn(async move {
-        handle_control_connection(control, server_stream)
+        handle_control_connection(service, server_stream)
             .await
             .expect("control connection should close cleanly");
     });
@@ -161,8 +176,9 @@ async fn control_plane_rejects_missing_and_wrong_nonce() {
         json!({
             "protocol_version": CONTROL_PROTOCOL_VERSION,
             "request_id": "missing",
-            "tool_name": "list_terminal_sessions",
-            "args": {}
+            "request": {
+                "operation": "list_terminal_sessions"
+            }
         }),
     )
     .await;
@@ -179,8 +195,9 @@ async fn control_plane_rejects_missing_and_wrong_nonce() {
             "protocol_version": CONTROL_PROTOCOL_VERSION,
             "request_id": "wrong",
             "session_nonce": "wrong-nonce",
-            "tool_name": "list_terminal_sessions",
-            "args": {}
+            "request": {
+                "operation": "list_terminal_sessions"
+            }
         }),
     )
     .await;
@@ -200,16 +217,20 @@ async fn proxy_control_call_preserves_structured_result() {
         .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
         .await;
     let (server_stream, client_stream) = tokio::io::duplex(4096);
-    let control = McpControlService::in_process(runtime);
+    let service = ExternalControlService::new(runtime);
     tokio::spawn(async move {
-        handle_control_connection(control, server_stream)
+        handle_control_connection(service, server_stream)
             .await
             .expect("control connection should close cleanly");
     });
 
-    let result = control_call_over_stream(client_stream, "list_terminal_sessions", json!({}))
-        .await
-        .unwrap();
+    let result = external_control_call_over_stream(
+        client_stream,
+        ExternalControlRequest::ListTerminalSessions,
+    )
+    .await
+    .unwrap()
+    .into_value();
 
     assert_eq!(result["sessions"][0]["session_id"], "s1");
     assert_eq!(result["sessions"][0]["protocol"], "ssh");
@@ -1188,7 +1209,8 @@ async fn service_rejects_send_to_disconnected_session() {
         })
         .await
         .unwrap_err();
-    assert!(error.message.contains("切断済み"));
+    assert!(matches!(&error, ExternalControlError::Unavailable(_)));
+    assert!(error.message().contains("切断済み"));
 }
 
 #[tokio::test]
@@ -1230,7 +1252,8 @@ async fn service_start_terminal_log_rejects_missing_and_disconnected_sessions() 
         })
         .await
         .unwrap_err();
-    assert!(missing.message.contains("見つかりません"));
+    assert!(matches!(&missing, ExternalControlError::NotFound(_)));
+    assert!(missing.message().contains("見つかりません"));
 
     let disconnected = service
         .start_terminal_log(StartTerminalLogArgs {
@@ -1238,7 +1261,31 @@ async fn service_start_terminal_log_rejects_missing_and_disconnected_sessions() 
         })
         .await
         .unwrap_err();
-    assert!(disconnected.message.contains("切断済み"));
+    assert!(matches!(
+        &disconnected,
+        ExternalControlError::Unavailable(_)
+    ));
+    assert!(disconnected.message().contains("切断済み"));
+}
+
+#[tokio::test]
+async fn service_reports_missing_logger_as_internal_error() {
+    let mut runtime = test_runtime();
+    runtime
+        .terminals
+        .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+        .await;
+    runtime.logger = None;
+    let service = McpTerminalService::new(runtime);
+
+    let error = service
+        .start_terminal_log(StartTerminalLogArgs {
+            session_id: "s1".into(),
+        })
+        .await
+        .unwrap_err();
+
+    assert!(matches!(&error, ExternalControlError::Internal(_)));
 }
 
 #[tokio::test]
@@ -1334,5 +1381,6 @@ async fn service_rejects_empty_run_terminal_command() {
         .await
         .unwrap_err();
 
-    assert!(error.message.contains("空"));
+    assert!(matches!(&error, ExternalControlError::InvalidArguments(_)));
+    assert!(error.message().contains("空"));
 }
