@@ -265,11 +265,28 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
     .await;
     let tools = read_json_line_for_test(&mut reader).await;
     assert_eq!(tools["id"], 2);
-    assert!(tools["result"]["tools"]
+    let tool_names = tools["result"]["tools"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|tool| tool["name"] == "list_terminal_sessions"));
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert!(tool_names.contains(&"list_terminal_sessions"));
+    assert!(tool_names.contains(&"read_terminal_output"));
+    assert!(!tool_names.contains(&"read_terminal_output_delta"));
+    assert!(!tool_names.contains(&"wait_terminal_output"));
+
+    let read_tool = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "read_terminal_output")
+        .unwrap();
+    let read_schema = read_tool["inputSchema"].to_string();
+    assert!(read_schema.contains("\"mode\""));
+    assert!(read_schema.contains("\"recent\""));
+    assert!(read_schema.contains("\"delta\""));
+    assert!(read_schema.contains("\"wait\""));
 }
 
 async fn write_json_line_for_test<W>(writer: &mut W, value: Value)
@@ -853,13 +870,14 @@ async fn service_reads_terminal_output_with_multibyte_tail() {
     let service = McpTerminalService::new(runtime);
 
     let result = service
-        .read_terminal_output(ReadTerminalOutputArgs {
+        .read_terminal_output(ReadTerminalOutputArgs::Recent {
             session_id: "s1".into(),
             max_chars: Some(2),
         })
         .await
         .unwrap();
     assert_eq!(result["session_id"], "s1");
+    assert_eq!(result["mode"], "recent");
     assert_eq!(result["output"], "世界");
     assert_eq!(result["truncated"], true);
     assert_eq!(result["start_cursor"], 5);
@@ -867,7 +885,7 @@ async fn service_reads_terminal_output_with_multibyte_tail() {
 }
 
 #[tokio::test]
-async fn service_reads_terminal_output_delta() {
+async fn service_reads_terminal_output_in_delta_mode() {
     let runtime = test_runtime();
     runtime
         .terminals
@@ -880,7 +898,7 @@ async fn service_reads_terminal_output_delta() {
     let service = McpTerminalService::new(runtime);
 
     let result = service
-        .read_terminal_output_delta(ReadTerminalOutputDeltaArgs {
+        .read_terminal_output(ReadTerminalOutputArgs::Delta {
             session_id: "s1".into(),
             cursor: 3,
             max_chars: Some(100),
@@ -888,6 +906,7 @@ async fn service_reads_terminal_output_delta() {
         .await
         .unwrap();
 
+    assert_eq!(result["mode"], "delta");
     assert_eq!(result["output"], "こんにちは");
     assert_eq!(result["start_cursor"], 3);
     assert_eq!(result["cursor"], 8);
@@ -915,7 +934,7 @@ async fn service_reads_non_utf8_terminal_output() {
     let service = McpTerminalService::new(runtime);
 
     let result = service
-        .read_terminal_output(ReadTerminalOutputArgs {
+        .read_terminal_output(ReadTerminalOutputArgs::Recent {
             session_id: "s1".into(),
             max_chars: Some(100),
         })
@@ -940,7 +959,7 @@ async fn service_waits_for_matching_terminal_output() {
     let service = McpTerminalService::new(runtime);
 
     let result = service
-        .wait_terminal_output(WaitTerminalOutputArgs {
+        .read_terminal_output(ReadTerminalOutputArgs::Wait {
             session_id: "s1".into(),
             cursor: Some(0),
             contains: Some("router#".into()),
@@ -950,6 +969,7 @@ async fn service_waits_for_matching_terminal_output() {
         .await
         .unwrap();
 
+    assert_eq!(result["mode"], "wait");
     assert_eq!(result["matched"], true);
     assert_eq!(result["timed_out"], false);
     assert_eq!(result["output"], "router#");
@@ -966,7 +986,7 @@ async fn service_wait_timeout_returns_latest_delta() {
     let service = McpTerminalService::new(runtime);
 
     let result = service
-        .wait_terminal_output(WaitTerminalOutputArgs {
+        .read_terminal_output(ReadTerminalOutputArgs::Wait {
             session_id: "s1".into(),
             cursor: Some(0),
             contains: Some("missing".into()),
@@ -979,6 +999,67 @@ async fn service_wait_timeout_returns_latest_delta() {
     assert_eq!(result["matched"], false);
     assert_eq!(result["timed_out"], true);
     assert_eq!(result["output"], "partial");
+}
+
+#[tokio::test]
+async fn service_wait_without_cursor_starts_from_current_output() {
+    let runtime = test_runtime();
+    runtime
+        .terminals
+        .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+        .await;
+    runtime.terminals.append_output("s1", b"old").await;
+    let terminals = runtime.terminals.clone();
+    tokio::spawn(async move {
+        time::sleep(Duration::from_millis(10)).await;
+        terminals.append_output("s1", b"new").await;
+    });
+    let service = McpTerminalService::new(runtime);
+
+    let result = service
+        .read_terminal_output(ReadTerminalOutputArgs::Wait {
+            session_id: "s1".into(),
+            cursor: None,
+            contains: None,
+            timeout_ms: Some(500),
+            max_chars: Some(100),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result["matched"], true);
+    assert_eq!(result["output"], "new");
+    assert_eq!(result["start_cursor"], 3);
+}
+
+#[tokio::test]
+async fn backend_rejects_invalid_read_terminal_output_mode_arguments() {
+    let backend = InProcessMcpBackend::new(test_runtime());
+
+    let missing_cursor = backend
+        .call_tool(
+            "read_terminal_output",
+            json!({
+                "mode": "delta",
+                "session_id": "s1",
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert!(missing_cursor.message.contains("cursor"));
+
+    let unexpected_cursor = backend
+        .call_tool(
+            "read_terminal_output",
+            json!({
+                "mode": "recent",
+                "session_id": "s1",
+                "cursor": 0,
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert!(unexpected_cursor.message.contains("unknown field"));
 }
 
 #[tokio::test]

@@ -146,58 +146,80 @@ impl McpTerminalService {
         &self,
         args: ReadTerminalOutputArgs,
     ) -> Result<Value, McpError> {
-        let snapshot = self
-            .runtime
-            .terminals
-            .read_output(&args.session_id, normalize_max_chars(args.max_chars))
-            .await
-            .map_err(invalid_params)?;
+        match args {
+            ReadTerminalOutputArgs::Recent {
+                session_id,
+                max_chars,
+            } => {
+                let snapshot = self
+                    .runtime
+                    .terminals
+                    .read_output(&session_id, normalize_max_chars(max_chars))
+                    .await
+                    .map_err(invalid_params)?;
 
-        Ok(json!(snapshot))
-    }
+                Ok(json!({
+                    "session_id": snapshot.session_id,
+                    "mode": "recent",
+                    "output": snapshot.output,
+                    "truncated": snapshot.truncated,
+                    "available_chars": snapshot.available_chars,
+                    "start_cursor": snapshot.start_cursor,
+                    "cursor": snapshot.cursor,
+                }))
+            }
+            ReadTerminalOutputArgs::Delta {
+                session_id,
+                cursor,
+                max_chars,
+            } => {
+                let snapshot = self
+                    .runtime
+                    .terminals
+                    .read_output_delta(&session_id, cursor, normalize_max_chars(max_chars))
+                    .await
+                    .map_err(invalid_params)?;
 
-    pub(super) async fn read_terminal_output_delta(
-        &self,
-        args: ReadTerminalOutputDeltaArgs,
-    ) -> Result<Value, McpError> {
-        let snapshot = self
-            .runtime
-            .terminals
-            .read_output_delta(
-                &args.session_id,
-                args.cursor,
-                normalize_max_chars(args.max_chars),
-            )
-            .await
-            .map_err(invalid_params)?;
-
-        Ok(json!(snapshot))
-    }
-
-    pub(super) async fn wait_terminal_output(
-        &self,
-        args: WaitTerminalOutputArgs,
-    ) -> Result<Value, McpError> {
-        let start_cursor = match args.cursor {
-            Some(cursor) => cursor,
-            None => self
-                .runtime
-                .terminals
-                .cursor(&args.session_id)
-                .await
-                .map_err(invalid_params)?,
-        };
-        let contains = args.contains.filter(|value| !value.is_empty());
-
-        wait_for_terminal_output(
-            &self.runtime.terminals,
-            &args.session_id,
-            start_cursor,
-            contains.as_deref(),
-            normalize_max_chars(args.max_chars),
-            normalize_timeout_ms(args.timeout_ms),
-        )
-        .await
+                Ok(json!({
+                    "session_id": snapshot.session_id,
+                    "mode": "delta",
+                    "output": snapshot.output,
+                    "truncated": snapshot.truncated,
+                    "available_chars": snapshot.available_chars,
+                    "start_cursor": snapshot.start_cursor,
+                    "cursor": snapshot.cursor,
+                }))
+            }
+            ReadTerminalOutputArgs::Wait {
+                session_id,
+                cursor,
+                contains,
+                timeout_ms,
+                max_chars,
+            } => {
+                let start_cursor = match cursor {
+                    Some(cursor) => cursor,
+                    None => self
+                        .runtime
+                        .terminals
+                        .cursor(&session_id)
+                        .await
+                        .map_err(invalid_params)?,
+                };
+                let contains = contains.filter(|value| !value.is_empty());
+                let mut result = wait_for_terminal_output(
+                    &self.runtime.terminals,
+                    &session_id,
+                    start_cursor,
+                    contains.as_deref(),
+                    normalize_max_chars(max_chars),
+                    normalize_timeout_ms(timeout_ms),
+                )
+                .await?;
+                result["mode"] = json!("wait");
+                Ok(result)
+            }
+        }
     }
 
     pub(super) async fn send_terminal_input(
@@ -400,16 +422,6 @@ impl McpBackend for InProcessMcpBackend {
             "read_terminal_output" => {
                 self.service
                     .read_terminal_output(parse_tool_args(args)?)
-                    .await
-            }
-            "read_terminal_output_delta" => {
-                self.service
-                    .read_terminal_output_delta(parse_tool_args(args)?)
-                    .await
-            }
-            "wait_terminal_output" => {
-                self.service
-                    .wait_terminal_output(parse_tool_args(args)?)
                     .await
             }
             "send_terminal_input" => {
@@ -1467,39 +1479,41 @@ pub(super) struct PreparedSerialConnection {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub(super) struct ReadTerminalOutputArgs {
-    /// Session ID returned by list_terminal_sessions.
-    pub(super) session_id: String,
-    /// Maximum number of recent characters to return.
-    #[schemars(range(min = 1, max = MAX_READ_CHARS))]
-    pub(super) max_chars: Option<usize>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub(super) struct ReadTerminalOutputDeltaArgs {
-    /// Session ID returned by list_terminal_sessions.
-    pub(super) session_id: String,
-    /// Cursor returned by read_terminal_output, read_terminal_output_delta, wait_terminal_output, or run_terminal_command.
-    pub(super) cursor: usize,
-    /// Maximum number of recent characters to return.
-    #[schemars(range(min = 1, max = MAX_READ_CHARS))]
-    pub(super) max_chars: Option<usize>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub(super) struct WaitTerminalOutputArgs {
-    /// Session ID returned by list_terminal_sessions.
-    pub(super) session_id: String,
-    /// Cursor to wait from. When omitted, waits from the current output cursor.
-    pub(super) cursor: Option<usize>,
-    /// Optional substring to wait for in the output delta.
-    pub(super) contains: Option<String>,
-    /// Maximum wait time in milliseconds.
-    #[schemars(range(min = 1, max = MAX_WAIT_TIMEOUT_MS))]
-    pub(super) timeout_ms: Option<u64>,
-    /// Maximum number of recent characters to return.
-    #[schemars(range(min = 1, max = MAX_READ_CHARS))]
-    pub(super) max_chars: Option<usize>,
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub(super) enum ReadTerminalOutputArgs {
+    /// Read the most recent output retained for the session.
+    Recent {
+        /// Session ID returned by list_terminal_sessions.
+        session_id: String,
+        /// Maximum number of recent characters to return.
+        #[schemars(range(min = 1, max = MAX_READ_CHARS))]
+        max_chars: Option<usize>,
+    },
+    /// Read output written after a previously returned cursor.
+    Delta {
+        /// Session ID returned by list_terminal_sessions.
+        session_id: String,
+        /// Cursor returned by read_terminal_output or run_terminal_command.
+        cursor: usize,
+        /// Maximum number of recent characters to return.
+        #[schemars(range(min = 1, max = MAX_READ_CHARS))]
+        max_chars: Option<usize>,
+    },
+    /// Wait for new output or for a substring to appear.
+    Wait {
+        /// Session ID returned by list_terminal_sessions.
+        session_id: String,
+        /// Cursor to wait from. When omitted, waits from the current output cursor.
+        cursor: Option<usize>,
+        /// Optional substring to wait for in the output delta.
+        contains: Option<String>,
+        /// Maximum wait time in milliseconds.
+        #[schemars(range(min = 1, max = MAX_WAIT_TIMEOUT_MS))]
+        timeout_ms: Option<u64>,
+        /// Maximum number of recent characters to return.
+        #[schemars(range(min = 1, max = MAX_READ_CHARS))]
+        max_chars: Option<usize>,
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

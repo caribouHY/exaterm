@@ -125,13 +125,34 @@ HTTP MCP transport は削除されました。古い設定ファイルに残っ�
 MCP が有効な場合、外部クライアントは次のツールを呼び出せます。
 
 - `list_terminal_sessions`: ユーザーが ExaTerm で開いたターミナルセッションを一覧表示します。
-- `read_terminal_output`: セッションの直近出力を読み取ります。返却値には次回差分読み取りに使える `cursor` が含まれます。
-- `read_terminal_output_delta`: 指定した `cursor` 以降の出力だけを読み取ります。
-- `wait_terminal_output`: 新しい出力、または指定した文字列が出力に現れるまで待機します。
+- `read_terminal_output`: 必須の `mode` 引数に応じてセッション出力を読み取るか待機します。
+  - `recent`: 保持されている直近出力を即時に読み取ります。
+  - `delta`: 必須の `cursor` 以降の出力を即時に読み取ります。
+  - `wait`: 新しい出力、または任意の `contains` 文字列が現れるまで待機します。`cursor` を省略した場合は現在の出力位置から待機します。
 - `send_terminal_input`: 接続中のセッションへテキストを送信します。
 - `run_terminal_command`: 接続中のセッションへコマンドを送信し、出力待機後に差分出力を返します。
 - `start_terminal_log`: 接続中セッションの手動平文ログを開始します。ログは `%AppData%\ExaTerm\logs` 配下に保存され、返却値には作成されたファイルパスが含まれます。
 - `stop_terminal_log`: ExaTerm が表示済み出力をログへ flush した後、セッションの手動平文ログを停止します。
+
+出力読み取りの例:
+
+```json
+{ "session_id": "session-id", "mode": "recent", "max_chars": 2000 }
+```
+
+```json
+{ "session_id": "session-id", "mode": "delta", "cursor": 1200 }
+```
+
+```json
+{
+  "session_id": "session-id",
+  "mode": "wait",
+  "cursor": 1200,
+  "contains": "router#",
+  "timeout_ms": 30000
+}
+```
 
 `mcp.connect_enabled` も `true` の場合、外部クライアントは次の追加ツールを呼び出せます。
 
@@ -140,9 +161,11 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
 - `list_serial_ports`: 現在利用可能なシリアルポートを一覧表示します。
 - `connect_serial_console`: MCP ツール引数で指定したポート名と通信設定から新しいシリアルコンソールセッションを開き、ExaTerm のタブとして表示します。ポート名は利用可能なシリアルポートと完全一致する必要があります。
 
-出力読み取り系ツールは `start_cursor`、`cursor`、`truncated` を返します。`cursor` は次回の `read_terminal_output_delta` や `wait_terminal_output` に渡せます。古い出力が内部バッファから切り詰められている場合、`truncated` は `true` になります。
+`read_terminal_output` は選択された `mode` を返します。また、`read_terminal_output` と `run_terminal_command` は `start_cursor`、`cursor`、`truncated` も返します。返された `cursor` を `mode: "delta"` または `mode: "wait"` の `read_terminal_output` に渡すと、同じ位置から読み取りを継続できます。古い出力が内部バッファから切り詰められている場合、`truncated` は `true` になります。`wait` の結果には `matched` と `timed_out` も含まれます。
 
-`wait_terminal_output` と `run_terminal_command` の待機時間は最大 60 秒です。`run_terminal_command` は既存の接続済みセッションだけを対象とします。保存済みプロファイルからの新規接続には、明示的に有効化した `connect_saved_profile` を使用します。
+`wait` モードと `run_terminal_command` の待機時間は最大 60 秒です。`run_terminal_command` は既存の接続済みセッションだけを対象とします。保存済みプロファイルからの新規接続には、明示的に有効化した `connect_saved_profile` を使用します。
+
+従来の `read_terminal_output_delta` と `wait_terminal_output` は削除されました。それぞれ `mode: "delta"` と `mode: "wait"` を指定した `read_terminal_output` に置き換えてください。
 
 MCP サーバーは保存済み認証情報の読み取り、API キーの公開、ログファイルの直接読み取りを行いません。MCP クライアントはセッションログを明示的に開始・停止できますが、受け取るのはログ状態とファイルパスだけで、ログ本文ではありません。MCP 経由の SSH/Telnet 新規接続は保存済みプロファイルに限定され、シリアル接続は明示的に指定した利用可能ポート名だけを対象にし、すべての MCP 新規接続には `mcp.connect_enabled=true` が必要です。保存済み SSH/Telnet プロファイルごとに `saved_connections[*].mcp_enabled=false` を設定すると、そのプロファイルは MCP の一覧表示と MCP 経由の新規接続から除外されます。SSH では既存の known_hosts 検証もそのまま適用されます。SSH プロファイルに `jump_profile_id` がある場合、MCP 経由の新規接続でも同じ 1 段の踏み台フローを使用し、必要な踏み台認証情報は ExaTerm UI で入力します。ターミナル出力やログファイルには機密情報が含まれる可能性があるため、MCP と MCP 経由のログ開始は信頼できるローカルクライアントに対してのみ有効化してください。
 
