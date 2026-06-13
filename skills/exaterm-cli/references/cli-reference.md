@@ -43,6 +43,8 @@ exaterm-cli terminal log stop --session-id <id>
 ```
 
 Use `exaterm-cli <command> --help` for the syntax supported by the installed version.
+`--help` and `--version` produce human-readable text, so do not pipe them to
+`ConvertFrom-Json` or any other JSON parser.
 
 ## Sessions and Profiles
 
@@ -88,6 +90,9 @@ After connecting:
      --max-chars 4000 | ConvertFrom-Json
    ```
 
+MUST NOT send the requested command until a normal prompt or another explicit readiness
+marker has been observed. A successful connection result alone does not establish readiness.
+
 Use `--contains` only when a reliable expected prompt is known. Some serial consoles remain
 silent until input is sent. Sending an empty line changes the remote interaction, so follow
 the host agent's normal approval policy before doing so.
@@ -110,6 +115,17 @@ Serial connections require `mcp.connect_enabled=true`.
 ## Reading Output
 
 The default and maximum output lengths are 2,000 and 20,000 characters.
+
+### Output Size Guidance
+
+- Use `--max-chars 2000` for ordinary inspection.
+- Increase the limit incrementally, such as to 4,000, only when relevant output is missing.
+- Use 20,000 only when the task requires a long result and the host agent has enough
+  remaining context to process it.
+- Prefer `delta` or `wait` with a retained cursor over repeatedly returning a large recent
+  buffer.
+- When `truncated=true`, narrow the requested output or continue from an appropriate cursor.
+- Summarize large terminal results instead of copying them wholesale into the response.
 
 Read the most recent retained output:
 
@@ -192,7 +208,7 @@ while ($result.timed_out -and (Get-Date) -lt $deadline) {
 }
 ```
 
-- Do not resend the command after a wait timeout.
+- MUST NOT resend the command after a wait timeout. Continue from the returned cursor.
 - Update the cursor after every result, including timeouts.
 - Treat the expected prompt or another command-specific completion marker as completion.
 - If the overall deadline expires, report that the command remains unconfirmed rather than
@@ -229,11 +245,11 @@ $prompt = exaterm-cli terminal output --session-id $sessionId `
   --timeout-ms 30000 --max-chars 2000 | ConvertFrom-Json
 ```
 
-Only run the requested command after the fresh prompt is observed. Capture the cursor before
-sending the empty line so that a quickly redrawn prompt is not missed. Replace `router#`
-with a verified prompt; omit `--contains` when it is unknown and inspect the returned output.
-If the terminal does not redraw its prompt after an empty line, report that the initial
-prompt may be absent from the log.
+MUST NOT run the requested command until the fresh prompt is observed. Capture the cursor
+before sending the empty line so that a quickly redrawn prompt is not missed. Replace
+`router#` with a verified prompt; omit `--contains` when it is unknown and inspect the
+returned output. If the terminal does not redraw its prompt after an empty line, report that
+the initial prompt may be absent from the log.
 
 ## JSON and Exit Codes
 
@@ -243,7 +259,8 @@ Successful commands write one JSON value to stdout. Errors write JSON to stderr:
 { "error": { "code": "cli_disabled", "message": "..." } }
 ```
 
-`--help` and `--version` are the only human-readable outputs.
+`--help` and `--version` are the only human-readable outputs. Read them as syntax or version
+text and do not parse them as JSON.
 
 | Exit code | Meaning                                                                |
 | --------- | ---------------------------------------------------------------------- |
