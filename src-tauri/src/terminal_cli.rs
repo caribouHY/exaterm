@@ -4,7 +4,7 @@ use clap::{error::ErrorKind, Args, Parser, Subcommand, ValueEnum};
 use rmcp::model::ErrorCode;
 use serde_json::{json, Value};
 
-use crate::{config, mcp::client::ControlClient};
+use crate::{config, mcp::ControlClient};
 
 #[derive(Debug, Parser)]
 #[command(

@@ -1,6 +1,7 @@
 mod ai;
 mod cli;
 mod config;
+mod external_control;
 mod logger;
 mod mcp;
 mod serial;
@@ -12,8 +13,11 @@ mod terminal_control;
 mod workspace;
 
 use cli::{CliAction, StartupCliRequest};
+use external_control::{
+    spawn_gui_control_plane, ExternalControlCredentialState, ExternalControlLogControlState,
+    ExternalControlRuntime,
+};
 use logger::LoggerState;
-use mcp::{spawn_gui_control_plane, McpCredentialState, McpLogControlState, McpRuntime};
 use serial::SerialState;
 use ssh::SshState;
 use std::sync::Mutex;
@@ -62,8 +66,8 @@ pub fn run() {
     let terminal_control_state = TerminalControlState::new();
     let workspace_state = WorkspaceState::new();
     let logger_state = LoggerState::new();
-    let mcp_credential_state = McpCredentialState::new();
-    let mcp_log_control_state = McpLogControlState::new();
+    let external_control_credential_state = ExternalControlCredentialState::new();
+    let external_control_log_control_state = ExternalControlLogControlState::new();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -75,8 +79,8 @@ pub fn run() {
         .manage(terminal_control_state.clone())
         .manage(workspace_state.clone())
         .manage(logger_state.clone())
-        .manage(mcp_credential_state.clone())
-        .manage(mcp_log_control_state.clone())
+        .manage(external_control_credential_state.clone())
+        .manage(external_control_log_control_state.clone())
         .on_window_event({
             let workspace_state = workspace_state.clone();
             move |window, event| match event {
@@ -111,8 +115,10 @@ pub fn run() {
                     terminal_control_state
                         .set_output_limit_from_scrollback(cfg.terminal.scrollback);
                     if cfg.mcp.enabled {
-                        let runtime = McpRuntime {
-                            config: cfg.mcp,
+                        let runtime = ExternalControlRuntime {
+                            config: external_control::service::ExternalControlPermissions::new(
+                                cfg.mcp.connect_enabled,
+                            ),
                             #[cfg(not(test))]
                             app: Some(app.handle().clone()),
                             terminals: terminal_control_state.clone(),
@@ -121,9 +127,9 @@ pub fn run() {
                             serial: serial_state.clone(),
                             telnet: telnet_state.clone(),
                             logger: Some(logger_state.clone()),
-                            log_control: Some(mcp_log_control_state.clone()),
+                            log_control: Some(external_control_log_control_state.clone()),
                             #[cfg(not(test))]
-                            credentials: Some(mcp_credential_state.clone()),
+                            credentials: Some(external_control_credential_state.clone()),
                         };
                         spawn_gui_control_plane(runtime);
                     }
@@ -174,8 +180,8 @@ pub fn run() {
             logger::logger_get_sessions,
             logger::logger_bulk_delete_sessions,
             logger::logger_get_log_dir,
-            mcp::control::mcp_credential_submit,
-            mcp::control::mcp_log_control_submit,
+            external_control::protocol::external_control_credential_submit,
+            external_control::protocol::external_control_log_control_submit,
             terminal_control::terminal_encoding_set,
             terminal_control::terminal_output_delta_get,
             terminal_control::terminal_output_snapshot_get,

@@ -7,11 +7,13 @@ use std::{
 #[cfg(not(windows))]
 use std::fs::{self, File, OpenOptions};
 
-use serde_json::Value;
 use tokio::time;
 
-use crate::mcp::control::{
-    control_call_over_stream, control_probe_over_stream, CONTROL_UNAVAILABLE_MESSAGE,
+use crate::external_control::{
+    protocol::{
+        control_probe_over_stream, external_control_call_over_stream, CONTROL_UNAVAILABLE_MESSAGE,
+    },
+    service::{ExternalControlError, ExternalControlRequest, ExternalControlResponse},
 };
 
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -19,9 +21,9 @@ const POST_LAUNCH_TIMEOUT: Duration = Duration::from_secs(30);
 const RETRY_INTERVAL: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct ControlClient;
+pub(crate) struct ExternalControlClient;
 
-impl ControlClient {
+impl ExternalControlClient {
     pub(crate) fn new() -> Self {
         Self
     }
@@ -41,12 +43,11 @@ impl ControlClient {
             .map_err(|_| CONTROL_UNAVAILABLE_MESSAGE.to_string())
     }
 
-    pub(crate) async fn call_tool(
+    pub(crate) async fn call(
         &self,
-        tool_name: &str,
-        args: Value,
-    ) -> Result<Value, rmcp::ErrorData> {
-        call_local_control_tool(tool_name, args).await
+        request: ExternalControlRequest,
+    ) -> Result<ExternalControlResponse, ExternalControlError> {
+        call_local_control(request).await
     }
 
     async fn wait_for_control_plane(&self, timeout: Duration) -> Result<(), String> {
@@ -218,24 +219,28 @@ fn launch_lock_path() -> PathBuf {
 }
 
 #[cfg(windows)]
-async fn call_local_control_tool(tool_name: &str, args: Value) -> Result<Value, rmcp::ErrorData> {
+async fn call_local_control(
+    request: ExternalControlRequest,
+) -> Result<ExternalControlResponse, ExternalControlError> {
     let stream = connect_named_pipe().await?;
-    control_call_over_stream(stream, tool_name, args).await
+    external_control_call_over_stream(stream, request).await
 }
 
 #[cfg(not(windows))]
-async fn call_local_control_tool(tool_name: &str, args: Value) -> Result<Value, rmcp::ErrorData> {
+async fn call_local_control(
+    request: ExternalControlRequest,
+) -> Result<ExternalControlResponse, ExternalControlError> {
     let stream = tokio::net::TcpStream::connect(control_tcp_address())
         .await
-        .map_err(|_| rmcp::ErrorData::internal_error(CONTROL_UNAVAILABLE_MESSAGE, None))?;
-    control_call_over_stream(stream, tool_name, args).await
+        .map_err(|_| ExternalControlError::Unavailable(CONTROL_UNAVAILABLE_MESSAGE.into()))?;
+    external_control_call_over_stream(stream, request).await
 }
 
 #[cfg(windows)]
 async fn probe_local_control_plane() -> Result<(), String> {
     let stream = connect_named_pipe()
         .await
-        .map_err(|error| error.message.into_owned())?;
+        .map_err(|error| error.message().to_string())?;
     control_probe_over_stream(stream).await
 }
 
@@ -249,18 +254,18 @@ async fn probe_local_control_plane() -> Result<(), String> {
 
 #[cfg(windows)]
 async fn connect_named_pipe(
-) -> Result<tokio::net::windows::named_pipe::NamedPipeClient, rmcp::ErrorData> {
+) -> Result<tokio::net::windows::named_pipe::NamedPipeClient, ExternalControlError> {
     use tokio::net::windows::named_pipe::ClientOptions;
 
     ClientOptions::new()
         .open(control_pipe_name())
-        .map_err(|_| rmcp::ErrorData::internal_error(CONTROL_UNAVAILABLE_MESSAGE, None))
+        .map_err(|_| ExternalControlError::Unavailable(CONTROL_UNAVAILABLE_MESSAGE.into()))
 }
 
 #[cfg(windows)]
 pub(super) fn control_pipe_name() -> String {
     format!(
-        r"\\.\pipe\exaterm-mcp-control-{}",
+        r"\\.\pipe\exaterm-external-control-{}",
         current_user_scope_hash()
     )
 }
