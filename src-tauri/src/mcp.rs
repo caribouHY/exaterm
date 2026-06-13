@@ -1,4 +1,5 @@
 mod backend;
+pub(crate) mod client;
 pub(crate) mod control;
 mod service;
 mod stdio;

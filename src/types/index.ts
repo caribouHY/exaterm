@@ -100,6 +100,7 @@ export interface McpConfig {
   enabled: boolean;
   connect_enabled: boolean;
   stdio_enabled: boolean;
+  cli_enabled: boolean;
 }
 
 export interface AiConfig {

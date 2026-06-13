@@ -36,3 +36,4 @@ thiserror = "2"
 keyring = { version = "3", features = ["windows-native"] }
 encoding_rs = "0.8"
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Threading"] }
+clap = { version = "4", features = ["derive"] }

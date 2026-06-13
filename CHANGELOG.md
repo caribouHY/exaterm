@@ -5,6 +5,12 @@
 ### Changed
 
 - Consolidated MCP terminal output reads into `read_terminal_output` with explicit `recent`, `delta`, and `wait` modes.
+- Saved-profile external connections now require both the profile ID and connection type, avoiding ambiguity when SSH and Telnet profiles share an ID.
+
+### Added
+
+- Added the opt-in `exaterm-cli` JSON command-line interface for controlling ExaTerm terminal sessions through the shared local control plane.
+- Added English and Japanese terminal CLI guides.
 
 ### Removed
 

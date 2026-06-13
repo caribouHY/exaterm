@@ -41,12 +41,12 @@ ExaTermには自動更新機能はありません。更新する場合は、Rele
 
 ExaTermはユーザーデータをWindows上にローカル保存します。
 
-| データ | 保存場所 |
-| --- | --- |
-| 設定 | `%AppData%\ExaTerm\config.json` |
-| 任意のセッションログ | `%AppData%\ExaTerm\logs` |
-| SSH known hosts | `%AppData%\ExaTerm\known_hosts` |
-| クラウドAIのAPIキー | OSの資格情報ストア |
+| データ               | 保存場所                        |
+| -------------------- | ------------------------------- |
+| 設定                 | `%AppData%\ExaTerm\config.json` |
+| 任意のセッションログ | `%AppData%\ExaTerm\logs`        |
+| SSH known hosts      | `%AppData%\ExaTerm\known_hosts` |
+| クラウドAIのAPIキー  | OSの資格情報ストア              |
 
 クラウドAIプロバイダーのAPIキーは`config.json`には保存されません。OSの資格情報ストアに保存されます。
 
@@ -80,6 +80,12 @@ ExaTermは、外部AIクライアント向けのローカルMCPサーバーを�
 
 MCPアクセスは、信頼できるクライアントに対してのみ有効にしてください。ターミナル出力、コマンド、プロンプト、ホスト名、ユーザー名、デバイス出力には機密情報が含まれる可能性があります。
 
+## ターミナル CLI
+
+`exaterm-cli.exe` を使用すると、MCP クライアントを用意せずにローカルスクリプトや
+AI エージェントから JSON ベースでターミナルを操作できます。詳細は
+[ターミナル CLI ガイド](docs/CLI_GUIDE.ja.md)を参照してください。
+
 ## よくある復旧手順
 
 ExaTermが起動しない場合は、最新のexeインストーラーで再インストールしてから、もう一度起動してください。
@@ -99,6 +105,7 @@ AIリクエストが失敗する場合は、選択中のプロバイダーが利
 手動設定の詳細は次を参照してください。
 
 - [設定ガイド](docs/CONFIG_JSON_GUIDE.ja.md)
+- [ターミナル CLI ガイド](docs/CLI_GUIDE.ja.md)
 
 ## 開発者向けセットアップ
 

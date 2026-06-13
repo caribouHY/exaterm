@@ -98,6 +98,18 @@ Current MCP tools include:
 MCP-created SSH profile connections request secrets through the ExaTerm UI. MCP does not
 read saved credentials, expose API keys, or read log file contents directly.
 
+### Terminal CLI
+
+`exaterm-cli` is a console executable for local scripts and AI agents. It uses the same
+current-user GUI control plane and backend tool calls as `exaterm-mcp`, but exposes typed
+subcommands and JSON stdout instead of MCP JSON-RPC. The CLI requires both `mcp.enabled`
+and `mcp.cli_enabled`; new profile and Serial connections additionally require
+`mcp.connect_enabled`.
+
+The external control client, GUI discovery, launch coordination, and local transport live
+in `src-tauri/src/mcp/client.rs` and are shared by both executables. Terminal sessions and
+credential prompts remain owned by the GUI.
+
 ## Important Data Flows
 
 ### User-Created Terminal Session

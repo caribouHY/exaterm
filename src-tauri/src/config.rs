@@ -37,6 +37,8 @@ pub struct McpConfig {
     pub connect_enabled: bool,
     #[serde(default)]
     pub stdio_enabled: bool,
+    #[serde(default)]
+    pub cli_enabled: bool,
 }
 
 impl Default for McpConfig {
@@ -45,6 +47,7 @@ impl Default for McpConfig {
             enabled: false,
             connect_enabled: false,
             stdio_enabled: false,
+            cli_enabled: false,
         }
     }
 }
@@ -302,6 +305,7 @@ mod tests {
         assert!(!cfg.mcp.enabled);
         assert!(!cfg.mcp.connect_enabled);
         assert!(!cfg.mcp.stdio_enabled);
+        assert!(!cfg.mcp.cli_enabled);
         assert_eq!(cfg.ai.azure_openai_endpoint, "");
         assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.terminal.font_size, 14);
