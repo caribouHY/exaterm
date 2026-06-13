@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- Consolidated MCP terminal output reads into `read_terminal_output` with explicit `recent`, `delta`, and `wait` modes.
+
+### Removed
+
+- Removed the MCP `read_terminal_output_delta` and `wait_terminal_output` tools. Use `read_terminal_output` with `mode: "delta"` or `mode: "wait"` instead.
+
 ## v0.6.1
 
 ### Added

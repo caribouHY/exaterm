@@ -125,13 +125,34 @@ The HTTP MCP transport has been removed. Existing HTTP-only `mcp.host` and `mcp.
 When MCP is enabled, external clients can call these tools:
 
 - `list_terminal_sessions`: lists ExaTerm terminal sessions opened by the user.
-- `read_terminal_output`: reads recent output from a session. The result includes a `cursor` that can be used for the next delta read.
-- `read_terminal_output_delta`: reads only the output written after the specified `cursor`.
-- `wait_terminal_output`: waits until new output is written or a specified substring appears.
+- `read_terminal_output`: reads or waits for session output using the required `mode` argument:
+  - `recent`: immediately reads the most recent retained output.
+  - `delta`: immediately reads output after the required `cursor`.
+  - `wait`: waits for new output or for the optional `contains` substring. When `cursor` is omitted, waiting starts at the current output position.
 - `send_terminal_input`: sends text to a connected session.
 - `run_terminal_command`: sends a command to a connected session, waits for output, and returns the output delta.
 - `start_terminal_log`: starts a manual plaintext log for a connected session. The log is saved under `%AppData%\ExaTerm\logs`, and the result returns the created file path.
 - `stop_terminal_log`: stops a manual plaintext log for a session after ExaTerm flushes pending displayed output to the log.
+
+Example output reads:
+
+```json
+{ "session_id": "session-id", "mode": "recent", "max_chars": 2000 }
+```
+
+```json
+{ "session_id": "session-id", "mode": "delta", "cursor": 1200 }
+```
+
+```json
+{
+  "session_id": "session-id",
+  "mode": "wait",
+  "cursor": 1200,
+  "contains": "router#",
+  "timeout_ms": 30000
+}
+```
 
 When `mcp.connect_enabled` is also `true`, external clients can call these additional tools:
 
@@ -140,9 +161,11 @@ When `mcp.connect_enabled` is also `true`, external clients can call these addit
 - `list_serial_ports`: lists currently available Serial ports.
 - `connect_serial_console`: opens a new Serial console session from explicit port and line settings and shows it as a tab in ExaTerm. The port name must match an available Serial port exactly.
 
-Output-reading tools return `start_cursor`, `cursor`, and `truncated`. Pass `cursor` to `read_terminal_output_delta` or `wait_terminal_output` to continue reading from the same point. If older output has been trimmed from the internal buffer, `truncated` is `true`.
+`read_terminal_output` returns the selected `mode`. It and `run_terminal_command` also return `start_cursor`, `cursor`, and `truncated`. Pass the returned `cursor` to `read_terminal_output` with `mode: "delta"` or `mode: "wait"` to continue from the same point. If older output has been trimmed from the internal buffer, `truncated` is `true`. The `wait` result also returns `matched` and `timed_out`.
 
-`wait_terminal_output` and `run_terminal_command` wait for up to 60 seconds. `run_terminal_command` targets only existing connected sessions; use `connect_saved_profile` for the opt-in saved-profile connection flow.
+The `wait` mode and `run_terminal_command` wait for up to 60 seconds. `run_terminal_command` targets only existing connected sessions; use `connect_saved_profile` for the opt-in saved-profile connection flow.
+
+The previous `read_terminal_output_delta` and `wait_terminal_output` tools were removed. Replace them with `read_terminal_output` using `mode: "delta"` and `mode: "wait"`, respectively.
 
 The MCP server does not read saved credentials, expose API keys, or read log files directly. MCP clients can explicitly start and stop session logs, but they receive only the log state and file path, not the log contents. New MCP-created SSH/Telnet connections are limited to saved profiles, Serial connections require an explicit available port name, and all new MCP-created connections require `mcp.connect_enabled=true`. Saved SSH/Telnet profiles can also individually opt out of MCP listing and MCP-created connections with `saved_connections[*].mcp_enabled=false`. SSH connections still enforce the existing known-host checks. If an SSH profile uses `jump_profile_id`, MCP-created connections use the same one-hop jump host flow and request any required jump-host credential in the ExaTerm UI. Terminal output and log files can contain sensitive information, so enable MCP and MCP-triggered logging only for trusted local clients.
 

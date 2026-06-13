@@ -8,8 +8,8 @@ use serde_json::{json, Value};
 
 use crate::mcp::backend::{
     internal_error, structured_tool_result, ConnectSavedProfileArgs, ConnectSerialConsoleArgs,
-    ReadTerminalOutputArgs, ReadTerminalOutputDeltaArgs, RunTerminalCommandArgs,
-    SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs, WaitTerminalOutputArgs,
+    ReadTerminalOutputArgs, RunTerminalCommandArgs, SendTerminalInputArgs, StartTerminalLogArgs,
+    StopTerminalLogArgs,
 };
 use crate::mcp::control::McpControlService;
 
@@ -94,36 +94,13 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "read_terminal_output",
-        description = "Read recent output from an ExaTerm terminal session."
+        description = "Read recent or cursor-based output from an ExaTerm terminal session, or wait for new or matching output. Select recent, delta, or wait mode."
     )]
     async fn read_terminal_output(
         &self,
         Parameters(args): Parameters<ReadTerminalOutputArgs>,
     ) -> Result<CallToolResult, McpError> {
         self.call_tool_with_args("read_terminal_output", args).await
-    }
-
-    #[tool(
-        name = "read_terminal_output_delta",
-        description = "Read output written after a previously returned ExaTerm terminal cursor."
-    )]
-    async fn read_terminal_output_delta(
-        &self,
-        Parameters(args): Parameters<ReadTerminalOutputDeltaArgs>,
-    ) -> Result<CallToolResult, McpError> {
-        self.call_tool_with_args("read_terminal_output_delta", args)
-            .await
-    }
-
-    #[tool(
-        name = "wait_terminal_output",
-        description = "Wait until an ExaTerm terminal session produces new output or a target string appears."
-    )]
-    async fn wait_terminal_output(
-        &self,
-        Parameters(args): Parameters<WaitTerminalOutputArgs>,
-    ) -> Result<CallToolResult, McpError> {
-        self.call_tool_with_args("wait_terminal_output", args).await
     }
 
     #[tool(
