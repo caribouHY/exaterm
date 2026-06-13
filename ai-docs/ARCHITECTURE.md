@@ -41,6 +41,8 @@ Avoid changes that remount terminal views or drop active tab state unless the ta
 - `src-tauri/src/ai/secrets.rs` stores cloud provider API keys in the operating system credential store, not in `config.json`.
 - `src-tauri/src/config.rs` loads, defaults, migrates, and saves user settings.
 - `src-tauri/src/logger.rs` handles optional plaintext terminal session logs and the log index.
+- `src-tauri/src/mcp/client.rs` provides the shared local control client and GUI startup flow used by `exaterm-mcp` and `exaterm-cli`.
+- `src-tauri/src/terminal_cli.rs` defines the typed JSON terminal CLI.
 
 When adding a Tauri command, implement it in the responsible backend module and register it in `src-tauri/src/lib.rs`.
 

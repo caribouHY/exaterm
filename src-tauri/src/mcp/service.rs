@@ -62,7 +62,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "connect_saved_profile",
-        description = "Open a new ExaTerm SSH or Telnet session from a saved profile when MCP profile connections are enabled. SSH passwords and encrypted key passphrases are requested in the ExaTerm UI."
+        description = "Open a new ExaTerm SSH or Telnet session selected by profile ID and connection type when MCP profile connections are enabled. SSH passwords and encrypted key passphrases are requested in the ExaTerm UI."
     )]
     async fn connect_saved_profile(
         &self,

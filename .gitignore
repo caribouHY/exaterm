@@ -25,3 +25,4 @@ dist-ssr
 
 # Codex local workspace state
 .codex/
+src-tauri/binaries/

@@ -38,12 +38,16 @@ fn test_runtime() -> McpRuntime {
 async fn connection_tools_require_connect_enabled() {
     let service = McpTerminalService::new(test_runtime());
 
-    let error = service.list_connection_profiles().await.unwrap_err();
+    let error = service
+        .list_connection_profiles(ListConnectionProfilesArgs::default())
+        .await
+        .unwrap_err();
     assert!(error.message.contains("connect_enabled"));
 
     let error = service
         .connect_saved_profile(ConnectSavedProfileArgs {
             profile_id: "dev".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         })
@@ -344,7 +348,7 @@ fn list_connection_profiles_returns_only_ssh_telnet_without_secret_paths() {
         },
     ];
 
-    let profiles = list_connection_profiles_from_config(&config);
+    let profiles = list_connection_profiles_from_config(&config, None);
 
     assert_eq!(profiles.len(), 2);
     assert_eq!(profiles[0].id, "dev");
@@ -358,6 +362,35 @@ fn list_connection_profiles_returns_only_ssh_telnet_without_secret_paths() {
     assert!(serialized.contains("Cisco ISR branch edge"));
     assert!(!serialized.contains("private_key_path"));
     assert!(!serialized.contains("id_ed25519"));
+}
+
+#[test]
+fn list_connection_profiles_filters_by_connection_type() {
+    let mut config = AppConfig::default();
+    config.saved_connections = vec![
+        SavedConnection {
+            id: "ssh-profile".into(),
+            connection_type: "ssh".into(),
+            host: Some("192.0.2.10".into()),
+            ..SavedConnection::default()
+        },
+        SavedConnection {
+            id: "telnet-profile".into(),
+            connection_type: "telnet".into(),
+            host: Some("192.0.2.20".into()),
+            ..SavedConnection::default()
+        },
+    ];
+
+    let ssh_profiles =
+        list_connection_profiles_from_config(&config, Some(SavedProfileConnectionType::Ssh));
+    let telnet_profiles =
+        list_connection_profiles_from_config(&config, Some(SavedProfileConnectionType::Telnet));
+
+    assert_eq!(ssh_profiles.len(), 1);
+    assert_eq!(ssh_profiles[0].id, "ssh-profile");
+    assert_eq!(telnet_profiles.len(), 1);
+    assert_eq!(telnet_profiles[0].id, "telnet-profile");
 }
 
 #[test]
@@ -379,7 +412,7 @@ fn list_connection_profiles_skips_mcp_disabled_profiles() {
         },
     ];
 
-    let profiles = list_connection_profiles_from_config(&config);
+    let profiles = list_connection_profiles_from_config(&config, None);
 
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].id, "ssh-enabled");
@@ -399,6 +432,7 @@ fn prepare_saved_profile_rejects_missing_and_unsupported_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "missing".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -410,12 +444,13 @@ fn prepare_saved_profile_rejects_missing_and_unsupported_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "console".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
     )
     .unwrap_err();
-    assert!(unsupported.contains("SSH/Telnet"));
+    assert!(unsupported.contains("見つかりません"));
 }
 
 #[test]
@@ -435,13 +470,14 @@ fn prepare_saved_profile_rejects_mcp_disabled_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "disabled".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
     )
     .unwrap_err();
 
-    assert!(error.contains("MCP"));
+    assert!(error.contains("外部制御"));
 }
 
 #[test]
@@ -470,6 +506,7 @@ fn prepare_saved_profile_rejects_incomplete_ssh_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "missing-user".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -481,6 +518,7 @@ fn prepare_saved_profile_rejects_incomplete_ssh_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "key".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -505,6 +543,7 @@ fn prepare_saved_profile_allows_profiles_without_explicit_mcp_flag() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "default-enabled".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -533,6 +572,7 @@ fn prepare_saved_profile_builds_connection_metadata() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "dev".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: Some(80),
             rows: Some(24),
         },
@@ -547,6 +587,69 @@ fn prepare_saved_profile_builds_connection_metadata() {
     assert_eq!(prepared.terminal_mode, "cisco_ios");
     assert_eq!(prepared.cols, 80);
     assert_eq!(prepared.rows, 24);
+}
+
+#[test]
+fn prepare_saved_profile_uses_id_and_connection_type() {
+    let mut config = AppConfig::default();
+    config.saved_connections = vec![
+        SavedConnection {
+            id: "router".into(),
+            connection_type: "telnet".into(),
+            host: Some("192.0.2.23".into()),
+            ..SavedConnection::default()
+        },
+        SavedConnection {
+            id: "router".into(),
+            connection_type: "ssh".into(),
+            host: Some("192.0.2.22".into()),
+            username: Some("admin".into()),
+            auth_method: Some("password".into()),
+            ..SavedConnection::default()
+        },
+    ];
+
+    let ssh = prepare_saved_profile_connection(
+        &config,
+        ConnectSavedProfileArgs {
+            profile_id: "router".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
+            cols: None,
+            rows: None,
+        },
+    )
+    .unwrap();
+    let telnet = prepare_saved_profile_connection(
+        &config,
+        ConnectSavedProfileArgs {
+            profile_id: "router".into(),
+            connection_type: SavedProfileConnectionType::Telnet,
+            cols: None,
+            rows: None,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(ssh.connection_type, "ssh");
+    assert_eq!(ssh.target, "admin@192.0.2.22:22");
+    assert_eq!(telnet.connection_type, "telnet");
+    assert_eq!(telnet.target, "192.0.2.23:23");
+}
+
+#[tokio::test]
+async fn backend_requires_saved_profile_connection_type() {
+    let backend = InProcessMcpBackend::new(test_runtime());
+    let error = backend
+        .call_tool(
+            "connect_saved_profile",
+            json!({
+                "profile_id": "router",
+            }),
+        )
+        .await
+        .unwrap_err();
+
+    assert!(error.message.contains("connection_type"));
 }
 
 #[test]
@@ -578,6 +681,7 @@ fn prepare_saved_profile_allows_disabled_jump_profile_when_target_is_enabled() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "inside".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -621,6 +725,7 @@ fn prepare_saved_profile_resolves_jump_profile() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "inside".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -675,6 +780,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "inside".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -687,6 +793,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "inside".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -699,6 +806,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "inside".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -711,6 +819,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "inside".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },

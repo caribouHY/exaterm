@@ -7,6 +7,7 @@ mod serial;
 mod ssh;
 mod ssh_known_hosts;
 mod telnet;
+mod terminal_cli;
 mod terminal_control;
 mod workspace;
 
@@ -22,6 +23,7 @@ use terminal_control::TerminalControlState;
 use workspace::WorkspaceState;
 
 pub use mcp::run_stdio_proxy;
+pub use terminal_cli::run_terminal_cli;
 
 pub struct StartupCliState {
     request: Mutex<Option<StartupCliRequest>>,

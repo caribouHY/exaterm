@@ -5,6 +5,14 @@
 ### Changed
 
 - Consolidated MCP terminal output reads into `read_terminal_output` with explicit `recent`, `delta`, and `wait` modes.
+- Saved-profile external connections now require both the profile ID and connection type, avoiding ambiguity when SSH and Telnet profiles share an ID.
+
+### Added
+
+- Added the opt-in `exaterm-cli` JSON command-line interface for controlling ExaTerm terminal sessions through the shared local control plane.
+- Added an installable `exaterm-cli` Agent Skill for Codex, Claude Code, GitHub Copilot, and other Agent Skills-compatible clients.
+- Added optional SSH or Telnet filtering to `exaterm-cli profiles list`.
+- Added English and Japanese terminal CLI guides.
 
 ### Removed
 

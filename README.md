@@ -43,12 +43,12 @@ The default configuration does not create terminal session logs. Session logging
 
 ExaTerm stores user data locally on Windows:
 
-| Data | Location |
-| --- | --- |
-| Settings | `%AppData%\ExaTerm\config.json` |
-| Optional session logs | `%AppData%\ExaTerm\logs` |
-| SSH known hosts | `%AppData%\ExaTerm\known_hosts` |
-| Cloud AI API keys | Operating system credential store |
+| Data                  | Location                          |
+| --------------------- | --------------------------------- |
+| Settings              | `%AppData%\ExaTerm\config.json`   |
+| Optional session logs | `%AppData%\ExaTerm\logs`          |
+| SSH known hosts       | `%AppData%\ExaTerm\known_hosts`   |
+| Cloud AI API keys     | Operating system credential store |
 
 API keys for cloud AI providers are not stored in `config.json`. They are saved in the operating system credential store.
 
@@ -82,6 +82,31 @@ When enabled, MCP clients can interact with visible ExaTerm terminal sessions, i
 
 Only enable MCP access for clients you trust. Terminal output, commands, prompts, hostnames, usernames, and device output can be sensitive.
 
+## Terminal CLI
+
+`exaterm-cli.exe` provides JSON-based terminal control for local scripts and AI agents
+without requiring an MCP client. See the [Terminal CLI guide](docs/CLI_GUIDE.en.md).
+
+### Agent Skill
+
+Install the `exaterm-cli` Agent Skill from this repository for use with supported coding
+agents:
+
+```powershell
+npx skills add caribouHY/exaterm --skill exaterm-cli
+```
+
+Target a specific agent with `-a codex`, `-a claude-code`, or `-a github-copilot`:
+
+```powershell
+npx skills add caribouHY/exaterm --skill exaterm-cli -a codex
+npx skills add caribouHY/exaterm --skill exaterm-cli -a claude-code
+npx skills add caribouHY/exaterm --skill exaterm-cli -a github-copilot
+```
+
+The Skill provides agent instructions only. Install ExaTerm separately, ensure
+`exaterm-cli.exe` is available, and enable both `mcp.enabled` and `mcp.cli_enabled`.
+
 ## Common Recovery Steps
 
 If ExaTerm does not launch, reinstall it with the latest exe installer and try launching it again.
@@ -101,6 +126,7 @@ If session logs are missing, confirm that Auto Session Log is enabled before sta
 For manual configuration details, see:
 
 - [Config guide](docs/CONFIG_JSON_GUIDE.en.md)
+- [Terminal CLI guide](docs/CLI_GUIDE.en.md)
 
 ## Developer Setup
 

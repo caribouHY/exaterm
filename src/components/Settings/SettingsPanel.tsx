@@ -25,6 +25,7 @@ const DEFAULT_MCP_CONFIG = {
   enabled: false,
   connect_enabled: false,
   stdio_enabled: false,
+  cli_enabled: false,
 };
 
 const EMPTY_SECRET_STATUS: AiSecretStatus = {
@@ -378,6 +379,20 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               type="checkbox"
               checked={Boolean(config.mcp?.stdio_enabled)}
               onChange={(e) => update("mcp.stdio_enabled", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.mcp_cli_enabled")}</span>
+            <small>{t("settings.mcp_cli_enabled_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(config.mcp?.cli_enabled)}
+              onChange={(e) => update("mcp.cli_enabled", e.target.checked)}
             />
             <span className="toggle-track" />
           </label>
