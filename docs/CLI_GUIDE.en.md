@@ -41,7 +41,7 @@ Restart ExaTerm after changing these settings.
 
 ```text
 exaterm-cli sessions list
-exaterm-cli profiles list
+exaterm-cli profiles list [--type <ssh|telnet>]
 exaterm-cli profiles connect --type <ssh|telnet> --profile-id <id> [--cols <n>] [--rows <n>]
 exaterm-cli serial ports
 exaterm-cli serial connect --port <name> [options]
@@ -59,10 +59,13 @@ Use `exaterm-cli <command> --help` for command-specific syntax.
 SSH and Telnet profiles may have the same ID. Always specify the connection type:
 
 ```powershell
+exaterm-cli profiles list --type ssh
+exaterm-cli profiles list --type telnet
 exaterm-cli profiles connect --type ssh --profile-id router
 exaterm-cli profiles connect --type telnet --profile-id router
 ```
 
+Omit `--type` from `profiles list` to return both SSH and Telnet profiles.
 The ID and type must match one profile. Profile connections require
 `mcp.connect_enabled=true`, and the selected profile must allow MCP access. SSH passwords
 and encrypted key passphrases are requested in the ExaTerm UI, never as CLI arguments.

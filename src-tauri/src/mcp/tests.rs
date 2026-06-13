@@ -38,7 +38,10 @@ fn test_runtime() -> McpRuntime {
 async fn connection_tools_require_connect_enabled() {
     let service = McpTerminalService::new(test_runtime());
 
-    let error = service.list_connection_profiles().await.unwrap_err();
+    let error = service
+        .list_connection_profiles(ListConnectionProfilesArgs::default())
+        .await
+        .unwrap_err();
     assert!(error.message.contains("connect_enabled"));
 
     let error = service
@@ -345,7 +348,7 @@ fn list_connection_profiles_returns_only_ssh_telnet_without_secret_paths() {
         },
     ];
 
-    let profiles = list_connection_profiles_from_config(&config);
+    let profiles = list_connection_profiles_from_config(&config, None);
 
     assert_eq!(profiles.len(), 2);
     assert_eq!(profiles[0].id, "dev");
@@ -359,6 +362,35 @@ fn list_connection_profiles_returns_only_ssh_telnet_without_secret_paths() {
     assert!(serialized.contains("Cisco ISR branch edge"));
     assert!(!serialized.contains("private_key_path"));
     assert!(!serialized.contains("id_ed25519"));
+}
+
+#[test]
+fn list_connection_profiles_filters_by_connection_type() {
+    let mut config = AppConfig::default();
+    config.saved_connections = vec![
+        SavedConnection {
+            id: "ssh-profile".into(),
+            connection_type: "ssh".into(),
+            host: Some("192.0.2.10".into()),
+            ..SavedConnection::default()
+        },
+        SavedConnection {
+            id: "telnet-profile".into(),
+            connection_type: "telnet".into(),
+            host: Some("192.0.2.20".into()),
+            ..SavedConnection::default()
+        },
+    ];
+
+    let ssh_profiles =
+        list_connection_profiles_from_config(&config, Some(SavedProfileConnectionType::Ssh));
+    let telnet_profiles =
+        list_connection_profiles_from_config(&config, Some(SavedProfileConnectionType::Telnet));
+
+    assert_eq!(ssh_profiles.len(), 1);
+    assert_eq!(ssh_profiles[0].id, "ssh-profile");
+    assert_eq!(telnet_profiles.len(), 1);
+    assert_eq!(telnet_profiles[0].id, "telnet-profile");
 }
 
 #[test]
@@ -380,7 +412,7 @@ fn list_connection_profiles_skips_mcp_disabled_profiles() {
         },
     ];
 
-    let profiles = list_connection_profiles_from_config(&config);
+    let profiles = list_connection_profiles_from_config(&config, None);
 
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].id, "ssh-enabled");

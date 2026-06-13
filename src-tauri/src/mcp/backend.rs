@@ -102,12 +102,15 @@ impl McpTerminalService {
         }
     }
 
-    pub(super) async fn list_connection_profiles(&self) -> Result<Value, McpError> {
+    pub(super) async fn list_connection_profiles(
+        &self,
+        args: ListConnectionProfilesArgs,
+    ) -> Result<Value, McpError> {
         self.ensure_connect_enabled()?;
         let config = config::config_read()
             .map_err(|error| internal_error(format!("設定読み込みエラー: {error}")))?;
         Ok(json!({
-            "profiles": list_connection_profiles_from_config(&config),
+            "profiles": list_connection_profiles_from_config(&config, args.connection_type),
         }))
     }
 
@@ -407,7 +410,11 @@ impl McpBackend for InProcessMcpBackend {
     async fn call_tool(&self, name: &str, args: Value) -> Result<Value, McpError> {
         match name {
             "list_terminal_sessions" => self.service.list_terminal_sessions().await,
-            "list_connection_profiles" => self.service.list_connection_profiles().await,
+            "list_connection_profiles" => {
+                self.service
+                    .list_connection_profiles(parse_tool_args(args)?)
+                    .await
+            }
             "connect_saved_profile" => {
                 self.service
                     .connect_saved_profile(parse_tool_args(args)?)
@@ -820,6 +827,7 @@ pub(super) fn prepare_serial_console_connection(
 
 pub(super) fn list_connection_profiles_from_config(
     config: &AppConfig,
+    connection_type_filter: Option<SavedProfileConnectionType>,
 ) -> Vec<McpConnectionProfile> {
     config
         .saved_connections
@@ -829,6 +837,9 @@ pub(super) fn list_connection_profiles_from_config(
                 return None;
             }
             let connection_type = normalize_profile_type(&profile.connection_type);
+            if connection_type_filter_mismatch(&connection_type, connection_type_filter.as_ref()) {
+                return None;
+            }
             let memo = normalize_profile_string(profile.memo.as_deref());
             match connection_type.as_str() {
                 "ssh" => Some(McpConnectionProfile {
@@ -879,6 +890,13 @@ pub(super) fn list_connection_profiles_from_config(
             }
         })
         .collect()
+}
+
+fn connection_type_filter_mismatch(
+    profile_type: &str,
+    filter: Option<&SavedProfileConnectionType>,
+) -> bool {
+    filter.is_some_and(|filter| profile_type != filter.as_str())
 }
 
 pub(super) fn prepare_saved_profile_connection(
@@ -1360,6 +1378,11 @@ pub(super) struct ConnectSavedProfileArgs {
     /// Requested terminal rows. Defaults to 30.
     #[schemars(range(min = 1, max = MAX_CONNECT_DIMENSION))]
     pub(super) rows: Option<u32>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub(super) struct ListConnectionProfilesArgs {
+    pub(super) connection_type: Option<SavedProfileConnectionType>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]

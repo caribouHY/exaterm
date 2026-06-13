@@ -40,7 +40,7 @@ exaterm-cli --version
 
 ```text
 exaterm-cli sessions list
-exaterm-cli profiles list
+exaterm-cli profiles list [--type <ssh|telnet>]
 exaterm-cli profiles connect --type <ssh|telnet> --profile-id <id> [--cols <n>] [--rows <n>]
 exaterm-cli serial ports
 exaterm-cli serial connect --port <name> [options]
@@ -58,10 +58,13 @@ exaterm-cli terminal log stop --session-id <id>
 SSH と Telnet では同じ ID を使用できます。接続種別を必ず指定してください。
 
 ```powershell
+exaterm-cli profiles list --type ssh
+exaterm-cli profiles list --type telnet
 exaterm-cli profiles connect --type ssh --profile-id router
 exaterm-cli profiles connect --type telnet --profile-id router
 ```
 
+`profiles list` で `--type` を省略すると、SSH と Telnet の両方を返します。
 ID と種別の両方が一致する必要があります。接続には `mcp.connect_enabled=true` と、
 対象プロファイルの MCP 許可が必要です。SSH パスワードや暗号化鍵のパスフレーズは
 CLI 引数では受け取らず、ExaTerm UI で入力します。

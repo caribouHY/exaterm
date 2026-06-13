@@ -10,6 +10,7 @@
 ### Added
 
 - Added the opt-in `exaterm-cli` JSON command-line interface for controlling ExaTerm terminal sessions through the shared local control plane.
+- Added optional SSH or Telnet filtering to `exaterm-cli profiles list`.
 - Added English and Japanese terminal CLI guides.
 
 ### Removed

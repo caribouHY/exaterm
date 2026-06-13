@@ -45,8 +45,14 @@ struct ProfilesArgs {
 
 #[derive(Debug, Subcommand)]
 enum ProfilesCommand {
-    List,
+    List(ProfileListArgs),
     Connect(ProfileConnectArgs),
+}
+
+#[derive(Debug, Args)]
+struct ProfileListArgs {
+    #[arg(long = "type", value_enum)]
+    connection_type: Option<ProfileType>,
 }
 
 #[derive(Debug, Args)]
@@ -295,8 +301,13 @@ fn build_call(command: RootCommand, stdin: &mut impl Read) -> Result<CliCall, St
             command: SessionsCommand::List,
         }) => Ok(call("list_terminal_sessions", json!({}))),
         RootCommand::Profiles(ProfilesArgs {
-            command: ProfilesCommand::List,
-        }) => Ok(call("list_connection_profiles", json!({}))),
+            command: ProfilesCommand::List(args),
+        }) => Ok(call(
+            "list_connection_profiles",
+            json!({
+                "connection_type": args.connection_type.map(ProfileType::as_str),
+            }),
+        )),
         RootCommand::Profiles(ProfilesArgs {
             command: ProfilesCommand::Connect(args),
         }) => {
@@ -560,6 +571,43 @@ mod tests {
         assert_eq!(call.tool_name, "connect_saved_profile");
         assert_eq!(call.args["connection_type"], "telnet");
         assert_eq!(call.args["profile_id"], "router");
+    }
+
+    #[test]
+    fn profile_list_without_type_requests_all_profiles() {
+        let call = build_call(
+            parse(&["exaterm-cli", "profiles", "list"]),
+            &mut io::empty(),
+        )
+        .unwrap();
+        assert_eq!(call.tool_name, "list_connection_profiles");
+        assert_eq!(call.args["connection_type"], Value::Null);
+    }
+
+    #[test]
+    fn profile_list_includes_connection_type() {
+        let ssh_call = build_call(
+            parse(&["exaterm-cli", "profiles", "list", "--type", "ssh"]),
+            &mut io::empty(),
+        )
+        .unwrap();
+        let telnet_call = build_call(
+            parse(&["exaterm-cli", "profiles", "list", "--type", "telnet"]),
+            &mut io::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(ssh_call.tool_name, "list_connection_profiles");
+        assert_eq!(ssh_call.args["connection_type"], "ssh");
+        assert_eq!(telnet_call.tool_name, "list_connection_profiles");
+        assert_eq!(telnet_call.args["connection_type"], "telnet");
+    }
+
+    #[test]
+    fn profile_list_rejects_unknown_connection_type() {
+        let error = Cli::try_parse_from(["exaterm-cli", "profiles", "list", "--type", "serial"])
+            .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidValue);
     }
 
     #[test]
