@@ -10,6 +10,7 @@
 ### Added
 
 - Added the opt-in `exaterm-cli` JSON command-line interface for controlling ExaTerm terminal sessions through the shared local control plane.
+- Added an installable `exaterm-cli` Agent Skill for Codex, Claude Code, GitHub Copilot, and other Agent Skills-compatible clients.
 - Added optional SSH or Telnet filtering to `exaterm-cli profiles list`.
 - Added English and Japanese terminal CLI guides.
 

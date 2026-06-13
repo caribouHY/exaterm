@@ -86,6 +86,28 @@ MCPアクセスは、信頼できるクライアントに対してのみ有効�
 AI エージェントから JSON ベースでターミナルを操作できます。詳細は
 [ターミナル CLI ガイド](docs/CLI_GUIDE.ja.md)を参照してください。
 
+### Agent Skill
+
+対応するコーディングエージェントから利用するには、このリポジトリの `exaterm-cli`
+Agent Skillをインストールします。
+
+```powershell
+npx skills add caribouHY/exaterm --skill exaterm-cli
+```
+
+対象を限定する場合は、`-a codex`、`-a claude-code`、または
+`-a github-copilot`を指定します。
+
+```powershell
+npx skills add caribouHY/exaterm --skill exaterm-cli -a codex
+npx skills add caribouHY/exaterm --skill exaterm-cli -a claude-code
+npx skills add caribouHY/exaterm --skill exaterm-cli -a github-copilot
+```
+
+SkillにExaTerm本体は含まれません。ExaTermを別途インストールし、
+`exaterm-cli.exe`を利用可能にしたうえで、`mcp.enabled`と`mcp.cli_enabled`を
+有効にしてください。
+
 ## よくある復旧手順
 
 ExaTermが起動しない場合は、最新のexeインストーラーで再インストールしてから、もう一度起動してください。

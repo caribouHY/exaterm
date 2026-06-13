@@ -87,6 +87,26 @@ Only enable MCP access for clients you trust. Terminal output, commands, prompts
 `exaterm-cli.exe` provides JSON-based terminal control for local scripts and AI agents
 without requiring an MCP client. See the [Terminal CLI guide](docs/CLI_GUIDE.en.md).
 
+### Agent Skill
+
+Install the `exaterm-cli` Agent Skill from this repository for use with supported coding
+agents:
+
+```powershell
+npx skills add caribouHY/exaterm --skill exaterm-cli
+```
+
+Target a specific agent with `-a codex`, `-a claude-code`, or `-a github-copilot`:
+
+```powershell
+npx skills add caribouHY/exaterm --skill exaterm-cli -a codex
+npx skills add caribouHY/exaterm --skill exaterm-cli -a claude-code
+npx skills add caribouHY/exaterm --skill exaterm-cli -a github-copilot
+```
+
+The Skill provides agent instructions only. Install ExaTerm separately, ensure
+`exaterm-cli.exe` is available, and enable both `mcp.enabled` and `mcp.cli_enabled`.
+
 ## Common Recovery Steps
 
 If ExaTerm does not launch, reinstall it with the latest exe installer and try launching it again.
