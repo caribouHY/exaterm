@@ -1,5 +1,4 @@
 mod backend;
-pub(crate) mod control;
 mod service;
 mod stdio;
 

@@ -1,69 +1,49 @@
-use async_trait::async_trait;
 use rmcp::ErrorData as McpError;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::external_control::{
     client::ExternalControlClient, ExternalControlError, ExternalControlRequest,
-    ExternalControlResponse, ExternalControlRuntime, ExternalControlService,
+    ExternalControlResponse, ExternalControlService,
 };
 
-#[async_trait]
-pub trait McpBackend: Send + Sync {
-    async fn call_tool(&self, name: &str, args: Value) -> Result<Value, McpError>;
-}
-
 #[derive(Clone)]
-#[cfg_attr(not(test), allow(dead_code))]
-pub struct InProcessMcpBackend {
-    service: ExternalControlService,
-}
-
-impl InProcessMcpBackend {
+pub(super) enum McpTarget {
     #[cfg_attr(not(test), allow(dead_code))]
-    pub fn new(runtime: ExternalControlRuntime) -> Self {
-        Self {
-            service: ExternalControlService::new(runtime),
-        }
-    }
+    Service {
+        service: ExternalControlService,
+    },
+    Client {
+        client: ExternalControlClient,
+    },
 }
 
-#[async_trait]
-impl McpBackend for InProcessMcpBackend {
-    async fn call_tool(&self, name: &str, args: Value) -> Result<Value, McpError> {
+impl McpTarget {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) fn with_service(service: ExternalControlService) -> Self {
+        Self::Service { service }
+    }
+
+    pub(super) fn with_client(client: ExternalControlClient) -> Self {
+        Self::Client { client }
+    }
+
+    pub(super) async fn call_tool(&self, name: &str, args: Value) -> Result<Value, McpError> {
         let request = request_from_tool(name, args)?;
-        self.service
-            .execute(request)
-            .await
+        let response = match self {
+            Self::Service { service } => service.execute(request).await,
+            Self::Client { client } => client.call(request).await,
+        };
+        response
             .map(ExternalControlResponse::into_value)
             .map_err(external_error_to_mcp)
     }
 }
 
-#[derive(Clone)]
-pub(super) struct ProxyMcpBackend {
-    client: ExternalControlClient,
-}
-
-impl ProxyMcpBackend {
-    pub(super) fn new(client: ExternalControlClient) -> Self {
-        Self { client }
-    }
-}
-
-#[async_trait]
-impl McpBackend for ProxyMcpBackend {
-    async fn call_tool(&self, name: &str, args: Value) -> Result<Value, McpError> {
-        let request = request_from_tool(name, args)?;
-        self.client
-            .call(request)
-            .await
-            .map(ExternalControlResponse::into_value)
-            .map_err(external_error_to_mcp)
-    }
-}
-
-fn request_from_tool(name: &str, args: Value) -> Result<ExternalControlRequest, McpError> {
+pub(super) fn request_from_tool(
+    name: &str,
+    args: Value,
+) -> Result<ExternalControlRequest, McpError> {
     match name {
         "list_terminal_sessions" => Ok(ExternalControlRequest::ListTerminalSessions),
         "list_connection_profiles" => Ok(ExternalControlRequest::ListConnectionProfiles(
