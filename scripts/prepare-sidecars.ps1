@@ -12,14 +12,18 @@ if (-not $hostLine) {
 }
 $targetTriple = ($hostLine.Line -split ":", 2)[1].Trim()
 
-cargo build --release --target-dir $cargoTargetDirectory --manifest-path $manifestPath --bin exaterm-mcp
-if ($LASTEXITCODE -ne 0) {
-    throw "Failed to build ExaTerm sidecar binary."
-}
-
 New-Item -ItemType Directory -Force -Path $binaryDirectory | Out-Null
 
 $extension = if ($IsWindows -or $env:OS -eq "Windows_NT") { ".exe" } else { "" }
-$source = Join-Path $targetDirectory "exaterm-mcp$extension"
-$destination = Join-Path $binaryDirectory "exaterm-mcp-$targetTriple$extension"
-Copy-Item -Force -LiteralPath $source -Destination $destination
+$binaries = @("exaterm-mcp", "exaterm-cli")
+
+foreach ($binary in $binaries) {
+    cargo build --release --target-dir $cargoTargetDirectory --manifest-path $manifestPath --bin $binary
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to build ExaTerm sidecar binary: $binary"
+    }
+
+    $source = Join-Path $targetDirectory "$binary$extension"
+    $destination = Join-Path $binaryDirectory "$binary-$targetTriple$extension"
+    Copy-Item -Force -LiteralPath $source -Destination $destination
+}
