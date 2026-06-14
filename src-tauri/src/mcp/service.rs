@@ -7,31 +7,45 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::external_control::{
-    ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ReadTerminalOutputArgs,
-    RunTerminalCommandArgs, SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs,
+    client::ExternalControlClient, ConnectSavedProfileArgs, ConnectSerialConsoleArgs,
+    ExternalControlService, ReadTerminalOutputArgs, RunTerminalCommandArgs, SendTerminalInputArgs,
+    StartTerminalLogArgs, StopTerminalLogArgs,
 };
-use crate::mcp::control::McpControlService;
+use crate::mcp::backend::McpTarget;
 
 #[derive(Clone)]
 pub(super) struct ExaTermMcpServer {
-    control: McpControlService,
+    target: McpTarget,
     tool_router: ToolRouter<Self>,
 }
 
 #[tool_router]
 impl ExaTermMcpServer {
-    pub(super) fn with_control(control: McpControlService) -> Self {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) fn with_service(service: ExternalControlService) -> Self {
         Self {
-            control,
+            target: McpTarget::with_service(service),
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    pub(super) fn with_client(client: ExternalControlClient) -> Self {
+        Self {
+            target: McpTarget::with_client(client),
             tool_router: Self::tool_router(),
         }
     }
 
     async fn call_tool(&self, name: &str, args: Value) -> Result<CallToolResult, McpError> {
-        self.control
+        self.target
             .call_tool(name, args)
             .await
             .and_then(structured_tool_result)
+    }
+
+    #[cfg(test)]
+    pub(super) async fn call_tool_json(&self, name: &str, args: Value) -> Result<Value, McpError> {
+        self.target.call_tool(name, args).await
     }
 
     async fn call_tool_with_args<T>(&self, name: &str, args: T) -> Result<CallToolResult, McpError>

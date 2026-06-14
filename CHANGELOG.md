@@ -7,6 +7,7 @@
 - Consolidated MCP terminal output reads into `read_terminal_output` with explicit `recent`, `delta`, and `wait` modes.
 - Saved-profile external connections now require both the profile ID and connection type, avoiding ambiguity when SSH and Telnet profiles share an ID.
 - Reworked `exaterm-cli` to call the typed external-control API directly while keeping its existing JSON output and exit-code contract.
+- Simplified the MCP stdio adapter so MCP tool dispatch now stays at the compatibility boundary and calls the shared external-control API directly.
 
 ### Added
 

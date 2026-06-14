@@ -8,8 +8,6 @@ use tokio::{
 };
 use uuid::Uuid;
 
-use super::backend::*;
-use super::control::*;
 use super::service::*;
 use crate::config::{AppConfig, SavedConnection};
 use crate::external_control::protocol::{
@@ -96,10 +94,10 @@ async fn control_service_dispatches_to_in_process_backend() {
         .terminals
         .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
         .await;
-    let control = McpControlService::in_process(runtime);
+    let server = ExaTermMcpServer::with_service(ExternalControlService::new(runtime));
 
-    let result = control
-        .call_tool("list_terminal_sessions", json!({}))
+    let result = server
+        .call_tool_json("list_terminal_sessions", json!({}))
         .await
         .unwrap();
 
@@ -109,10 +107,10 @@ async fn control_service_dispatches_to_in_process_backend() {
 
 #[tokio::test]
 async fn control_service_rejects_unknown_tools() {
-    let control = McpControlService::in_process(test_runtime());
+    let server = ExaTermMcpServer::with_service(ExternalControlService::new(test_runtime()));
 
-    let error = control
-        .call_tool("missing_tool", json!({}))
+    let error = server
+        .call_tool_json("missing_tool", json!({}))
         .await
         .unwrap_err();
 
@@ -239,9 +237,9 @@ async fn proxy_control_call_preserves_structured_result() {
 #[tokio::test]
 async fn stdio_server_smoke_initialize_and_tools_list() {
     let (server_transport, client_transport) = tokio::io::duplex(16 * 1024);
-    let control = McpControlService::in_process(test_runtime());
+    let service = ExternalControlService::new(test_runtime());
     tokio::spawn(async move {
-        let server = ExaTermMcpServer::with_control(control)
+        let server = ExaTermMcpServer::with_service(service)
             .serve(server_transport)
             .await
             .expect("stdio server should initialize");
@@ -659,9 +657,9 @@ fn prepare_saved_profile_uses_id_and_connection_type() {
 
 #[tokio::test]
 async fn backend_requires_saved_profile_connection_type() {
-    let backend = InProcessMcpBackend::new(test_runtime());
-    let error = backend
-        .call_tool(
+    let server = ExaTermMcpServer::with_service(ExternalControlService::new(test_runtime()));
+    let error = server
+        .call_tool_json(
             "connect_saved_profile",
             json!({
                 "profile_id": "router",
@@ -1164,10 +1162,10 @@ async fn service_wait_without_cursor_starts_from_current_output() {
 
 #[tokio::test]
 async fn backend_rejects_invalid_read_terminal_output_mode_arguments() {
-    let backend = InProcessMcpBackend::new(test_runtime());
+    let server = ExaTermMcpServer::with_service(ExternalControlService::new(test_runtime()));
 
-    let missing_cursor = backend
-        .call_tool(
+    let missing_cursor = server
+        .call_tool_json(
             "read_terminal_output",
             json!({
                 "mode": "delta",
@@ -1178,8 +1176,8 @@ async fn backend_rejects_invalid_read_terminal_output_mode_arguments() {
         .unwrap_err();
     assert!(missing_cursor.message.contains("cursor"));
 
-    let unexpected_cursor = backend
-        .call_tool(
+    let unexpected_cursor = server
+        .call_tool_json(
             "read_terminal_output",
             json!({
                 "mode": "recent",

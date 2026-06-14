@@ -1,9 +1,7 @@
 use rmcp::{transport, ServiceExt};
 
 use crate::{
-    config,
-    external_control::client::ExternalControlClient,
-    mcp::{backend::ProxyMcpBackend, service::ExaTermMcpServer},
+    config, external_control::client::ExternalControlClient, mcp::service::ExaTermMcpServer,
 };
 
 pub async fn run_stdio_proxy() -> Result<(), String> {
@@ -17,14 +15,11 @@ pub async fn run_stdio_proxy() -> Result<(), String> {
 
     let client = ExternalControlClient::new();
     client.discover_or_start_gui().await?;
-    let control = crate::mcp::control::McpControlService::new(ProxyMcpBackend::new(client));
-    run_stdio_server(control).await
+    run_stdio_server(client).await
 }
 
-pub(super) async fn run_stdio_server(
-    control: crate::mcp::control::McpControlService,
-) -> Result<(), String> {
-    let server = ExaTermMcpServer::with_control(control);
+pub(super) async fn run_stdio_server(client: ExternalControlClient) -> Result<(), String> {
+    let server = ExaTermMcpServer::with_client(client);
     let running = server
         .serve(transport::stdio())
         .await
