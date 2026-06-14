@@ -426,7 +426,7 @@ fn list_connection_profiles_skips_mcp_disabled_profiles() {
             id: "telnet-disabled".into(),
             connection_type: "telnet".into(),
             host: Some("192.0.2.20".into()),
-            mcp_enabled: false,
+            external_control_enabled: false,
             ..SavedConnection::default()
         },
     ];
@@ -481,7 +481,7 @@ fn prepare_saved_profile_rejects_mcp_disabled_profiles() {
         host: Some("192.0.2.10".into()),
         username: Some("admin".into()),
         auth_method: Some("password".into()),
-        mcp_enabled: false,
+        external_control_enabled: false,
         ..SavedConnection::default()
     }];
 
@@ -682,7 +682,7 @@ fn prepare_saved_profile_allows_disabled_jump_profile_when_target_is_enabled() {
             port: Some(2222),
             username: Some("jump".into()),
             auth_method: Some("password".into()),
-            mcp_enabled: false,
+            external_control_enabled: false,
             ..SavedConnection::default()
         },
         SavedConnection {

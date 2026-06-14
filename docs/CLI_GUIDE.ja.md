@@ -20,21 +20,21 @@ exaterm-cli --version
 
 ```json
 {
-  "mcp": {
+  "external_control": {
     "enabled": true,
     "cli_enabled": true,
-    "stdio_enabled": false,
+    "mcp_enabled": false,
     "connect_enabled": false
   }
 }
 ```
 
-- `mcp.enabled` は MCP と CLI に共通するマスター許可です。
-- `mcp.cli_enabled` は `exaterm-cli` を許可します。
-- `mcp.connect_enabled` はプロファイル接続とシリアル接続も許可します。
-- `mcp.stdio_enabled` は `exaterm-mcp` だけを制御します。
+- `external_control.enabled` は CLI と MCP 互換アクセスに共通するマスター許可です。
+- `external_control.cli_enabled` は推奨される主要経路である `exaterm-cli` を許可します。
+- `external_control.connect_enabled` はプロファイル接続とシリアル接続も許可します。
+- `external_control.mcp_enabled` は `exaterm-mcp` 互換アダプターだけを制御します。
 
-設定の正本は[設定ガイド](CONFIG_JSON_GUIDE.ja.md#mcp)です。設定変更後は ExaTerm を再起動します。
+設定の正本は[設定ガイド](CONFIG_JSON_GUIDE.ja.md#external_control)です。設定変更後は ExaTerm を再起動します。
 
 ## コマンド
 
@@ -65,8 +65,8 @@ exaterm-cli profiles connect --type telnet --profile-id router
 ```
 
 `profiles list` で `--type` を省略すると、SSH と Telnet の両方を返します。
-ID と種別の両方が一致する必要があります。接続には `mcp.connect_enabled=true` と、
-対象プロファイルの MCP 許可が必要です。SSH パスワードや暗号化鍵のパスフレーズは
+ID と種別の両方が一致する必要があります。接続には `external_control.connect_enabled=true` と、
+対象プロファイルの外部制御許可が必要です。SSH パスワードや暗号化鍵のパスフレーズは
 CLI 引数では受け取らず、ExaTerm UI で入力します。
 
 ### シリアル接続
@@ -162,8 +162,8 @@ ExaTerm が停止中の場合、CLI は通常の表示される GUI を起動し
 
 ## トラブルシューティング
 
-- `cli_disabled`: `mcp.enabled` と `mcp.cli_enabled` を有効にして再起動します。
-- プロファイル/シリアル接続が拒否される: `mcp.connect_enabled` を有効にします。
+- `cli_disabled`: `external_control.enabled` と `external_control.cli_enabled` を有効にして再起動します。
+- プロファイル/シリアル接続が拒否される: `external_control.connect_enabled` を有効にします。
 - セッションが見つからない: `sessions list` の `session_id` を使用します。
 - 待機がタイムアウトする: `timed_out` と出力を確認し、返された `cursor` から継続します。
 - GUI を利用できない: `exaterm.exe` が CLI と同じインストール先にあり、起動できるか確認します。

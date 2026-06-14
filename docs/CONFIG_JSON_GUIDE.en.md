@@ -29,7 +29,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 ```json
 {
-  "config_version": 1,
+  "config_version": 2,
   "language": "system",
   "ai": {
     "azure_openai_enabled": false,
@@ -41,10 +41,10 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "default_model": "gpt-4o",
     "debug_log_enabled": false
   },
-  "mcp": {
+  "external_control": {
     "enabled": false,
     "connect_enabled": false,
-    "stdio_enabled": false,
+    "mcp_enabled": false,
     "cli_enabled": false
   },
   "terminal": {
@@ -67,10 +67,10 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 | Parameter           | Type   | Default    | Description                                                                                                                                                |
 | ------------------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`    | number | `1`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
+| `config_version`    | number | `2`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
 | `language`          | string | `"system"` | Display language. Use `"system"` to follow the OS language, `"en"` for English, or `"ja"` for Japanese. Unsupported system languages fall back to English. |
 | `ai`                | object | See below  | AI assistant settings.                                                                                                                                     |
-| `mcp`               | object | See below  | Local MCP and CLI settings for external AI agent terminal control.                                                                                         |
+| `external_control`  | object | See below  | Local external-control settings for the Terminal CLI and MCP compatibility adapter.                                                                        |
 | `terminal`          | object | See below  | Terminal display and logging settings.                                                                                                                     |
 | `ssh`               | object | See below  | SSH connection compatibility settings.                                                                                                                     |
 | `saved_connections` | array  | `[]`       | Saved SSH and Telnet connection profiles. Profiles can be created, selected, and deleted from the connection dialog.                                       |
@@ -111,16 +111,18 @@ Set `ai.debug_log_enabled` to `true` only when you need to troubleshoot AI chat 
 | OpenRouter   | `openai/gpt-4o`, `anthropic/claude-sonnet-4`            |
 | Ollama       | Model names installed in your local Ollama instance     |
 
-## mcp
+## external_control
 
-| Parameter             | Type    | Default | Description                                                                                                                                                                                                                                                                    |
-| --------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `mcp.enabled`         | boolean | `false` | Master permission for local MCP and CLI access. Setting it to `true` does not enable an interface by itself; enable `mcp.stdio_enabled` or `mcp.cli_enabled` separately.                                                                                                       |
-| `mcp.connect_enabled` | boolean | `false` | When set to `true`, trusted MCP and CLI clients can list saved SSH/Telnet profiles, open new ExaTerm tabs from those profiles, list Serial ports, and open Serial consoles. SSH credentials are entered in the ExaTerm UI and are not exposed to the external client or saved. |
-| `mcp.stdio_enabled`   | boolean | `false` | When set to `true` with `mcp.enabled=true`, the `exaterm-mcp` stdio proxy can be used by local MCP clients.                                                                                                                                                                    |
-| `mcp.cli_enabled`     | boolean | `false` | When set to `true` with `mcp.enabled=true`, trusted local programs can use `exaterm-cli` to call the shared terminal-control operations and receive JSON results. See the [CLI guide](CLI_GUIDE.en.md).                                                                        |
+| Parameter                          | Type    | Default | Description                                                                                                                                                                                                                                                  |
+| ---------------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `external_control.enabled`         | boolean | `false` | Master permission for local external-control access. Setting it to `true` does not enable an interface by itself; enable `external_control.cli_enabled` or `external_control.mcp_enabled` separately.                                                        |
+| `external_control.connect_enabled` | boolean | `false` | When set to `true`, trusted external-control clients can list saved SSH/Telnet profiles, open new ExaTerm tabs from those profiles, list Serial ports, and open Serial consoles. SSH credentials are entered in the ExaTerm UI and are not exposed or saved. |
+| `external_control.mcp_enabled`     | boolean | `false` | When set to `true` with `external_control.enabled=true`, local MCP clients can use the `exaterm-mcp` compatibility adapter.                                                                                                                                  |
+| `external_control.cli_enabled`     | boolean | `false` | When set to `true` with `external_control.enabled=true`, trusted local programs can use `exaterm-cli` to call the shared terminal-control operations and receive JSON results. See the [CLI guide](CLI_GUIDE.en.md).                                         |
 
-The HTTP MCP transport has been removed. Existing HTTP-only `mcp.host` and `mcp.port` values in older config files are ignored and will be omitted the next time ExaTerm saves the settings. Users who previously used HTTP MCP must manually enable `mcp.enabled=true` and `mcp.stdio_enabled=true`, then configure their MCP client to launch `exaterm-mcp`.
+Older config files may still contain the legacy `mcp` object and `saved_connections[*].mcp_enabled`. ExaTerm migrates those fields automatically when loading the config. If both legacy and new settings are present, the new `external_control` fields take priority and the legacy values are used only to fill missing values. After ExaTerm saves the config, only the new `external_control` and `external_control_enabled` fields remain.
+
+The HTTP MCP transport has been removed. Existing HTTP-only `mcp.host` and `mcp.port` values in older config files are ignored and will be omitted the next time ExaTerm saves the settings. Users who previously used HTTP MCP must manually enable `external_control.enabled=true` and `external_control.mcp_enabled=true`, then configure their MCP client to launch `exaterm-mcp`.
 
 ### MCP Tools
 
@@ -156,9 +158,9 @@ Example output reads:
 }
 ```
 
-When `mcp.connect_enabled` is also `true`, external clients can call these additional tools:
+When `external_control.connect_enabled` is also `true`, external clients can call these additional tools:
 
-- `list_connection_profiles`: lists saved SSH/Telnet profiles that individually allow MCP access. Private key paths and credentials are not returned.
+- `list_connection_profiles`: lists saved SSH/Telnet profiles that individually allow external control access. Private key paths and credentials are not returned.
 - `connect_saved_profile`: opens a new SSH/Telnet session from a saved profile and shows it as a tab in ExaTerm. It requires both `profile_id` and `connection_type` (`"ssh"` or `"telnet"`), so profiles of different types may share an ID. SSH credentials are requested in the ExaTerm UI.
 - `list_serial_ports`: lists currently available Serial ports.
 - `connect_serial_console`: opens a new Serial console session from explicit port and line settings and shows it as a tab in ExaTerm. The port name must match an available Serial port exactly.
@@ -169,7 +171,7 @@ The `wait` mode and `run_terminal_command` wait for up to 60 seconds. `run_termi
 
 The previous `read_terminal_output_delta` and `wait_terminal_output` tools were removed. Replace them with `read_terminal_output` using `mode: "delta"` and `mode: "wait"`, respectively.
 
-The MCP server and CLI do not read saved credentials, expose API keys, or read log files directly. External clients can explicitly start and stop session logs, but they receive only the log state and file path, not the log contents. New SSH/Telnet connections are limited to saved profiles, Serial connections require an explicit available port name, and all new external connections require `mcp.connect_enabled=true`. Saved profiles can opt out with `saved_connections[*].mcp_enabled=false`. SSH connections still enforce known-host checks and request required credentials in the ExaTerm UI. Terminal output and log files can contain sensitive information, so enable external control only for trusted local clients.
+The MCP compatibility adapter and CLI do not read saved credentials, expose API keys, or read log files directly. External clients can explicitly start and stop session logs, but they receive only the log state and file path, not the log contents. New SSH/Telnet connections are limited to saved profiles, Serial connections require an explicit available port name, and all new external connections require `external_control.connect_enabled=true`. Saved profiles can opt out with `saved_connections[*].external_control_enabled=false`. SSH connections still enforce known-host checks and request required credentials in the ExaTerm UI. Terminal output and log files can contain sensitive information, so enable external control only for trusted local clients.
 
 ## terminal
 
@@ -229,22 +231,22 @@ Internal SSH extension markers, such as strict key exchange and extension info m
 
 ## saved_connections
 
-`saved_connections` is an array of saved SSH and Telnet connection profiles. Profiles can be managed from the connection dialog. Serial profiles are not currently supported. Passwords, private key contents, key passphrases, and other credentials are not stored in this section. Profile memos are stored as plaintext and may be returned by `list_connection_profiles` when MCP profile connections are enabled, so do not put secrets in them. Existing profiles treat a missing `mcp_enabled` value as `true`.
+`saved_connections` is an array of saved SSH and Telnet connection profiles. Profiles can be managed from the connection dialog. Serial profiles are not currently supported. Passwords, private key contents, key passphrases, and other credentials are not stored in this section. Profile memos are stored as plaintext and may be returned by `list_connection_profiles` when external profile connections are enabled, so do not put secrets in them. Existing profiles treat a missing `external_control_enabled` value as `true`.
 
-| Parameter          | Type           | Description                                                                                                                                            |
-| ------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`               | string         | Profile name and identifier.                                                                                                                           |
-| `connection_type`  | string         | Connection type. Supported profile values are `"ssh"` and `"telnet"`.                                                                                  |
-| `host`             | string or null | SSH or Telnet target host.                                                                                                                             |
-| `port`             | number or null | SSH or Telnet target port.                                                                                                                             |
-| `username`         | string or null | SSH username. Not used for Telnet profiles.                                                                                                            |
-| `encoding`         | string or null | Initial terminal display encoding for the profile. Supported values are `"utf-8"`, `"shift-jis"`, and `"euc-jp"`. Missing values default to `"utf-8"`. |
-| `terminal_mode`    | string or null | Initial terminal mode for the profile. Supported values are `"general"` and `"cisco_ios"`. Missing values default to `"general"`.                      |
-| `auth_method`      | string or null | SSH authentication method. Supported values are `"password"` and `"public_key"`. Missing values default to `"password"`. Not used for Telnet profiles. |
-| `private_key_path` | string or null | Private key file path used with SSH `"public_key"` authentication, such as an `id_ed25519` file. The file contents and passphrase are not stored.      |
-| `jump_profile_id`  | string or null | SSH jump host profile ID. The referenced profile must be a saved SSH profile. Only one jump host is supported; nested jump hosts are rejected.         |
-| `memo`             | string or null | Optional plaintext profile memo, such as the device model, role, or operational notes. Non-empty memos may be returned by MCP profile listing.         |
-| `mcp_enabled`      | boolean        | Whether trusted MCP clients may list and open this saved profile. Missing values default to `true`.                                                    |
+| Parameter                  | Type           | Description                                                                                                                                                 |
+| -------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                       | string         | Profile name and identifier.                                                                                                                                |
+| `connection_type`          | string         | Connection type. Supported profile values are `"ssh"` and `"telnet"`.                                                                                       |
+| `host`                     | string or null | SSH or Telnet target host.                                                                                                                                  |
+| `port`                     | number or null | SSH or Telnet target port.                                                                                                                                  |
+| `username`                 | string or null | SSH username. Not used for Telnet profiles.                                                                                                                 |
+| `encoding`                 | string or null | Initial terminal display encoding for the profile. Supported values are `"utf-8"`, `"shift-jis"`, and `"euc-jp"`. Missing values default to `"utf-8"`.      |
+| `terminal_mode`            | string or null | Initial terminal mode for the profile. Supported values are `"general"` and `"cisco_ios"`. Missing values default to `"general"`.                           |
+| `auth_method`              | string or null | SSH authentication method. Supported values are `"password"` and `"public_key"`. Missing values default to `"password"`. Not used for Telnet profiles.      |
+| `private_key_path`         | string or null | Private key file path used with SSH `"public_key"` authentication, such as an `id_ed25519` file. The file contents and passphrase are not stored.           |
+| `jump_profile_id`          | string or null | SSH jump host profile ID. The referenced profile must be a saved SSH profile. Only one jump host is supported; nested jump hosts are rejected.              |
+| `memo`                     | string or null | Optional plaintext profile memo, such as the device model, role, or operational notes. Non-empty memos may be returned by external-control profile listing. |
+| `external_control_enabled` | boolean        | Whether trusted CLI and MCP clients may list and open this saved profile. Missing values default to `true`.                                                 |
 
 Example:
 

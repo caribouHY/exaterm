@@ -21,10 +21,10 @@ type LanguageOption = {
 };
 
 const MASKED_VALUE = "••••••••";
-const DEFAULT_MCP_CONFIG = {
+const DEFAULT_EXTERNAL_CONTROL_CONFIG = {
   enabled: false,
   connect_enabled: false,
-  stdio_enabled: false,
+  mcp_enabled: false,
   cli_enabled: false,
 };
 
@@ -50,12 +50,12 @@ const LANGUAGE_OPTIONS: LanguageOption[] = [
   { value: "ja", label: "日本語" },
 ];
 
-function normalizeMcpConfig(config: AppConfig): AppConfig {
+function normalizeExternalControlConfig(config: AppConfig): AppConfig {
   return {
     ...config,
-    mcp: {
-      ...DEFAULT_MCP_CONFIG,
-      ...(config.mcp ?? {}),
+    external_control: {
+      ...DEFAULT_EXTERNAL_CONTROL_CONFIG,
+      ...(config.external_control ?? {}),
     },
   };
 }
@@ -87,7 +87,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
 
   useEffect(() => {
     invoke<AppConfig>("config_load")
-      .then((cfg) => setConfig(normalizeMcpConfig(cfg)))
+      .then((cfg) => setConfig(normalizeExternalControlConfig(cfg)))
       .catch(() => {});
     refreshSecretStatus();
   }, []);
@@ -96,7 +96,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     if (!config) return;
     try {
       setError("");
-      const normalizedConfig = normalizeMcpConfig(config);
+      const normalizedConfig = normalizeExternalControlConfig(config);
       setConfig(normalizedConfig);
       await invoke("config_save", { config: normalizedConfig });
 
@@ -363,22 +363,8 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           <label className="toggle">
             <input
               type="checkbox"
-              checked={Boolean(config.mcp?.enabled)}
-              onChange={(e) => update("mcp.enabled", e.target.checked)}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.mcp_stdio_enabled")}</span>
-            <small>{t("settings.mcp_stdio_enabled_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.mcp?.stdio_enabled)}
-              onChange={(e) => update("mcp.stdio_enabled", e.target.checked)}
+              checked={Boolean(config.external_control?.enabled)}
+              onChange={(e) => update("external_control.enabled", e.target.checked)}
             />
             <span className="toggle-track" />
           </label>
@@ -391,8 +377,8 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           <label className="toggle">
             <input
               type="checkbox"
-              checked={Boolean(config.mcp?.cli_enabled)}
-              onChange={(e) => update("mcp.cli_enabled", e.target.checked)}
+              checked={Boolean(config.external_control?.cli_enabled)}
+              onChange={(e) => update("external_control.cli_enabled", e.target.checked)}
             />
             <span className="toggle-track" />
           </label>
@@ -405,8 +391,26 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           <label className="toggle">
             <input
               type="checkbox"
-              checked={Boolean(config.mcp?.connect_enabled)}
-              onChange={(e) => update("mcp.connect_enabled", e.target.checked)}
+              checked={Boolean(config.external_control?.connect_enabled)}
+              onChange={(e) => update("external_control.connect_enabled", e.target.checked)}
+            />
+            <span className="toggle-track" />
+          </label>
+        </div>
+        <div className="settings-section__title" style={{ marginTop: 20 }}>
+          {t("settings.mcp_adapter_title")}
+        </div>
+        <p className="settings-help">{t("settings.mcp_adapter_desc")}</p>
+        <div className="settings-toggle-row">
+          <div className="settings-toggle-label">
+            <span>{t("settings.mcp_stdio_enabled")}</span>
+            <small>{t("settings.mcp_stdio_enabled_desc")}</small>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(config.external_control?.mcp_enabled)}
+              onChange={(e) => update("external_control.mcp_enabled", e.target.checked)}
             />
             <span className="toggle-track" />
           </label>

@@ -252,10 +252,10 @@ pub async fn run_terminal_cli() -> i32 {
             return 1;
         }
     };
-    if !app_config.mcp.enabled || !app_config.mcp.cli_enabled {
+    if !app_config.external_control.enabled || !app_config.external_control.cli_enabled {
         print_error(
             "cli_disabled",
-            "ExaTerm CLI is disabled. Set mcp.enabled=true and mcp.cli_enabled=true.",
+            "ExaTerm CLI is disabled. Set external_control.enabled=true and external_control.cli_enabled=true.",
         );
         return 1;
     }

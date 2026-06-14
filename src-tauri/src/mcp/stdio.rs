@@ -6,9 +6,9 @@ use crate::{
 
 pub async fn run_stdio_proxy() -> Result<(), String> {
     let config = config::config_read()?;
-    if !config.mcp.enabled || !config.mcp.stdio_enabled {
+    if !config.external_control.enabled || !config.external_control.mcp_enabled {
         return Err(
-            "MCP stdio transport is disabled. Set mcp.enabled=true and mcp.stdio_enabled=true."
+            "MCP compatibility adapter is disabled. Set external_control.enabled=true and external_control.mcp_enabled=true."
                 .into(),
         );
     }

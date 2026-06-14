@@ -8,6 +8,8 @@
 - Saved-profile external connections now require both the profile ID and connection type, avoiding ambiguity when SSH and Telnet profiles share an ID.
 - Reworked `exaterm-cli` to call the typed external-control API directly while keeping its existing JSON output and exit-code contract.
 - Simplified the MCP stdio adapter so MCP tool dispatch now stays at the compatibility boundary and calls the shared external-control API directly.
+- Migrated user settings from `mcp` to `external_control`, including automatic migration of saved-profile external access flags.
+- Reorganized Settings so Terminal CLI is presented as the primary external-control path and `exaterm-mcp` as an MCP compatibility adapter.
 
 ### Added
 
@@ -15,6 +17,7 @@
 - Added an installable `exaterm-cli` Agent Skill for Codex, Claude Code, GitHub Copilot, and other Agent Skills-compatible clients.
 - Added optional SSH or Telnet filtering to `exaterm-cli profiles list`.
 - Added English and Japanese terminal CLI guides.
+- Added updated English and Japanese config guidance for the `external_control` settings.
 - Added `exaterm-cli` to the packaged Windows sidecar binaries so it ships alongside `exaterm-mcp`.
 
 ### Removed
