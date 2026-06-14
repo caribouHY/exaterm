@@ -10,19 +10,19 @@ Enable the shared external-control service and CLI access in ExaTerm Settings, o
 
 ```json
 {
-  "mcp": {
+  "external_control": {
     "enabled": true,
     "cli_enabled": true,
-    "stdio_enabled": false,
+    "mcp_enabled": false,
     "connect_enabled": false
   }
 }
 ```
 
-- `mcp.enabled` is the master permission for MCP and CLI access.
-- `mcp.cli_enabled` permits CLI operations.
-- `mcp.connect_enabled` additionally permits saved-profile and serial connections.
-- `mcp.stdio_enabled` affects `exaterm-mcp`, not `exaterm-cli`.
+- `external_control.enabled` is the master permission for CLI and MCP compatibility access.
+- `external_control.cli_enabled` permits CLI operations and is the recommended primary path.
+- `external_control.connect_enabled` additionally permits saved-profile and serial connections.
+- `external_control.mcp_enabled` affects `exaterm-mcp`, not `exaterm-cli`.
 
 Restart ExaTerm after changing these settings. Individual saved profiles must also allow MCP
 access before the CLI can list or connect them.
@@ -57,7 +57,8 @@ always retain both the returned profile ID and connection type. `--type` accepts
 or `telnet`.
 
 `profiles connect` requires an exact returned ID and type. `--cols` and `--rows` each accept
-values from 1 through 1000. Profile connections require `mcp.connect_enabled=true`.
+values from 1 through 1000. Profile connections require
+`external_control.connect_enabled=true`.
 
 SSH passwords and encrypted private-key passphrases are entered through the visible ExaTerm
 UI and must never be supplied as CLI arguments.
@@ -109,7 +110,7 @@ the remote interaction, so follow the host agent's normal approval policy before
 ## Serial Connections
 
 `serial ports` returns a `ports` array. Pass an exact returned port name to `serial connect`.
-Serial connections require `mcp.connect_enabled=true`.
+Serial connections require `external_control.connect_enabled=true`.
 
 | Option             | Default     | Allowed values                 |
 | ------------------ | ----------- | ------------------------------ |
@@ -307,9 +308,9 @@ active sessions and discard state.
 
 ## Recovery
 
-- `cli_disabled`: Enable `mcp.enabled` and `mcp.cli_enabled`, then restart ExaTerm.
-- Connection rejected: Enable `mcp.connect_enabled` and verify that the selected saved
-  profile allows MCP access.
+- `cli_disabled`: Enable `external_control.enabled` and `external_control.cli_enabled`, then restart ExaTerm.
+- Connection rejected: Enable `external_control.connect_enabled` and verify that the selected saved
+  profile allows external control access.
 - Session not found: Run `sessions list` again and select a current returned session ID.
 - Profile not found or ambiguous: Run `profiles list`, retain both ID and type, and retry
   only with an exact match.

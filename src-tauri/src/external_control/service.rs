@@ -147,7 +147,7 @@ impl ExternalControlService {
             Ok(())
         } else {
             Err(permission_denied(
-                "外部制御からの新規接続は無効です。mcp.connect_enabled=true にしてください",
+                "外部制御からの新規接続は無効です。external_control.connect_enabled=true にしてください",
             ))
         }
     }
@@ -161,7 +161,7 @@ impl ExternalControlService {
         #[cfg(not(test))]
         {
             config::config_read()
-                .map(|config| config.mcp.connect_enabled)
+                .map(|config| config.external_control.connect_enabled)
                 .map_err(|error| internal_error(format!("設定読み込みエラー: {error}")))
         }
     }
@@ -682,7 +682,7 @@ pub(crate) fn normalize_profile_string(value: Option<&str>) -> Option<String> {
 }
 
 pub(crate) fn profile_external_control_enabled(profile: &SavedConnection) -> bool {
-    profile.mcp_enabled
+    profile.external_control_enabled
 }
 
 pub(crate) fn normalize_profile_encoding(value: Option<&str>) -> String {

@@ -20,21 +20,21 @@ Enable both external control and the CLI in Settings, or configure:
 
 ```json
 {
-  "mcp": {
+  "external_control": {
     "enabled": true,
     "cli_enabled": true,
-    "stdio_enabled": false,
+    "mcp_enabled": false,
     "connect_enabled": false
   }
 }
 ```
 
-- `mcp.enabled` is the master permission for MCP and CLI access.
-- `mcp.cli_enabled` permits `exaterm-cli`.
-- `mcp.connect_enabled` additionally permits profile and Serial connection commands.
-- `mcp.stdio_enabled` controls only `exaterm-mcp`.
+- `external_control.enabled` is the master permission for CLI and MCP compatibility access.
+- `external_control.cli_enabled` permits `exaterm-cli` and is the recommended primary path.
+- `external_control.connect_enabled` additionally permits profile and Serial connection commands.
+- `external_control.mcp_enabled` controls only the `exaterm-mcp` compatibility adapter.
 
-See the [config guide](CONFIG_JSON_GUIDE.en.md#mcp) for the authoritative setting details.
+See the [config guide](CONFIG_JSON_GUIDE.en.md#external_control) for the authoritative setting details.
 Restart ExaTerm after changing these settings.
 
 ## Commands
@@ -67,8 +67,9 @@ exaterm-cli profiles connect --type telnet --profile-id router
 
 Omit `--type` from `profiles list` to return both SSH and Telnet profiles.
 The ID and type must match one profile. Profile connections require
-`mcp.connect_enabled=true`, and the selected profile must allow MCP access. SSH passwords
-and encrypted key passphrases are requested in the ExaTerm UI, never as CLI arguments.
+`external_control.connect_enabled=true`, and the selected profile must allow external
+control access. SSH passwords and encrypted key passphrases are requested in the ExaTerm
+UI, never as CLI arguments.
 
 ### Serial Connections
 
@@ -163,8 +164,8 @@ plaintext files and remain opt-in.
 
 ## Troubleshooting
 
-- `cli_disabled`: enable `mcp.enabled` and `mcp.cli_enabled`, then restart ExaTerm.
-- Profile or Serial connection rejected: enable `mcp.connect_enabled`.
+- `cli_disabled`: enable `external_control.enabled` and `external_control.cli_enabled`, then restart ExaTerm.
+- Profile or Serial connection rejected: enable `external_control.connect_enabled`.
 - Session not found: run `sessions list` and use the returned session ID.
 - Wait timed out: inspect `timed_out` and the returned output, then continue from `cursor`.
 - GUI unavailable: confirm `exaterm.exe` is installed beside `exaterm-cli.exe` and can start.

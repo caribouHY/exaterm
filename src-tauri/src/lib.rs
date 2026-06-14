@@ -114,10 +114,10 @@ pub fn run() {
                 Ok(cfg) => {
                     terminal_control_state
                         .set_output_limit_from_scrollback(cfg.terminal.scrollback);
-                    if cfg.mcp.enabled {
+                    if cfg.external_control.enabled {
                         let runtime = ExternalControlRuntime {
                             config: external_control::service::ExternalControlPermissions::new(
-                                cfg.mcp.connect_enabled,
+                                cfg.external_control.connect_enabled,
                             ),
                             #[cfg(not(test))]
                             app: Some(app.handle().clone()),
@@ -136,7 +136,7 @@ pub fn run() {
                 }
                 Err(error) => {
                     log::warn!(
-                        "MCP runtime not started because config could not be loaded: {error}"
+                        "External control runtime not started because config could not be loaded: {error}"
                     );
                 }
             }

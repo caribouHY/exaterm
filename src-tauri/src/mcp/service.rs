@@ -68,7 +68,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "list_connection_profiles",
-        description = "List saved SSH and Telnet connection profiles when MCP profile connections are enabled. Secrets and private key paths are not returned."
+        description = "List saved SSH and Telnet connection profiles when external profile connections are enabled. Secrets and private key paths are not returned."
     )]
     async fn list_connection_profiles(&self) -> Result<CallToolResult, McpError> {
         self.call_tool("list_connection_profiles", json!({})).await
@@ -76,7 +76,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "connect_saved_profile",
-        description = "Open a new ExaTerm SSH or Telnet session selected by profile ID and connection type when MCP profile connections are enabled. SSH passwords and encrypted key passphrases are requested in the ExaTerm UI."
+        description = "Open a new ExaTerm SSH or Telnet session selected by profile ID and connection type when external profile connections are enabled. SSH passwords and encrypted key passphrases are requested in the ExaTerm UI."
     )]
     async fn connect_saved_profile(
         &self,
@@ -88,7 +88,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "list_serial_ports",
-        description = "List available Serial console ports when MCP profile connections are enabled."
+        description = "List available Serial console ports when external profile connections are enabled."
     )]
     async fn list_serial_ports(&self) -> Result<CallToolResult, McpError> {
         self.call_tool("list_serial_ports", json!({})).await
@@ -96,7 +96,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "connect_serial_console",
-        description = "Open a new ExaTerm Serial console session from explicit port and line settings when MCP profile connections are enabled."
+        description = "Open a new ExaTerm Serial console session from explicit port and line settings when external profile connections are enabled."
     )]
     async fn connect_serial_console(
         &self,

@@ -1,6 +1,6 @@
 ---
 name: exaterm-cli
-description: Control ExaTerm SSH, Telnet, and serial terminal sessions through the Windows exaterm-cli JSON interface. Use when an agent needs to inspect active ExaTerm sessions, discover and connect approved saved profiles, open serial consoles, read terminal output, run commands, send interactive input, or control opt-in session logging without using MCP.
+description: Control ExaTerm SSH, Telnet, and serial terminal sessions through the Windows exaterm-cli JSON interface. Use when an agent needs to inspect active ExaTerm sessions, discover and connect approved saved profiles, open serial consoles, read terminal output, run commands, send interactive input, or control opt-in session logging through ExaTerm's recommended primary external-control path.
 ---
 
 # ExaTerm CLI
