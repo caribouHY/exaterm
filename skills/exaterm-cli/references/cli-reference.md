@@ -3,8 +3,8 @@
 ## Requirements
 
 `exaterm-cli.exe` is distributed with supported Windows builds of ExaTerm and is normally
-installed beside `exaterm.exe`. Add that directory to the current PowerShell `PATH` or invoke
-the executable by its full path.
+installed beside `exaterm.exe` and `exaterm-mcp.exe`. Add that directory to the current
+PowerShell `PATH` or invoke the executable by its full path.
 
 Enable the shared external-control service and CLI access in ExaTerm Settings, or configure:
 

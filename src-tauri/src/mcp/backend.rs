@@ -45,30 +45,6 @@ pub(super) struct ProxyMcpBackend {
     client: ExternalControlClient,
 }
 
-#[derive(Clone, Default)]
-pub(crate) struct ControlClient {
-    client: ExternalControlClient,
-}
-
-impl ControlClient {
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
-    pub(crate) async fn discover_or_start_gui(&self) -> Result<(), String> {
-        self.client.discover_or_start_gui().await
-    }
-
-    pub(crate) async fn call_tool(&self, name: &str, args: Value) -> Result<Value, McpError> {
-        let request = request_from_tool(name, args)?;
-        self.client
-            .call(request)
-            .await
-            .map(ExternalControlResponse::into_value)
-            .map_err(external_error_to_mcp)
-    }
-}
-
 impl ProxyMcpBackend {
     pub(super) fn new(client: ExternalControlClient) -> Self {
         Self { client }

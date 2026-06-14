@@ -20,8 +20,8 @@ option limits, result fields, setup, or troubleshooting details are needed.
    ```
 
    If it is not on `PATH`, look for it beside the installed ExaTerm executable, normally
-   under `C:\Program Files\ExaTerm`. Do not download or install software unless the user
-   requested it.
+   under `C:\Program Files\ExaTerm` beside `exaterm.exe` and `exaterm-mcp.exe`. Do not
+   download or install software unless the user requested it.
 
 2. Run `sessions list` and parse the JSON before acting on a session:
 

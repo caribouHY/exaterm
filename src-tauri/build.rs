@@ -15,8 +15,10 @@ fn ensure_sidecar_paths_exist() {
     let directory = PathBuf::from("binaries");
     fs::create_dir_all(&directory).expect("create sidecar binary directory");
 
-    let path = directory.join(format!("exaterm-mcp-{target}{extension}"));
-    if !path.exists() {
-        fs::write(path, []).expect("create sidecar placeholder");
+    for binary in ["exaterm-mcp", "exaterm-cli"] {
+        let path = directory.join(format!("{binary}-{target}{extension}"));
+        if !path.exists() {
+            fs::write(path, []).expect("create sidecar placeholder");
+        }
     }
 }
