@@ -43,7 +43,7 @@ Avoid changes that remount terminal views or drop active tab state unless the ta
   `external_control`, and saves user settings.
 - `src-tauri/src/logger.rs` handles optional plaintext terminal session logs and the log index.
 - `src-tauri/src/external_control/` owns the typed terminal-operation API, GUI-local control protocol, client discovery, and GUI startup flow used by `exaterm-mcp` and `exaterm-cli`.
-- `src-tauri/src/mcp/` adapts the typed external-control API to the existing MCP tool contract.
+- `src-tauri/src/mcp/` adapts the typed external-control API to the existing MCP tool behavior.
 - `src-tauri/src/terminal_cli.rs` defines the typed JSON terminal CLI.
 
 When adding a Tauri command, implement it in the responsible backend module and register it in `src-tauri/src/lib.rs`.

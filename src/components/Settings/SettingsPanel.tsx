@@ -400,7 +400,6 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         <div className="settings-section__title" style={{ marginTop: 20 }}>
           {t("settings.mcp_adapter_title")}
         </div>
-        <p className="settings-help">{t("settings.mcp_adapter_desc")}</p>
         <div className="settings-toggle-row">
           <div className="settings-toggle-label">
             <span>{t("settings.mcp_stdio_enabled")}</span>
