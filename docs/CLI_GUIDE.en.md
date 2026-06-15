@@ -4,7 +4,7 @@
 ExaTerm GUI without speaking MCP. It uses the same local control plane, permissions,
 validation, JSON results, and credential prompts as the MCP integration.
 
-This CLI is available in builds after ExaTerm v0.6.1 that include `exaterm-cli.exe`.
+This CLI is available in ExaTerm v0.7.0 and later.
 
 ## Installation and Setup
 
