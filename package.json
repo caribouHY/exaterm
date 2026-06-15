@@ -1,12 +1,13 @@
 {
   "name": "exaterm",
   "private": true,
-  "version": "0.6.1",
+  "version": "0.7.0",
   "packageManager": "pnpm@10.33.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "prepare:sidecars": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sidecars.ps1",
     "preview": "vite preview",
     "tauri": "tauri",
     "format": "pnpm run format:frontend && pnpm run format:rust",

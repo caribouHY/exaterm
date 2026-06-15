@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## v0.7.0
+
+### Changed
+
+- Reorganized External Control settings around the Terminal CLI, with `exaterm-mcp` retained as a compatibility option for MCP clients.
+- Renamed external-control configuration from `mcp` to `external_control`. Existing settings and per-profile access permissions are migrated automatically.
+- Saved SSH and Telnet profile connections now identify both the profile ID and connection type, so profiles can safely share the same ID.
+- Consolidated MCP terminal output reading into one `read_terminal_output` tool with `recent`, `delta`, and `wait` modes.
+
+### Added
+
+- Added the opt-in `exaterm-cli` command-line interface for trusted local programs and AI agents to control ExaTerm terminal sessions and receive JSON results.
+- Added `exaterm-cli` to the Windows installer alongside `exaterm-mcp`.
+- Added optional SSH or Telnet filtering when listing saved profiles from the Terminal CLI.
+- Added an installable Agent Skill for using `exaterm-cli` with Codex, Claude Code, GitHub Copilot, and other compatible clients.
+- Added English and Japanese guides for the Terminal CLI and its external-control settings.
+
+### Removed
+
+- Removed the MCP `read_terminal_output_delta` and `wait_terminal_output` tools. MCP client configurations and prompts must use `read_terminal_output` with `mode: "delta"` or `mode: "wait"` instead.
+
 ## v0.6.1
 
 ### Added

@@ -65,7 +65,7 @@ Backend state is managed through Tauri `State` values created in `src-tauri/src/
 - `SshState`, `SerialState`, and `TelnetState` own active protocol sessions.
 - `TerminalControlState` stores a readable decoded output buffer and status per session.
 - `LoggerState` owns automatic and manual plaintext session log state.
-- `McpCredentialState` and `McpLogControlState` bridge MCP requests that need UI action.
+- `ExternalControlCredentialState` and `ExternalControlLogControlState` bridge external requests that need UI action.
 - `StartupCliState` carries one startup CLI request into the frontend.
 
 The protocol modules start sessions, write input, resize where supported, disconnect, and
@@ -80,9 +80,10 @@ frontend tabs, protocol sessions, terminal output buffers, logger state, and MCP
 discovers the normal ExaTerm GUI process, and forwards tool calls through the GUI-local
 control plane.
 
-The GUI process owns the in-process MCP backend state. When `mcp.enabled` is true, startup
-spawns the local control plane; the stdio proxy additionally requires
-`mcp.stdio_enabled=true` before it serves MCP over stdio. Windows proxy launch
+The GUI process owns the typed external-control service state. When
+`external_control.enabled` is true, startup spawns the local control plane; the MCP
+compatibility adapter additionally requires `external_control.mcp_enabled=true` before it
+serves MCP over stdio. Windows proxy launch
 coordination uses a current-user named mutex so an abnormal proxy exit cannot leave a stale
 lock file that blocks later GUI startup attempts.
 
@@ -93,10 +94,23 @@ Current MCP tools include:
 - terminal input and command execution helpers
 - manual log start and stop
 - optional saved-profile and serial-console connection creation when
-  `mcp.connect_enabled` is true
+  `external_control.connect_enabled` is true
 
 MCP-created SSH profile connections request secrets through the ExaTerm UI. MCP does not
 read saved credentials, expose API keys, or read log file contents directly.
+
+### Terminal CLI
+
+`exaterm-cli` is a console executable for local scripts and AI agents. It uses the same
+current-user GUI control plane and backend tool calls as `exaterm-mcp`, but exposes typed
+subcommands and JSON stdout instead of MCP JSON-RPC. The CLI requires both
+`external_control.enabled` and `external_control.cli_enabled`; new profile and Serial
+connections additionally require `external_control.connect_enabled`.
+
+The typed external-control service, GUI discovery, launch coordination, and local transport
+live in `src-tauri/src/external_control/` and are shared by both executables. The MCP module
+maps the existing tool names and JSON contracts onto that API. Terminal sessions and
+credential prompts remain owned by the GUI.
 
 ## Important Data Flows
 

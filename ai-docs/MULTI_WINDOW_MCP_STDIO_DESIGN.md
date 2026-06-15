@@ -296,9 +296,9 @@ Removal behavior:
 - do not add `mcp.http_enabled` or `mcp.http_autostart_enabled`
 - do not automatically enable stdio MCP for existing configs that previously enabled HTTP
 
-Existing users who relied on HTTP MCP must opt in to stdio MCP by setting
-`mcp.enabled=true` and `mcp.stdio_enabled=true` and by configuring their MCP client to
-launch `exaterm-mcp.exe`.
+Existing users who relied on HTTP MCP must opt in to the MCP compatibility adapter by
+setting `external_control.enabled=true` and `external_control.mcp_enabled=true` and by
+configuring their MCP client to launch `exaterm-mcp.exe`.
 
 ### GUI Control Plane
 
@@ -371,7 +371,7 @@ must use the bundled sidecar path.
 
 Keep existing config compatible.
 
-Current:
+Legacy input:
 
 ```json
 {
@@ -384,13 +384,13 @@ Current:
 }
 ```
 
-Target:
+Current target:
 
 ```json
 {
-  "mcp": {
+  "external_control": {
     "enabled": false,
-    "stdio_enabled": false,
+    "mcp_enabled": false,
     "connect_enabled": false
   }
 }
@@ -398,27 +398,31 @@ Target:
 
 Migration default:
 
-- Existing `mcp.enabled` remains the master MCP permission flag.
-- Existing configs do not automatically enable `stdio_enabled`; users must opt in even if
+- Existing `mcp.enabled` migrates to `external_control.enabled`.
+- Existing configs do not automatically enable `external_control.mcp_enabled`; users must opt in even if
   they previously had HTTP MCP enabled.
 - Existing `mcp.host` and `mcp.port` are HTTP-only fields and become removal targets.
-- New installs default to `mcp.enabled=false` and `stdio_enabled=false`.
-- Settings UI must describe stdio proxy behavior and any restart requirements.
-- Enabling the MCP master flag in Settings must not automatically enable stdio.
+- New installs default to `external_control.enabled=false` and
+  `external_control.mcp_enabled=false`.
+- Settings UI must describe the CLI as the primary path, the MCP adapter as compatibility
+  behavior, and any restart requirements.
+- Enabling the external-control master flag in Settings must not automatically enable the
+  MCP adapter.
 
 Transport gating rules:
 
-- `mcp.enabled=false` disables MCP.
-- `mcp.enabled=true` permits MCP generally, but stdio still needs its own flag.
-- `mcp.stdio_enabled=false` disables stdio MCP.
-- `mcp.connect_enabled` gates new connection tools for every transport; it is intentionally
+- `external_control.enabled=false` disables external control.
+- `external_control.enabled=true` permits CLI and MCP compatibility generally, but each
+  interface still needs its own flag.
+- `external_control.mcp_enabled=false` disables the MCP compatibility adapter.
+- `external_control.connect_enabled` gates new connection tools for every transport; it is intentionally
   shared because it controls tool capability, not transport startup.
 
 ### Security and Privacy
 
 - stdio proxy must not log JSON-RPC payloads by default.
 - GUI control plane must accept only current-user local clients.
-- MCP-created connections must keep the existing `mcp.connect_enabled` gate.
+- MCP-created connections must keep the existing `external_control.connect_enabled` gate.
 - SSH credentials and key passphrases must still be entered in the GUI.
 - API keys remain in the OS credential store.
 - Log file contents remain unavailable through MCP.
@@ -519,7 +523,7 @@ Manual MCP scenarios:
 - GUI not running: MCP client launches `exaterm-mcp.exe`, GUI starts normally visible, tools/list
   succeeds
 - GUI running: proxy attaches to existing GUI control endpoint
-- `mcp.connect_enabled=false` still blocks new connection tools
+- `external_control.connect_enabled=false` still blocks new connection tools
 - proxy timeout returns a clear MCP error if GUI cannot start or cannot expose control plane
 
 ## Open Implementation Notes

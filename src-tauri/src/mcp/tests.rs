@@ -8,10 +8,15 @@ use tokio::{
 };
 use uuid::Uuid;
 
-use super::backend::*;
-use super::control::*;
 use super::service::*;
-use crate::config::{AppConfig, McpConfig, SavedConnection};
+use crate::config::{AppConfig, SavedConnection};
+use crate::external_control::protocol::{
+    external_control_call_over_stream, handle_control_connection, CONTROL_PROTOCOL_VERSION,
+};
+use crate::external_control::service::*;
+use crate::external_control::{
+    ExternalControlLogControlState, ExternalControlRuntime, ExternalControlService,
+};
 use crate::logger::LoggerState;
 use crate::serial::{self, SerialState};
 use crate::ssh::SshState;
@@ -19,11 +24,17 @@ use crate::telnet::TelnetState;
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 use crate::workspace::WorkspaceState;
 
-fn test_runtime() -> McpRuntime {
+type McpTerminalService = ExternalControlService;
+type McpLogControlState = ExternalControlLogControlState;
+type McpSerialParity = ExternalControlSerialParity;
+type McpSerialFlowControl = ExternalControlSerialFlowControl;
+type McpTerminalMode = ExternalControlTerminalMode;
+
+fn test_runtime() -> ExternalControlRuntime {
     let log_dir = std::env::temp_dir().join(format!("exaterm_mcp_log_test_{}", Uuid::new_v4()));
     let index_path = log_dir.join("index.json");
-    McpRuntime {
-        config: McpConfig::default(),
+    ExternalControlRuntime {
+        config: ExternalControlPermissions::default(),
         terminals: TerminalControlState::new(),
         workspace: WorkspaceState::new(),
         ssh: SshState::new(),
@@ -38,21 +49,26 @@ fn test_runtime() -> McpRuntime {
 async fn connection_tools_require_connect_enabled() {
     let service = McpTerminalService::new(test_runtime());
 
-    let error = service.list_connection_profiles().await.unwrap_err();
-    assert!(error.message.contains("connect_enabled"));
+    let error = service
+        .list_connection_profiles(ListConnectionProfilesArgs::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(&error, ExternalControlError::PermissionDenied(_)));
+    assert!(error.message().contains("connect_enabled"));
 
     let error = service
         .connect_saved_profile(ConnectSavedProfileArgs {
             profile_id: "dev".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         })
         .await
         .unwrap_err();
-    assert!(error.message.contains("connect_enabled"));
+    assert!(error.message().contains("connect_enabled"));
 
     let error = service.list_serial_ports().await.unwrap_err();
-    assert!(error.message.contains("connect_enabled"));
+    assert!(error.message().contains("connect_enabled"));
 
     let error = service
         .connect_serial_console(ConnectSerialConsoleArgs {
@@ -68,7 +84,7 @@ async fn connection_tools_require_connect_enabled() {
         })
         .await
         .unwrap_err();
-    assert!(error.message.contains("connect_enabled"));
+    assert!(error.message().contains("connect_enabled"));
 }
 
 #[tokio::test]
@@ -78,10 +94,10 @@ async fn control_service_dispatches_to_in_process_backend() {
         .terminals
         .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
         .await;
-    let control = McpControlService::in_process(runtime);
+    let server = ExaTermMcpServer::with_service(ExternalControlService::new(runtime));
 
-    let result = control
-        .call_tool("list_terminal_sessions", json!({}))
+    let result = server
+        .call_tool_json("list_terminal_sessions", json!({}))
         .await
         .unwrap();
 
@@ -91,10 +107,10 @@ async fn control_service_dispatches_to_in_process_backend() {
 
 #[tokio::test]
 async fn control_service_rejects_unknown_tools() {
-    let control = McpControlService::in_process(test_runtime());
+    let server = ExaTermMcpServer::with_service(ExternalControlService::new(test_runtime()));
 
-    let error = control
-        .call_tool("missing_tool", json!({}))
+    let error = server
+        .call_tool_json("missing_tool", json!({}))
         .await
         .unwrap_err();
 
@@ -104,9 +120,9 @@ async fn control_service_rejects_unknown_tools() {
 #[tokio::test]
 async fn control_plane_rejects_unknown_protocol_version() {
     let (server_stream, client_stream) = tokio::io::duplex(4096);
-    let control = McpControlService::in_process(test_runtime());
+    let service = ExternalControlService::new(test_runtime());
     tokio::spawn(async move {
-        handle_control_connection(control, server_stream)
+        handle_control_connection(service, server_stream)
             .await
             .expect("control connection should close cleanly");
     });
@@ -123,6 +139,7 @@ async fn control_plane_rejects_unknown_protocol_version() {
     let response = read_json_line_for_test(&mut reader).await;
 
     assert_eq!(response["protocol_version"], CONTROL_PROTOCOL_VERSION);
+    assert_eq!(CONTROL_PROTOCOL_VERSION, 2);
     assert!(response["session_nonce"].is_null());
     assert!(response["error"]["message"]
         .as_str()
@@ -133,9 +150,9 @@ async fn control_plane_rejects_unknown_protocol_version() {
 #[tokio::test]
 async fn control_plane_rejects_missing_and_wrong_nonce() {
     let (server_stream, client_stream) = tokio::io::duplex(4096);
-    let control = McpControlService::in_process(test_runtime());
+    let service = ExternalControlService::new(test_runtime());
     tokio::spawn(async move {
-        handle_control_connection(control, server_stream)
+        handle_control_connection(service, server_stream)
             .await
             .expect("control connection should close cleanly");
     });
@@ -157,8 +174,9 @@ async fn control_plane_rejects_missing_and_wrong_nonce() {
         json!({
             "protocol_version": CONTROL_PROTOCOL_VERSION,
             "request_id": "missing",
-            "tool_name": "list_terminal_sessions",
-            "args": {}
+            "request": {
+                "operation": "list_terminal_sessions"
+            }
         }),
     )
     .await;
@@ -175,8 +193,9 @@ async fn control_plane_rejects_missing_and_wrong_nonce() {
             "protocol_version": CONTROL_PROTOCOL_VERSION,
             "request_id": "wrong",
             "session_nonce": "wrong-nonce",
-            "tool_name": "list_terminal_sessions",
-            "args": {}
+            "request": {
+                "operation": "list_terminal_sessions"
+            }
         }),
     )
     .await;
@@ -196,16 +215,20 @@ async fn proxy_control_call_preserves_structured_result() {
         .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
         .await;
     let (server_stream, client_stream) = tokio::io::duplex(4096);
-    let control = McpControlService::in_process(runtime);
+    let service = ExternalControlService::new(runtime);
     tokio::spawn(async move {
-        handle_control_connection(control, server_stream)
+        handle_control_connection(service, server_stream)
             .await
             .expect("control connection should close cleanly");
     });
 
-    let result = control_call_over_stream(client_stream, "list_terminal_sessions", json!({}))
-        .await
-        .unwrap();
+    let result = external_control_call_over_stream(
+        client_stream,
+        ExternalControlRequest::ListTerminalSessions,
+    )
+    .await
+    .unwrap()
+    .into_value();
 
     assert_eq!(result["sessions"][0]["session_id"], "s1");
     assert_eq!(result["sessions"][0]["protocol"], "ssh");
@@ -214,9 +237,9 @@ async fn proxy_control_call_preserves_structured_result() {
 #[tokio::test]
 async fn stdio_server_smoke_initialize_and_tools_list() {
     let (server_transport, client_transport) = tokio::io::duplex(16 * 1024);
-    let control = McpControlService::in_process(test_runtime());
+    let service = ExternalControlService::new(test_runtime());
     tokio::spawn(async move {
-        let server = ExaTermMcpServer::with_control(control)
+        let server = ExaTermMcpServer::with_service(service)
             .serve(server_transport)
             .await
             .expect("stdio server should initialize");
@@ -265,11 +288,28 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
     .await;
     let tools = read_json_line_for_test(&mut reader).await;
     assert_eq!(tools["id"], 2);
-    assert!(tools["result"]["tools"]
+    let tool_names = tools["result"]["tools"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|tool| tool["name"] == "list_terminal_sessions"));
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert!(tool_names.contains(&"list_terminal_sessions"));
+    assert!(tool_names.contains(&"read_terminal_output"));
+    assert!(!tool_names.contains(&"read_terminal_output_delta"));
+    assert!(!tool_names.contains(&"wait_terminal_output"));
+
+    let read_tool = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "read_terminal_output")
+        .unwrap();
+    let read_schema = read_tool["inputSchema"].to_string();
+    assert!(read_schema.contains("\"mode\""));
+    assert!(read_schema.contains("\"recent\""));
+    assert!(read_schema.contains("\"delta\""));
+    assert!(read_schema.contains("\"wait\""));
 }
 
 async fn write_json_line_for_test<W>(writer: &mut W, value: Value)
@@ -327,7 +367,7 @@ fn list_connection_profiles_returns_only_ssh_telnet_without_secret_paths() {
         },
     ];
 
-    let profiles = list_connection_profiles_from_config(&config);
+    let profiles = list_connection_profiles_from_config(&config, None);
 
     assert_eq!(profiles.len(), 2);
     assert_eq!(profiles[0].id, "dev");
@@ -344,6 +384,35 @@ fn list_connection_profiles_returns_only_ssh_telnet_without_secret_paths() {
 }
 
 #[test]
+fn list_connection_profiles_filters_by_connection_type() {
+    let mut config = AppConfig::default();
+    config.saved_connections = vec![
+        SavedConnection {
+            id: "ssh-profile".into(),
+            connection_type: "ssh".into(),
+            host: Some("192.0.2.10".into()),
+            ..SavedConnection::default()
+        },
+        SavedConnection {
+            id: "telnet-profile".into(),
+            connection_type: "telnet".into(),
+            host: Some("192.0.2.20".into()),
+            ..SavedConnection::default()
+        },
+    ];
+
+    let ssh_profiles =
+        list_connection_profiles_from_config(&config, Some(SavedProfileConnectionType::Ssh));
+    let telnet_profiles =
+        list_connection_profiles_from_config(&config, Some(SavedProfileConnectionType::Telnet));
+
+    assert_eq!(ssh_profiles.len(), 1);
+    assert_eq!(ssh_profiles[0].id, "ssh-profile");
+    assert_eq!(telnet_profiles.len(), 1);
+    assert_eq!(telnet_profiles[0].id, "telnet-profile");
+}
+
+#[test]
 fn list_connection_profiles_skips_mcp_disabled_profiles() {
     let mut config = AppConfig::default();
     config.saved_connections = vec![
@@ -357,12 +426,12 @@ fn list_connection_profiles_skips_mcp_disabled_profiles() {
             id: "telnet-disabled".into(),
             connection_type: "telnet".into(),
             host: Some("192.0.2.20".into()),
-            mcp_enabled: false,
+            external_control_enabled: false,
             ..SavedConnection::default()
         },
     ];
 
-    let profiles = list_connection_profiles_from_config(&config);
+    let profiles = list_connection_profiles_from_config(&config, None);
 
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].id, "ssh-enabled");
@@ -382,6 +451,7 @@ fn prepare_saved_profile_rejects_missing_and_unsupported_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "missing".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -393,12 +463,13 @@ fn prepare_saved_profile_rejects_missing_and_unsupported_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "console".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
     )
     .unwrap_err();
-    assert!(unsupported.contains("SSH/Telnet"));
+    assert!(unsupported.contains("見つかりません"));
 }
 
 #[test]
@@ -410,7 +481,7 @@ fn prepare_saved_profile_rejects_mcp_disabled_profiles() {
         host: Some("192.0.2.10".into()),
         username: Some("admin".into()),
         auth_method: Some("password".into()),
-        mcp_enabled: false,
+        external_control_enabled: false,
         ..SavedConnection::default()
     }];
 
@@ -418,13 +489,14 @@ fn prepare_saved_profile_rejects_mcp_disabled_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "disabled".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
     )
     .unwrap_err();
 
-    assert!(error.contains("MCP"));
+    assert!(error.contains("外部制御"));
 }
 
 #[test]
@@ -453,6 +525,7 @@ fn prepare_saved_profile_rejects_incomplete_ssh_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "missing-user".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -464,6 +537,7 @@ fn prepare_saved_profile_rejects_incomplete_ssh_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "key".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -488,6 +562,7 @@ fn prepare_saved_profile_allows_profiles_without_explicit_mcp_flag() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "default-enabled".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -516,6 +591,7 @@ fn prepare_saved_profile_builds_connection_metadata() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "dev".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: Some(80),
             rows: Some(24),
         },
@@ -533,6 +609,69 @@ fn prepare_saved_profile_builds_connection_metadata() {
 }
 
 #[test]
+fn prepare_saved_profile_uses_id_and_connection_type() {
+    let mut config = AppConfig::default();
+    config.saved_connections = vec![
+        SavedConnection {
+            id: "router".into(),
+            connection_type: "telnet".into(),
+            host: Some("192.0.2.23".into()),
+            ..SavedConnection::default()
+        },
+        SavedConnection {
+            id: "router".into(),
+            connection_type: "ssh".into(),
+            host: Some("192.0.2.22".into()),
+            username: Some("admin".into()),
+            auth_method: Some("password".into()),
+            ..SavedConnection::default()
+        },
+    ];
+
+    let ssh = prepare_saved_profile_connection(
+        &config,
+        ConnectSavedProfileArgs {
+            profile_id: "router".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
+            cols: None,
+            rows: None,
+        },
+    )
+    .unwrap();
+    let telnet = prepare_saved_profile_connection(
+        &config,
+        ConnectSavedProfileArgs {
+            profile_id: "router".into(),
+            connection_type: SavedProfileConnectionType::Telnet,
+            cols: None,
+            rows: None,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(ssh.connection_type, "ssh");
+    assert_eq!(ssh.target, "admin@192.0.2.22:22");
+    assert_eq!(telnet.connection_type, "telnet");
+    assert_eq!(telnet.target, "192.0.2.23:23");
+}
+
+#[tokio::test]
+async fn backend_requires_saved_profile_connection_type() {
+    let server = ExaTermMcpServer::with_service(ExternalControlService::new(test_runtime()));
+    let error = server
+        .call_tool_json(
+            "connect_saved_profile",
+            json!({
+                "profile_id": "router",
+            }),
+        )
+        .await
+        .unwrap_err();
+
+    assert!(error.message.contains("connection_type"));
+}
+
+#[test]
 fn prepare_saved_profile_allows_disabled_jump_profile_when_target_is_enabled() {
     let mut config = AppConfig::default();
     config.saved_connections = vec![
@@ -543,7 +682,7 @@ fn prepare_saved_profile_allows_disabled_jump_profile_when_target_is_enabled() {
             port: Some(2222),
             username: Some("jump".into()),
             auth_method: Some("password".into()),
-            mcp_enabled: false,
+            external_control_enabled: false,
             ..SavedConnection::default()
         },
         SavedConnection {
@@ -561,6 +700,7 @@ fn prepare_saved_profile_allows_disabled_jump_profile_when_target_is_enabled() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "inside".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -604,6 +744,7 @@ fn prepare_saved_profile_resolves_jump_profile() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "inside".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -658,6 +799,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "inside".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -670,6 +812,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "inside".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -682,6 +825,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "inside".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -694,6 +838,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         &config,
         ConnectSavedProfileArgs {
             profile_id: "inside".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
             cols: None,
             rows: None,
         },
@@ -853,13 +998,14 @@ async fn service_reads_terminal_output_with_multibyte_tail() {
     let service = McpTerminalService::new(runtime);
 
     let result = service
-        .read_terminal_output(ReadTerminalOutputArgs {
+        .read_terminal_output(ReadTerminalOutputArgs::Recent {
             session_id: "s1".into(),
             max_chars: Some(2),
         })
         .await
         .unwrap();
     assert_eq!(result["session_id"], "s1");
+    assert_eq!(result["mode"], "recent");
     assert_eq!(result["output"], "世界");
     assert_eq!(result["truncated"], true);
     assert_eq!(result["start_cursor"], 5);
@@ -867,7 +1013,7 @@ async fn service_reads_terminal_output_with_multibyte_tail() {
 }
 
 #[tokio::test]
-async fn service_reads_terminal_output_delta() {
+async fn service_reads_terminal_output_in_delta_mode() {
     let runtime = test_runtime();
     runtime
         .terminals
@@ -880,7 +1026,7 @@ async fn service_reads_terminal_output_delta() {
     let service = McpTerminalService::new(runtime);
 
     let result = service
-        .read_terminal_output_delta(ReadTerminalOutputDeltaArgs {
+        .read_terminal_output(ReadTerminalOutputArgs::Delta {
             session_id: "s1".into(),
             cursor: 3,
             max_chars: Some(100),
@@ -888,6 +1034,7 @@ async fn service_reads_terminal_output_delta() {
         .await
         .unwrap();
 
+    assert_eq!(result["mode"], "delta");
     assert_eq!(result["output"], "こんにちは");
     assert_eq!(result["start_cursor"], 3);
     assert_eq!(result["cursor"], 8);
@@ -915,7 +1062,7 @@ async fn service_reads_non_utf8_terminal_output() {
     let service = McpTerminalService::new(runtime);
 
     let result = service
-        .read_terminal_output(ReadTerminalOutputArgs {
+        .read_terminal_output(ReadTerminalOutputArgs::Recent {
             session_id: "s1".into(),
             max_chars: Some(100),
         })
@@ -940,7 +1087,7 @@ async fn service_waits_for_matching_terminal_output() {
     let service = McpTerminalService::new(runtime);
 
     let result = service
-        .wait_terminal_output(WaitTerminalOutputArgs {
+        .read_terminal_output(ReadTerminalOutputArgs::Wait {
             session_id: "s1".into(),
             cursor: Some(0),
             contains: Some("router#".into()),
@@ -950,6 +1097,7 @@ async fn service_waits_for_matching_terminal_output() {
         .await
         .unwrap();
 
+    assert_eq!(result["mode"], "wait");
     assert_eq!(result["matched"], true);
     assert_eq!(result["timed_out"], false);
     assert_eq!(result["output"], "router#");
@@ -966,7 +1114,7 @@ async fn service_wait_timeout_returns_latest_delta() {
     let service = McpTerminalService::new(runtime);
 
     let result = service
-        .wait_terminal_output(WaitTerminalOutputArgs {
+        .read_terminal_output(ReadTerminalOutputArgs::Wait {
             session_id: "s1".into(),
             cursor: Some(0),
             contains: Some("missing".into()),
@@ -979,6 +1127,67 @@ async fn service_wait_timeout_returns_latest_delta() {
     assert_eq!(result["matched"], false);
     assert_eq!(result["timed_out"], true);
     assert_eq!(result["output"], "partial");
+}
+
+#[tokio::test]
+async fn service_wait_without_cursor_starts_from_current_output() {
+    let runtime = test_runtime();
+    runtime
+        .terminals
+        .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+        .await;
+    runtime.terminals.append_output("s1", b"old").await;
+    let terminals = runtime.terminals.clone();
+    tokio::spawn(async move {
+        time::sleep(Duration::from_millis(10)).await;
+        terminals.append_output("s1", b"new").await;
+    });
+    let service = McpTerminalService::new(runtime);
+
+    let result = service
+        .read_terminal_output(ReadTerminalOutputArgs::Wait {
+            session_id: "s1".into(),
+            cursor: None,
+            contains: None,
+            timeout_ms: Some(500),
+            max_chars: Some(100),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result["matched"], true);
+    assert_eq!(result["output"], "new");
+    assert_eq!(result["start_cursor"], 3);
+}
+
+#[tokio::test]
+async fn backend_rejects_invalid_read_terminal_output_mode_arguments() {
+    let server = ExaTermMcpServer::with_service(ExternalControlService::new(test_runtime()));
+
+    let missing_cursor = server
+        .call_tool_json(
+            "read_terminal_output",
+            json!({
+                "mode": "delta",
+                "session_id": "s1",
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert!(missing_cursor.message.contains("cursor"));
+
+    let unexpected_cursor = server
+        .call_tool_json(
+            "read_terminal_output",
+            json!({
+                "mode": "recent",
+                "session_id": "s1",
+                "cursor": 0,
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert!(unexpected_cursor.message.contains("unknown field"));
 }
 
 #[tokio::test]
@@ -998,7 +1207,8 @@ async fn service_rejects_send_to_disconnected_session() {
         })
         .await
         .unwrap_err();
-    assert!(error.message.contains("切断済み"));
+    assert!(matches!(&error, ExternalControlError::Unavailable(_)));
+    assert!(error.message().contains("切断済み"));
 }
 
 #[tokio::test]
@@ -1040,7 +1250,8 @@ async fn service_start_terminal_log_rejects_missing_and_disconnected_sessions() 
         })
         .await
         .unwrap_err();
-    assert!(missing.message.contains("見つかりません"));
+    assert!(matches!(&missing, ExternalControlError::NotFound(_)));
+    assert!(missing.message().contains("見つかりません"));
 
     let disconnected = service
         .start_terminal_log(StartTerminalLogArgs {
@@ -1048,7 +1259,31 @@ async fn service_start_terminal_log_rejects_missing_and_disconnected_sessions() 
         })
         .await
         .unwrap_err();
-    assert!(disconnected.message.contains("切断済み"));
+    assert!(matches!(
+        &disconnected,
+        ExternalControlError::Unavailable(_)
+    ));
+    assert!(disconnected.message().contains("切断済み"));
+}
+
+#[tokio::test]
+async fn service_reports_missing_logger_as_internal_error() {
+    let mut runtime = test_runtime();
+    runtime
+        .terminals
+        .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+        .await;
+    runtime.logger = None;
+    let service = McpTerminalService::new(runtime);
+
+    let error = service
+        .start_terminal_log(StartTerminalLogArgs {
+            session_id: "s1".into(),
+        })
+        .await
+        .unwrap_err();
+
+    assert!(matches!(&error, ExternalControlError::Internal(_)));
 }
 
 #[tokio::test]
@@ -1144,5 +1379,6 @@ async fn service_rejects_empty_run_terminal_command() {
         .await
         .unwrap_err();
 
-    assert!(error.message.contains("空"));
+    assert!(matches!(&error, ExternalControlError::InvalidArguments(_)));
+    assert!(error.message().contains("空"));
 }

@@ -1,27 +1,20 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
 use crate::ai::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
 use crate::terminal_control::TerminalControlState;
 
-const CURRENT_CONFIG_VERSION: u32 = 1;
+const CURRENT_CONFIG_VERSION: u32 = 2;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AppConfig {
-    #[serde(default)]
     pub config_version: u32,
-    #[serde(default = "default_language")]
     pub language: String,
-    #[serde(default)]
     pub ai: AiConfig,
-    #[serde(default)]
-    pub mcp: McpConfig,
-    #[serde(default)]
+    pub external_control: ExternalControlConfig,
     pub terminal: TerminalConfig,
-    #[serde(default)]
     pub ssh: SshConfig,
-    #[serde(default)]
     pub saved_connections: Vec<SavedConnection>,
 }
 
@@ -30,23 +23,46 @@ fn default_language() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct McpConfig {
+pub struct ExternalControlConfig {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
     pub connect_enabled: bool,
     #[serde(default)]
-    pub stdio_enabled: bool,
+    pub mcp_enabled: bool,
+    #[serde(default)]
+    pub cli_enabled: bool,
 }
 
-impl Default for McpConfig {
+impl Default for ExternalControlConfig {
     fn default() -> Self {
         Self {
             enabled: false,
             connect_enabled: false,
-            stdio_enabled: false,
+            mcp_enabled: false,
+            cli_enabled: false,
         }
     }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct ExternalControlConfigInput {
+    enabled: Option<bool>,
+    connect_enabled: Option<bool>,
+    mcp_enabled: Option<bool>,
+    cli_enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct LegacyMcpConfig {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default)]
+    connect_enabled: bool,
+    #[serde(default)]
+    stdio_enabled: bool,
+    #[serde(default)]
+    cli_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -166,36 +182,42 @@ fn default_terminal_include_log_header() -> bool {
     false
 }
 
-fn default_saved_connection_mcp_enabled() -> bool {
+fn default_saved_connection_external_control_enabled() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SavedConnection {
-    #[serde(default)]
     pub id: String,
-    #[serde(default)]
     pub connection_type: String,
-    #[serde(default)]
     pub host: Option<String>,
-    #[serde(default)]
     pub port: Option<u16>,
-    #[serde(default)]
     pub username: Option<String>,
-    #[serde(default)]
     pub encoding: Option<String>,
-    #[serde(default)]
     pub terminal_mode: Option<String>,
-    #[serde(default)]
     pub auth_method: Option<String>,
-    #[serde(default)]
     pub private_key_path: Option<String>,
-    #[serde(default)]
     pub jump_profile_id: Option<String>,
-    #[serde(default)]
     pub memo: Option<String>,
-    #[serde(default = "default_saved_connection_mcp_enabled")]
-    pub mcp_enabled: bool,
+    pub external_control_enabled: bool,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct SavedConnectionInput {
+    id: Option<String>,
+    connection_type: Option<String>,
+    host: Option<String>,
+    port: Option<u16>,
+    username: Option<String>,
+    encoding: Option<String>,
+    terminal_mode: Option<String>,
+    auth_method: Option<String>,
+    private_key_path: Option<String>,
+    jump_profile_id: Option<String>,
+    memo: Option<String>,
+    external_control_enabled: Option<bool>,
+    #[serde(rename = "mcp_enabled")]
+    legacy_mcp_enabled: Option<bool>,
 }
 
 impl Default for SavedConnection {
@@ -212,9 +234,48 @@ impl Default for SavedConnection {
             private_key_path: None,
             jump_profile_id: None,
             memo: None,
-            mcp_enabled: default_saved_connection_mcp_enabled(),
+            external_control_enabled: default_saved_connection_external_control_enabled(),
         }
     }
+}
+
+impl<'de> Deserialize<'de> for SavedConnection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let input = SavedConnectionInput::deserialize(deserializer)?;
+        Ok(Self {
+            id: input.id.unwrap_or_default(),
+            connection_type: input.connection_type.unwrap_or_default(),
+            host: input.host,
+            port: input.port,
+            username: input.username,
+            encoding: input.encoding,
+            terminal_mode: input.terminal_mode,
+            auth_method: input.auth_method,
+            private_key_path: input.private_key_path,
+            jump_profile_id: input.jump_profile_id,
+            memo: input.memo,
+            external_control_enabled: input
+                .external_control_enabled
+                .or(input.legacy_mcp_enabled)
+                .unwrap_or_else(default_saved_connection_external_control_enabled),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct AppConfigInput {
+    config_version: Option<u32>,
+    language: Option<String>,
+    ai: Option<AiConfig>,
+    external_control: Option<ExternalControlConfigInput>,
+    #[serde(rename = "mcp")]
+    legacy_mcp: Option<LegacyMcpConfig>,
+    terminal: Option<TerminalConfig>,
+    ssh: Option<SshConfig>,
+    saved_connections: Option<Vec<SavedConnection>>,
 }
 
 impl Default for AppConfig {
@@ -223,11 +284,44 @@ impl Default for AppConfig {
             config_version: CURRENT_CONFIG_VERSION,
             language: default_language(),
             ai: AiConfig::default(),
-            mcp: McpConfig::default(),
+            external_control: ExternalControlConfig::default(),
             terminal: TerminalConfig::default(),
             ssh: SshConfig::default(),
             saved_connections: Vec::new(),
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for AppConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let input = AppConfigInput::deserialize(deserializer)?;
+        let defaults = AppConfig::default();
+        let legacy_mcp = input.legacy_mcp.unwrap_or_default();
+        let external_control = input.external_control.unwrap_or_default();
+
+        Ok(Self {
+            config_version: input.config_version.unwrap_or(0),
+            language: input.language.unwrap_or_else(default_language),
+            ai: input.ai.unwrap_or(defaults.ai),
+            external_control: ExternalControlConfig {
+                enabled: external_control.enabled.unwrap_or(legacy_mcp.enabled),
+                connect_enabled: external_control
+                    .connect_enabled
+                    .unwrap_or(legacy_mcp.connect_enabled),
+                mcp_enabled: external_control
+                    .mcp_enabled
+                    .unwrap_or(legacy_mcp.stdio_enabled),
+                cli_enabled: external_control
+                    .cli_enabled
+                    .unwrap_or(legacy_mcp.cli_enabled),
+            },
+            terminal: input.terminal.unwrap_or(defaults.terminal),
+            ssh: input.ssh.unwrap_or(defaults.ssh),
+            saved_connections: input.saved_connections.unwrap_or_default(),
+        })
     }
 }
 
@@ -270,6 +364,7 @@ pub fn config_save(
     terminals: tauri::State<'_, TerminalControlState>,
     config: AppConfig,
 ) -> Result<(), String> {
+    let config = config.migrate();
     config_write(&config)?;
     terminals.set_output_limit_from_scrollback(config.terminal.scrollback);
     Ok(())
@@ -299,9 +394,10 @@ mod tests {
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
         assert!(!cfg.ai.debug_log_enabled);
         assert!(!cfg.ai.azure_openai_enabled);
-        assert!(!cfg.mcp.enabled);
-        assert!(!cfg.mcp.connect_enabled);
-        assert!(!cfg.mcp.stdio_enabled);
+        assert!(!cfg.external_control.enabled);
+        assert!(!cfg.external_control.connect_enabled);
+        assert!(!cfg.external_control.mcp_enabled);
+        assert!(!cfg.external_control.cli_enabled);
         assert_eq!(cfg.ai.azure_openai_endpoint, "");
         assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.terminal.font_size, 14);
@@ -345,7 +441,56 @@ mod tests {
         assert_eq!(cfg.saved_connections[0].private_key_path, None);
         assert_eq!(cfg.saved_connections[0].jump_profile_id, None);
         assert_eq!(cfg.saved_connections[0].memo, None);
-        assert!(cfg.saved_connections[0].mcp_enabled);
+        assert!(cfg.saved_connections[0].external_control_enabled);
+    }
+
+    #[test]
+    fn legacy_mcp_config_is_migrated_to_external_control() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "config_version": 1,
+                "mcp": {
+                    "enabled": true,
+                    "connect_enabled": true,
+                    "stdio_enabled": true,
+                    "cli_enabled": false
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let cfg = cfg.migrate();
+
+        assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
+        assert!(cfg.external_control.enabled);
+        assert!(cfg.external_control.connect_enabled);
+        assert!(cfg.external_control.mcp_enabled);
+        assert!(!cfg.external_control.cli_enabled);
+    }
+
+    #[test]
+    fn new_external_control_config_takes_priority_over_legacy_mcp() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "config_version": 1,
+                "mcp": {
+                    "enabled": false,
+                    "connect_enabled": false,
+                    "stdio_enabled": true,
+                    "cli_enabled": false
+                },
+                "external_control": {
+                    "enabled": true,
+                    "cli_enabled": true
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert!(cfg.external_control.enabled);
+        assert!(!cfg.external_control.connect_enabled);
+        assert!(cfg.external_control.mcp_enabled);
+        assert!(cfg.external_control.cli_enabled);
     }
 
     #[test]
@@ -472,7 +617,7 @@ mod tests {
     }
 
     #[test]
-    fn saved_connection_defaults_mcp_enabled_to_true() {
+    fn saved_connection_defaults_external_control_enabled_to_true() {
         let cfg: AppConfig = serde_json::from_str(
             r#"{
                 "saved_connections": [{
@@ -483,11 +628,11 @@ mod tests {
         )
         .unwrap();
 
-        assert!(cfg.saved_connections[0].mcp_enabled);
+        assert!(cfg.saved_connections[0].external_control_enabled);
     }
 
     #[test]
-    fn saved_connection_preserves_mcp_enabled_false() {
+    fn saved_connection_migrates_legacy_mcp_enabled_false() {
         let cfg: AppConfig = serde_json::from_str(
             r#"{
                 "saved_connections": [{
@@ -499,7 +644,57 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!cfg.saved_connections[0].mcp_enabled);
+        assert!(!cfg.saved_connections[0].external_control_enabled);
+    }
+
+    #[test]
+    fn saved_connection_new_flag_takes_priority_over_legacy_flag() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "saved_connections": [{
+                    "id": "edge-router",
+                    "connection_type": "ssh",
+                    "external_control_enabled": true,
+                    "mcp_enabled": false
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        assert!(cfg.saved_connections[0].external_control_enabled);
+    }
+
+    #[test]
+    fn serialization_omits_legacy_mcp_fields() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "config_version": 1,
+                "mcp": {
+                    "enabled": true,
+                    "connect_enabled": true,
+                    "stdio_enabled": true,
+                    "cli_enabled": true
+                },
+                "saved_connections": [{
+                    "id": "edge-router",
+                    "connection_type": "ssh",
+                    "mcp_enabled": false
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        let cfg = cfg.migrate();
+        let value = serde_json::to_value(&cfg).unwrap();
+
+        assert_eq!(value["config_version"], CURRENT_CONFIG_VERSION);
+        assert!(value.get("mcp").is_none());
+        assert_eq!(value["external_control"]["mcp_enabled"], true);
+        assert!(value["saved_connections"][0].get("mcp_enabled").is_none());
+        assert_eq!(
+            value["saved_connections"][0]["external_control_enabled"],
+            false
+        );
     }
 
     #[test]
@@ -507,5 +702,6 @@ mod tests {
         let cfg = AppConfig::default();
 
         assert_eq!(cfg.language, "system");
+        assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
     }
 }

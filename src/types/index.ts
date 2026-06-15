@@ -90,16 +90,17 @@ export interface AppConfig {
   config_version: number;
   language: "system" | "en" | "ja" | (string & {});
   ai: AiConfig;
-  mcp: McpConfig;
+  external_control: ExternalControlConfig;
   terminal: TerminalConfig;
   ssh: SshConfig;
   saved_connections: SavedConnection[];
 }
 
-export interface McpConfig {
+export interface ExternalControlConfig {
   enabled: boolean;
   connect_enabled: boolean;
-  stdio_enabled: boolean;
+  mcp_enabled: boolean;
+  cli_enabled: boolean;
 }
 
 export interface AiConfig {
@@ -143,7 +144,7 @@ export interface SavedConnection {
   private_key_path?: string | null;
   jump_profile_id?: string | null;
   memo?: string | null;
-  mcp_enabled?: boolean | null;
+  external_control_enabled?: boolean | null;
 }
 
 export type ConnectionType = "ssh" | "serial" | "telnet";

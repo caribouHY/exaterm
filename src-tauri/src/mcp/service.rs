@@ -6,41 +6,55 @@ use rmcp::{
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::mcp::backend::{
-    internal_error, structured_tool_result, ConnectSavedProfileArgs, ConnectSerialConsoleArgs,
-    ReadTerminalOutputArgs, ReadTerminalOutputDeltaArgs, RunTerminalCommandArgs,
-    SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs, WaitTerminalOutputArgs,
+use crate::external_control::{
+    client::ExternalControlClient, ConnectSavedProfileArgs, ConnectSerialConsoleArgs,
+    ExternalControlService, ReadTerminalOutputArgs, RunTerminalCommandArgs, SendTerminalInputArgs,
+    StartTerminalLogArgs, StopTerminalLogArgs,
 };
-use crate::mcp::control::McpControlService;
+use crate::mcp::backend::McpTarget;
 
 #[derive(Clone)]
 pub(super) struct ExaTermMcpServer {
-    control: McpControlService,
+    target: McpTarget,
     tool_router: ToolRouter<Self>,
 }
 
 #[tool_router]
 impl ExaTermMcpServer {
-    pub(super) fn with_control(control: McpControlService) -> Self {
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(super) fn with_service(service: ExternalControlService) -> Self {
         Self {
-            control,
+            target: McpTarget::with_service(service),
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    pub(super) fn with_client(client: ExternalControlClient) -> Self {
+        Self {
+            target: McpTarget::with_client(client),
             tool_router: Self::tool_router(),
         }
     }
 
     async fn call_tool(&self, name: &str, args: Value) -> Result<CallToolResult, McpError> {
-        self.control
+        self.target
             .call_tool(name, args)
             .await
             .and_then(structured_tool_result)
+    }
+
+    #[cfg(test)]
+    pub(super) async fn call_tool_json(&self, name: &str, args: Value) -> Result<Value, McpError> {
+        self.target.call_tool(name, args).await
     }
 
     async fn call_tool_with_args<T>(&self, name: &str, args: T) -> Result<CallToolResult, McpError>
     where
         T: Serialize,
     {
-        let args = serde_json::to_value(args)
-            .map_err(|error| internal_error(format!("Serialize MCP tool args failed: {error}")))?;
+        let args = serde_json::to_value(args).map_err(|error| {
+            McpError::internal_error(format!("Serialize MCP tool args failed: {error}"), None)
+        })?;
         self.call_tool(name, args).await
     }
 
@@ -54,7 +68,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "list_connection_profiles",
-        description = "List saved SSH and Telnet connection profiles when MCP profile connections are enabled. Secrets and private key paths are not returned."
+        description = "List saved SSH and Telnet connection profiles when external profile connections are enabled. Secrets and private key paths are not returned."
     )]
     async fn list_connection_profiles(&self) -> Result<CallToolResult, McpError> {
         self.call_tool("list_connection_profiles", json!({})).await
@@ -62,7 +76,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "connect_saved_profile",
-        description = "Open a new ExaTerm SSH or Telnet session from a saved profile when MCP profile connections are enabled. SSH passwords and encrypted key passphrases are requested in the ExaTerm UI."
+        description = "Open a new ExaTerm SSH or Telnet session selected by profile ID and connection type when external profile connections are enabled. SSH passwords and encrypted key passphrases are requested in the ExaTerm UI."
     )]
     async fn connect_saved_profile(
         &self,
@@ -74,7 +88,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "list_serial_ports",
-        description = "List available Serial console ports when MCP profile connections are enabled."
+        description = "List available Serial console ports when external profile connections are enabled."
     )]
     async fn list_serial_ports(&self) -> Result<CallToolResult, McpError> {
         self.call_tool("list_serial_ports", json!({})).await
@@ -82,7 +96,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "connect_serial_console",
-        description = "Open a new ExaTerm Serial console session from explicit port and line settings when MCP profile connections are enabled."
+        description = "Open a new ExaTerm Serial console session from explicit port and line settings when external profile connections are enabled."
     )]
     async fn connect_serial_console(
         &self,
@@ -94,36 +108,13 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "read_terminal_output",
-        description = "Read recent output from an ExaTerm terminal session."
+        description = "Read recent or cursor-based output from an ExaTerm terminal session, or wait for new or matching output. Select recent, delta, or wait mode."
     )]
     async fn read_terminal_output(
         &self,
         Parameters(args): Parameters<ReadTerminalOutputArgs>,
     ) -> Result<CallToolResult, McpError> {
         self.call_tool_with_args("read_terminal_output", args).await
-    }
-
-    #[tool(
-        name = "read_terminal_output_delta",
-        description = "Read output written after a previously returned ExaTerm terminal cursor."
-    )]
-    async fn read_terminal_output_delta(
-        &self,
-        Parameters(args): Parameters<ReadTerminalOutputDeltaArgs>,
-    ) -> Result<CallToolResult, McpError> {
-        self.call_tool_with_args("read_terminal_output_delta", args)
-            .await
-    }
-
-    #[tool(
-        name = "wait_terminal_output",
-        description = "Wait until an ExaTerm terminal session produces new output or a target string appears."
-    )]
-    async fn wait_terminal_output(
-        &self,
-        Parameters(args): Parameters<WaitTerminalOutputArgs>,
-    ) -> Result<CallToolResult, McpError> {
-        self.call_tool_with_args("wait_terminal_output", args).await
     }
 
     #[tool(
@@ -169,6 +160,15 @@ impl ExaTermMcpServer {
     ) -> Result<CallToolResult, McpError> {
         self.call_tool_with_args("run_terminal_command", args).await
     }
+}
+
+fn structured_tool_result(value: Value) -> Result<CallToolResult, McpError> {
+    let text = serde_json::to_string_pretty(&value).map_err(|error| {
+        McpError::internal_error(format!("Serialize MCP tool result failed: {error}"), None)
+    })?;
+    let mut result = CallToolResult::structured(value);
+    result.content = vec![rmcp::model::Content::text(text)];
+    Ok(result)
 }
 
 #[tool_handler(router = self.tool_router)]

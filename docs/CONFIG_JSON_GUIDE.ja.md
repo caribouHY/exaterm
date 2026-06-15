@@ -29,7 +29,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 ```json
 {
-  "config_version": 1,
+  "config_version": 2,
   "language": "system",
   "ai": {
     "azure_openai_enabled": false,
@@ -41,10 +41,11 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "default_model": "gpt-4o",
     "debug_log_enabled": false
   },
-  "mcp": {
+  "external_control": {
     "enabled": false,
     "connect_enabled": false,
-    "stdio_enabled": false
+    "mcp_enabled": false,
+    "cli_enabled": false
   },
   "terminal": {
     "font_size": 14,
@@ -66,10 +67,10 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 | パラメータ          | 型     | 既定値     | 説明                                                                                                                                            |
 | ------------------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`    | number | `1`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
+| `config_version`    | number | `2`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
 | `language`          | string | `"system"` | 画面表示言語です。`"system"` は OS の言語設定に従います。`"en"` は英語、`"ja"` は日本語です。未対応のシステム言語は英語にフォールバックします。 |
 | `ai`                | object | 下記参照   | AI アシスタント関連の設定です。                                                                                                                 |
-| `mcp`               | object | 下記参照   | 外部 AI エージェントからターミナルを制御するためのローカル MCP 設定です。                                                                       |
+| `external_control`  | object | 下記参照   | ターミナル CLI と MCP 互換アダプターのためのローカル外部制御設定です。                                                                          |
 | `terminal`          | object | 下記参照   | ターミナル表示とログ関連の設定です。                                                                                                            |
 | `ssh`               | object | 下記参照   | SSH 接続の互換性設定です。                                                                                                                      |
 | `saved_connections` | array  | `[]`       | 保存済み SSH/Telnet 接続プロファイルです。プロファイルは接続ダイアログから作成、選択、削除できます。                                            |
@@ -110,41 +111,67 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 | OpenRouter   | `openai/gpt-4o`, `anthropic/claude-sonnet-4`            |
 | Ollama       | ローカルの Ollama にインストール済みのモデル名          |
 
-## mcp
+## external_control
 
-| パラメータ            | 型      | 既定値  | 説明                                                                                                                                                                                                                                                                                                 |
-| --------------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mcp.enabled`         | boolean | `false` | ローカル MCP アクセスのマスター許可です。`false` の場合、すべての MCP トランスポートは無効です。`true` にしても stdio は自動では有効にならないため、`mcp.stdio_enabled` などのトランスポート設定を別途有効化してください。                                                                           |
-| `mcp.connect_enabled` | boolean | `false` | `true` にすると、信頼済み MCP クライアントが保存済み SSH/Telnet プロファイルの一覧取得、そのプロファイルからの新規タブ作成、シリアルポート一覧取得、シリアルコンソール接続を行えます。SSH パスワードや暗号化鍵のパスフレーズは ExaTerm UI で入力し、MCP クライアントへは公開されず保存もされません。 |
-| `mcp.stdio_enabled`   | boolean | `false` | `mcp.enabled=true` と併用して `true` にすると、ローカル MCP クライアントから `exaterm-mcp` stdio proxy を使用できます。proxy は current-user ローカル control plane 経由で、実際のツール呼び出しを起動中の ExaTerm GUI へ転送します。                                                                |
+| パラメータ                         | 型      | 既定値  | 説明                                                                                                                                                                                                                        |
+| ---------------------------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `external_control.enabled`         | boolean | `false` | ローカル外部制御アクセスのマスター許可です。`true` にしても各インターフェースは自動で有効にならないため、`external_control.cli_enabled` または `external_control.mcp_enabled` を別途有効化します。                          |
+| `external_control.connect_enabled` | boolean | `false` | `true` にすると、信頼済み外部制御クライアントが保存済み SSH/Telnet プロファイルやシリアルコンソールを開けます。SSH 認証情報は ExaTerm UI で入力し、外部クライアントへは公開されず保存もされません。                         |
+| `external_control.mcp_enabled`     | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、ローカル MCP クライアントから `exaterm-mcp` 互換アダプターを使用できます。                                                                                      |
+| `external_control.cli_enabled`     | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、信頼済みローカルプログラムが `exaterm-cli` から共通のターミナル操作を呼び出し、JSON 結果を取得できます。詳細は[CLI ガイド](CLI_GUIDE.ja.md)を参照してください。 |
 
-HTTP MCP transport は削除されました。古い設定ファイルに残っている HTTP 専用の `mcp.host` と `mcp.port` の値は無視され、次に ExaTerm が設定を保存したときに出力されなくなります。以前 HTTP MCP を使用していた場合は、`mcp.enabled=true` と `mcp.stdio_enabled=true` を手動で設定し、MCP クライアント側で `exaterm-mcp` を起動するよう設定してください。
+古い設定ファイルには、従来の `mcp` オブジェクトや `saved_connections[*].mcp_enabled` が残っている場合があります。ExaTerm は読み込み時にそれらを自動移行します。新旧設定が併存する場合は、新しい `external_control` 側を優先し、旧設定は不足値の補完だけに使います。ExaTerm が設定を保存すると、新しい `external_control` と `external_control_enabled` だけが残ります。
+
+HTTP MCP transport は削除されました。古い設定ファイルに残っている HTTP 専用の `mcp.host` と `mcp.port` の値は無視され、次に ExaTerm が設定を保存したときに出力されなくなります。以前 HTTP MCP を使用していた場合は、`external_control.enabled=true` と `external_control.mcp_enabled=true` を手動で設定し、MCP クライアント側で `exaterm-mcp` を起動するよう設定してください。
 
 ### MCP ツール
 
 MCP が有効な場合、外部クライアントは次のツールを呼び出せます。
 
 - `list_terminal_sessions`: ユーザーが ExaTerm で開いたターミナルセッションを一覧表示します。
-- `read_terminal_output`: セッションの直近出力を読み取ります。返却値には次回差分読み取りに使える `cursor` が含まれます。
-- `read_terminal_output_delta`: 指定した `cursor` 以降の出力だけを読み取ります。
-- `wait_terminal_output`: 新しい出力、または指定した文字列が出力に現れるまで待機します。
+- `read_terminal_output`: 必須の `mode` 引数に応じてセッション出力を読み取るか待機します。
+  - `recent`: 保持されている直近出力を即時に読み取ります。
+  - `delta`: 必須の `cursor` 以降の出力を即時に読み取ります。
+  - `wait`: 新しい出力、または任意の `contains` 文字列が現れるまで待機します。`cursor` を省略した場合は現在の出力位置から待機します。
 - `send_terminal_input`: 接続中のセッションへテキストを送信します。
 - `run_terminal_command`: 接続中のセッションへコマンドを送信し、出力待機後に差分出力を返します。
 - `start_terminal_log`: 接続中セッションの手動平文ログを開始します。ログは `%AppData%\ExaTerm\logs` 配下に保存され、返却値には作成されたファイルパスが含まれます。
 - `stop_terminal_log`: ExaTerm が表示済み出力をログへ flush した後、セッションの手動平文ログを停止します。
 
-`mcp.connect_enabled` も `true` の場合、外部クライアントは次の追加ツールを呼び出せます。
+出力読み取りの例:
 
-- `list_connection_profiles`: 個別に MCP 利用を許可した保存済み SSH/Telnet プロファイルを一覧表示します。秘密鍵パスや認証情報は返しません。
-- `connect_saved_profile`: 保存済みプロファイルから新しい SSH/Telnet セッションを開き、ExaTerm のタブとして表示します。SSH パスワードや暗号化鍵のパスフレーズは MCP ツール引数では受け取らず、ExaTerm UI で入力します。
+```json
+{ "session_id": "session-id", "mode": "recent", "max_chars": 2000 }
+```
+
+```json
+{ "session_id": "session-id", "mode": "delta", "cursor": 1200 }
+```
+
+```json
+{
+  "session_id": "session-id",
+  "mode": "wait",
+  "cursor": 1200,
+  "contains": "router#",
+  "timeout_ms": 30000
+}
+```
+
+`external_control.connect_enabled` も `true` の場合、外部クライアントは次の追加ツールを呼び出せます。
+
+- `list_connection_profiles`: 個別に外部制御利用を許可した保存済み SSH/Telnet プロファイルを一覧表示します。秘密鍵パスや認証情報は返しません。
+- `connect_saved_profile`: 保存済みプロファイルから新しい SSH/Telnet セッションを開きます。`profile_id` と `connection_type`（`"ssh"` または `"telnet"`）の両方が必須なので、異なる種別で同じ ID を使用できます。SSH 認証情報は ExaTerm UI で入力します。
 - `list_serial_ports`: 現在利用可能なシリアルポートを一覧表示します。
 - `connect_serial_console`: MCP ツール引数で指定したポート名と通信設定から新しいシリアルコンソールセッションを開き、ExaTerm のタブとして表示します。ポート名は利用可能なシリアルポートと完全一致する必要があります。
 
-出力読み取り系ツールは `start_cursor`、`cursor`、`truncated` を返します。`cursor` は次回の `read_terminal_output_delta` や `wait_terminal_output` に渡せます。古い出力が内部バッファから切り詰められている場合、`truncated` は `true` になります。
+`read_terminal_output` は選択された `mode` を返します。また、`read_terminal_output` と `run_terminal_command` は `start_cursor`、`cursor`、`truncated` も返します。返された `cursor` を `mode: "delta"` または `mode: "wait"` の `read_terminal_output` に渡すと、同じ位置から読み取りを継続できます。古い出力が内部バッファから切り詰められている場合、`truncated` は `true` になります。`wait` の結果には `matched` と `timed_out` も含まれます。
 
-`wait_terminal_output` と `run_terminal_command` の待機時間は最大 60 秒です。`run_terminal_command` は既存の接続済みセッションだけを対象とします。保存済みプロファイルからの新規接続には、明示的に有効化した `connect_saved_profile` を使用します。
+`wait` モードと `run_terminal_command` の待機時間は最大 60 秒です。`run_terminal_command` は既存の接続済みセッションだけを対象とします。保存済みプロファイルからの新規接続には、明示的に有効化した `connect_saved_profile` を使用します。
 
-MCP サーバーは保存済み認証情報の読み取り、API キーの公開、ログファイルの直接読み取りを行いません。MCP クライアントはセッションログを明示的に開始・停止できますが、受け取るのはログ状態とファイルパスだけで、ログ本文ではありません。MCP 経由の SSH/Telnet 新規接続は保存済みプロファイルに限定され、シリアル接続は明示的に指定した利用可能ポート名だけを対象にし、すべての MCP 新規接続には `mcp.connect_enabled=true` が必要です。保存済み SSH/Telnet プロファイルごとに `saved_connections[*].mcp_enabled=false` を設定すると、そのプロファイルは MCP の一覧表示と MCP 経由の新規接続から除外されます。SSH では既存の known_hosts 検証もそのまま適用されます。SSH プロファイルに `jump_profile_id` がある場合、MCP 経由の新規接続でも同じ 1 段の踏み台フローを使用し、必要な踏み台認証情報は ExaTerm UI で入力します。ターミナル出力やログファイルには機密情報が含まれる可能性があるため、MCP と MCP 経由のログ開始は信頼できるローカルクライアントに対してのみ有効化してください。
+従来の `read_terminal_output_delta` と `wait_terminal_output` は削除されました。それぞれ `mode: "delta"` と `mode: "wait"` を指定した `read_terminal_output` に置き換えてください。
+
+MCP 互換アダプターと CLI は保存済み認証情報の読み取り、API キーの公開、ログファイル本文の直接読み取りを行いません。外部クライアントがログを開始・停止した場合も、受け取るのはログ状態とファイルパスだけです。SSH/Telnet 新規接続は保存済みプロファイルに限定され、シリアル接続は利用可能なポート名だけを対象にし、すべての外部新規接続には `external_control.connect_enabled=true` が必要です。プロファイルは `saved_connections[*].external_control_enabled=false` で除外できます。SSH の known_hosts 検証と ExaTerm UI での認証入力は維持されます。機密情報を含む可能性があるため、外部制御は信頼済みローカルクライアントに対してのみ有効化してください。
 
 ## terminal
 
@@ -204,22 +231,22 @@ Strict key exchange や extension info などの SSH 内部拡張マーカーは
 
 ## saved_connections
 
-`saved_connections` は保存済み SSH/Telnet 接続プロファイルを表す配列です。プロファイルは接続ダイアログから管理できます。シリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズ、その他の認証情報はこのセクションには保存されません。プロファイルのメモは平文で保存され、MCP のプロファイル接続が有効な場合は `list_connection_profiles` で返る可能性があるため、秘密情報は入力しないでください。既存プロファイルで `mcp_enabled` が未設定の場合は `true` として扱われます。
+`saved_connections` は保存済み SSH/Telnet 接続プロファイルを表す配列です。プロファイルは接続ダイアログから管理できます。シリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズ、その他の認証情報はこのセクションには保存されません。プロファイルのメモは平文で保存され、外部プロファイル接続が有効な場合は `list_connection_profiles` で返る可能性があるため、秘密情報は入力しないでください。既存プロファイルで `external_control_enabled` が未設定の場合は `true` として扱われます。
 
-| パラメータ         | 型                 | 説明                                                                                                                                                                |
-| ------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`               | string             | プロファイル名兼識別子です。                                                                                                                                        |
-| `connection_type`  | string             | 接続種別です。プロファイルで対応している値は `"ssh"` と `"telnet"` です。                                                                                           |
-| `host`             | string または null | SSH または Telnet 接続先ホストです。                                                                                                                                |
-| `port`             | number または null | SSH または Telnet 接続先ポートです。                                                                                                                                |
-| `username`         | string または null | SSH ユーザー名です。Telnet プロファイルでは使用しません。                                                                                                           |
-| `encoding`         | string または null | このプロファイルで接続したときのターミナル表示文字コードです。指定できる値は `"utf-8"`、`"shift-jis"`、`"euc-jp"` です。未設定の場合は `"utf-8"` として扱われます。 |
-| `terminal_mode`    | string または null | このプロファイルで接続したときのターミナルモードです。指定できる値は `"general"` と `"cisco_ios"` です。未設定の場合は `"general"` として扱われます。               |
-| `auth_method`      | string または null | SSH 認証方式です。指定できる値は `"password"` と `"public_key"` です。未設定の場合は `"password"` として扱われます。Telnet プロファイルでは使用しません。           |
-| `private_key_path` | string または null | SSH の `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                        |
-| `jump_profile_id`  | string または null | SSH 踏み台プロファイルの ID です。参照先は保存済み SSH プロファイルである必要があります。踏み台は 1 段のみ対応し、多段指定は拒否されます。                          |
-| `memo`             | string または null | 任意の平文メモです。機種名、用途、作業時の注意などを記録できます。空でないメモは MCP のプロファイル一覧で返る場合があります。                                       |
-| `mcp_enabled`      | boolean            | 信頼済み MCP クライアントがこの保存済みプロファイルを一覧表示し、接続に使えるかどうかです。未設定時の既定値は `true` です。                                         |
+| パラメータ                 | 型                 | 説明                                                                                                                                                                |
+| -------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                       | string             | プロファイル名兼識別子です。                                                                                                                                        |
+| `connection_type`          | string             | 接続種別です。プロファイルで対応している値は `"ssh"` と `"telnet"` です。                                                                                           |
+| `host`                     | string または null | SSH または Telnet 接続先ホストです。                                                                                                                                |
+| `port`                     | number または null | SSH または Telnet 接続先ポートです。                                                                                                                                |
+| `username`                 | string または null | SSH ユーザー名です。Telnet プロファイルでは使用しません。                                                                                                           |
+| `encoding`                 | string または null | このプロファイルで接続したときのターミナル表示文字コードです。指定できる値は `"utf-8"`、`"shift-jis"`、`"euc-jp"` です。未設定の場合は `"utf-8"` として扱われます。 |
+| `terminal_mode`            | string または null | このプロファイルで接続したときのターミナルモードです。指定できる値は `"general"` と `"cisco_ios"` です。未設定の場合は `"general"` として扱われます。               |
+| `auth_method`              | string または null | SSH 認証方式です。指定できる値は `"password"` と `"public_key"` です。未設定の場合は `"password"` として扱われます。Telnet プロファイルでは使用しません。           |
+| `private_key_path`         | string または null | SSH の `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                        |
+| `jump_profile_id`          | string または null | SSH 踏み台プロファイルの ID です。参照先は保存済み SSH プロファイルである必要があります。踏み台は 1 段のみ対応し、多段指定は拒否されます。                          |
+| `memo`                     | string または null | 任意の平文メモです。機種名、用途、作業時の注意などを記録できます。空でないメモは外部制御クライアント向けのプロファイル一覧で返る場合があります。                    |
+| `external_control_enabled` | boolean            | 信頼済み CLI / MCP クライアントがこの保存済みプロファイルを一覧表示し、接続に使えるかどうかです。未設定時の既定値は `true` です。                                   |
 
 例:
 
