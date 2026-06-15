@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.7.0
+
 ### Changed
 
 - Consolidated MCP terminal output reads into `read_terminal_output` with explicit `recent`, `delta`, and `wait` modes.
