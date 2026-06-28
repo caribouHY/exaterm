@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Made SSH read queue overflow visible with a privacy-safe terminal status line and backend event instead of silently dropping output.
 - Improved SSH remote disconnect handling so closed target sessions are not disconnected again from russh callbacks.
 
 ## v0.7.1

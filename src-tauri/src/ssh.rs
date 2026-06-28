@@ -11,6 +11,7 @@ use russh::keys::{Algorithm, PrivateKey, PublicKey};
 use russh::*;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
@@ -31,6 +32,9 @@ struct SshSession {
 }
 
 const SSH_READ_QUEUE_CAPACITY: usize = 1024;
+const SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS: usize = 1024;
+const SSH_READ_DROP_STATUS_LINE: &[u8] =
+    b"\r\n[ExaTerm] Some SSH output was dropped because the read queue was full.\r\n";
 
 struct SshReadRequest {
     data: Vec<u8>,
@@ -48,6 +52,78 @@ impl SshReadStreamKind {
         match self {
             Self::Data => format!("ssh://data/{session_id}"),
             Self::ExtendedData => format!("ssh://error/{session_id}"),
+        }
+    }
+}
+
+#[derive(Default)]
+struct SshReadDropState {
+    dropped_chunks: usize,
+    dropped_bytes: usize,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SshReadDropNotice {
+    dropped_chunks: usize,
+    dropped_bytes: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct SshReadOverflowEvent {
+    dropped_chunks: usize,
+    dropped_bytes: usize,
+    queue_capacity: usize,
+}
+
+fn ssh_read_overflow_event_name(session_id: &str) -> String {
+    format!("ssh://read-overflow/{session_id}")
+}
+
+fn record_ssh_read_drop(
+    drop_state: &Arc<StdMutex<SshReadDropState>>,
+    dropped_bytes: usize,
+) -> Option<SshReadDropNotice> {
+    let mut state = drop_state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    state.dropped_chunks = state.dropped_chunks.saturating_add(1);
+    state.dropped_bytes = state.dropped_bytes.saturating_add(dropped_bytes);
+
+    if state.dropped_chunks == 1 || state.dropped_chunks % SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS == 0
+    {
+        Some(SshReadDropNotice {
+            dropped_chunks: state.dropped_chunks,
+            dropped_bytes: state.dropped_bytes,
+        })
+    } else {
+        None
+    }
+}
+
+fn enqueue_ssh_read(
+    app: &AppHandle,
+    session_id: &str,
+    read_tx: mpsc::Sender<SshReadRequest>,
+    drop_state: Arc<StdMutex<SshReadDropState>>,
+    request: SshReadRequest,
+) {
+    match read_tx.try_send(request) {
+        Ok(()) | Err(TrySendError::Closed(_)) => {}
+        Err(TrySendError::Full(request)) => {
+            if let Some(notice) = record_ssh_read_drop(&drop_state, request.data.len()) {
+                let _ = app.emit(
+                    &ssh_read_overflow_event_name(session_id),
+                    SshReadOverflowEvent {
+                        dropped_chunks: notice.dropped_chunks,
+                        dropped_bytes: notice.dropped_bytes,
+                        queue_capacity: SSH_READ_QUEUE_CAPACITY,
+                    },
+                );
+                let _ = app.emit(
+                    &SshReadStreamKind::ExtendedData.event_name(session_id),
+                    SSH_READ_DROP_STATUS_LINE.to_vec(),
+                );
+            }
         }
     }
 }
@@ -234,6 +310,7 @@ struct SshClientHandler {
     workspace: WorkspaceState,
     logger: Option<LoggerState>,
     read_tx: mpsc::Sender<SshReadRequest>,
+    read_drop_state: Arc<StdMutex<SshReadDropState>>,
 }
 
 struct ProbeClientHandler {
@@ -269,13 +346,22 @@ impl russh::client::Handler for SshClientHandler {
         data: &[u8],
         _session: &mut russh::client::Session,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let app = self.app.clone();
+        let session_id = self.session_id.clone();
         let read_tx = self.read_tx.clone();
+        let read_drop_state = self.read_drop_state.clone();
         let data = data.to_vec();
         async move {
-            let _ = read_tx.try_send(SshReadRequest {
-                data,
-                stream_kind: SshReadStreamKind::Data,
-            });
+            enqueue_ssh_read(
+                &app,
+                &session_id,
+                read_tx,
+                read_drop_state,
+                SshReadRequest {
+                    data,
+                    stream_kind: SshReadStreamKind::Data,
+                },
+            );
             Ok(())
         }
     }
@@ -287,13 +373,22 @@ impl russh::client::Handler for SshClientHandler {
         data: &[u8],
         _session: &mut russh::client::Session,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let app = self.app.clone();
+        let session_id = self.session_id.clone();
         let read_tx = self.read_tx.clone();
+        let read_drop_state = self.read_drop_state.clone();
         let data = data.to_vec();
         async move {
-            let _ = read_tx.try_send(SshReadRequest {
-                data,
-                stream_kind: SshReadStreamKind::ExtendedData,
-            });
+            enqueue_ssh_read(
+                &app,
+                &session_id,
+                read_tx,
+                read_drop_state,
+                SshReadRequest {
+                    data,
+                    stream_kind: SshReadStreamKind::ExtendedData,
+                },
+            );
             Ok(())
         }
     }
@@ -1136,6 +1231,7 @@ pub async fn connect(
     let config = Arc::new(build_client_config(&app_config.ssh));
     let host_verifier = HostKeyVerifier::enforce(options.host.clone(), options.port);
     let (read_tx, read_rx) = mpsc::channel::<SshReadRequest>(SSH_READ_QUEUE_CAPACITY);
+    let read_drop_state = Arc::new(StdMutex::new(SshReadDropState::default()));
     let handler = SshClientHandler {
         app: app.clone(),
         session_id: session_id.clone(),
@@ -1145,6 +1241,7 @@ pub async fn connect(
         workspace: workspace.clone(),
         logger: logger_state.cloned(),
         read_tx,
+        read_drop_state,
     };
 
     let (mut handle, jump_handle) = if let Some(jump_profile) = jump_profile {
@@ -1384,6 +1481,50 @@ mod tests {
         assert_eq!(
             ssh_diagnostic_event_name("request-1"),
             "ssh://connect-diagnostic/request-1"
+        );
+    }
+
+    #[test]
+    fn read_overflow_event_name_scopes_to_session_id() {
+        assert_eq!(
+            ssh_read_overflow_event_name("session-1"),
+            "ssh://read-overflow/session-1"
+        );
+    }
+
+    #[test]
+    fn read_drop_state_reports_first_drop_only_until_interval() {
+        let state = Arc::new(StdMutex::new(SshReadDropState::default()));
+
+        assert_eq!(
+            record_ssh_read_drop(&state, 32),
+            Some(SshReadDropNotice {
+                dropped_chunks: 1,
+                dropped_bytes: 32,
+            })
+        );
+        assert_eq!(record_ssh_read_drop(&state, 64), None);
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.dropped_chunks, 2);
+        assert_eq!(state.dropped_bytes, 96);
+    }
+
+    #[test]
+    fn read_drop_state_reports_every_notice_interval() {
+        let state = Arc::new(StdMutex::new(SshReadDropState::default()));
+        let mut last_notice = None;
+
+        for _ in 0..SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS {
+            last_notice = record_ssh_read_drop(&state, 1);
+        }
+
+        assert_eq!(
+            last_notice,
+            Some(SshReadDropNotice {
+                dropped_chunks: SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS,
+                dropped_bytes: SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS,
+            })
         );
     }
 
