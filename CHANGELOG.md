@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.7.1
+
 ### Fixed
 
 - Fixed SSH sessions sometimes stopping terminal input and echo during repeated input.
