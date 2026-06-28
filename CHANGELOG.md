@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Improved SSH remote disconnect handling so closed target sessions are not disconnected again from russh callbacks.
+
 ## v0.7.1
 
 ### Fixed

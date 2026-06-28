@@ -362,15 +362,6 @@ async fn mark_disconnected_impl(
     let removed_session = sessions.lock().await.remove(session_id);
     if let Some(session) = removed_session {
         let session = session.lock().await;
-        {
-            let channel = session.channel.lock().await;
-            let _ = channel.eof().await;
-            let _ = channel.close().await;
-        }
-        let _ = session
-            .handle
-            .disconnect(Disconnect::ByApplication, "Target disconnected", "en")
-            .await;
         if let Some(jump_handle) = &session.jump_handle {
             let _ = jump_handle
                 .disconnect(Disconnect::ByApplication, "Target disconnected", "en")
