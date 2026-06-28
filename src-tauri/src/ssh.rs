@@ -11,7 +11,7 @@ use russh::keys::{Algorithm, PrivateKey, PublicKey};
 use russh::*;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
 use crate::config::{config_load, AppConfig, SavedConnection, SshConfig};
@@ -26,8 +26,30 @@ use crate::{logger, logger::LoggerState};
 /// SSH session state shared across async tasks
 struct SshSession {
     handle: russh::client::Handle<SshClientHandler>,
-    channel: russh::Channel<russh::client::Msg>,
+    channel: Arc<Mutex<russh::ChannelWriteHalf<russh::client::Msg>>>,
     jump_handle: Option<russh::client::Handle<ProbeClientHandler>>,
+}
+
+const SSH_READ_QUEUE_CAPACITY: usize = 1024;
+
+struct SshReadRequest {
+    data: Vec<u8>,
+    stream_kind: SshReadStreamKind,
+}
+
+#[derive(Clone, Copy)]
+enum SshReadStreamKind {
+    Data,
+    ExtendedData,
+}
+
+impl SshReadStreamKind {
+    fn event_name(self, session_id: &str) -> String {
+        match self {
+            Self::Data => format!("ssh://data/{session_id}"),
+            Self::ExtendedData => format!("ssh://error/{session_id}"),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -211,6 +233,7 @@ struct SshClientHandler {
     terminals: TerminalControlState,
     workspace: WorkspaceState,
     logger: Option<LoggerState>,
+    read_tx: mpsc::Sender<SshReadRequest>,
 }
 
 struct ProbeClientHandler {
@@ -246,13 +269,13 @@ impl russh::client::Handler for SshClientHandler {
         data: &[u8],
         _session: &mut russh::client::Session,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        let terminals = self.terminals.clone();
-        let session_id = self.session_id.clone();
-        let app = self.app.clone();
+        let read_tx = self.read_tx.clone();
         let data = data.to_vec();
         async move {
-            terminals.append_output(&session_id, &data).await;
-            let _ = app.emit(&format!("ssh://data/{session_id}"), data);
+            let _ = read_tx.try_send(SshReadRequest {
+                data,
+                stream_kind: SshReadStreamKind::Data,
+            });
             Ok(())
         }
     }
@@ -264,13 +287,13 @@ impl russh::client::Handler for SshClientHandler {
         data: &[u8],
         _session: &mut russh::client::Session,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        let terminals = self.terminals.clone();
-        let session_id = self.session_id.clone();
-        let app = self.app.clone();
+        let read_tx = self.read_tx.clone();
         let data = data.to_vec();
         async move {
-            terminals.append_output(&session_id, &data).await;
-            let _ = app.emit(&format!("ssh://error/{session_id}"), data);
+            let _ = read_tx.try_send(SshReadRequest {
+                data,
+                stream_kind: SshReadStreamKind::ExtendedData,
+            });
             Ok(())
         }
     }
@@ -339,6 +362,15 @@ async fn mark_disconnected_impl(
     let removed_session = sessions.lock().await.remove(session_id);
     if let Some(session) = removed_session {
         let session = session.lock().await;
+        {
+            let channel = session.channel.lock().await;
+            let _ = channel.eof().await;
+            let _ = channel.close().await;
+        }
+        let _ = session
+            .handle
+            .disconnect(Disconnect::ByApplication, "Target disconnected", "en")
+            .await;
         if let Some(jump_handle) = &session.jump_handle {
             let _ = jump_handle
                 .disconnect(Disconnect::ByApplication, "Target disconnected", "en")
@@ -353,6 +385,22 @@ async fn mark_disconnected_impl(
     if let Some(logger_state) = logger {
         logger::clear_session_logs(logger_state, session_id).await;
     }
+}
+
+fn spawn_ssh_read_processor(
+    app: &AppHandle,
+    session_id: &str,
+    terminals: TerminalControlState,
+    mut read_rx: mpsc::Receiver<SshReadRequest>,
+) {
+    let app = app.clone();
+    let session_id = session_id.to_string();
+    tokio::spawn(async move {
+        while let Some(request) = read_rx.recv().await {
+            terminals.append_output(&session_id, &request.data).await;
+            let _ = app.emit(&request.stream_kind.event_name(&session_id), request.data);
+        }
+    });
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1096,6 +1144,7 @@ pub async fn connect(
     let jump_profile = resolve_jump_profile(&app_config, options.jump_profile_id.as_deref(), None)?;
     let config = Arc::new(build_client_config(&app_config.ssh));
     let host_verifier = HostKeyVerifier::enforce(options.host.clone(), options.port);
+    let (read_tx, read_rx) = mpsc::channel::<SshReadRequest>(SSH_READ_QUEUE_CAPACITY);
     let handler = SshClientHandler {
         app: app.clone(),
         session_id: session_id.clone(),
@@ -1104,6 +1153,7 @@ pub async fn connect(
         terminals: terminals.clone(),
         workspace: workspace.clone(),
         logger: logger_state.cloned(),
+        read_tx,
     };
 
     let (mut handle, jump_handle) = if let Some(jump_profile) = jump_profile {
@@ -1184,9 +1234,13 @@ pub async fn connect(
         "シェルリクエストエラー".to_string()
     })?;
 
+    let (mut channel_read_half, channel_write_half) = channel.split();
+    tokio::spawn(async move { while channel_read_half.wait().await.is_some() {} });
+    spawn_ssh_read_processor(app, &session_id, terminals.clone(), read_rx);
+
     let session = SshSession {
         handle,
-        channel,
+        channel: Arc::new(Mutex::new(channel_write_half)),
         jump_handle,
     };
 
@@ -1222,16 +1276,19 @@ pub async fn ssh_write(
 }
 
 pub async fn write_data(state: &SshState, session_id: &str, data: String) -> Result<(), String> {
-    let sessions = state.sessions.lock().await;
-    let session = sessions
-        .get(session_id)
-        .ok_or("セッションが見つかりません")?
-        .clone();
+    let session = {
+        let sessions = state.sessions.lock().await;
+        sessions
+            .get(session_id)
+            .ok_or("セッションが見つかりません")?
+            .clone()
+    };
 
-    let session = session.lock().await;
-    session
-        .channel
-        .data(data.as_bytes())
+    let channel = session.lock().await.channel.clone();
+    channel
+        .lock()
+        .await
+        .data_bytes(data.into_bytes())
         .await
         .map_err(|_| "SSH送信エラー".to_string())?;
 
@@ -1246,15 +1303,18 @@ pub async fn ssh_resize(
     cols: u32,
     rows: u32,
 ) -> Result<(), String> {
-    let sessions = state.sessions.lock().await;
-    let session = sessions
-        .get(&session_id)
-        .ok_or("セッションが見つかりません")?
-        .clone();
+    let session = {
+        let sessions = state.sessions.lock().await;
+        sessions
+            .get(&session_id)
+            .ok_or("セッションが見つかりません")?
+            .clone()
+    };
 
-    let session = session.lock().await;
-    session
-        .channel
+    let channel = session.lock().await.channel.clone();
+    channel
+        .lock()
+        .await
         .window_change(cols, rows, 0, 0)
         .await
         .map_err(|_| "SSHリサイズエラー".to_string())?;
@@ -1275,8 +1335,11 @@ pub async fn ssh_disconnect(
     let session = state.sessions.lock().await.remove(&session_id);
     if let Some(session) = session {
         let session = session.lock().await;
-        let _ = session.channel.eof().await;
-        let _ = session.channel.close().await;
+        {
+            let channel = session.channel.lock().await;
+            let _ = channel.eof().await;
+            let _ = channel.close().await;
+        }
         let _ = session
             .handle
             .disconnect(Disconnect::ByApplication, "User disconnected", "en")
