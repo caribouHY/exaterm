@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Fixed SSH sessions sometimes stopping terminal input and echo during repeated input.
+
 ## v0.7.0
 
 ### Changed
