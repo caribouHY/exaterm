@@ -4,6 +4,7 @@ use std::fs;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
 
 use russh::keys::decode_secret_key;
 use russh::keys::key::PrivateKeyWithHashAlg;
@@ -13,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, Mutex};
+use tokio::time;
 use uuid::Uuid;
 
 use crate::config::{config_load, AppConfig, SavedConnection, SshConfig};
@@ -35,6 +37,12 @@ const SSH_READ_QUEUE_CAPACITY: usize = 1024;
 const SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS: usize = 1024;
 const SSH_READ_DROP_STATUS_LINE: &[u8] =
     b"\r\n[ExaTerm] Some SSH output was dropped because the read queue was full.\r\n";
+const SSH_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+const SSH_RESIZE_TIMEOUT: Duration = Duration::from_secs(5);
+const SSH_WRITE_ERROR: &str = "SSH送信エラー";
+const SSH_WRITE_TIMEOUT_ERROR: &str = "SSH送信がタイムアウトしました";
+const SSH_RESIZE_ERROR: &str = "SSHリサイズエラー";
+const SSH_RESIZE_TIMEOUT_ERROR: &str = "SSHリサイズがタイムアウトしました";
 
 struct SshReadRequest {
     data: Vec<u8>,
@@ -125,6 +133,20 @@ fn enqueue_ssh_read(
                 );
             }
         }
+    }
+}
+
+async fn run_ssh_channel_operation_with_timeout<F>(
+    timeout: Duration,
+    timeout_message: &'static str,
+    operation: F,
+) -> Result<(), String>
+where
+    F: Future<Output = Result<(), String>>,
+{
+    match time::timeout(timeout, operation).await {
+        Ok(result) => result,
+        Err(_) => Err(timeout_message.to_string()),
     }
 }
 
@@ -1373,12 +1395,19 @@ pub async fn write_data(state: &SshState, session_id: &str, data: String) -> Res
     };
 
     let channel = session.lock().await.channel.clone();
-    channel
-        .lock()
-        .await
-        .data_bytes(data.into_bytes())
-        .await
-        .map_err(|_| "SSH送信エラー".to_string())?;
+    run_ssh_channel_operation_with_timeout(
+        SSH_WRITE_TIMEOUT,
+        SSH_WRITE_TIMEOUT_ERROR,
+        async move {
+            channel
+                .lock()
+                .await
+                .data_bytes(data.into_bytes())
+                .await
+                .map_err(|_| SSH_WRITE_ERROR.to_string())
+        },
+    )
+    .await?;
 
     Ok(())
 }
@@ -1400,12 +1429,19 @@ pub async fn ssh_resize(
     };
 
     let channel = session.lock().await.channel.clone();
-    channel
-        .lock()
-        .await
-        .window_change(cols, rows, 0, 0)
-        .await
-        .map_err(|_| "SSHリサイズエラー".to_string())?;
+    run_ssh_channel_operation_with_timeout(
+        SSH_RESIZE_TIMEOUT,
+        SSH_RESIZE_TIMEOUT_ERROR,
+        async move {
+            channel
+                .lock()
+                .await
+                .window_change(cols, rows, 0, 0)
+                .await
+                .map_err(|_| SSH_RESIZE_ERROR.to_string())
+        },
+    )
+    .await?;
 
     Ok(())
 }
@@ -1526,6 +1562,41 @@ mod tests {
                 dropped_bytes: SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS,
             })
         );
+    }
+
+    #[tokio::test]
+    async fn channel_operation_timeout_returns_fixed_error() {
+        let error = run_ssh_channel_operation_with_timeout(
+            Duration::from_millis(1),
+            SSH_WRITE_TIMEOUT_ERROR,
+            std::future::pending::<Result<(), String>>(),
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error, SSH_WRITE_TIMEOUT_ERROR);
+        assert!(!error.contains("secret"));
+        assert!(!error.contains("payload"));
+    }
+
+    #[tokio::test]
+    async fn channel_operation_timeout_preserves_operation_result() {
+        let success = run_ssh_channel_operation_with_timeout(
+            Duration::from_secs(1),
+            SSH_WRITE_TIMEOUT_ERROR,
+            async { Ok(()) },
+        )
+        .await;
+        assert_eq!(success, Ok(()));
+
+        let error = run_ssh_channel_operation_with_timeout(
+            Duration::from_secs(1),
+            SSH_WRITE_TIMEOUT_ERROR,
+            async { Err(SSH_WRITE_ERROR.to_string()) },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error, SSH_WRITE_ERROR);
     }
 
     #[test]
