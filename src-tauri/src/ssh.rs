@@ -37,8 +37,19 @@ const SSH_READ_QUEUE_CAPACITY: usize = 1024;
 const SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS: usize = 1024;
 const SSH_READ_DROP_STATUS_LINE: &[u8] =
     b"\r\n[ExaTerm] Some SSH output was dropped because the read queue was full.\r\n";
+const SSH_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+const SSH_AUTH_TIMEOUT: Duration = Duration::from_secs(30);
+const SSH_CHANNEL_OPEN_TIMEOUT: Duration = Duration::from_secs(15);
+const SSH_PTY_TIMEOUT: Duration = Duration::from_secs(10);
+const SSH_SHELL_TIMEOUT: Duration = Duration::from_secs(10);
 const SSH_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 const SSH_RESIZE_TIMEOUT: Duration = Duration::from_secs(5);
+const SSH_CONNECT_TIMEOUT_ERROR: &str = "SSH接続がタイムアウトしました";
+const SSH_AUTH_TIMEOUT_ERROR: &str = "SSH認証がタイムアウトしました";
+const SSH_CHANNEL_OPEN_TIMEOUT_ERROR: &str = "SSHチャネルオープンがタイムアウトしました";
+const SSH_JUMP_CHANNEL_OPEN_TIMEOUT_ERROR: &str = "SSH踏み台チャネルオープンがタイムアウトしました";
+const SSH_PTY_TIMEOUT_ERROR: &str = "PTYリクエストがタイムアウトしました";
+const SSH_SHELL_TIMEOUT_ERROR: &str = "シェルリクエストがタイムアウトしました";
 const SSH_WRITE_ERROR: &str = "SSH送信エラー";
 const SSH_WRITE_TIMEOUT_ERROR: &str = "SSH送信がタイムアウトしました";
 const SSH_RESIZE_ERROR: &str = "SSHリサイズエラー";
@@ -136,6 +147,20 @@ fn enqueue_ssh_read(
     }
 }
 
+async fn run_ssh_operation_with_timeout<T, F>(
+    timeout: Duration,
+    timeout_message: &'static str,
+    operation: F,
+) -> Result<T, String>
+where
+    F: Future<Output = Result<T, String>>,
+{
+    match time::timeout(timeout, operation).await {
+        Ok(result) => result,
+        Err(_) => Err(timeout_message.to_string()),
+    }
+}
+
 async fn run_ssh_channel_operation_with_timeout<F>(
     timeout: Duration,
     timeout_message: &'static str,
@@ -144,10 +169,7 @@ async fn run_ssh_channel_operation_with_timeout<F>(
 where
     F: Future<Output = Result<(), String>>,
 {
-    match time::timeout(timeout, operation).await {
-        Ok(result) => result,
-        Err(_) => Err(timeout_message.to_string()),
-    }
+    run_ssh_operation_with_timeout(timeout, timeout_message, operation).await
 }
 
 #[derive(Clone)]
@@ -968,47 +990,91 @@ async fn connect_jump_profile(
     if let Some(diagnostic) = diagnostic {
         diagnostic.info("jump: connecting");
     }
-    let mut handle = russh::client::connect(
-        config,
-        (jump_profile.host.as_str(), jump_profile.port),
-        handler,
-    )
-    .await
-    .map_err(|error| {
-        if let Some(diagnostic) = diagnostic {
-            diagnostic.error("error: jump SSH handshake failed");
-        }
-        map_connect_error(error, &jump_verifier)
-    })?;
+    let mut handle =
+        run_ssh_operation_with_timeout(SSH_CONNECT_TIMEOUT, SSH_CONNECT_TIMEOUT_ERROR, async {
+            russh::client::connect(
+                config,
+                (jump_profile.host.as_str(), jump_profile.port),
+                handler,
+            )
+            .await
+            .map_err(|error| map_connect_error(error, &jump_verifier))
+        })
+        .await
+        .map_err(|error| {
+            if let Some(diagnostic) = diagnostic {
+                if error == SSH_CONNECT_TIMEOUT_ERROR {
+                    diagnostic.error("error: jump SSH handshake timed out");
+                } else {
+                    diagnostic.error("error: jump SSH handshake failed");
+                }
+            }
+            error
+        })?;
 
     if let Some(diagnostic) = diagnostic {
         diagnostic.info("jump: host key accepted");
         diagnostic.info("jump: authentication started");
     }
 
-    authenticate_ssh(&mut handle, &jump_profile.username, auth)
+    if let Err(error) =
+        run_ssh_operation_with_timeout(SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR, async {
+            authenticate_ssh(&mut handle, &jump_profile.username, auth).await
+        })
         .await
-        .map_err(|error| {
-            if let Some(diagnostic) = diagnostic {
+    {
+        if let Some(diagnostic) = diagnostic {
+            if error == SSH_AUTH_TIMEOUT_ERROR {
+                diagnostic.error("error: jump authentication timed out");
+            } else {
                 diagnostic.error("error: jump authentication failed");
             }
-            error
-        })?;
+        }
+        let _ = handle
+            .disconnect(
+                Disconnect::ByApplication,
+                "Jump authentication failed",
+                "en",
+            )
+            .await;
+        return Err(error);
+    }
 
     if let Some(diagnostic) = diagnostic {
         diagnostic.info("jump: authentication succeeded");
         diagnostic.info("jump: opening direct-tcpip channel");
     }
 
-    let channel = handle
-        .channel_open_direct_tcpip(target_host, u32::from(target_port), "127.0.0.1", 0)
-        .await
-        .map_err(|error| {
-            if let Some(diagnostic) = diagnostic {
+    let channel = run_ssh_operation_with_timeout(
+        SSH_CHANNEL_OPEN_TIMEOUT,
+        SSH_JUMP_CHANNEL_OPEN_TIMEOUT_ERROR,
+        async {
+            handle
+                .channel_open_direct_tcpip(target_host, u32::from(target_port), "127.0.0.1", 0)
+                .await
+                .map_err(|error| format!("SSH踏み台チャネルオープンエラー: {}", error))
+        },
+    )
+    .await
+    .map_err(|error| {
+        if let Some(diagnostic) = diagnostic {
+            if error == SSH_JUMP_CHANNEL_OPEN_TIMEOUT_ERROR {
+                diagnostic.error("error: jump direct-tcpip channel timed out");
+            } else {
                 diagnostic.error("error: jump direct-tcpip channel failed");
             }
-            format!("SSH踏み台チャネルオープンエラー: {}", error)
-        })?;
+        }
+        error
+    });
+    let channel = match channel {
+        Ok(channel) => channel,
+        Err(error) => {
+            let _ = handle
+                .disconnect(Disconnect::ByApplication, "Jump channel open failed", "en")
+                .await;
+            return Err(error);
+        }
+    };
 
     if let Some(diagnostic) = diagnostic {
         diagnostic.info("jump: direct-tcpip channel opened");
@@ -1047,26 +1113,53 @@ async fn run_host_key_probe(
         if let Some(diagnostic) = &diagnostic {
             diagnostic.info(format!("{role}: starting SSH handshake"));
         }
-        let handle = russh::client::connect_stream(config, stream, handler)
+        let handle_result =
+            run_ssh_operation_with_timeout(SSH_CONNECT_TIMEOUT, SSH_CONNECT_TIMEOUT_ERROR, async {
+                russh::client::connect_stream(config, stream, handler)
+                    .await
+                    .map_err(|error| format!("SSH接続エラー: {}", error))
+            })
             .await
             .map_err(|error| {
                 if let Some(diagnostic) = &diagnostic {
-                    diagnostic.error(format!("error: {role} SSH handshake failed"));
+                    if error == SSH_CONNECT_TIMEOUT_ERROR {
+                        diagnostic.error(format!("error: {role} SSH handshake timed out"));
+                    } else {
+                        diagnostic.error(format!("error: {role} SSH handshake failed"));
+                    }
                 }
-                format!("SSH接続エラー: {}", error)
-            })?;
+                error
+            });
+        let handle = match handle_result {
+            Ok(handle) => handle,
+            Err(error) => {
+                let _ = jump_handle
+                    .disconnect(Disconnect::ByApplication, "Target handshake failed", "en")
+                    .await;
+                return Err(error);
+            }
+        };
         (handle, Some(jump_handle))
     } else {
         if let Some(diagnostic) = &diagnostic {
             diagnostic.info(format!("{role}: starting SSH handshake"));
         }
-        let handle = russh::client::connect(config, (host, port), handler)
+        let handle =
+            run_ssh_operation_with_timeout(SSH_CONNECT_TIMEOUT, SSH_CONNECT_TIMEOUT_ERROR, async {
+                russh::client::connect(config, (host, port), handler)
+                    .await
+                    .map_err(|error| format!("SSH接続エラー: {}", error))
+            })
             .await
             .map_err(|error| {
                 if let Some(diagnostic) = &diagnostic {
-                    diagnostic.error(format!("error: {role} SSH handshake failed"));
+                    if error == SSH_CONNECT_TIMEOUT_ERROR {
+                        diagnostic.error(format!("error: {role} SSH handshake timed out"));
+                    } else {
+                        diagnostic.error(format!("error: {role} SSH handshake failed"));
+                    }
                 }
-                format!("SSH接続エラー: {}", error)
+                error
             })?;
         (handle, None)
     };
@@ -1279,26 +1372,57 @@ pub async fn connect(
         .await?;
         let stream = jump_channel.into_stream();
         diagnostic.info("target: starting SSH handshake");
-        let handle = russh::client::connect_stream(config, stream, handler)
+        let handle_result =
+            run_ssh_operation_with_timeout(SSH_CONNECT_TIMEOUT, SSH_CONNECT_TIMEOUT_ERROR, async {
+                russh::client::connect_stream(config, stream, handler)
+                    .await
+                    .map_err(|error| {
+                        if let Some(result) = host_verifier.last_result() {
+                            emit_host_key_diagnostic(&diagnostic, &result);
+                        }
+                        map_connect_error(error, &host_verifier)
+                    })
+            })
             .await
             .map_err(|error| {
-                if let Some(result) = host_verifier.last_result() {
-                    emit_host_key_diagnostic(&diagnostic, &result);
+                if error == SSH_CONNECT_TIMEOUT_ERROR {
+                    diagnostic.error("error: target SSH handshake timed out");
+                } else {
+                    diagnostic.error("error: target SSH handshake failed");
                 }
-                diagnostic.error("error: target SSH handshake failed");
-                map_connect_error(error, &host_verifier)
-            })?;
+                error
+            });
+        let handle = match handle_result {
+            Ok(handle) => handle,
+            Err(error) => {
+                let _ = jump_handle
+                    .disconnect(Disconnect::ByApplication, "Target handshake failed", "en")
+                    .await;
+                return Err(error);
+            }
+        };
         (handle, Some(jump_handle))
     } else {
         diagnostic.info("target: starting SSH handshake");
-        let handle = russh::client::connect(config, (options.host.as_str(), options.port), handler)
+        let handle =
+            run_ssh_operation_with_timeout(SSH_CONNECT_TIMEOUT, SSH_CONNECT_TIMEOUT_ERROR, async {
+                russh::client::connect(config, (options.host.as_str(), options.port), handler)
+                    .await
+                    .map_err(|error| {
+                        if let Some(result) = host_verifier.last_result() {
+                            emit_host_key_diagnostic(&diagnostic, &result);
+                        }
+                        map_connect_error(error, &host_verifier)
+                    })
+            })
             .await
             .map_err(|error| {
-                if let Some(result) = host_verifier.last_result() {
-                    emit_host_key_diagnostic(&diagnostic, &result);
+                if error == SSH_CONNECT_TIMEOUT_ERROR {
+                    diagnostic.error("error: target SSH handshake timed out");
+                } else {
+                    diagnostic.error("error: target SSH handshake failed");
                 }
-                diagnostic.error("error: target SSH handshake failed");
-                map_connect_error(error, &host_verifier)
+                error
             })?;
         (handle, None)
     };
@@ -1307,42 +1431,147 @@ pub async fn connect(
         emit_host_key_diagnostic(&diagnostic, &result);
     }
     diagnostic.info("target: authentication started");
-    authenticate_ssh(&mut handle, &options.username, auth)
+    if let Err(error) =
+        run_ssh_operation_with_timeout(SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR, async {
+            authenticate_ssh(&mut handle, &options.username, auth).await
+        })
         .await
-        .map_err(|error| {
+    {
+        if error == SSH_AUTH_TIMEOUT_ERROR {
+            diagnostic.error("error: target authentication timed out");
+        } else {
             diagnostic.error("error: target authentication failed");
-            error
-        })?;
+        }
+        let _ = handle
+            .disconnect(
+                Disconnect::ByApplication,
+                "Target authentication failed",
+                "en",
+            )
+            .await;
+        if let Some(jump_handle) = &jump_handle {
+            let _ = jump_handle
+                .disconnect(
+                    Disconnect::ByApplication,
+                    "Target authentication failed",
+                    "en",
+                )
+                .await;
+        }
+        return Err(error);
+    }
     diagnostic.info("target: authentication succeeded");
 
     diagnostic.info("target: opening session channel");
-    let channel = handle.channel_open_session().await.map_err(|e| {
-        diagnostic.error("error: target session channel failed");
-        format!("SSHチャネルオープンエラー: {}", e)
-    })?;
+    let channel = run_ssh_operation_with_timeout(
+        SSH_CHANNEL_OPEN_TIMEOUT,
+        SSH_CHANNEL_OPEN_TIMEOUT_ERROR,
+        async {
+            handle
+                .channel_open_session()
+                .await
+                .map_err(|e| format!("SSHチャネルオープンエラー: {}", e))
+        },
+    )
+    .await
+    .map_err(|error| {
+        if error == SSH_CHANNEL_OPEN_TIMEOUT_ERROR {
+            diagnostic.error("error: target session channel timed out");
+        } else {
+            diagnostic.error("error: target session channel failed");
+        }
+        error
+    });
+    let channel = match channel {
+        Ok(channel) => channel,
+        Err(error) => {
+            let _ = handle
+                .disconnect(
+                    Disconnect::ByApplication,
+                    "Target channel open failed",
+                    "en",
+                )
+                .await;
+            if let Some(jump_handle) = &jump_handle {
+                let _ = jump_handle
+                    .disconnect(
+                        Disconnect::ByApplication,
+                        "Target channel open failed",
+                        "en",
+                    )
+                    .await;
+            }
+            return Err(error);
+        }
+    };
 
     diagnostic.info("target: requesting pty");
-    channel
-        .request_pty(
-            false,
-            "xterm-256color",
-            options.cols,
-            options.rows,
-            0,
-            0,
-            &[],
-        )
+    if let Err(error) =
+        run_ssh_operation_with_timeout(SSH_PTY_TIMEOUT, SSH_PTY_TIMEOUT_ERROR, async {
+            channel
+                .request_pty(
+                    false,
+                    "xterm-256color",
+                    options.cols,
+                    options.rows,
+                    0,
+                    0,
+                    &[],
+                )
+                .await
+                .map_err(|_| "PTYリクエストエラー".to_string())
+        })
         .await
-        .map_err(|_| {
+    {
+        if error == SSH_PTY_TIMEOUT_ERROR {
+            diagnostic.error("error: target pty request timed out");
+        } else {
             diagnostic.error("error: target pty request failed");
-            "PTYリクエストエラー".to_string()
-        })?;
+        }
+        let _ = handle
+            .disconnect(Disconnect::ByApplication, "Target pty request failed", "en")
+            .await;
+        if let Some(jump_handle) = &jump_handle {
+            let _ = jump_handle
+                .disconnect(Disconnect::ByApplication, "Target pty request failed", "en")
+                .await;
+        }
+        return Err(error);
+    }
 
     diagnostic.info("target: requesting shell");
-    channel.request_shell(false).await.map_err(|_| {
-        diagnostic.error("error: target shell request failed");
-        "シェルリクエストエラー".to_string()
-    })?;
+    if let Err(error) =
+        run_ssh_operation_with_timeout(SSH_SHELL_TIMEOUT, SSH_SHELL_TIMEOUT_ERROR, async {
+            channel
+                .request_shell(false)
+                .await
+                .map_err(|_| "シェルリクエストエラー".to_string())
+        })
+        .await
+    {
+        if error == SSH_SHELL_TIMEOUT_ERROR {
+            diagnostic.error("error: target shell request timed out");
+        } else {
+            diagnostic.error("error: target shell request failed");
+        }
+        let _ = handle
+            .disconnect(
+                Disconnect::ByApplication,
+                "Target shell request failed",
+                "en",
+            )
+            .await;
+        if let Some(jump_handle) = &jump_handle {
+            let _ = jump_handle
+                .disconnect(
+                    Disconnect::ByApplication,
+                    "Target shell request failed",
+                    "en",
+                )
+                .await;
+        }
+        return Err(error);
+    }
 
     let (mut channel_read_half, channel_write_half) = channel.split();
     tokio::spawn(async move { while channel_read_half.wait().await.is_some() {} });
@@ -1597,6 +1826,36 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(error, SSH_WRITE_ERROR);
+    }
+
+    #[tokio::test]
+    async fn ssh_operation_timeout_returns_fixed_error_without_sensitive_context() {
+        let error = run_ssh_operation_with_timeout(
+            Duration::from_millis(1),
+            SSH_CONNECT_TIMEOUT_ERROR,
+            std::future::pending::<Result<&'static str, String>>(),
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error, SSH_CONNECT_TIMEOUT_ERROR);
+        assert!(!error.contains("secret"));
+        assert!(!error.contains("payload"));
+        assert!(!error.contains("host.example.com"));
+        assert!(!error.contains("admin"));
+    }
+
+    #[tokio::test]
+    async fn ssh_operation_timeout_preserves_success_value() {
+        let value = run_ssh_operation_with_timeout(
+            Duration::from_secs(1),
+            SSH_CONNECT_TIMEOUT_ERROR,
+            async { Ok("connected") },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(value, "connected");
     }
 
     #[test]

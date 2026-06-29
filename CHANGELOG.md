@@ -6,6 +6,7 @@
 
 - Made SSH read queue overflow visible with a privacy-safe terminal status line and backend event instead of silently dropping output.
 - Improved SSH remote disconnect handling so closed target sessions are not disconnected again from russh callbacks.
+- Added timeout boundaries to SSH connection setup so stalled connect, authentication, channel, PTY, or shell requests do not leave the connection dialog waiting indefinitely.
 - Added timeout boundaries to SSH writes and terminal resizes so stalled SSH channels do not leave backend operations waiting indefinitely.
 
 ## v0.7.1
