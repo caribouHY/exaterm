@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- Improved SSH sessions so overloaded output no longer disappears without warning.
+- Fixed SSH sessions so remote disconnects are reflected more reliably in the UI.
+- Improved SSH connections so stalled connection setup no longer leaves the connection dialog waiting indefinitely.
+- Improved SSH sessions so stalled input sends and terminal resizes time out instead of waiting indefinitely.
+
 ## v0.7.1
 
 ### Fixed
