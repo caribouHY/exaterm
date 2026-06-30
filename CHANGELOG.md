@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added PowerShell-style right-click copy and paste in terminal sessions.
+
 ### Fixed
 
 - Improved SSH sessions so overloaded output no longer disappears without warning.

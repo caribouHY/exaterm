@@ -6,6 +6,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useTranslation } from "react-i18next";
 import type { ConnectionType, Encoding, TerminalConfig, TerminalMode } from "../../types";
 import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
@@ -636,7 +637,8 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
   // Create the terminal once per session and keep it mounted after disconnect.
   useEffect(() => {
-    if (!containerRef.current || !sessionId || termRef.current) return;
+    const terminalElement = containerRef.current;
+    if (!terminalElement || !sessionId || termRef.current) return;
 
     const term = new Terminal({
       fontFamily:
@@ -688,7 +690,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     term.loadAddon(webLinksAddon);
     term.loadAddon(searchAddon);
 
-    term.open(containerRef.current);
+    term.open(terminalElement);
     fitAddon.fit();
 
     termRef.current = term;
@@ -701,6 +703,50 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       invoke(protocol.write, { sessionId, data }).catch(console.error);
     });
     const scrollDecorationDisposable = term.onScroll(() => scheduleTerminalModeDecoration(term));
+    let disposed = false;
+
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+
+      void (async () => {
+        const selection = term.getSelection();
+        if (selection.length > 0) {
+          try {
+            await writeText(selection);
+            if (!disposed) {
+              term.clearSelection();
+            }
+          } catch {
+            // Clipboard failures should not send anything to the terminal.
+          } finally {
+            if (!disposed) {
+              term.focus();
+            }
+          }
+          return;
+        }
+
+        if (!isConnectedRef.current) {
+          term.focus();
+          return;
+        }
+
+        try {
+          const clipboardText = await readText();
+          if (!disposed && clipboardText.length > 0) {
+            term.paste(clipboardText);
+          }
+        } catch {
+          // Clipboard failures should not send anything to the terminal.
+        } finally {
+          if (!disposed) {
+            term.focus();
+          }
+        }
+      })();
+    };
+
+    terminalElement.addEventListener("contextmenu", handleContextMenu);
 
     // Backend data -> terminal
     const eventPrefix = protocol.dataEvent;
@@ -744,7 +790,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       writeTerminalText(text);
     };
 
-    let disposed = false;
     let unlistenData: Promise<() => void> | null = null;
     let unlistenError: Promise<() => void> | null = null;
 
@@ -807,10 +852,11 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     };
 
     const resizeObserver = new ResizeObserver(handleResize);
-    resizeObserver.observe(containerRef.current);
+    resizeObserver.observe(terminalElement);
 
     return () => {
       disposed = true;
+      terminalElement.removeEventListener("contextmenu", handleContextMenu);
       unlistenData?.then((fn) => fn());
       unlistenError?.then((fn) => fn());
       if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
