@@ -6,6 +6,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useTranslation } from "react-i18next";
 import type { ConnectionType, Encoding, TerminalConfig, TerminalMode } from "../../types";
@@ -105,6 +106,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const terminalModeRef = useRef(terminalMode);
   const decorationFrameRef = useRef<number | null>(null);
   const decorationRebuildRef = useRef(false);
+  const contextMenuActionInProgressRef = useRef(false);
   const promptDecorationsRef = useRef<Map<number, PromptDecorationSet>>(new Map());
   const errorDecorationsRef = useRef<Map<number, LineDecorationSet>>(new Map());
   const autoLogSanitizerRef = useRef(
@@ -707,38 +709,53 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
     const handleContextMenu = (event: MouseEvent) => {
       event.preventDefault();
+      if (contextMenuActionInProgressRef.current) return;
+      contextMenuActionInProgressRef.current = true;
 
       void (async () => {
-        const selection = term.getSelection();
-        if (selection.length > 0) {
-          try {
+        try {
+          const selection = term.getSelection();
+          if (selection.length > 0) {
             await writeText(selection);
             if (!disposed) {
               term.clearSelection();
             }
-          } catch {
-            // Clipboard failures should not send anything to the terminal.
-          } finally {
-            if (!disposed) {
-              term.focus();
+            return;
+          }
+
+          if (!isConnectedRef.current) {
+            return;
+          }
+
+          const clipboardText = await readText();
+          if (disposed || clipboardText.length === 0) {
+            return;
+          }
+
+          const hasMultipleLines = clipboardText.includes("\n") || clipboardText.includes("\r");
+          if (hasMultipleLines) {
+            const shouldPaste = await confirm(
+              t("terminal.multiline_paste_message", { content: clipboardText }),
+              {
+                title: t("terminal.multiline_paste_title"),
+                kind: "warning",
+                okLabel: t("terminal.multiline_paste_confirm"),
+                cancelLabel: t("terminal.multiline_paste_cancel"),
+              }
+            );
+
+            if (!shouldPaste || disposed) {
+              return;
             }
           }
-          return;
-        }
 
-        if (!isConnectedRef.current) {
-          term.focus();
-          return;
-        }
-
-        try {
-          const clipboardText = await readText();
-          if (!disposed && clipboardText.length > 0) {
+          if (!disposed) {
             term.paste(clipboardText);
           }
         } catch {
           // Clipboard failures should not send anything to the terminal.
         } finally {
+          contextMenuActionInProgressRef.current = false;
           if (!disposed) {
             term.focus();
           }

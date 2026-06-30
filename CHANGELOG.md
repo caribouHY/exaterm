@@ -5,6 +5,7 @@
 ### Added
 
 - Added PowerShell-style right-click copy and paste in terminal sessions.
+- Added a confirmation dialog that shows clipboard content before pasting multiple lines into a terminal session.
 
 ### Fixed
 
