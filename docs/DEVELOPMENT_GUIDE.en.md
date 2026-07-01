@@ -43,11 +43,10 @@ pnpm run build
 Run Rust tests:
 
 ```powershell
-cd src-tauri
-cargo test
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-Run Cargo commands from `src-tauri` unless the command uses an explicit manifest path.
+Run Cargo validation commands from the repository root with an explicit manifest path.
 
 ## Branches and Commits
 

@@ -87,9 +87,11 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
 
   useEffect(() => {
     invoke<AppConfig>("config_load")
-      .then((cfg) => setConfig(normalizeExternalControlConfig(cfg)))
+      .then((cfg) => {
+        setConfig(normalizeExternalControlConfig(cfg));
+      })
       .catch(() => {});
-    refreshSecretStatus();
+    void refreshSecretStatus();
   }, []);
 
   const handleSave = async () => {
@@ -137,11 +139,13 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
 
       const resolvedLanguage = resolveAppLanguage(normalizedConfig.language);
       if (resolvedLanguage !== i18n.language) {
-        i18n.changeLanguage(resolvedLanguage);
+        void i18n.changeLanguage(resolvedLanguage);
       }
       setSaved(true);
       if (onSave) onSave();
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => {
+        setSaved(false);
+      }, 2000);
     } catch (e) {
       console.error(e);
       setError(typeof e === "string" ? e : "Failed to save settings.");
@@ -155,7 +159,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       </div>
     );
 
-  const update = (path: string, value: any) => {
+  const update = (path: string, value: unknown) => {
     const newConfig = JSON.parse(JSON.stringify(config));
     const keys = path.split(".");
     let obj = newConfig;
@@ -205,7 +209,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             type="password"
             value={value}
             readOnly={!canType}
-            onChange={(e) => setSecretEdits((prev) => ({ ...prev, [key]: e.target.value }))}
+            onChange={(e) => {
+              setSecretEdits((prev) => ({ ...prev, [key]: e.target.value }));
+            }}
             placeholder={hasSecret ? "" : placeholder}
           />
           {hasSecret && !isEditing && (
@@ -213,7 +219,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                onClick={() => beginEditSecret(key)}
+                onClick={() => {
+                  beginEditSecret(key);
+                }}
               >
                 {t("settings.change")}
               </button>
@@ -230,7 +238,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => cancelEditSecret(key)}
+              onClick={() => {
+                cancelEditSecret(key);
+              }}
             >
               {t("settings.cancel")}
             </button>
@@ -251,7 +261,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <select
               className="select"
               value={config.language}
-              onChange={(e) => update("language", e.target.value)}
+              onChange={(e) => {
+                update("language", e.target.value);
+              }}
             >
               {LANGUAGE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -271,7 +283,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <select
               className="select"
               value={config.ai.default_provider}
-              onChange={(e) => update("ai.default_provider", e.target.value)}
+              onChange={(e) => {
+                update("ai.default_provider", e.target.value);
+              }}
             >
               <option value="OpenAi">OpenAI</option>
               <option value="AzureOpenAi">Azure OpenAI</option>
@@ -363,8 +377,10 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           <label className="toggle">
             <input
               type="checkbox"
-              checked={Boolean(config.external_control?.enabled)}
-              onChange={(e) => update("external_control.enabled", e.target.checked)}
+              checked={Boolean(config.external_control.enabled)}
+              onChange={(e) => {
+                update("external_control.enabled", e.target.checked);
+              }}
             />
             <span className="toggle-track" />
           </label>
@@ -377,8 +393,10 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           <label className="toggle">
             <input
               type="checkbox"
-              checked={Boolean(config.external_control?.cli_enabled)}
-              onChange={(e) => update("external_control.cli_enabled", e.target.checked)}
+              checked={Boolean(config.external_control.cli_enabled)}
+              onChange={(e) => {
+                update("external_control.cli_enabled", e.target.checked);
+              }}
             />
             <span className="toggle-track" />
           </label>
@@ -391,8 +409,10 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           <label className="toggle">
             <input
               type="checkbox"
-              checked={Boolean(config.external_control?.connect_enabled)}
-              onChange={(e) => update("external_control.connect_enabled", e.target.checked)}
+              checked={Boolean(config.external_control.connect_enabled)}
+              onChange={(e) => {
+                update("external_control.connect_enabled", e.target.checked);
+              }}
             />
             <span className="toggle-track" />
           </label>
@@ -408,8 +428,10 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           <label className="toggle">
             <input
               type="checkbox"
-              checked={Boolean(config.external_control?.mcp_enabled)}
-              onChange={(e) => update("external_control.mcp_enabled", e.target.checked)}
+              checked={Boolean(config.external_control.mcp_enabled)}
+              onChange={(e) => {
+                update("external_control.mcp_enabled", e.target.checked);
+              }}
             />
             <span className="toggle-track" />
           </label>
@@ -431,7 +453,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <input
               type="checkbox"
               checked={Boolean(config.ssh.allow_legacy_algorithms)}
-              onChange={(e) => update("ssh.allow_legacy_algorithms", e.target.checked)}
+              onChange={(e) => {
+                update("ssh.allow_legacy_algorithms", e.target.checked);
+              }}
             />
             <span className="toggle-track" />
           </label>
@@ -447,7 +471,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               className="input"
               type="number"
               value={config.terminal.font_size}
-              onChange={(e) => update("terminal.font_size", parseInt(e.target.value))}
+              onChange={(e) => {
+                update("terminal.font_size", parseInt(e.target.value));
+              }}
               min={8}
               max={32}
             />
@@ -458,7 +484,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               className="input"
               type="number"
               value={config.terminal.scrollback}
-              onChange={(e) => update("terminal.scrollback", parseInt(e.target.value))}
+              onChange={(e) => {
+                update("terminal.scrollback", parseInt(e.target.value));
+              }}
             />
           </div>
         </div>
@@ -467,7 +495,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           <input
             className="input"
             value={config.terminal.font_family}
-            onChange={(e) => update("terminal.font_family", e.target.value)}
+            onChange={(e) => {
+              update("terminal.font_family", e.target.value);
+            }}
           />
         </div>
       </div>
@@ -483,7 +513,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <input
               type="checkbox"
               checked={config.terminal.auto_session_log}
-              onChange={(e) => update("terminal.auto_session_log", e.target.checked)}
+              onChange={(e) => {
+                update("terminal.auto_session_log", e.target.checked);
+              }}
             />
             <span className="toggle-track" />
           </label>
@@ -493,7 +525,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           <select
             className="select"
             value={config.terminal.log_format || "display"}
-            onChange={(e) => update("terminal.log_format", e.target.value)}
+            onChange={(e) => {
+              update("terminal.log_format", e.target.value);
+            }}
           >
             <option value="display">{t("settings.log_format_display")}</option>
             <option value="strip_controls">{t("settings.log_format_strip_controls")}</option>
@@ -508,7 +542,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <input
               type="checkbox"
               checked={config.terminal.include_log_header ?? false}
-              onChange={(e) => update("terminal.include_log_header", e.target.checked)}
+              onChange={(e) => {
+                update("terminal.include_log_header", e.target.checked);
+              }}
             />
             <span className="toggle-track" />
           </label>

@@ -21,7 +21,7 @@ export function resolveAppLanguage(language: string | undefined): "en" | "ja" {
     return language;
   }
 
-  return resolveSystemLanguage(globalThis.navigator?.language);
+  return resolveSystemLanguage(globalThis.navigator.language);
 }
 
 i18n.use(initReactI18next).init({
@@ -34,7 +34,7 @@ i18n.use(initReactI18next).init({
 });
 
 // Load the language from config on startup
-invoke<any>("config_load")
+invoke<{ language?: string } | null>("config_load")
   .then((config) => {
     if (config && config.language) {
       i18n.changeLanguage(resolveAppLanguage(config.language));

@@ -22,22 +22,19 @@ Use this checklist before and after code changes. It is intentionally short and 
 - Keep Rust and TypeScript payload shapes synchronized.
 - Update both English and Japanese locale files for user-visible text.
 - Add a concise entry to `CHANGELOG.md` for user-visible behavior changes, fixes, and notable internal changes.
-- For release version bumps, also use `ai-docs/RELEASE_CHECKLIST.md`.
+- For release version bumps, also use `.agents/skills/exaterm-release-prep/SKILL.md`.
 - Register new backend commands in `src-tauri/src/lib.rs`.
 - Keep changes scoped to the subsystem requested by the task.
 
 ## After Changing Code
 
-- Format the changed area before validation, using `pnpm run format` or the narrower formatter command when appropriate.
-- Do not rely on editor format-on-save as the only formatting gate. Before opening or updating a PR, run `pnpm run format:check` so Markdown, JSON, and files not saved in the editor are checked the same way CI checks them.
+- Format the changed area before validation using the project formatter or the narrower formatter command when appropriate.
+- Do not rely on editor format-on-save as the only formatting gate. Before opening or updating a PR, use `.agents/skills/exaterm-validate-change/SKILL.md` to choose validation commands.
 - Confirm AI-facing implementation notes stayed in `ai-docs/` or `AGENTS.md`, not in `docs/`.
 - Confirm user-facing documentation stayed in `docs/`.
 - Confirm Markdown links and referenced paths exist.
 - Confirm active terminal tabs would not be remounted or cleared by the change.
 - Confirm log and secret handling still match the privacy model.
-- Run the smallest relevant validation set:
-  - `pnpm run build` for frontend and TypeScript changes.
-  - `cargo test` for Rust backend changes.
-  - `pnpm run tauri build --debug` for installer/runtime integration changes.
+- Run the smallest relevant validation set selected by `.agents/skills/exaterm-validate-change/SKILL.md`.
 
 Documentation-only changes do not require a full application build.

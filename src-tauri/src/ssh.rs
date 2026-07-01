@@ -725,6 +725,26 @@ fn normalize_auth_path(path: &str) -> PathBuf {
     PathBuf::from(expanded)
 }
 
+const PEM_BEGIN_PREFIX: &str = "-----BEGIN ";
+const PEM_END_SUFFIX: &str = "-----";
+const SUPPORTED_PRIVATE_KEY_LABELS: &[&str] = &[
+    "OPENSSH PRIVATE KEY",
+    "RSA PRIVATE KEY",
+    "DSA PRIVATE KEY",
+    "EC PRIVATE KEY",
+    "ENCRYPTED PRIVATE KEY",
+    "PRIVATE KEY",
+];
+
+fn pem_header_label(line: &str) -> Option<&str> {
+    line.strip_prefix(PEM_BEGIN_PREFIX)?
+        .strip_suffix(PEM_END_SUFFIX)
+}
+
+fn is_supported_private_key_header(line: &str) -> bool {
+    pem_header_label(line).is_some_and(|label| SUPPORTED_PRIVATE_KEY_LABELS.contains(&label))
+}
+
 fn private_key_format_hint(secret: &str) -> Result<(), String> {
     let first_line = secret.lines().find(|line| !line.trim().is_empty());
 
@@ -747,14 +767,7 @@ fn private_key_format_hint(secret: &str) -> Result<(), String> {
                     .to_string(),
             )
         }
-        Some(line)
-            if line == "-----BEGIN OPENSSH PRIVATE KEY-----"
-                || line == "-----BEGIN RSA PRIVATE KEY-----"
-                || line == "-----BEGIN ENCRYPTED PRIVATE KEY-----"
-                || line == "-----BEGIN PRIVATE KEY-----" =>
-        {
-            Ok(())
-        }
+        Some(line) if is_supported_private_key_header(line) => Ok(()),
         _ => Err(
             "OpenSSH/PEM形式の秘密鍵ファイルを指定してください。公開鍵ファイルは秘密鍵として使用できません"
                 .to_string(),
@@ -2046,6 +2059,37 @@ mod tests {
         let error = private_key_format_hint("PuTTY-User-Key-File-3: ssh-ed25519\n").unwrap_err();
 
         assert!(error.contains("PuTTY形式"));
+    }
+
+    #[test]
+    fn private_key_hint_accepts_supported_pem_headers() {
+        for label in SUPPORTED_PRIVATE_KEY_LABELS {
+            let secret = format!(
+                "-----BEGIN {}-----\nexample\n-----END {}-----\n",
+                label, label
+            );
+
+            assert!(
+                private_key_format_hint(&secret).is_ok(),
+                "expected supported key header for {label}"
+            );
+        }
+    }
+
+    #[test]
+    fn private_key_header_requires_exact_pem_boundaries() {
+        assert!(!is_supported_private_key_header(
+            "----BEGIN OPENSSH PRIVATE KEY-----"
+        ));
+        assert!(!is_supported_private_key_header(
+            "-----BEGIN OPENSSH PRIVATE KEY----"
+        ));
+        assert!(!is_supported_private_key_header(
+            "-----BEGIN OPENSSH PRIVATE KEY----- extra"
+        ));
+        assert!(!is_supported_private_key_header(
+            "-----BEGIN CERTIFICATE-----"
+        ));
     }
 
     #[test]

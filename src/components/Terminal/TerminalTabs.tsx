@@ -426,7 +426,9 @@ export default function TerminalTabs({
             <span className="terminal-tab__label">{labelFor(tab)}</span>
             <span
               className="terminal-tab__close"
-              onPointerDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 if (!isClosing) {

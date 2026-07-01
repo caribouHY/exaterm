@@ -43,11 +43,10 @@ pnpm run build
 Rust のテストを実行します。
 
 ```powershell
-cd src-tauri
-cargo test
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-明示的に manifest path を指定するコマンド以外は、`src-tauri` で Cargo コマンドを実行します。
+Cargo の検証コマンドは、リポジトリルートから明示的な manifest path を指定して実行します。
 
 ## ブランチとコミット
 

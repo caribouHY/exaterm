@@ -193,7 +193,7 @@ Use this structure as the repository grows:
 - `ai-docs/SYSTEM_DESIGN.md`: durable system-wide design and direction.
 - `ai-docs/*_DESIGN.md`: detailed feature or subsystem designs.
 - `ai-docs/CHANGE_CHECKLIST.md`: before/after checklist for code changes.
-- `ai-docs/RELEASE_CHECKLIST.md`: release-specific checklist.
+- `.agents/skills/exaterm-release-prep/SKILL.md`: release-preparation workflow.
 - `docs/`: user-facing documentation only.
 
 When adding a feature design, include:
@@ -215,8 +215,5 @@ Documentation-only changes do not require a full app build. At minimum:
 - confirm implementation guidance stayed in `ai-docs/`
 - confirm user-facing documentation stayed in `docs/`
 
-For implementation work that follows this design:
-
-- use `pnpm run build` for frontend and TypeScript changes
-- use `cargo test` for Rust backend changes
-- use `pnpm run tauri build --debug` when installer, binary, or runtime integration matters
+For AI agent validation command selection, use
+`.agents/skills/exaterm-validate-change/SKILL.md`.
