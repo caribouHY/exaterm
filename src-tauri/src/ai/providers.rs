@@ -5,6 +5,8 @@ use super::errors::{
 };
 use super::secrets::load_provider_secret;
 use super::types::{AiModelInfo, AiProvider, ChatMessage};
+use reqwest::RequestBuilder;
+use serde_json::Value;
 
 const OPENAI_MODELS_URL: &str = "https://api.openai.com/v1/models";
 const OPENAI_CHAT_URL: &str = "https://api.openai.com/v1/chat/completions";
@@ -16,6 +18,14 @@ const OPENROUTER_MODELS_URL: &str = "https://openrouter.ai/api/v1/models";
 const OPENROUTER_CHAT_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
+#[derive(Debug, Clone, Copy)]
+enum ChatResponseFormat {
+    OpenAiCompatible,
+    Anthropic,
+    Gemini,
+    Ollama,
+}
+
 pub async fn fetch_provider_models(
     client: &reqwest::Client,
     provider: &AiProvider,
@@ -25,56 +35,49 @@ pub async fn fetch_provider_models(
 ) -> Result<Vec<AiModelInfo>, String> {
     let body = match provider {
         AiProvider::OpenAi => {
-            let api_key = api_key.ok_or_else(|| missing_secret_message(provider, language))?;
-            let resp = client
-                .get(OPENAI_MODELS_URL)
-                .header("Authorization", format!("Bearer {}", api_key))
-                .send()
-                .await
-                .map_err(|e| format_network_error(provider, language, &e))?;
-            response_json(resp, provider, language, "model list").await?
+            let api_key = require_api_key(provider, api_key, language)?;
+            send_model_list_request(
+                client
+                    .get(OPENAI_MODELS_URL)
+                    .header("Authorization", format!("Bearer {}", api_key)),
+                provider,
+                language,
+            )
+            .await?
         }
         AiProvider::AzureOpenAi => serde_json::json!({ "data": [] }),
         AiProvider::Anthropic => {
-            let api_key = api_key.ok_or_else(|| missing_secret_message(provider, language))?;
-            let resp = client
-                .get(ANTHROPIC_MODELS_URL)
-                .header("x-api-key", api_key)
-                .header("anthropic-version", ANTHROPIC_VERSION)
-                .send()
-                .await
-                .map_err(|e| format_network_error(provider, language, &e))?;
-            response_json(resp, provider, language, "model list").await?
+            let api_key = require_api_key(provider, api_key, language)?;
+            send_model_list_request(
+                client
+                    .get(ANTHROPIC_MODELS_URL)
+                    .header("x-api-key", api_key)
+                    .header("anthropic-version", ANTHROPIC_VERSION),
+                provider,
+                language,
+            )
+            .await?
         }
         AiProvider::Gemini => {
-            let api_key = api_key.ok_or_else(|| missing_secret_message(provider, language))?;
+            let api_key = require_api_key(provider, api_key, language)?;
             let url = format!("{}?key={}", GEMINI_MODELS_URL, api_key);
-            let resp = client
-                .get(&url)
-                .send()
-                .await
-                .map_err(|e| format_network_error(provider, language, &e))?;
-            response_json(resp, provider, language, "model list").await?
+            send_model_list_request(client.get(&url), provider, language).await?
         }
         AiProvider::OpenRouter => {
-            let api_key = api_key.ok_or_else(|| missing_secret_message(provider, language))?;
-            let resp = client
-                .get(OPENROUTER_MODELS_URL)
-                .header("Authorization", format!("Bearer {}", api_key))
-                .send()
-                .await
-                .map_err(|e| format_network_error(provider, language, &e))?;
-            response_json(resp, provider, language, "model list").await?
+            let api_key = require_api_key(provider, api_key, language)?;
+            send_model_list_request(
+                client
+                    .get(OPENROUTER_MODELS_URL)
+                    .header("Authorization", format!("Bearer {}", api_key)),
+                provider,
+                language,
+            )
+            .await?
         }
         AiProvider::Ollama => {
             let base_url = normalized_ollama_base_url(ollama_base_url);
             let url = format!("{}/api/tags", base_url);
-            let resp = client
-                .get(&url)
-                .send()
-                .await
-                .map_err(|e| format_network_error(provider, language, &e))?;
-            response_json(resp, provider, language, "model list").await?
+            send_model_list_request(client.get(&url), provider, language).await?
         }
     };
 
@@ -84,6 +87,43 @@ pub async fn fetch_provider_models(
     } else {
         Ok(models)
     }
+}
+
+fn require_api_key<'a>(
+    provider: &AiProvider,
+    api_key: Option<&'a str>,
+    language: &str,
+) -> Result<&'a str, String> {
+    api_key.ok_or_else(|| missing_secret_message(provider, language))
+}
+
+async fn send_model_list_request(
+    request: RequestBuilder,
+    provider: &AiProvider,
+    language: &str,
+) -> Result<Value, String> {
+    send_json_request(request, provider, language, "model list").await
+}
+
+async fn send_chat_request_json(
+    request: RequestBuilder,
+    provider: &AiProvider,
+    language: &str,
+) -> Result<Value, String> {
+    send_json_request(request, provider, language, "chat").await
+}
+
+async fn send_json_request(
+    request: RequestBuilder,
+    provider: &AiProvider,
+    language: &str,
+    operation: &str,
+) -> Result<Value, String> {
+    let resp = request
+        .send()
+        .await
+        .map_err(|e| format_network_error(provider, language, &e))?;
+    response_json(resp, provider, language, operation).await
 }
 
 pub async fn send_chat_request(
@@ -150,25 +190,25 @@ async fn send_azure_openai_chat(
         language,
     )?;
 
-    let mut payload_messages = vec![serde_json::json!({"role":"system","content":system_prompt})];
-    for message in messages {
-        payload_messages.push(serde_json::json!({"role":&message.role,"content":&message.content}));
-    }
+    let payload_messages = openai_compatible_messages(messages, system_prompt);
 
-    let resp = client
-        .post(url)
-        .header("api-key", api_key)
-        .header("content-type", "application/json")
-        .json(&serde_json::json!({"model":deployment,"messages":payload_messages}))
-        .send()
-        .await
-        .map_err(|e| format_network_error(&provider, language, &e))?;
-    let body = response_json(resp, &provider, language, "chat").await?;
+    let body = send_chat_request_json(
+        client
+            .post(url)
+            .header("api-key", api_key)
+            .header("content-type", "application/json")
+            .json(&serde_json::json!({"model":deployment,"messages":payload_messages})),
+        &provider,
+        language,
+    )
+    .await?;
 
-    body["choices"][0]["message"]["content"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| malformed_chat_response_message(&provider, language, &body))
+    extract_chat_text(
+        &body,
+        &provider,
+        language,
+        ChatResponseFormat::OpenAiCompatible,
+    )
 }
 
 async fn send_openai_chat(
@@ -178,28 +218,17 @@ async fn send_openai_chat(
     system_prompt: &str,
     language: &str,
 ) -> Result<String, String> {
-    let provider = AiProvider::OpenAi;
-    let api_key = load_provider_secret(&provider, language)?;
-    ensure_model_selected(model, language)?;
-
-    let mut payload_messages = vec![serde_json::json!({"role":"system","content":system_prompt})];
-    for message in messages {
-        payload_messages.push(serde_json::json!({"role":&message.role,"content":&message.content}));
-    }
-
-    let resp = client
-        .post(OPENAI_CHAT_URL)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .json(&serde_json::json!({"model":model,"messages":payload_messages,"temperature":0.7}))
-        .send()
-        .await
-        .map_err(|e| format_network_error(&provider, language, &e))?;
-    let body = response_json(resp, &provider, language, "chat").await?;
-
-    body["choices"][0]["message"]["content"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| malformed_chat_response_message(&provider, language, &body))
+    send_openai_compatible_chat(
+        client,
+        AiProvider::OpenAi,
+        OPENAI_CHAT_URL,
+        model,
+        messages,
+        system_prompt,
+        language,
+        &[],
+    )
+    .await
 }
 
 async fn send_anthropic_chat(
@@ -218,21 +247,19 @@ async fn send_anthropic_chat(
         .map(|message| serde_json::json!({"role":&message.role,"content":&message.content}))
         .collect();
 
-    let resp = client
-        .post(ANTHROPIC_MESSAGES_URL)
-        .header("x-api-key", &api_key)
-        .header("anthropic-version", ANTHROPIC_VERSION)
-        .header("content-type", "application/json")
-        .json(&serde_json::json!({"model":model,"max_tokens":4096,"system":system_prompt,"messages":payload_messages}))
-        .send()
-        .await
-        .map_err(|e| format_network_error(&provider, language, &e))?;
-    let body = response_json(resp, &provider, language, "chat").await?;
+    let body = send_chat_request_json(
+        client
+            .post(ANTHROPIC_MESSAGES_URL)
+            .header("x-api-key", &api_key)
+            .header("anthropic-version", ANTHROPIC_VERSION)
+            .header("content-type", "application/json")
+            .json(&serde_json::json!({"model":model,"max_tokens":4096,"system":system_prompt,"messages":payload_messages})),
+        &provider,
+        language,
+    )
+    .await?;
 
-    body["content"][0]["text"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| malformed_chat_response_message(&provider, language, &body))
+    extract_chat_text(&body, &provider, language, ChatResponseFormat::Anthropic)
 }
 
 async fn send_gemini_chat(
@@ -255,18 +282,16 @@ async fn send_gemini_chat(
         "{}/{}:generateContent?key={}",
         GEMINI_GENERATE_BASE_URL, model, api_key
     );
-    let resp = client
-        .post(&url)
-        .json(&serde_json::json!({"contents":[{"parts":parts}],"generationConfig":{"temperature":0.7,"maxOutputTokens":4096}}))
-        .send()
-        .await
-        .map_err(|e| format_network_error(&provider, language, &e))?;
-    let body = response_json(resp, &provider, language, "chat").await?;
+    let body = send_chat_request_json(
+        client
+            .post(&url)
+            .json(&serde_json::json!({"contents":[{"parts":parts}],"generationConfig":{"temperature":0.7,"maxOutputTokens":4096}})),
+        &provider,
+        language,
+    )
+    .await?;
 
-    body["candidates"][0]["content"]["parts"][0]["text"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| malformed_chat_response_message(&provider, language, &body))
+    extract_chat_text(&body, &provider, language, ChatResponseFormat::Gemini)
 }
 
 async fn send_openrouter_chat(
@@ -276,30 +301,20 @@ async fn send_openrouter_chat(
     system_prompt: &str,
     language: &str,
 ) -> Result<String, String> {
-    let provider = AiProvider::OpenRouter;
-    let api_key = load_provider_secret(&provider, language)?;
-    ensure_model_selected(model, language)?;
-
-    let mut payload_messages = vec![serde_json::json!({"role":"system","content":system_prompt})];
-    for message in messages {
-        payload_messages.push(serde_json::json!({"role":&message.role,"content":&message.content}));
-    }
-
-    let resp = client
-        .post(OPENROUTER_CHAT_URL)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("content-type", "application/json")
-        .header("X-OpenRouter-Title", "ExaTerm")
-        .json(&serde_json::json!({"model":model,"messages":payload_messages,"temperature":0.7}))
-        .send()
-        .await
-        .map_err(|e| format_network_error(&provider, language, &e))?;
-    let body = response_json(resp, &provider, language, "chat").await?;
-
-    body["choices"][0]["message"]["content"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| malformed_chat_response_message(&provider, language, &body))
+    send_openai_compatible_chat(
+        client,
+        AiProvider::OpenRouter,
+        OPENROUTER_CHAT_URL,
+        model,
+        messages,
+        system_prompt,
+        language,
+        &[
+            ("content-type", "application/json"),
+            ("X-OpenRouter-Title", "ExaTerm"),
+        ],
+    )
+    .await
 }
 
 async fn send_ollama_chat(
@@ -314,85 +329,158 @@ async fn send_ollama_chat(
     let base_url = normalized_ollama_base_url(ollama_base_url);
     ensure_model_selected(model, language)?;
 
-    let mut payload_messages = vec![serde_json::json!({"role":"system","content":system_prompt})];
-    for message in messages {
-        payload_messages.push(serde_json::json!({"role":&message.role,"content":&message.content}));
-    }
+    let payload_messages = openai_compatible_messages(messages, system_prompt);
 
     let url = format!("{}/api/chat", base_url);
-    let resp = client
-        .post(&url)
-        .json(&serde_json::json!({"model":model,"messages":payload_messages,"stream":false}))
-        .send()
-        .await
-        .map_err(|e| format_network_error(&provider, language, &e))?;
-    let body = response_json(resp, &provider, language, "chat").await?;
+    let body = send_chat_request_json(
+        client
+            .post(&url)
+            .json(&serde_json::json!({"model":model,"messages":payload_messages,"stream":false})),
+        &provider,
+        language,
+    )
+    .await?;
 
-    body["message"]["content"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| malformed_chat_response_message(&provider, language, &body))
+    extract_chat_text(&body, &provider, language, ChatResponseFormat::Ollama)
 }
 
-fn parse_models(provider: &AiProvider, body: &serde_json::Value) -> Vec<AiModelInfo> {
-    match provider {
-        AiProvider::OpenAi => body["data"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|model| model["id"].as_str())
-            .map(|id| model_info(provider, id, &model_display_name(id)))
-            .collect(),
-        AiProvider::AzureOpenAi => Vec::new(),
-        AiProvider::Anthropic => body["data"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|model| {
-                let id = model["id"].as_str()?;
-                let display = model["display_name"].as_str().unwrap_or(id);
-                Some(model_info(provider, id, display))
-            })
-            .collect(),
-        AiProvider::Gemini => body["models"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|model| {
-                model["supportedGenerationMethods"]
-                    .as_array()
-                    .map(|methods| {
-                        methods
-                            .iter()
-                            .any(|method| method.as_str() == Some("generateContent"))
-                    })
-                    .unwrap_or(true)
-            })
-            .filter_map(|model| {
-                let raw_name = model["name"].as_str()?;
-                let id = normalize_gemini_model_id(raw_name);
-                let display = model["displayName"].as_str().unwrap_or(&id);
-                Some(model_info(provider, &id, display))
-            })
-            .collect(),
-        AiProvider::OpenRouter => body["data"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|model| {
-                let id = model["id"].as_str()?;
-                let display = model["name"].as_str().unwrap_or(id);
-                Some(model_info(provider, id, display))
-            })
-            .collect(),
-        AiProvider::Ollama => body["models"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|model| model["name"].as_str())
-            .map(|name| model_info(provider, name, name))
-            .collect(),
+async fn send_openai_compatible_chat(
+    client: &reqwest::Client,
+    provider: AiProvider,
+    url: &str,
+    model: &str,
+    messages: &[ChatMessage],
+    system_prompt: &str,
+    language: &str,
+    extra_headers: &[(&str, &str)],
+) -> Result<String, String> {
+    let api_key = load_provider_secret(&provider, language)?;
+    ensure_model_selected(model, language)?;
+
+    let payload_messages = openai_compatible_messages(messages, system_prompt);
+    let mut request = client
+        .post(url)
+        .header("Authorization", format!("Bearer {}", api_key));
+
+    for (name, value) in extra_headers {
+        request = request.header(*name, *value);
     }
+
+    let body = send_chat_request_json(
+        request.json(
+            &serde_json::json!({"model":model,"messages":payload_messages,"temperature":0.7}),
+        ),
+        &provider,
+        language,
+    )
+    .await?;
+
+    extract_chat_text(
+        &body,
+        &provider,
+        language,
+        ChatResponseFormat::OpenAiCompatible,
+    )
+}
+
+fn openai_compatible_messages(messages: &[ChatMessage], system_prompt: &str) -> Vec<Value> {
+    let mut payload_messages = vec![serde_json::json!({"role":"system","content":system_prompt})];
+    payload_messages.extend(
+        messages
+            .iter()
+            .map(|message| serde_json::json!({"role":&message.role,"content":&message.content})),
+    );
+    payload_messages
+}
+
+fn extract_chat_text(
+    body: &Value,
+    provider: &AiProvider,
+    language: &str,
+    format: ChatResponseFormat,
+) -> Result<String, String> {
+    let text = match format {
+        ChatResponseFormat::OpenAiCompatible => body["choices"][0]["message"]["content"].as_str(),
+        ChatResponseFormat::Anthropic => body["content"][0]["text"].as_str(),
+        ChatResponseFormat::Gemini => body["candidates"][0]["content"]["parts"][0]["text"].as_str(),
+        ChatResponseFormat::Ollama => body["message"]["content"].as_str(),
+    };
+
+    text.map(|s| s.to_string())
+        .ok_or_else(|| malformed_chat_response_message(provider, language, body))
+}
+
+fn parse_models(provider: &AiProvider, body: &Value) -> Vec<AiModelInfo> {
+    match provider {
+        AiProvider::OpenAi => parse_data_models(provider, body, |model| {
+            let id = model["id"].as_str()?;
+            Some((id.to_string(), model_display_name(id)))
+        }),
+        AiProvider::AzureOpenAi => Vec::new(),
+        AiProvider::Anthropic => parse_data_models(provider, body, |model| {
+            model_data_with_display_field(model, "display_name")
+        }),
+        AiProvider::Gemini => parse_gemini_models(provider, body),
+        AiProvider::OpenRouter => parse_data_models(provider, body, |model| {
+            model_data_with_display_field(model, "name")
+        }),
+        AiProvider::Ollama => parse_ollama_models(provider, body),
+    }
+}
+
+fn parse_data_models<F>(provider: &AiProvider, body: &Value, map_model: F) -> Vec<AiModelInfo>
+where
+    F: Fn(&Value) -> Option<(String, String)>,
+{
+    body["data"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|model| {
+            let (id, display) = map_model(model)?;
+            Some(model_info(provider, &id, &display))
+        })
+        .collect()
+}
+
+fn model_data_with_display_field(model: &Value, display_field: &str) -> Option<(String, String)> {
+    let id = model["id"].as_str()?;
+    let display = model[display_field].as_str().unwrap_or(id);
+    Some((id.to_string(), display.to_string()))
+}
+
+fn parse_gemini_models(provider: &AiProvider, body: &Value) -> Vec<AiModelInfo> {
+    body["models"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|model| {
+            model["supportedGenerationMethods"]
+                .as_array()
+                .map(|methods| {
+                    methods
+                        .iter()
+                        .any(|method| method.as_str() == Some("generateContent"))
+                })
+                .unwrap_or(true)
+        })
+        .filter_map(|model| {
+            let raw_name = model["name"].as_str()?;
+            let id = normalize_gemini_model_id(raw_name);
+            let display = model["displayName"].as_str().unwrap_or(&id);
+            Some(model_info(provider, &id, display))
+        })
+        .collect()
+}
+
+fn parse_ollama_models(provider: &AiProvider, body: &Value) -> Vec<AiModelInfo> {
+    body["models"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|model| model["name"].as_str())
+        .map(|name| model_info(provider, name, name))
+        .collect()
 }
 
 fn model_info(provider: &AiProvider, model_id: &str, display_name: &str) -> AiModelInfo {
@@ -545,6 +633,118 @@ mod tests {
         assert_eq!(models[0].provider, "OpenRouter");
         assert_eq!(models[0].model_id, "openai/gpt-4o");
         assert_eq!(models[0].display_name, "OpenAI: GPT-4o");
+    }
+
+    #[test]
+    fn parses_openai_models_with_generated_display_names() {
+        let body = serde_json::json!({
+            "data": [
+                { "id": "gpt-4o-mini" }
+            ]
+        });
+
+        let models = parse_models(&AiProvider::OpenAi, &body);
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].provider, "OpenAi");
+        assert_eq!(models[0].model_id, "gpt-4o-mini");
+        assert_eq!(models[0].display_name, "Gpt 4o Mini");
+    }
+
+    #[test]
+    fn parses_anthropic_models_with_display_names() {
+        let body = serde_json::json!({
+            "data": [
+                {
+                    "id": "claude-sonnet-4-20250514",
+                    "display_name": "Claude Sonnet 4"
+                }
+            ]
+        });
+
+        let models = parse_models(&AiProvider::Anthropic, &body);
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].provider, "Anthropic");
+        assert_eq!(models[0].model_id, "claude-sonnet-4-20250514");
+        assert_eq!(models[0].display_name, "Claude Sonnet 4");
+    }
+
+    #[test]
+    fn extracts_chat_text_for_supported_response_formats() {
+        let openai = serde_json::json!({
+            "choices": [
+                { "message": { "content": "openai-compatible" } }
+            ]
+        });
+        let anthropic = serde_json::json!({
+            "content": [
+                { "text": "anthropic" }
+            ]
+        });
+        let gemini = serde_json::json!({
+            "candidates": [
+                { "content": { "parts": [ { "text": "gemini" } ] } }
+            ]
+        });
+        let ollama = serde_json::json!({
+            "message": { "content": "ollama" }
+        });
+
+        assert_eq!(
+            extract_chat_text(
+                &openai,
+                &AiProvider::OpenAi,
+                "en",
+                ChatResponseFormat::OpenAiCompatible
+            )
+            .unwrap(),
+            "openai-compatible"
+        );
+        assert_eq!(
+            extract_chat_text(
+                &anthropic,
+                &AiProvider::Anthropic,
+                "en",
+                ChatResponseFormat::Anthropic
+            )
+            .unwrap(),
+            "anthropic"
+        );
+        assert_eq!(
+            extract_chat_text(
+                &gemini,
+                &AiProvider::Gemini,
+                "en",
+                ChatResponseFormat::Gemini
+            )
+            .unwrap(),
+            "gemini"
+        );
+        assert_eq!(
+            extract_chat_text(
+                &ollama,
+                &AiProvider::Ollama,
+                "en",
+                ChatResponseFormat::Ollama
+            )
+            .unwrap(),
+            "ollama"
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_chat_response_with_provider_error() {
+        let body = serde_json::json!({ "choices": [] });
+        let err = extract_chat_text(
+            &body,
+            &AiProvider::OpenAi,
+            "en",
+            ChatResponseFormat::OpenAiCompatible,
+        )
+        .unwrap_err();
+
+        assert!(err.contains("Could not read the OpenAI chat response"));
     }
 
     #[test]
