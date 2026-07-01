@@ -1,0 +1,4 @@
+interface:
+  display_name: "ExaTerm Validation"
+  short_description: "Standard ExaTerm validation commands"
+  default_prompt: "Use $exaterm-validate-change to choose and run the correct ExaTerm validation commands."

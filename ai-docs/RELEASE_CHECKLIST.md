@@ -24,11 +24,8 @@ Use this checklist when preparing a new ExaTerm release version.
 
 ## Validation
 
-- Run `pnpm run format:check` before opening or updating the release PR. Editor format-on-save is not enough because CI also checks Markdown, JSON, and files that may not have been saved through the editor.
-- Run `pnpm run build` for frontend and TypeScript validation.
-- Run `cargo test` from `src-tauri/` or use `cargo test --manifest-path src-tauri/Cargo.toml`.
+- Use `.agents/skills/exaterm-validate-change/SKILL.md` to choose release validation commands before opening or updating the release PR.
 - Run `git status --short` and confirm only intended release-preparation files changed.
-- Use `pnpm run tauri build --debug` only when installer/runtime integration or distributable bundle validation is part of the task.
 
 ## Out of Scope Unless Requested
 

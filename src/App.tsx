@@ -569,10 +569,9 @@ export default function App() {
     (pointerScreenPosition: WorkspacePointerPosition) => {
       invoke<WorkspaceDragPreview>("workspace_tab_drag_update", {
         pointerScreenPosition,
-      })
-        .catch((error) => {
-          console.error("Failed to update workspace tab drag:", error);
-        });
+      }).catch((error) => {
+        console.error("Failed to update workspace tab drag:", error);
+      });
     },
     []
   );
