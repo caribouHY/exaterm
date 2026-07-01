@@ -730,6 +730,8 @@ const PEM_END_SUFFIX: &str = "-----";
 const SUPPORTED_PRIVATE_KEY_LABELS: &[&str] = &[
     "OPENSSH PRIVATE KEY",
     "RSA PRIVATE KEY",
+    "DSA PRIVATE KEY",
+    "EC PRIVATE KEY",
     "ENCRYPTED PRIVATE KEY",
     "PRIVATE KEY",
 ];
@@ -2057,6 +2059,37 @@ mod tests {
         let error = private_key_format_hint("PuTTY-User-Key-File-3: ssh-ed25519\n").unwrap_err();
 
         assert!(error.contains("PuTTY形式"));
+    }
+
+    #[test]
+    fn private_key_hint_accepts_supported_pem_headers() {
+        for label in SUPPORTED_PRIVATE_KEY_LABELS {
+            let secret = format!(
+                "-----BEGIN {}-----\nexample\n-----END {}-----\n",
+                label, label
+            );
+
+            assert!(
+                private_key_format_hint(&secret).is_ok(),
+                "expected supported key header for {label}"
+            );
+        }
+    }
+
+    #[test]
+    fn private_key_header_requires_exact_pem_boundaries() {
+        assert!(!is_supported_private_key_header(
+            "----BEGIN OPENSSH PRIVATE KEY-----"
+        ));
+        assert!(!is_supported_private_key_header(
+            "-----BEGIN OPENSSH PRIVATE KEY----"
+        ));
+        assert!(!is_supported_private_key_header(
+            "-----BEGIN OPENSSH PRIVATE KEY----- extra"
+        ));
+        assert!(!is_supported_private_key_header(
+            "-----BEGIN CERTIFICATE-----"
+        ));
     }
 
     #[test]

@@ -75,28 +75,7 @@ type SshDiagnosticEntry = SshDiagnosticEvent & {
   time: string;
 };
 
-const createRequestId = () => {
-  const crypto = globalThis.crypto;
-  if (crypto?.randomUUID) {
-    return crypto.randomUUID();
-  }
-  if (!crypto?.getRandomValues) {
-    throw new Error("Secure random number generator is unavailable");
-  }
-
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
-  return [
-    hex.slice(0, 4).join(""),
-    hex.slice(4, 6).join(""),
-    hex.slice(6, 8).join(""),
-    hex.slice(8, 10).join(""),
-    hex.slice(10, 16).join(""),
-  ].join("-");
-};
+const createRequestId = () => globalThis.crypto.randomUUID();
 
 const normalizeEncoding = (encoding: string | null | undefined): Encoding => {
   return SSH_ENCODINGS.some((entry) => entry.value === encoding) ? (encoding as Encoding) : "utf-8";

@@ -899,8 +899,12 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     return () => {
       disposed = true;
       terminalElement.removeEventListener("contextmenu", handleContextMenu);
-      void unlistenData?.then((fn) => fn());
-      void unlistenError?.then((fn) => fn());
+      void unlistenData?.then((fn) => {
+        fn();
+      });
+      void unlistenError?.then((fn) => {
+        fn();
+      });
       if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
         const logText = autoLogSanitizerRef.current.flush();
         if (logText) {
