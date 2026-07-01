@@ -193,7 +193,7 @@ Use this structure as the repository grows:
 - `ai-docs/SYSTEM_DESIGN.md`: durable system-wide design and direction.
 - `ai-docs/*_DESIGN.md`: detailed feature or subsystem designs.
 - `ai-docs/CHANGE_CHECKLIST.md`: before/after checklist for code changes.
-- `ai-docs/RELEASE_CHECKLIST.md`: release-specific checklist.
+- `.agents/skills/exaterm-release-prep/SKILL.md`: release-preparation workflow.
 - `docs/`: user-facing documentation only.
 
 When adding a feature design, include:
