@@ -140,8 +140,20 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     /% Invalid/i,
     /%You must disable VTPv1 and VTPv2 or switch to VTPv3 before configuring a VLAN name longer than 32 characters/i,
   ];
-  const terminalModeDecorators: Partial<Record<TerminalMode, (term: Terminal) => void>> = {
-    cisco_ios: (term) => decorateCiscoIosTerminal(term),
+  const canDecorateTerminalMode = (mode: TerminalMode) => {
+    return mode === "cisco_ios";
+  };
+
+  const decorateTerminalMode = (term: Terminal, mode: TerminalMode) => {
+    switch (mode) {
+      case "cisco_ios":
+        decorateCiscoIosTerminal(term);
+        return true;
+      case DEFAULT_TERMINAL_MODE:
+        return false;
+      default:
+        return false;
+    }
   };
 
   const cancelScheduledDecoration = () => {
@@ -152,7 +164,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   };
 
   const scheduleTerminalModeDecoration = (term: Terminal, rebuild = false) => {
-    if (terminalModeRef.current === DEFAULT_TERMINAL_MODE) return;
+    if (!canDecorateTerminalMode(terminalModeRef.current)) return;
     decorationRebuildRef.current = decorationRebuildRef.current || rebuild;
     if (decorationFrameRef.current !== null) return;
 
@@ -162,7 +174,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         clearModeDecorations();
         decorationRebuildRef.current = false;
       }
-      terminalModeDecorators[terminalModeRef.current]?.(term);
+      decorateTerminalMode(term, terminalModeRef.current);
     });
   };
 
@@ -627,13 +639,12 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       clearModeDecorations();
       return;
     }
-    const decorator = terminalModeDecorators[terminalMode];
-    if (!decorator) {
+    if (!canDecorateTerminalMode(terminalMode)) {
       clearModeDecorations();
       return;
     }
     if (termRef.current) {
-      decorator(termRef.current);
+      decorateTerminalMode(termRef.current, terminalMode);
     }
   }, [terminalMode]);
 
