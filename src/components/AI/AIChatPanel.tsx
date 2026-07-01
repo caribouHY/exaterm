@@ -167,15 +167,15 @@ export default function AIChatPanel({
         }
       }
 
-      const ollamaUrl = cfg?.ai?.ollama_base_url || "http://localhost:11434";
-      const azureEndpoint = cfg?.ai?.azure_openai_endpoint?.trim() || "";
-      const azureDeployment = cfg?.ai?.azure_openai_deployment?.trim() || "";
+      const ollamaUrl = cfg?.ai.ollama_base_url || "http://localhost:11434";
+      const azureEndpoint = cfg?.ai.azure_openai_endpoint?.trim() || "";
+      const azureDeployment = cfg?.ai.azure_openai_deployment?.trim() || "";
       const enabledProviders = PROVIDERS.filter((provider) =>
         provider.id === "Ollama"
-          ? Boolean(cfg?.ai?.ollama_enabled)
+          ? Boolean(cfg?.ai.ollama_enabled)
           : provider.id === "AzureOpenAi"
             ? Boolean(
-                cfg?.ai?.azure_openai_enabled &&
+                cfg?.ai.azure_openai_enabled &&
                 secretStatus.azure_openai &&
                 azureEndpoint &&
                 azureDeployment
@@ -187,7 +187,7 @@ export default function AIChatPanel({
       );
 
       if (
-        cfg?.ai?.azure_openai_enabled &&
+        cfg?.ai.azure_openai_enabled &&
         secretStatus.azure_openai &&
         azureEndpoint &&
         azureDeployment
@@ -202,7 +202,7 @@ export default function AIChatPanel({
         ];
       }
 
-      if (cfg?.ai?.ollama_enabled) {
+      if (cfg?.ai.ollama_enabled) {
         try {
           const ollamaModels = await invoke<AiModelInfo[]>("ai_get_ollama_models", {
             baseUrl: ollamaUrl,
@@ -215,7 +215,7 @@ export default function AIChatPanel({
 
       if (cancelled) return;
 
-      const savedProvider = cfg?.ai?.default_provider || "OpenAi";
+      const savedProvider = cfg?.ai.default_provider || "OpenAi";
       const rememberedProviderModels = nextModels.filter((m) => m.provider === selectedProvider);
       const hasRememberedModel = rememberedProviderModels.some((m) => m.model_id === selectedModel);
       const hasSavedProviderModels = nextModels.some((model) => model.provider === savedProvider);
@@ -227,7 +227,7 @@ export default function AIChatPanel({
             ? savedProvider
             : nextModels[0]?.provider || "";
       const providerModels = nextModels.filter((m) => m.provider === nextProvider);
-      const savedModel = cfg?.ai?.default_model || "";
+      const savedModel = cfg?.ai.default_model || "";
       const nextModel =
         selectedProvider && selectedModel && hasRememberedModel
           ? selectedModel
@@ -242,7 +242,7 @@ export default function AIChatPanel({
       setSelectedModel(nextModel);
     };
 
-    loadAiSettings();
+    void loadAiSettings();
 
     return () => {
       cancelled = true;
@@ -314,8 +314,8 @@ export default function AIChatPanel({
           model_id: selectedModel,
         },
       ]);
-    } catch (e: any) {
-      const detail = typeof e === "string" ? e : e.message || "Unknown error";
+    } catch (e: unknown) {
+      const detail = typeof e === "string" ? e : e instanceof Error ? e.message : "Unknown error";
       setMessages((prev) => [
         ...prev,
         {
@@ -384,7 +384,9 @@ export default function AIChatPanel({
                           <button
                             className="ai-command__insert"
                             type="button"
-                            onClick={() => onInsertCommand(segment.suggestion.command)}
+                            onClick={() => {
+                              onInsertCommand(segment.suggestion.command);
+                            }}
                             disabled={!canInsertCommand}
                             title={
                               canInsertCommand
@@ -423,11 +425,13 @@ export default function AIChatPanel({
             ref={inputRef}
             className="ai-panel__input"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                handleSend();
+                void handleSend();
               }
             }}
             placeholder={t("ai.placeholder")}
@@ -445,7 +449,9 @@ export default function AIChatPanel({
         <div className="ai-panel__bottom-row">
           <button
             className={`ai-panel__context-btn ${useContext ? "ai-panel__context-btn--active" : ""}`}
-            onClick={() => setUseContext(!useContext)}
+            onClick={() => {
+              setUseContext(!useContext);
+            }}
             aria-label={t("ai.context")}
             aria-pressed={useContext}
             data-tooltip={useContext ? t("ai.context_tooltip_on") : t("ai.context_tooltip_off")}
@@ -470,7 +476,9 @@ export default function AIChatPanel({
             </select>
             <select
               value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
+              onChange={(e) => {
+                setSelectedModel(e.target.value);
+              }}
               disabled={providerModels.length === 0}
             >
               {providerModels.map((m) => (

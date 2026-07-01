@@ -964,7 +964,7 @@ export default function ConnectionDialog({
   useEffect(() => {
     if (!pendingStartupConnect) return;
     setPendingStartupConnect(false);
-    handleConnect();
+    void handleConnect();
   }, [handleConnect, pendingStartupConnect]);
 
   const hostKeyTitle =
@@ -1009,20 +1009,22 @@ export default function ConnectionDialog({
       if (connecting) return;
 
       if (credentialPrompt) {
-        handleCredentialSubmit();
+        void handleCredentialSubmit();
         return;
       }
 
       if (hostKeyCheck) {
-        handleTrustAndConnect(hostKeyCheck.status === "mismatch");
+        void handleTrustAndConnect(hostKeyCheck.status === "mismatch");
         return;
       }
 
-      handleConnect();
+      void handleConnect();
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [
     connecting,
     credentialPrompt,
@@ -1055,7 +1057,9 @@ export default function ConnectionDialog({
           <button
             className="connection-dialog__diagnostics-toggle"
             type="button"
-            onClick={() => setSshDiagnosticsExpanded((current) => !current)}
+            onClick={() => {
+              setSshDiagnosticsExpanded((current) => !current);
+            }}
           >
             {sshDiagnosticsExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             <span>{t("connection.ssh_diagnostics")}</span>
@@ -1097,7 +1101,12 @@ export default function ConnectionDialog({
           if (e.target === e.currentTarget) closeCredentialPrompt();
         }}
       >
-        <div className="connection-credential-modal" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="connection-credential-modal"
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+        >
           <div className="connection-credential-modal__header">
             <span className="connection-dialog__title">{credentialTitle}</span>
             <button className="btn-icon" onClick={closeCredentialPrompt} disabled={connecting}>
@@ -1126,7 +1135,7 @@ export default function ConnectionDialog({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    handleCredentialSubmit();
+                    void handleCredentialSubmit();
                   }
                 }}
               />
@@ -1164,7 +1173,12 @@ export default function ConnectionDialog({
       onMouseDown={handleOverlayMouseDown}
       onClick={handleOverlayClick}
     >
-      <div className="connection-dialog" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="connection-dialog"
+        onClick={(e) => {
+          e.stopPropagation();
+        }}
+      >
         <div className="connection-dialog__header">
           <span className="connection-dialog__title">
             {hostKeyCheck ? hostKeyTitle : t("connection.new")}
@@ -1178,19 +1192,25 @@ export default function ConnectionDialog({
           <div className="connection-dialog__tabs">
             <button
               className={`connection-dialog__tab ${tab === "ssh" ? "connection-dialog__tab--active" : ""}`}
-              onClick={() => setTab("ssh")}
+              onClick={() => {
+                setTab("ssh");
+              }}
             >
               {t("connection.ssh")}
             </button>
             <button
               className={`connection-dialog__tab ${tab === "telnet" ? "connection-dialog__tab--active" : ""}`}
-              onClick={() => setTab("telnet")}
+              onClick={() => {
+                setTab("telnet");
+              }}
             >
               {t("connection.telnet")}
             </button>
             <button
               className={`connection-dialog__tab ${tab === "serial" ? "connection-dialog__tab--active" : ""}`}
-              onClick={() => setTab("serial")}
+              onClick={() => {
+                setTab("serial");
+              }}
             >
               {t("connection.serial")}
             </button>
@@ -1254,7 +1274,9 @@ export default function ConnectionDialog({
                   <select
                     className="select"
                     value={selectedProfileIds.ssh}
-                    onChange={(e) => handleSelectSshProfile(e.target.value)}
+                    onChange={(e) => {
+                      handleSelectSshProfile(e.target.value);
+                    }}
                   >
                     <option value="">{t("connection.profile_manual")}</option>
                     {sshProfiles.map((profile) => (
@@ -1278,7 +1300,9 @@ export default function ConnectionDialog({
                 <input
                   className="input"
                   value={sshProfileName}
-                  onChange={(e) => setSshProfileName(e.target.value)}
+                  onChange={(e) => {
+                    setSshProfileName(e.target.value);
+                  }}
                   placeholder={t("connection.profile_name_placeholder")}
                 />
               </div>
@@ -1288,7 +1312,9 @@ export default function ConnectionDialog({
                   <input
                     className="input"
                     value={host}
-                    onChange={(e) => setHost(e.target.value)}
+                    onChange={(e) => {
+                      setHost(e.target.value);
+                    }}
                     placeholder="192.168.1.1"
                   />
                 </div>
@@ -1298,7 +1324,9 @@ export default function ConnectionDialog({
                     className="input"
                     type="number"
                     value={port}
-                    onChange={(e) => setPort(e.target.value)}
+                    onChange={(e) => {
+                      setPort(e.target.value);
+                    }}
                   />
                 </div>
               </div>
@@ -1307,7 +1335,9 @@ export default function ConnectionDialog({
                 <input
                   className="input"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                  }}
                 />
               </div>
               <div>
@@ -1316,7 +1346,9 @@ export default function ConnectionDialog({
                   className="select"
                   style={{ width: "100%" }}
                   value={authMethod}
-                  onChange={(e) => setAuthMethod(normalizeSshAuthMethod(e.target.value))}
+                  onChange={(e) => {
+                    setAuthMethod(normalizeSshAuthMethod(e.target.value));
+                  }}
                 >
                   {SSH_AUTH_METHODS.map((entry) => (
                     <option key={entry.value} value={entry.value}>
@@ -1333,7 +1365,9 @@ export default function ConnectionDialog({
                       <input
                         className="input"
                         value={privateKeyPath}
-                        onChange={(e) => setPrivateKeyPath(e.target.value)}
+                        onChange={(e) => {
+                          setPrivateKeyPath(e.target.value);
+                        }}
                         placeholder={PRIVATE_KEY_PLACEHOLDER}
                       />
                       <button
@@ -1355,7 +1389,9 @@ export default function ConnectionDialog({
                   className="select"
                   style={{ width: "100%" }}
                   value={jumpProfileId}
-                  onChange={(e) => setJumpProfileId(e.target.value)}
+                  onChange={(e) => {
+                    setJumpProfileId(e.target.value);
+                  }}
                 >
                   <option value="">{t("connection.jump_profile_none")}</option>
                   {jumpProfileOptions.map((profile) => (
@@ -1371,7 +1407,9 @@ export default function ConnectionDialog({
                   className="select"
                   style={{ width: "100%" }}
                   value={encoding}
-                  onChange={(e) => setEncoding(normalizeEncoding(e.target.value))}
+                  onChange={(e) => {
+                    setEncoding(normalizeEncoding(e.target.value));
+                  }}
                 >
                   {SSH_ENCODINGS.map((entry) => (
                     <option key={entry.value} value={entry.value}>
@@ -1386,7 +1424,9 @@ export default function ConnectionDialog({
                   className="select"
                   style={{ width: "100%" }}
                   value={sshTerminalMode}
-                  onChange={(e) => setSshTerminalMode(normalizeTerminalMode(e.target.value))}
+                  onChange={(e) => {
+                    setSshTerminalMode(normalizeTerminalMode(e.target.value));
+                  }}
                 >
                   {TERMINAL_MODE_OPTIONS.map((entry) => (
                     <option key={entry.value} value={entry.value}>
@@ -1400,7 +1440,9 @@ export default function ConnectionDialog({
                 <textarea
                   className="input connection-dialog__memo"
                   value={sshMemo}
-                  onChange={(e) => setSshMemo(e.target.value)}
+                  onChange={(e) => {
+                    setSshMemo(e.target.value);
+                  }}
                   placeholder={t("connection.profile_memo_placeholder")}
                 />
                 <div className="connection-dialog__field-help">
@@ -1411,7 +1453,9 @@ export default function ConnectionDialog({
                 <input
                   type="checkbox"
                   checked={sshExternalControlEnabled}
-                  onChange={(e) => setSshExternalControlEnabled(e.target.checked)}
+                  onChange={(e) => {
+                    setSshExternalControlEnabled(e.target.checked);
+                  }}
                 />
                 <span>{t("connection.profile_mcp_enabled")}</span>
               </label>
@@ -1435,7 +1479,9 @@ export default function ConnectionDialog({
                   <select
                     className="select"
                     value={selectedProfileIds.telnet}
-                    onChange={(e) => handleSelectTelnetProfile(e.target.value)}
+                    onChange={(e) => {
+                      handleSelectTelnetProfile(e.target.value);
+                    }}
                   >
                     <option value="">{t("connection.profile_manual")}</option>
                     {telnetProfiles.map((profile) => (
@@ -1459,7 +1505,9 @@ export default function ConnectionDialog({
                 <input
                   className="input"
                   value={telnetProfileName}
-                  onChange={(e) => setTelnetProfileName(e.target.value)}
+                  onChange={(e) => {
+                    setTelnetProfileName(e.target.value);
+                  }}
                   placeholder={t("connection.profile_name_placeholder")}
                 />
               </div>
@@ -1469,7 +1517,9 @@ export default function ConnectionDialog({
                   <input
                     className="input"
                     value={telnetHost}
-                    onChange={(e) => setTelnetHost(e.target.value)}
+                    onChange={(e) => {
+                      setTelnetHost(e.target.value);
+                    }}
                     placeholder="192.168.1.1"
                   />
                 </div>
@@ -1479,7 +1529,9 @@ export default function ConnectionDialog({
                     className="input"
                     type="number"
                     value={telnetPort}
-                    onChange={(e) => setTelnetPort(e.target.value)}
+                    onChange={(e) => {
+                      setTelnetPort(e.target.value);
+                    }}
                     onKeyDown={(e) => e.key === "Enter" && handleConnect()}
                   />
                 </div>
@@ -1490,7 +1542,9 @@ export default function ConnectionDialog({
                   className="select"
                   style={{ width: "100%" }}
                   value={telnetEncoding}
-                  onChange={(e) => setTelnetEncoding(normalizeEncoding(e.target.value))}
+                  onChange={(e) => {
+                    setTelnetEncoding(normalizeEncoding(e.target.value));
+                  }}
                 >
                   {SSH_ENCODINGS.map((entry) => (
                     <option key={entry.value} value={entry.value}>
@@ -1505,7 +1559,9 @@ export default function ConnectionDialog({
                   className="select"
                   style={{ width: "100%" }}
                   value={telnetTerminalMode}
-                  onChange={(e) => setTelnetTerminalMode(normalizeTerminalMode(e.target.value))}
+                  onChange={(e) => {
+                    setTelnetTerminalMode(normalizeTerminalMode(e.target.value));
+                  }}
                 >
                   {TERMINAL_MODE_OPTIONS.map((entry) => (
                     <option key={entry.value} value={entry.value}>
@@ -1519,7 +1575,9 @@ export default function ConnectionDialog({
                 <textarea
                   className="input connection-dialog__memo"
                   value={telnetMemo}
-                  onChange={(e) => setTelnetMemo(e.target.value)}
+                  onChange={(e) => {
+                    setTelnetMemo(e.target.value);
+                  }}
                   placeholder={t("connection.profile_memo_placeholder")}
                 />
                 <div className="connection-dialog__field-help">
@@ -1530,7 +1588,9 @@ export default function ConnectionDialog({
                 <input
                   type="checkbox"
                   checked={telnetExternalControlEnabled}
-                  onChange={(e) => setTelnetExternalControlEnabled(e.target.checked)}
+                  onChange={(e) => {
+                    setTelnetExternalControlEnabled(e.target.checked);
+                  }}
                 />
                 <span>{t("connection.profile_mcp_enabled")}</span>
               </label>
@@ -1554,7 +1614,9 @@ export default function ConnectionDialog({
                   className="select"
                   style={{ width: "100%" }}
                   value={selectedPort}
-                  onChange={(e) => setSelectedPort(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedPort(e.target.value);
+                  }}
                 >
                   {ports.length === 0 && <option value="">{t("connection.no_ports")}</option>}
                   {ports.map((p) => (
@@ -1571,7 +1633,9 @@ export default function ConnectionDialog({
                     className="select"
                     style={{ width: "100%" }}
                     value={baudRate}
-                    onChange={(e) => setBaudRate(e.target.value)}
+                    onChange={(e) => {
+                      setBaudRate(e.target.value);
+                    }}
                   >
                     {[
                       "300",
@@ -1596,7 +1660,9 @@ export default function ConnectionDialog({
                     className="select"
                     style={{ width: "100%" }}
                     value={dataBits}
-                    onChange={(e) => setDataBits(e.target.value)}
+                    onChange={(e) => {
+                      setDataBits(e.target.value);
+                    }}
                   >
                     {["5", "6", "7", "8"].map((d) => (
                       <option key={d} value={d}>
@@ -1613,7 +1679,9 @@ export default function ConnectionDialog({
                     className="select"
                     style={{ width: "100%" }}
                     value={parity}
-                    onChange={(e) => setParity(e.target.value)}
+                    onChange={(e) => {
+                      setParity(e.target.value);
+                    }}
                   >
                     <option value="none">{t("connection.parity_none")}</option>
                     <option value="odd">{t("connection.parity_odd")}</option>
@@ -1626,7 +1694,9 @@ export default function ConnectionDialog({
                     className="select"
                     style={{ width: "100%" }}
                     value={stopBits}
-                    onChange={(e) => setStopBits(e.target.value)}
+                    onChange={(e) => {
+                      setStopBits(e.target.value);
+                    }}
                   >
                     <option value="1">1</option>
                     <option value="2">2</option>
@@ -1639,7 +1709,9 @@ export default function ConnectionDialog({
                   className="select"
                   style={{ width: "100%" }}
                   value={serialTerminalMode}
-                  onChange={(e) => setSerialTerminalMode(normalizeTerminalMode(e.target.value))}
+                  onChange={(e) => {
+                    setSerialTerminalMode(normalizeTerminalMode(e.target.value));
+                  }}
                 >
                   {TERMINAL_MODE_OPTIONS.map((entry) => (
                     <option key={entry.value} value={entry.value}>
@@ -1662,7 +1734,12 @@ export default function ConnectionDialog({
             </div>
           ) : hostKeyCheck ? (
             <>
-              <button className="btn btn-ghost" onClick={() => setHostKeyCheck(null)}>
+              <button
+                className="btn btn-ghost"
+                onClick={() => {
+                  setHostKeyCheck(null);
+                }}
+              >
                 {t("connection.cancel")}
               </button>
               <button

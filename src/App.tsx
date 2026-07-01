@@ -239,7 +239,9 @@ export default function App() {
           tabId: id,
         })
           .then(applyWorkspaceSnapshot)
-          .catch((error) => console.error("Failed to activate workspace tab:", error));
+          .catch((error) => {
+            console.error("Failed to activate workspace tab:", error);
+          });
       }
     },
     [appTabs, applyWorkspaceSnapshot]
@@ -286,7 +288,9 @@ export default function App() {
         windowId: windowIdRef.current,
       })
         .then(applyWorkspaceSnapshot)
-        .catch((error) => console.error("Failed to focus workspace window:", error));
+        .catch((error) => {
+          console.error("Failed to focus workspace window:", error);
+        });
     };
 
     window.addEventListener("focus", handleFocus);
@@ -322,7 +326,9 @@ export default function App() {
     const waitForUiUpdate = () =>
       new Promise<void>((resolve) => {
         window.requestAnimationFrame(() => {
-          window.setTimeout(() => resolve(), 0);
+          window.setTimeout(() => {
+            resolve();
+          }, 0);
         });
       });
 
@@ -520,7 +526,9 @@ export default function App() {
           dropSide,
         })
           .then(applyWorkspaceSnapshot)
-          .catch((error) => console.error("Failed to reorder workspace tab:", error));
+          .catch((error) => {
+            console.error("Failed to reorder workspace tab:", error);
+          });
         return;
       }
 
@@ -547,8 +555,12 @@ export default function App() {
         tabId,
         pointerScreenPosition,
       })
-        .then((preview) => setWorkspaceDragPreview(preview.active ? preview : null))
-        .catch((error) => console.error("Failed to start workspace tab drag:", error));
+        .then((preview) => {
+          setWorkspaceDragPreview(preview.active ? preview : null);
+        })
+        .catch((error) => {
+          console.error("Failed to start workspace tab drag:", error);
+        });
     },
     []
   );
@@ -557,7 +569,10 @@ export default function App() {
     (pointerScreenPosition: WorkspacePointerPosition) => {
       invoke<WorkspaceDragPreview>("workspace_tab_drag_update", {
         pointerScreenPosition,
-      }).catch((error) => console.error("Failed to update workspace tab drag:", error));
+      })
+        .catch((error) => {
+          console.error("Failed to update workspace tab drag:", error);
+        });
     },
     []
   );
@@ -566,13 +581,19 @@ export default function App() {
     invoke<WorkspaceDragPreview>("workspace_tab_drag_hover", {
       windowId: windowIdRef.current,
       targetIndex,
-    }).catch((error) => console.error("Failed to update workspace tab drag hover:", error));
+    }).catch((error) => {
+      console.error("Failed to update workspace tab drag hover:", error);
+    });
   }, []);
 
   const handleCrossWindowDragCancel = useCallback(() => {
     invoke<WorkspaceDragPreview>("workspace_tab_drag_cancel")
-      .then(() => setWorkspaceDragPreview(null))
-      .catch((error) => console.error("Failed to cancel workspace tab drag:", error));
+      .then(() => {
+        setWorkspaceDragPreview(null);
+      })
+      .catch((error) => {
+        console.error("Failed to cancel workspace tab drag:", error);
+      });
   }, []);
 
   const handleCrossWindowDragDrop = useCallback(
@@ -690,7 +711,9 @@ export default function App() {
 
   const showTemporaryLogStatus = useCallback((message: string) => {
     setLogStatusMessage(message);
-    window.setTimeout(() => setLogStatusMessage(""), 3000);
+    window.setTimeout(() => {
+      setLogStatusMessage("");
+    }, 3000);
   }, []);
 
   const handleStartManualLog = useCallback(
@@ -795,7 +818,9 @@ export default function App() {
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [openConnection, openUtilityTab, openWindow]);
 
   const refreshConfig = useCallback(async () => {
@@ -808,7 +833,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    refreshConfig();
+    void refreshConfig();
   }, [refreshConfig]);
 
   useEffect(() => {
@@ -836,7 +861,9 @@ export default function App() {
 
     handleResize();
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
   }, []);
 
   useEffect(() => {
@@ -927,7 +954,9 @@ export default function App() {
                       isManualLogging={Boolean(tab.isManualLogging)}
                       isLoggingPaused={Boolean(tab.isLoggingPaused)}
                       onOpenConnection={openConnection}
-                      onTerminalData={(data) => handleTerminalData(tab.id, data)}
+                      onTerminalData={(data) => {
+                        handleTerminalData(tab.id, data);
+                      }}
                       encoding={tab.encoding}
                       terminalMode={tab.terminalMode}
                       terminalConfig={config?.terminal}
@@ -958,7 +987,9 @@ export default function App() {
                 >
                   <Suspense fallback={<div aria-hidden="true" />}>
                     <AIChatPanel
-                      onClose={() => setShowAiPanel(false)}
+                      onClose={() => {
+                        setShowAiPanel(false);
+                      }}
                       config={config}
                       terminalBuffer={activeTerminalBuffer}
                       messages={aiMessages}
@@ -997,8 +1028,12 @@ export default function App() {
         <Suspense fallback={<div aria-hidden="true" />}>
           <ConnectionDialog
             startupRequest={startupCliRequest}
-            onStartupRequestHandled={() => setStartupCliRequest(null)}
-            onClose={() => setShowConnection(false)}
+            onStartupRequestHandled={() => {
+              setStartupCliRequest(null);
+            }}
+            onClose={() => {
+              setShowConnection(false);
+            }}
             onConnect={handleConnect}
           />
         </Suspense>
@@ -1041,7 +1076,9 @@ export default function App() {
                 autoFocus
                 value={activeMcpCredentialPrompt.value}
                 disabled={activeMcpCredentialPrompt.submitting}
-                onChange={(event) => updateActiveMcpCredentialPrompt({ value: event.target.value })}
+                onChange={(event) => {
+                  updateActiveMcpCredentialPrompt({ value: event.target.value });
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     void resolveMcpCredentialPrompt(activeMcpCredentialPrompt.value);

@@ -82,7 +82,9 @@ export default function TitleBar({
       key: "logs",
       label: t("titlebar.menu.logs"),
       active: activeView === "logs",
-      action: () => onViewChange("logs"),
+      action: () => {
+        onViewChange("logs");
+      },
     },
     { key: "separator-logs-settings", separator: true },
     {
@@ -90,7 +92,9 @@ export default function TitleBar({
       label: t("titlebar.menu.settings"),
       shortcut: "Ctrl+,",
       active: activeView === "settings",
-      action: () => onViewChange("settings"),
+      action: () => {
+        onViewChange("settings");
+      },
     },
   ];
 
@@ -102,7 +106,9 @@ export default function TitleBar({
         <div className="titlebar__menu" ref={menuRef}>
           <button
             className={`titlebar__menu-trigger ${isMenuOpen ? "titlebar__menu-trigger--open" : ""}`}
-            onClick={() => setIsMenuOpen((current) => !current)}
+            onClick={() => {
+              setIsMenuOpen((current) => !current);
+            }}
             aria-expanded={isMenuOpen}
             aria-haspopup="menu"
           >
@@ -127,7 +133,9 @@ export default function TitleBar({
                       item.active ? "titlebar__menu-item--active" : ""
                     }`}
                     role="menuitem"
-                    onClick={() => runMenuAction(item.action)}
+                    onClick={() => {
+                      runMenuAction(item.action);
+                    }}
                   >
                     <span className="titlebar__menu-item-label">{item.label}</span>
                     {item.shortcut && (

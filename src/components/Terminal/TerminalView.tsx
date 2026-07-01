@@ -77,6 +77,14 @@ interface TerminalOutputSnapshot {
   cursor: number;
 }
 
+function normalizeCursorStyle(cursorStyle: string | undefined): "block" | "bar" | "underline" {
+  if (cursorStyle === "bar" || cursorStyle === "underline") {
+    return cursorStyle;
+  }
+
+  return "block";
+}
+
 const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
   {
     sessionId,
@@ -680,7 +688,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         brightWhite: "#ffffff",
       },
       cursorBlink: true,
-      cursorStyle: (terminalConfig?.cursor_style as any) || "block",
+      cursorStyle: normalizeCursorStyle(terminalConfig?.cursor_style),
       scrollback: terminalConfig?.scrollback || 10000,
       allowProposedApi: true,
     });
@@ -715,7 +723,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       if (!isConnectedRef.current) return;
       invoke(protocol.write, { sessionId, data }).catch(console.error);
     });
-    const scrollDecorationDisposable = term.onScroll(() => scheduleTerminalModeDecoration(term));
+    const scrollDecorationDisposable = term.onScroll(() => {
+      scheduleTerminalModeDecoration(term);
+    });
     let disposed = false;
 
     const handleContextMenu = (event: MouseEvent) => {
@@ -782,7 +792,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
     const writeTerminalText = (text: string) => {
       if (!text) return;
-      term.write(text, () => scheduleTerminalModeDecoration(term));
+      term.write(text, () => {
+        scheduleTerminalModeDecoration(term);
+      });
       if (onTerminalData) onTerminalData(text);
       if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
         const logText = autoLogSanitizerRef.current.push(text);
@@ -854,7 +866,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           }
         } catch {
           if (!disposed) {
-            bufferedInitialOutput.forEach((text) => writeTerminalText(text));
+            bufferedInitialOutput.forEach((text) => {
+              writeTerminalText(text);
+            });
           }
         } finally {
           bufferedInitialOutput = [];
@@ -885,8 +899,8 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     return () => {
       disposed = true;
       terminalElement.removeEventListener("contextmenu", handleContextMenu);
-      unlistenData?.then((fn) => fn());
-      unlistenError?.then((fn) => fn());
+      void unlistenData?.then((fn) => fn());
+      void unlistenError?.then((fn) => fn());
       if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
         const logText = autoLogSanitizerRef.current.flush();
         if (logText) {
@@ -924,7 +938,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         }
         termRef.current?.focus();
       }, 50);
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+      };
     }
   }, [isActive]);
 
@@ -933,7 +949,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     if (termRef.current && terminalConfig) {
       termRef.current.options.fontSize = terminalConfig.font_size;
       termRef.current.options.fontFamily = terminalConfig.font_family;
-      termRef.current.options.cursorStyle = terminalConfig.cursor_style as any;
+      termRef.current.options.cursorStyle = normalizeCursorStyle(terminalConfig.cursor_style);
       termRef.current.options.scrollback = terminalConfig.scrollback;
 
       // Re-fit to adjust for potential size changes
