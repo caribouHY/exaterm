@@ -544,20 +544,22 @@ export default function ConnectionDialog({
     const jumpProfile = sshProfiles.find((profile) => profile.id === jumpProfileId);
     const jumpAuthMethod = normalizeSshAuthMethod(jumpProfile?.auth_method);
     const result = await invoke<{ session_id: string }>("ssh_connect", {
-      host,
-      port: sshPort,
-      username,
-      password: promptAuthMethod === "password" ? credential : "",
-      authMethod: promptAuthMethod,
-      privateKeyPath,
-      keyPassphrase: promptAuthMethod === "public_key" ? credential : "",
-      jumpProfileId: jumpProfileId || null,
-      jumpPassword: jumpAuthMethod === "password" ? currentJumpCredential : "",
-      jumpKeyPassphrase: jumpAuthMethod === "public_key" ? currentJumpCredential : "",
-      cols: 120,
-      rows: 30,
-      encoding,
-      requestId: currentSshRequestId(),
+      options: {
+        host,
+        port: sshPort,
+        username,
+        password: promptAuthMethod === "password" ? credential : "",
+        authMethod: promptAuthMethod,
+        privateKeyPath,
+        keyPassphrase: promptAuthMethod === "public_key" ? credential : "",
+        jumpProfileId: jumpProfileId || null,
+        jumpPassword: jumpAuthMethod === "password" ? currentJumpCredential : "",
+        jumpKeyPassphrase: jumpAuthMethod === "public_key" ? currentJumpCredential : "",
+        cols: 120,
+        rows: 30,
+        encoding,
+        requestId: currentSshRequestId(),
+      },
     });
     if (autoLog) {
       await invoke("logger_start_auto", {
@@ -602,13 +604,15 @@ export default function ConnectionDialog({
     const jumpProfile = sshProfiles.find((profile) => profile.id === jumpProfileId);
     const jumpAuthMethod = normalizeSshAuthMethod(jumpProfile?.auth_method);
     const result = await invoke<HostKeyCheckResult>("ssh_probe_host_key", {
-      host,
-      port: sshPort,
-      jumpProfileId: jumpProfileId || null,
-      jumpPassword: jumpAuthMethod === "password" ? currentJumpCredential : "",
-      jumpKeyPassphrase: jumpAuthMethod === "public_key" ? currentJumpCredential : "",
-      requestId: currentSshRequestId(),
-      diagnosticRole: "target",
+      options: {
+        host,
+        port: sshPort,
+        jumpProfileId: jumpProfileId || null,
+        jumpPassword: jumpAuthMethod === "password" ? currentJumpCredential : "",
+        jumpKeyPassphrase: jumpAuthMethod === "public_key" ? currentJumpCredential : "",
+        requestId: currentSshRequestId(),
+        diagnosticRole: "target",
+      },
     });
 
     if (result.status === "trusted") {
@@ -770,13 +774,15 @@ export default function ConnectionDialog({
           }
           const jumpPort = jumpProfile.port ?? 22;
           const jumpResult = await invoke<HostKeyCheckResult>("ssh_probe_host_key", {
-            host: jumpProfile.host,
-            port: jumpPort,
-            jumpProfileId: null,
-            jumpPassword: "",
-            jumpKeyPassphrase: "",
-            requestId: currentSshRequestId(),
-            diagnosticRole: "jump",
+            options: {
+              host: jumpProfile.host,
+              port: jumpPort,
+              jumpProfileId: null,
+              jumpPassword: "",
+              jumpKeyPassphrase: "",
+              requestId: currentSshRequestId(),
+              diagnosticRole: "jump",
+            },
           });
           if (jumpResult.status === "trusted") {
             await continueAfterJumpTrusted(sshPort);
