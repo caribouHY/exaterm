@@ -1,48 +1,50 @@
 use serde_json::{json, Value};
 #[cfg(not(test))]
 use tauri::AppHandle;
+#[cfg(test)]
+use uuid::Uuid;
 
-use crate::config::{self, AppConfig};
+use crate::config::AppConfig;
 #[cfg(not(test))]
 use crate::external_control::protocol::ExternalControlCredentialState;
-#[cfg(not(test))]
 use crate::logger;
-use crate::serial;
 #[cfg(not(test))]
 use crate::ssh;
 #[cfg(not(test))]
 use crate::telnet;
 use crate::terminal_control::TerminalProtocol;
 #[cfg(not(test))]
-use crate::workspace::{emit_workspace_updated, WorkspaceTabRegisterInput};
+use crate::workspace::emit_workspace_updated;
+use crate::workspace::WorkspaceTabRegisterInput;
 
 #[cfg(not(test))]
 use super::profiles::ssh_credential_required;
 use super::profiles::{prepare_saved_profile_connection, prepare_serial_console_connection};
+use super::ExternalControlConnectionCreatedPayload;
+#[cfg(not(test))]
+use super::ExternalControlCredentialRequestPayload;
 #[cfg(not(test))]
 use super::PreparedConnectionKind;
+#[cfg_attr(test, allow(unused_imports))]
 use super::{
-    internal_error, invalid_params, ConnectSavedProfileArgs, ConnectSerialConsoleArgs,
-    ExternalControlError, ExternalControlRuntime, ExternalControlService, PreparedConnection,
-    PreparedSerialConnection,
+    internal_error, invalid_params, load_app_config, load_serial_ports, ConnectSavedProfileArgs,
+    ConnectSerialConsoleArgs, ExternalControlError, ExternalControlRuntime, ExternalControlService,
+    PreparedConnection, PreparedSerialConnection,
 };
-#[cfg(not(test))]
-use super::{ExternalControlConnectionCreatedPayload, ExternalControlCredentialRequestPayload};
 impl ExternalControlService {
     pub(crate) async fn connect_saved_profile(
         &self,
         args: ConnectSavedProfileArgs,
     ) -> Result<Value, ExternalControlError> {
         self.ensure_connect_enabled()?;
-        let config = config::config_read()
-            .map_err(|error| internal_error(format!("設定読み込みエラー: {error}")))?;
+        let config = load_app_config(&self.runtime)?;
         let prepared = prepare_saved_profile_connection(&config, args).map_err(invalid_params)?;
         connect_prepared_profile(&self.runtime, &config, prepared).await
     }
 
     pub(crate) async fn list_serial_ports(&self) -> Result<Value, ExternalControlError> {
         self.ensure_connect_enabled()?;
-        let ports = serial::serial_list_ports().map_err(internal_error)?;
+        let ports = load_serial_ports(&self.runtime)?;
         Ok(json!({
             "ports": ports,
         }))
@@ -53,10 +55,9 @@ impl ExternalControlService {
         args: ConnectSerialConsoleArgs,
     ) -> Result<Value, ExternalControlError> {
         self.ensure_connect_enabled()?;
-        let ports = serial::serial_list_ports().map_err(internal_error)?;
+        let ports = load_serial_ports(&self.runtime)?;
         let prepared = prepare_serial_console_connection(args, &ports).map_err(invalid_params)?;
-        let config = config::config_read()
-            .map_err(|error| internal_error(format!("設定読み込みエラー: {error}")))?;
+        let config = load_app_config(&self.runtime)?;
         connect_prepared_serial_console(&self.runtime, &config, prepared).await
     }
 }
@@ -69,7 +70,6 @@ pub(super) fn terminal_protocol_log_type(protocol: TerminalProtocol) -> &'static
     }
 }
 
-#[cfg(not(test))]
 fn terminal_protocol_from_log_type(value: &str) -> Result<TerminalProtocol, String> {
     match value {
         "ssh" => Ok(TerminalProtocol::Ssh),
@@ -372,7 +372,6 @@ async fn request_profile_credential(
         .ok_or_else(|| invalid_params("外部制御の認証入力がキャンセルされました"))
 }
 
-#[cfg(not(test))]
 async fn finish_created_session(
     runtime: &ExternalControlRuntime,
     config: &AppConfig,
@@ -383,10 +382,6 @@ async fn finish_created_session(
     encoding: String,
     terminal_mode: String,
 ) -> Result<Value, ExternalControlError> {
-    let app = runtime
-        .app
-        .as_ref()
-        .ok_or_else(|| internal_error("外部制御接続に必要なアプリハンドルがありません"))?;
     let auto_logging = if config.terminal.auto_session_log {
         match &runtime.logger {
             Some(logger_state) => logger::start_auto_log(
@@ -425,7 +420,7 @@ async fn finish_created_session(
         auto_logging,
     };
 
-    let snapshot = runtime
+    let _workspace_snapshot = runtime
         .workspace
         .register_tab(WorkspaceTabRegisterInput {
             window_id: None,
@@ -438,7 +433,14 @@ async fn finish_created_session(
             is_auto_logging: auto_logging,
         })
         .await;
-    emit_workspace_updated(app, &snapshot);
+    #[cfg(not(test))]
+    {
+        let app = runtime
+            .app
+            .as_ref()
+            .ok_or_else(|| internal_error("外部制御接続に必要なアプリハンドルがありません"))?;
+        emit_workspace_updated(app, &_workspace_snapshot);
+    }
 
     Ok(json!(payload))
 }
@@ -454,7 +456,7 @@ async fn connect_prepared_serial_console(
         .as_ref()
         .ok_or_else(|| internal_error("外部制御接続に必要なアプリハンドルがありません"))?;
 
-    let session_id = serial::connect(
+    let session_id = crate::serial::connect(
         app,
         &runtime.serial,
         &runtime.terminals,
@@ -482,22 +484,60 @@ async fn connect_prepared_serial_console(
 
 #[cfg(test)]
 async fn connect_prepared_profile(
-    _runtime: &ExternalControlRuntime,
-    _config: &AppConfig,
-    _prepared: PreparedConnection,
+    runtime: &ExternalControlRuntime,
+    config: &AppConfig,
+    prepared: PreparedConnection,
 ) -> Result<Value, ExternalControlError> {
-    Err(internal_error(
-        "外部制御プロファイル接続の実接続処理はユニットテストでは実行しません",
-    ))
+    let session_id = Uuid::new_v4().to_string();
+    let protocol =
+        terminal_protocol_from_log_type(&prepared.connection_type).map_err(invalid_params)?;
+    runtime
+        .terminals
+        .register_session_with_encoding(
+            session_id.clone(),
+            protocol,
+            prepared.target.clone(),
+            Some(prepared.encoding.clone()),
+        )
+        .await;
+    finish_created_session(
+        runtime,
+        config,
+        session_id,
+        prepared.connection_type,
+        prepared.target,
+        prepared.title,
+        prepared.encoding,
+        prepared.terminal_mode,
+    )
+    .await
 }
 
 #[cfg(test)]
 async fn connect_prepared_serial_console(
-    _runtime: &ExternalControlRuntime,
-    _config: &AppConfig,
-    _prepared: PreparedSerialConnection,
+    runtime: &ExternalControlRuntime,
+    config: &AppConfig,
+    prepared: PreparedSerialConnection,
 ) -> Result<Value, ExternalControlError> {
-    Err(internal_error(
-        "外部制御シリアル接続の実接続処理はユニットテストでは実行しません",
-    ))
+    let session_id = Uuid::new_v4().to_string();
+    runtime
+        .terminals
+        .register_session_with_encoding(
+            session_id.clone(),
+            TerminalProtocol::Serial,
+            prepared.target.clone(),
+            Some(prepared.encoding.clone()),
+        )
+        .await;
+    finish_created_session(
+        runtime,
+        config,
+        session_id,
+        "serial".into(),
+        prepared.target,
+        prepared.title,
+        prepared.encoding,
+        prepared.terminal_mode,
+    )
+    .await
 }

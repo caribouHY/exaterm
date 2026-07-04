@@ -120,6 +120,10 @@ pub fn run() {
                             config: external_control::service::ExternalControlPermissions::new(
                                 cfg.external_control.connect_enabled,
                             ),
+                            #[cfg(test)]
+                            app_config: None,
+                            #[cfg(test)]
+                            available_serial_ports: None,
                             #[cfg(not(test))]
                             app: Some(app.handle().clone()),
                             terminals: terminal_control_state.clone(),

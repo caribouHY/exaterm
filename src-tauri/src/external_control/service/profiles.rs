@@ -1,11 +1,11 @@
 use serde_json::{json, Value};
 
-use crate::config::{self, AppConfig, SavedConnection};
+use crate::config::{AppConfig, SavedConnection};
 use crate::serial;
 use crate::ssh;
 
 use super::{
-    internal_error, ConnectSavedProfileArgs, ConnectSerialConsoleArgs,
+    load_app_config, ConnectSavedProfileArgs, ConnectSerialConsoleArgs,
     ExternalControlConnectionProfile, ExternalControlError, ExternalControlService,
     ListConnectionProfilesArgs, PreparedConnection, PreparedConnectionKind,
     PreparedSerialConnection, SavedProfileConnectionType, DEFAULT_CONNECT_COLS,
@@ -18,8 +18,7 @@ impl ExternalControlService {
         args: ListConnectionProfilesArgs,
     ) -> Result<Value, ExternalControlError> {
         self.ensure_connect_enabled()?;
-        let config = config::config_read()
-            .map_err(|error| internal_error(format!("設定読み込みエラー: {error}")))?;
+        let config = load_app_config(&self.runtime)?;
         Ok(json!({
             "profiles": list_connection_profiles_from_config(&config, args.connection_type),
         }))

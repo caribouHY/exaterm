@@ -3,6 +3,7 @@ use tauri::AppHandle;
 
 #[cfg(not(test))]
 use crate::config;
+use crate::config::AppConfig;
 #[cfg(not(test))]
 use crate::external_control::protocol::ExternalControlCredentialState;
 use crate::external_control::protocol::ExternalControlLogControlState;
@@ -30,6 +31,7 @@ pub(crate) use profiles::{
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use terminal::{normalize_max_chars, normalize_timeout_ms};
+pub(crate) use types::ExternalControlConnectionCreatedPayload;
 pub(super) use types::{internal_error, invalid_params, not_found, permission_denied, unavailable};
 pub(crate) use types::{
     ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ExternalControlConnectionProfile,
@@ -46,8 +48,7 @@ use types::{
 };
 #[cfg(not(test))]
 pub(crate) use types::{
-    ExternalControlConnectionCreatedPayload, ExternalControlCredentialRequestPayload,
-    ExternalControlLogControlRequestPayload,
+    ExternalControlCredentialRequestPayload, ExternalControlLogControlRequestPayload,
 };
 pub use types::{
     ExternalControlError, ExternalControlRequest, ExternalControlResponse,
@@ -72,6 +73,10 @@ pub(super) const DEFAULT_SERIAL_STOP_BITS: u8 = 1;
 pub struct ExternalControlRuntime {
     #[cfg_attr(not(test), allow(dead_code))]
     pub config: ExternalControlPermissions,
+    #[cfg(test)]
+    pub app_config: Option<AppConfig>,
+    #[cfg(test)]
+    pub available_serial_ports: Option<Vec<crate::serial::PortInfo>>,
     #[cfg(not(test))]
     pub app: Option<AppHandle>,
     pub terminals: TerminalControlState,
@@ -189,5 +194,36 @@ impl ExternalControlService {
                 .map(|config| config.external_control.connect_enabled)
                 .map_err(|error| internal_error(format!("設定読み込みエラー: {error}")))
         }
+    }
+}
+
+#[cfg_attr(not(test), allow(unused_variables))]
+pub(super) fn load_app_config(
+    runtime: &ExternalControlRuntime,
+) -> Result<AppConfig, ExternalControlError> {
+    #[cfg(test)]
+    {
+        Ok(runtime.app_config.clone().unwrap_or_default())
+    }
+
+    #[cfg(not(test))]
+    {
+        config::config_read()
+            .map_err(|error| internal_error(format!("設定読み込みエラー: {error}")))
+    }
+}
+
+#[cfg_attr(not(test), allow(unused_variables))]
+pub(super) fn load_serial_ports(
+    runtime: &ExternalControlRuntime,
+) -> Result<Vec<crate::serial::PortInfo>, ExternalControlError> {
+    #[cfg(test)]
+    {
+        Ok(runtime.available_serial_ports.clone().unwrap_or_default())
+    }
+
+    #[cfg(not(test))]
+    {
+        crate::serial::serial_list_ports().map_err(internal_error)
     }
 }

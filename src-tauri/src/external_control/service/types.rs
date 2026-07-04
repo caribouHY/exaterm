@@ -29,7 +29,6 @@ pub(crate) struct ExternalControlConnectionProfile {
     pub(crate) memo: Option<String>,
 }
 
-#[cfg(not(test))]
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) struct ExternalControlConnectionCreatedPayload {
     pub(crate) session_id: String,
