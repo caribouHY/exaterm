@@ -40,7 +40,7 @@ export const useSavedConnectionProfiles = ({
         throw new Error(t("connection.jump_profile_self"));
       }
 
-      const existingConnections = loaded.saved_connections ?? [];
+      const existingConnections = loaded.saved_connections;
       if (hasDuplicateProfile(existingConnections, nextProfile, selectedProfileId)) {
         throw new Error(t("connection.profile_duplicate"));
       }

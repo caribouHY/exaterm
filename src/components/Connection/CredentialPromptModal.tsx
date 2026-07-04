@@ -72,7 +72,9 @@ export function CredentialPromptModal({
               type="password"
               autoFocus
               value={credentialPrompt.value}
-              onChange={(e) => onValueChange(e.target.value)}
+              onChange={(event) => {
+                onValueChange(event.target.value);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();

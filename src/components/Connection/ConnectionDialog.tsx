@@ -339,10 +339,18 @@ export default function ConnectionDialog({
     hostKeyCheck,
     onClose,
     onCloseCredentialPrompt: closeCredentialPrompt,
-    onCancelHostKeyCheck: () => setHostKeyCheck(null),
-    onCredentialSubmit: () => void connectionActions.handleCredentialSubmit(),
-    onTrustAndConnect: (replace) => void connectionActions.handleTrustAndConnect(replace),
-    onConnect: () => void connectionActions.handleConnect(),
+    onCancelHostKeyCheck: () => {
+      setHostKeyCheck(null);
+    },
+    onCredentialSubmit: () => {
+      void connectionActions.handleCredentialSubmit();
+    },
+    onTrustAndConnect: (replace) => {
+      void connectionActions.handleTrustAndConnect(replace);
+    },
+    onConnect: () => {
+      void connectionActions.handleConnect();
+    },
   });
 
   const handleOverlayMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -360,8 +368,12 @@ export default function ConnectionDialog({
     logs: diagnostics.logs,
     expanded: diagnostics.expanded,
     copied: diagnostics.copied,
-    onToggleExpanded: () => diagnostics.setExpanded((current) => !current),
-    onCopy: () => void diagnostics.copy(),
+    onToggleExpanded: () => {
+      diagnostics.setExpanded((current) => !current);
+    },
+    onCopy: () => {
+      void diagnostics.copy();
+    },
   };
 
   if (credentialPrompt) {
@@ -371,14 +383,16 @@ export default function ConnectionDialog({
         connecting={connecting}
         diagnostics={diagnosticsPanelProps}
         onClose={closeCredentialPrompt}
-        onSubmit={() => void connectionActions.handleCredentialSubmit()}
-        onValueChange={(value) =>
+        onSubmit={() => {
+          void connectionActions.handleCredentialSubmit();
+        }}
+        onValueChange={(value) => {
           setCredentialPrompt({
             ...credentialPrompt,
             value,
             error: "",
-          })
-        }
+          });
+        }}
       />
     );
   }
@@ -399,17 +413,27 @@ export default function ConnectionDialog({
   };
   const sshFormActions: SshFormActions = {
     onSelectProfile: profileSelection.handleSelectSshProfile,
-    onDeleteProfile: () => void handleDeleteProfile("ssh"),
+    onDeleteProfile: () => {
+      void handleDeleteProfile("ssh");
+    },
     onProfileNameChange: setSshProfileName,
     onHostChange: setHost,
     onPortChange: setPort,
     onUsernameChange: setUsername,
-    onAuthMethodChange: (value) => setAuthMethod(normalizeSshAuthMethod(value)),
+    onAuthMethodChange: (value) => {
+      setAuthMethod(normalizeSshAuthMethod(value));
+    },
     onPrivateKeyPathChange: setPrivateKeyPath,
-    onSelectPrivateKeyFile: () => void selectSshAuthFile(),
+    onSelectPrivateKeyFile: () => {
+      void selectSshAuthFile();
+    },
     onJumpProfileChange: setJumpProfileId,
-    onEncodingChange: (value) => setEncoding(normalizeEncoding(value)),
-    onTerminalModeChange: (value) => setSshTerminalMode(normalizeTerminalMode(value)),
+    onEncodingChange: (value) => {
+      setEncoding(normalizeEncoding(value));
+    },
+    onTerminalModeChange: (value) => {
+      setSshTerminalMode(normalizeTerminalMode(value));
+    },
     onMemoChange: setSshMemo,
     onExternalControlEnabledChange: setSshExternalControlEnabled,
     onSaveProfile: handleSaveSshProfile,
@@ -426,13 +450,21 @@ export default function ConnectionDialog({
   };
   const telnetFormActions: TelnetFormActions = {
     onSelectProfile: profileSelection.handleSelectTelnetProfile,
-    onDeleteProfile: () => void handleDeleteProfile("telnet"),
+    onDeleteProfile: () => {
+      void handleDeleteProfile("telnet");
+    },
     onProfileNameChange: setTelnetProfileName,
     onHostChange: setTelnetHost,
     onPortChange: setTelnetPort,
-    onPortEnter: () => void connectionActions.handleConnect(),
-    onEncodingChange: (value) => setTelnetEncoding(normalizeEncoding(value)),
-    onTerminalModeChange: (value) => setTelnetTerminalMode(normalizeTerminalMode(value)),
+    onPortEnter: () => {
+      void connectionActions.handleConnect();
+    },
+    onEncodingChange: (value) => {
+      setTelnetEncoding(normalizeEncoding(value));
+    },
+    onTerminalModeChange: (value) => {
+      setTelnetTerminalMode(normalizeTerminalMode(value));
+    },
     onMemoChange: setTelnetMemo,
     onExternalControlEnabledChange: setTelnetExternalControlEnabled,
     onSaveProfile: handleSaveTelnetProfile,
@@ -476,7 +508,9 @@ export default function ConnectionDialog({
         onDataBitsChange: setDataBits,
         onParityChange: setParity,
         onStopBitsChange: setStopBits,
-        onTerminalModeChange: (value) => setSerialTerminalMode(normalizeTerminalMode(value)),
+        onTerminalModeChange: (value) => {
+          setSerialTerminalMode(normalizeTerminalMode(value));
+        },
       }}
       diagnosticsPanelProps={diagnosticsPanelProps}
       connectionActions={connectionActions}

@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { normalizeTerminalMode, TERMINAL_MODE_OPTIONS } from "../../utils/terminalModes";
 import type { SerialFormActions, SerialFormState } from "./connectionDialogTypes";
+import { TerminalModeSelect } from "./ConnectionFormFields";
 
 interface SerialConnectionFormProps {
   formState: SerialFormState;
@@ -20,7 +20,9 @@ export function SerialConnectionForm({ formState, formActions }: SerialConnectio
           className="select"
           style={{ width: "100%" }}
           value={formState.selectedPort}
-          onChange={(e) => formActions.onSelectedPortChange(e.target.value)}
+          onChange={(event) => {
+            formActions.onSelectedPortChange(event.target.value);
+          }}
         >
           {formState.ports.length === 0 && <option value="">{t("connection.no_ports")}</option>}
           {formState.ports.map((p) => (
@@ -37,7 +39,9 @@ export function SerialConnectionForm({ formState, formActions }: SerialConnectio
             className="select"
             style={{ width: "100%" }}
             value={formState.baudRate}
-            onChange={(e) => formActions.onBaudRateChange(e.target.value)}
+            onChange={(event) => {
+              formActions.onBaudRateChange(event.target.value);
+            }}
           >
             {BAUD_RATES.map((rate) => (
               <option key={rate} value={rate}>
@@ -52,7 +56,9 @@ export function SerialConnectionForm({ formState, formActions }: SerialConnectio
             className="select"
             style={{ width: "100%" }}
             value={formState.dataBits}
-            onChange={(e) => formActions.onDataBitsChange(e.target.value)}
+            onChange={(event) => {
+              formActions.onDataBitsChange(event.target.value);
+            }}
           >
             {["5", "6", "7", "8"].map((dataBits) => (
               <option key={dataBits} value={dataBits}>
@@ -69,7 +75,9 @@ export function SerialConnectionForm({ formState, formActions }: SerialConnectio
             className="select"
             style={{ width: "100%" }}
             value={formState.parity}
-            onChange={(e) => formActions.onParityChange(e.target.value)}
+            onChange={(event) => {
+              formActions.onParityChange(event.target.value);
+            }}
           >
             <option value="none">{t("connection.parity_none")}</option>
             <option value="odd">{t("connection.parity_odd")}</option>
@@ -82,28 +90,19 @@ export function SerialConnectionForm({ formState, formActions }: SerialConnectio
             className="select"
             style={{ width: "100%" }}
             value={formState.stopBits}
-            onChange={(e) => formActions.onStopBitsChange(e.target.value)}
+            onChange={(event) => {
+              formActions.onStopBitsChange(event.target.value);
+            }}
           >
             <option value="1">1</option>
             <option value="2">2</option>
           </select>
         </div>
       </div>
-      <div>
-        <label className="label">{t("connection.terminal_mode")}</label>
-        <select
-          className="select"
-          style={{ width: "100%" }}
-          value={formState.terminalMode}
-          onChange={(e) => formActions.onTerminalModeChange(normalizeTerminalMode(e.target.value))}
-        >
-          {TERMINAL_MODE_OPTIONS.map((entry) => (
-            <option key={entry.value} value={entry.value}>
-              {t(entry.labelKey)}
-            </option>
-          ))}
-        </select>
-      </div>
+      <TerminalModeSelect
+        value={formState.terminalMode}
+        onChange={formActions.onTerminalModeChange}
+      />
     </>
   );
 }

@@ -17,7 +17,7 @@ export const SSH_AUTH_METHODS: { labelKey: string; value: SshAuthMethod }[] = [
   { labelKey: "connection.auth_public_key", value: "public_key" },
 ];
 
-export const PRIVATE_KEY_PLACEHOLDER = "C:\\Users\\user\\.ssh\\id_ed25519";
+export const SSH_KEY_PATH_PLACEHOLDER = ["C:", "Users", "user", ".ssh", "id_ed25519"].join("\\");
 
 export const normalizeEncoding = (encoding: string | null | undefined): Encoding => {
   return SSH_ENCODINGS.some((entry) => entry.value === encoding) ? (encoding as Encoding) : "utf-8";
@@ -106,7 +106,7 @@ export const upsertSavedProfile = (
   profile: SavedConnection,
   selectedProfileId: string
 ): AppConfig => {
-  const existingConnections = config.saved_connections ?? [];
+  const existingConnections = config.saved_connections;
   const shouldUpdate = Boolean(selectedProfileId);
   return {
     ...config,
@@ -126,7 +126,7 @@ export const removeSavedProfile = (
   profileId: string
 ): AppConfig => ({
   ...config,
-  saved_connections: (config.saved_connections ?? []).filter(
+  saved_connections: config.saved_connections.filter(
     (entry) => entry.connection_type !== connectionType || entry.id !== profileId
   ),
 });

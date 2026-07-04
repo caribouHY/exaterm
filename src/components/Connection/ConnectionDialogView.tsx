@@ -1,7 +1,6 @@
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ConnectionType, SavedConnection } from "../../types";
-import { normalizeTerminalMode } from "../../utils/terminalModes";
 import { HostKeyConfirmation } from "./HostKeyConfirmation";
 import { SerialConnectionForm } from "./SerialConnectionForm";
 import { SshConnectionForm } from "./SshConnectionForm";
@@ -105,19 +104,25 @@ export function ConnectionDialogView({
           <div className="connection-dialog__tabs">
             <button
               className={`connection-dialog__tab ${tab === "ssh" ? "connection-dialog__tab--active" : ""}`}
-              onClick={() => setTab("ssh")}
+              onClick={() => {
+                setTab("ssh");
+              }}
             >
               {t("connection.ssh")}
             </button>
             <button
               className={`connection-dialog__tab ${tab === "telnet" ? "connection-dialog__tab--active" : ""}`}
-              onClick={() => setTab("telnet")}
+              onClick={() => {
+                setTab("telnet");
+              }}
             >
               {t("connection.telnet")}
             </button>
             <button
               className={`connection-dialog__tab ${tab === "serial" ? "connection-dialog__tab--active" : ""}`}
-              onClick={() => setTab("serial")}
+              onClick={() => {
+                setTab("serial");
+              }}
             >
               {t("connection.serial")}
             </button>
@@ -147,14 +152,7 @@ export function ConnectionDialogView({
               }}
             />
           ) : (
-            <SerialConnectionForm
-              formState={serialFormState}
-              formActions={{
-                ...serialActions,
-                onTerminalModeChange: (value) =>
-                  serialActions.onTerminalModeChange(normalizeTerminalMode(value)),
-              }}
-            />
+            <SerialConnectionForm formState={serialFormState} formActions={serialActions} />
           )}
           {error && <div className="connection-dialog__error">{error}</div>}
           {tab === "ssh" && <SshDiagnosticsPanel {...diagnosticsPanelProps} />}
@@ -168,7 +166,12 @@ export function ConnectionDialogView({
             </div>
           ) : hostKeyCheck ? (
             <>
-              <button className="btn btn-ghost" onClick={() => setHostKeyCheck(null)}>
+              <button
+                className="btn btn-ghost"
+                onClick={() => {
+                  setHostKeyCheck(null);
+                }}
+              >
                 {t("connection.cancel")}
               </button>
               <button
@@ -190,7 +193,9 @@ export function ConnectionDialogView({
               </button>
               <button
                 className="btn btn-primary"
-                onClick={() => void connectionActions.handleConnect()}
+                onClick={() => {
+                  void connectionActions.handleConnect();
+                }}
               >
                 {t("connection.connect")}{" "}
                 <span className="connection-dialog__shortcut">{shortcutText}</span>

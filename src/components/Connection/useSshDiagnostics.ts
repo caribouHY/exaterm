@@ -48,7 +48,6 @@ export const useSshDiagnostics = () => {
 
   const copy = useCallback(async () => {
     if (logs.length === 0) return;
-    if (!navigator.clipboard) return;
     const text = logs.map((entry) => `[${entry.time}] ${entry.level}: ${entry.message}`).join("\n");
     await navigator.clipboard.writeText(text);
     setCopied(true);
