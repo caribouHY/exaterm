@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { FeedbackMessage } from "../Common";
 import type { SshHostKeyCheck } from "./connectionDialogTypes";
 
 interface HostKeyConfirmationProps {
@@ -52,7 +53,9 @@ export function HostKeyConfirmation({ hostKeyCheck }: HostKeyConfirmationProps) 
         )}
       </div>
 
-      <div className="connection-dialog__host-key-warning">{t("connection.host_key_warning")}</div>
+      <FeedbackMessage tone="warning" className="connection-dialog__host-key-warning">
+        {t("connection.host_key_warning")}
+      </FeedbackMessage>
     </div>
   );
 }

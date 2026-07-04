@@ -4,6 +4,7 @@ import { ChevronDown, Menu, Minus, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ViewMode } from "../../types";
 import AIAssistantLogo from "../AI/AIAssistantLogo";
+import { PopoverMenu, type PopoverMenuItem } from "../Common";
 import "./TitleBar.css";
 
 interface TitleBarProps {
@@ -56,7 +57,7 @@ export default function TitleBar({
     setIsMenuOpen(false);
   };
 
-  const menuItems = [
+  const menuItems: PopoverMenuItem[] = [
     {
       key: "new_connection",
       label: t("titlebar.menu.new_connection"),
@@ -118,33 +119,11 @@ export default function TitleBar({
           </button>
 
           {isMenuOpen && (
-            <div className="titlebar__menu-popover" role="menu">
-              {menuItems.map((item) => {
-                if ("separator" in item) {
-                  return (
-                    <div key={item.key} className="titlebar__menu-separator" role="separator" />
-                  );
-                }
-
-                return (
-                  <button
-                    key={item.key}
-                    className={`titlebar__menu-item ${
-                      item.active ? "titlebar__menu-item--active" : ""
-                    }`}
-                    role="menuitem"
-                    onClick={() => {
-                      runMenuAction(item.action);
-                    }}
-                  >
-                    <span className="titlebar__menu-item-label">{item.label}</span>
-                    {item.shortcut && (
-                      <span className="titlebar__menu-shortcut">{item.shortcut}</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            <PopoverMenu
+              items={menuItems}
+              onAction={runMenuAction}
+              className="titlebar__menu-popover"
+            />
           )}
         </div>
       </div>

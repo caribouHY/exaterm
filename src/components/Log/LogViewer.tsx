@@ -4,6 +4,7 @@ import { message } from "@tauri-apps/plugin-dialog";
 import { FileText, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { LogBulkDeleteResult, LogSession } from "../../types";
+import { EmptyState, FeedbackMessage } from "../Common";
 import "./LogViewer.css";
 
 export default function LogViewer() {
@@ -97,13 +98,18 @@ export default function LogViewer() {
           </button>
         </div>
       </div>
-      {deleteStatus && <div className="log-viewer__status">{deleteStatus}</div>}
+      {deleteStatus && (
+        <FeedbackMessage tone="info" className="log-viewer__status">
+          {deleteStatus}
+        </FeedbackMessage>
+      )}
 
       {sessions.length === 0 ? (
-        <div className="log-viewer__empty">
-          <FileText size={32} />
-          <span>{t("logs.no_logs")}</span>
-        </div>
+        <EmptyState
+          icon={<FileText size={32} />}
+          title={t("logs.no_logs")}
+          className="log-viewer__empty"
+        />
       ) : (
         <table className="log-table">
           <thead>

@@ -1,6 +1,15 @@
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ConnectionType, SavedConnection } from "../../types";
+import {
+  FeedbackMessage,
+  ModalBody,
+  ModalBusy,
+  ModalFooter,
+  ModalFrame,
+  ModalHeader,
+  ModalTitle,
+} from "../Common";
 import { HostKeyConfirmation } from "./HostKeyConfirmation";
 import { SerialConnectionForm } from "./SerialConnectionForm";
 import { SshConnectionForm } from "./SshConnectionForm";
@@ -85,20 +94,20 @@ export function ConnectionDialogView({
 
   return (
     <div className="connection-overlay" onMouseDown={onOverlayMouseDown} onClick={onOverlayClick}>
-      <div
+      <ModalFrame
         className="connection-dialog"
         onClick={(event) => {
           event.stopPropagation();
         }}
       >
-        <div className="connection-dialog__header">
-          <span className="connection-dialog__title">
+        <ModalHeader className="connection-dialog__header">
+          <ModalTitle className="connection-dialog__title">
             {hostKeyCheck ? hostKeyTitle : t("connection.new")}
-          </span>
+          </ModalTitle>
           <button className="btn-icon" onClick={onClose}>
             <X size={16} />
           </button>
-        </div>
+        </ModalHeader>
 
         {!hostKeyCheck && (
           <div className="connection-dialog__tabs">
@@ -129,7 +138,7 @@ export function ConnectionDialogView({
           </div>
         )}
 
-        <div className="connection-dialog__body">
+        <ModalBody className="connection-dialog__body">
           {hostKeyCheck ? (
             <HostKeyConfirmation hostKeyCheck={hostKeyCheck} />
           ) : tab === "ssh" ? (
@@ -154,16 +163,19 @@ export function ConnectionDialogView({
           ) : (
             <SerialConnectionForm formState={serialFormState} formActions={serialActions} />
           )}
-          {error && <div className="connection-dialog__error">{error}</div>}
+          {error && (
+            <FeedbackMessage tone="error" className="connection-dialog__error">
+              {error}
+            </FeedbackMessage>
+          )}
           {tab === "ssh" && <SshDiagnosticsPanel {...diagnosticsPanelProps} />}
-        </div>
+        </ModalBody>
 
-        <div className="connection-dialog__footer">
+        <ModalFooter className="connection-dialog__footer">
           {connecting ? (
-            <div className="connection-dialog__connecting">
-              <div className="connection-dialog__spinner" />
+            <ModalBusy className="connection-dialog__connecting">
               {t("connection.connecting")}
-            </div>
+            </ModalBusy>
           ) : hostKeyCheck ? (
             <>
               <button
@@ -202,8 +214,8 @@ export function ConnectionDialogView({
               </button>
             </>
           )}
-        </div>
-      </div>
+        </ModalFooter>
+      </ModalFrame>
     </div>
   );
 }

@@ -66,14 +66,7 @@
 }
 
 .ai-panel__welcome {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
   padding: 24px;
-  text-align: center;
-  flex: 1;
 }
 
 .ai-panel__welcome-icon {

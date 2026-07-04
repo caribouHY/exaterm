@@ -60,23 +60,11 @@
 }
 
 .log-viewer__status {
-  padding: 8px 10px;
   margin-bottom: 16px;
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  background: var(--bg-surface);
-  font-size: 12px;
 }
 
 .log-viewer__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
   padding: 40px;
-  color: var(--text-secondary);
-  font-size: 13px;
 }
 
 .log-table {

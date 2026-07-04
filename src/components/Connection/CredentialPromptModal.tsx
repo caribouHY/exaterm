@@ -1,5 +1,16 @@
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import {
+  FeedbackMessage,
+  ModalBody,
+  ModalBusy,
+  ModalDescription,
+  ModalFooter,
+  ModalFrame,
+  ModalHeader,
+  ModalTarget,
+  ModalTitle,
+} from "../Common";
 import type { SshCredentialPrompt } from "./connectionDialogTypes";
 import { SshDiagnosticsPanel } from "./SshDiagnosticsPanel";
 import type { SshDiagnosticEntry } from "./connectionDialogTypes";
@@ -48,23 +59,25 @@ export function CredentialPromptModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div
+      <ModalFrame
         className="connection-credential-modal"
         onClick={(e) => {
           e.stopPropagation();
         }}
       >
-        <div className="connection-credential-modal__header">
-          <span className="connection-dialog__title">{credentialTitle}</span>
+        <ModalHeader className="connection-credential-modal__header">
+          <ModalTitle className="connection-dialog__title">{credentialTitle}</ModalTitle>
           <button className="btn-icon" onClick={onClose} disabled={connecting}>
             <X size={16} />
           </button>
-        </div>
-        <div className="connection-credential-modal__body">
-          <div className="connection-credential-modal__target">
+        </ModalHeader>
+        <ModalBody className="connection-credential-modal__body">
+          <ModalTarget className="connection-credential-modal__target">
             {credentialPrompt.username}@{credentialPrompt.host}:{credentialPrompt.port}
-          </div>
-          <div className="connection-credential-modal__description">{credentialDescription}</div>
+          </ModalTarget>
+          <ModalDescription className="connection-credential-modal__description">
+            {credentialDescription}
+          </ModalDescription>
           <div>
             <label className="label">{credentialLabel}</label>
             <input
@@ -84,7 +97,9 @@ export function CredentialPromptModal({
             />
           </div>
           {credentialPrompt.error && (
-            <div className="connection-dialog__error">{credentialPrompt.error}</div>
+            <FeedbackMessage tone="error" className="connection-dialog__error">
+              {credentialPrompt.error}
+            </FeedbackMessage>
           )}
           <SshDiagnosticsPanel
             logs={diagnostics.logs}
@@ -93,13 +108,12 @@ export function CredentialPromptModal({
             onToggleExpanded={diagnostics.onToggleExpanded}
             onCopy={diagnostics.onCopy}
           />
-        </div>
-        <div className="connection-dialog__footer">
+        </ModalBody>
+        <ModalFooter className="connection-dialog__footer">
           {connecting ? (
-            <div className="connection-dialog__connecting">
-              <div className="connection-dialog__spinner" />
+            <ModalBusy className="connection-dialog__connecting">
               {t("connection.connecting")}
-            </div>
+            </ModalBusy>
           ) : (
             <>
               <button className="btn btn-ghost" onClick={onClose}>
@@ -110,8 +124,8 @@ export function CredentialPromptModal({
               </button>
             </>
           )}
-        </div>
-      </div>
+        </ModalFooter>
+      </ModalFrame>
     </div>
   );
 }
