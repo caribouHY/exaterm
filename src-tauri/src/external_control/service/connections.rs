@@ -1,0 +1,543 @@
+use serde_json::{json, Value};
+#[cfg(not(test))]
+use tauri::AppHandle;
+#[cfg(test)]
+use uuid::Uuid;
+
+use crate::config::AppConfig;
+#[cfg(not(test))]
+use crate::external_control::protocol::ExternalControlCredentialState;
+use crate::logger;
+#[cfg(not(test))]
+use crate::ssh;
+#[cfg(not(test))]
+use crate::telnet;
+use crate::terminal_control::TerminalProtocol;
+#[cfg(not(test))]
+use crate::workspace::emit_workspace_updated;
+use crate::workspace::WorkspaceTabRegisterInput;
+
+#[cfg(not(test))]
+use super::profiles::ssh_credential_required;
+use super::profiles::{prepare_saved_profile_connection, prepare_serial_console_connection};
+use super::ExternalControlConnectionCreatedPayload;
+#[cfg(not(test))]
+use super::ExternalControlCredentialRequestPayload;
+#[cfg(not(test))]
+use super::PreparedConnectionKind;
+#[cfg_attr(test, allow(unused_imports))]
+use super::{
+    internal_error, invalid_params, load_app_config, load_serial_ports, ConnectSavedProfileArgs,
+    ConnectSerialConsoleArgs, ExternalControlError, ExternalControlRuntime, ExternalControlService,
+    PreparedConnection, PreparedSerialConnection,
+};
+impl ExternalControlService {
+    pub(crate) async fn connect_saved_profile(
+        &self,
+        args: ConnectSavedProfileArgs,
+    ) -> Result<Value, ExternalControlError> {
+        self.ensure_connect_enabled()?;
+        let config = load_app_config(&self.runtime)?;
+        let prepared = prepare_saved_profile_connection(&config, args).map_err(invalid_params)?;
+        connect_prepared_profile(&self.runtime, &config, prepared).await
+    }
+
+    pub(crate) async fn list_serial_ports(&self) -> Result<Value, ExternalControlError> {
+        self.ensure_connect_enabled()?;
+        let ports = load_serial_ports(&self.runtime)?;
+        Ok(json!({
+            "ports": ports,
+        }))
+    }
+
+    pub(crate) async fn connect_serial_console(
+        &self,
+        args: ConnectSerialConsoleArgs,
+    ) -> Result<Value, ExternalControlError> {
+        self.ensure_connect_enabled()?;
+        let ports = load_serial_ports(&self.runtime)?;
+        let prepared = prepare_serial_console_connection(args, &ports).map_err(invalid_params)?;
+        let config = load_app_config(&self.runtime)?;
+        connect_prepared_serial_console(&self.runtime, &config, prepared).await
+    }
+}
+
+pub(super) fn terminal_protocol_log_type(protocol: TerminalProtocol) -> &'static str {
+    match protocol {
+        TerminalProtocol::Ssh => "ssh",
+        TerminalProtocol::Serial => "serial",
+        TerminalProtocol::Telnet => "telnet",
+    }
+}
+
+fn terminal_protocol_from_log_type(value: &str) -> Result<TerminalProtocol, String> {
+    match value {
+        "ssh" => Ok(TerminalProtocol::Ssh),
+        "serial" => Ok(TerminalProtocol::Serial),
+        "telnet" => Ok(TerminalProtocol::Telnet),
+        _ => Err(format!("不明な接続種別: {value}")),
+    }
+}
+
+#[cfg(not(test))]
+async fn connect_prepared_profile(
+    runtime: &ExternalControlRuntime,
+    config: &AppConfig,
+    prepared: PreparedConnection,
+) -> Result<Value, ExternalControlError> {
+    let app = runtime
+        .app
+        .as_ref()
+        .ok_or_else(|| internal_error("外部制御接続に必要なアプリハンドルがありません"))?;
+    let session_id = connect_prepared_profile_session(runtime, app, &prepared).await?;
+
+    finish_created_session(
+        runtime,
+        config,
+        session_id,
+        prepared.connection_type,
+        prepared.target,
+        prepared.title,
+        prepared.encoding,
+        prepared.terminal_mode,
+    )
+    .await
+}
+
+#[cfg(not(test))]
+async fn connect_prepared_profile_session(
+    runtime: &ExternalControlRuntime,
+    app: &AppHandle,
+    prepared: &PreparedConnection,
+) -> Result<String, ExternalControlError> {
+    match &prepared.kind {
+        PreparedConnectionKind::Ssh {
+            host,
+            port,
+            username,
+            auth_method,
+            private_key_path,
+            jump_profile,
+        } => {
+            connect_prepared_ssh_profile(
+                runtime,
+                app,
+                prepared,
+                PreparedSshProfileParts {
+                    host,
+                    port: *port,
+                    username,
+                    auth_method,
+                    private_key_path: private_key_path.as_deref(),
+                    jump_profile: jump_profile.as_ref(),
+                },
+            )
+            .await
+        }
+        PreparedConnectionKind::Telnet { host, port } => {
+            connect_prepared_telnet_profile(runtime, app, prepared, host, *port).await
+        }
+    }
+}
+
+#[cfg(not(test))]
+struct PreparedSshProfileParts<'a> {
+    host: &'a str,
+    port: u16,
+    username: &'a str,
+    auth_method: &'a str,
+    private_key_path: Option<&'a str>,
+    jump_profile: Option<&'a ssh::SshJumpProfile>,
+}
+
+#[cfg(not(test))]
+async fn connect_prepared_ssh_profile(
+    runtime: &ExternalControlRuntime,
+    app: &AppHandle,
+    prepared: &PreparedConnection,
+    parts: PreparedSshProfileParts<'_>,
+) -> Result<String, ExternalControlError> {
+    let credentials = runtime
+        .credentials
+        .as_ref()
+        .ok_or_else(|| internal_error("外部制御の認証入力に必要な状態がありません"))?;
+    let jump_credential = request_jump_credential(credentials, app, parts.jump_profile).await?;
+    verify_profile_host_key(
+        parts.host,
+        parts.port,
+        parts.jump_profile,
+        jump_credential.clone(),
+    )
+    .await?;
+    let profile_credential = request_profile_credential(
+        credentials,
+        app,
+        &prepared.profile_id,
+        parts.host,
+        parts.port,
+        parts.username,
+        parts.auth_method,
+        parts.private_key_path,
+        &prepared.target,
+        &prepared.title,
+    )
+    .await?;
+
+    let options = build_ssh_connect_options(prepared, parts, profile_credential, jump_credential);
+    ssh::connect(
+        app,
+        &runtime.ssh,
+        &runtime.terminals,
+        &runtime.workspace,
+        runtime.logger.as_ref(),
+        options,
+    )
+    .await
+    .map_err(invalid_params)
+    .map(|result| result.session_id)
+}
+
+#[cfg(not(test))]
+async fn connect_prepared_telnet_profile(
+    runtime: &ExternalControlRuntime,
+    app: &AppHandle,
+    prepared: &PreparedConnection,
+    host: &str,
+    port: u16,
+) -> Result<String, ExternalControlError> {
+    telnet::connect(
+        app,
+        &runtime.telnet,
+        &runtime.terminals,
+        &runtime.workspace,
+        runtime.logger.as_ref(),
+        host.to_string(),
+        port,
+        prepared.cols,
+        prepared.rows,
+        Some(prepared.encoding.clone()),
+    )
+    .await
+    .map_err(invalid_params)
+}
+
+#[cfg(not(test))]
+async fn request_jump_credential(
+    credentials: &ExternalControlCredentialState,
+    app: &AppHandle,
+    jump_profile: Option<&ssh::SshJumpProfile>,
+) -> Result<Option<String>, ExternalControlError> {
+    let Some(jump_profile) = jump_profile else {
+        return Ok(None);
+    };
+    ssh::verify_trusted_host_key(&jump_profile.host, jump_profile.port)
+        .await
+        .map_err(invalid_params)?;
+    request_profile_credential(
+        credentials,
+        app,
+        &jump_profile.id,
+        &jump_profile.host,
+        jump_profile.port,
+        &jump_profile.username,
+        &jump_profile.auth_method,
+        jump_profile.private_key_path.as_deref(),
+        &format!(
+            "{}@{}:{}",
+            jump_profile.username, jump_profile.host, jump_profile.port
+        ),
+        &format!("{}@{}", jump_profile.username, jump_profile.host),
+    )
+    .await
+}
+
+#[cfg(not(test))]
+async fn verify_profile_host_key(
+    host: &str,
+    port: u16,
+    jump_profile: Option<&ssh::SshJumpProfile>,
+    jump_credential: Option<String>,
+) -> Result<(), ExternalControlError> {
+    match jump_profile {
+        Some(jump_profile) => {
+            let (jump_password, jump_key_passphrase) =
+                split_optional_ssh_credential(&jump_profile.auth_method, jump_credential);
+            ssh::verify_trusted_host_key_via_jump(
+                host,
+                port,
+                jump_profile.clone(),
+                jump_password,
+                jump_key_passphrase,
+            )
+            .await
+        }
+        None => ssh::verify_trusted_host_key(host, port).await,
+    }
+    .map_err(invalid_params)
+}
+
+#[cfg(not(test))]
+fn build_ssh_connect_options(
+    prepared: &PreparedConnection,
+    parts: PreparedSshProfileParts<'_>,
+    profile_credential: Option<String>,
+    jump_credential: Option<String>,
+) -> ssh::SshConnectOptions {
+    let (password, key_passphrase) =
+        split_required_ssh_credential(parts.auth_method, profile_credential);
+    let (jump_password, jump_key_passphrase) = match parts.jump_profile {
+        Some(jump_profile) => {
+            split_optional_ssh_credential(&jump_profile.auth_method, jump_credential)
+        }
+        None => (None, None),
+    };
+
+    ssh::SshConnectOptions {
+        host: parts.host.to_string(),
+        port: parts.port,
+        username: parts.username.to_string(),
+        password,
+        auth_method: Some(parts.auth_method.to_string()),
+        private_key_path: parts.private_key_path.map(ToOwned::to_owned),
+        key_passphrase,
+        jump_profile_id: parts.jump_profile.map(|profile| profile.id.clone()),
+        jump_password,
+        jump_key_passphrase,
+        cols: prepared.cols,
+        rows: prepared.rows,
+        encoding: Some(prepared.encoding.clone()),
+        request_id: None,
+    }
+}
+
+#[cfg(not(test))]
+fn split_required_ssh_credential(
+    auth_method: &str,
+    credential: Option<String>,
+) -> (String, Option<String>) {
+    if auth_method == "password" {
+        (credential.unwrap_or_default(), None)
+    } else {
+        (String::new(), credential)
+    }
+}
+
+#[cfg(not(test))]
+fn split_optional_ssh_credential(
+    auth_method: &str,
+    credential: Option<String>,
+) -> (Option<String>, Option<String>) {
+    if auth_method == "password" {
+        (credential, None)
+    } else {
+        (None, credential)
+    }
+}
+
+#[cfg(not(test))]
+#[allow(clippy::too_many_arguments)]
+async fn request_profile_credential(
+    credentials: &ExternalControlCredentialState,
+    app: &AppHandle,
+    profile_id: &str,
+    host: &str,
+    port: u16,
+    username: &str,
+    auth_method: &str,
+    private_key_path: Option<&str>,
+    target: &str,
+    title: &str,
+) -> Result<Option<String>, ExternalControlError> {
+    if !ssh_credential_required(auth_method, private_key_path).map_err(invalid_params)? {
+        return Ok(None);
+    }
+
+    credentials
+        .request_ssh_credential(
+            app,
+            ExternalControlCredentialRequestPayload {
+                request_id: String::new(),
+                profile_id: profile_id.to_string(),
+                host: host.to_string(),
+                port,
+                username: username.to_string(),
+                auth_method: auth_method.to_string(),
+                target: target.to_string(),
+                title: title.to_string(),
+            },
+        )
+        .await
+        .map_err(invalid_params)?
+        .map(Some)
+        .ok_or_else(|| invalid_params("外部制御の認証入力がキャンセルされました"))
+}
+
+async fn finish_created_session(
+    runtime: &ExternalControlRuntime,
+    config: &AppConfig,
+    session_id: String,
+    connection_type: String,
+    target: String,
+    title: String,
+    encoding: String,
+    terminal_mode: String,
+) -> Result<Value, ExternalControlError> {
+    let auto_logging = if config.terminal.auto_session_log {
+        match &runtime.logger {
+            Some(logger_state) => logger::start_auto_log(
+                logger_state,
+                session_id.clone(),
+                connection_type.clone(),
+                target.clone(),
+            )
+            .await
+            .map(|_| true)
+            .unwrap_or_else(|error| {
+                log::warn!(
+                    "External control auto log start failed for session {session_id}: {error}"
+                );
+                false
+            }),
+            None => {
+                log::warn!(
+                    "External control auto log start skipped because logger state is unavailable"
+                );
+                false
+            }
+        }
+    } else {
+        false
+    };
+
+    let protocol = terminal_protocol_from_log_type(&connection_type).map_err(invalid_params)?;
+    let payload = ExternalControlConnectionCreatedPayload {
+        session_id: session_id.clone(),
+        connection_type: connection_type.clone(),
+        target,
+        title: title.clone(),
+        encoding: encoding.clone(),
+        terminal_mode: terminal_mode.clone(),
+        auto_logging,
+    };
+
+    let _workspace_snapshot = runtime
+        .workspace
+        .register_tab(WorkspaceTabRegisterInput {
+            window_id: None,
+            tab_id: None,
+            session_id,
+            connection_type: protocol,
+            title,
+            encoding,
+            terminal_mode,
+            is_auto_logging: auto_logging,
+        })
+        .await;
+    #[cfg(not(test))]
+    {
+        let app = runtime
+            .app
+            .as_ref()
+            .ok_or_else(|| internal_error("外部制御接続に必要なアプリハンドルがありません"))?;
+        emit_workspace_updated(app, &_workspace_snapshot);
+    }
+
+    Ok(json!(payload))
+}
+
+#[cfg(not(test))]
+async fn connect_prepared_serial_console(
+    runtime: &ExternalControlRuntime,
+    config: &AppConfig,
+    prepared: PreparedSerialConnection,
+) -> Result<Value, ExternalControlError> {
+    let app = runtime
+        .app
+        .as_ref()
+        .ok_or_else(|| internal_error("外部制御接続に必要なアプリハンドルがありません"))?;
+
+    let session_id = crate::serial::connect(
+        app,
+        &runtime.serial,
+        &runtime.terminals,
+        &runtime.workspace,
+        runtime.logger.as_ref(),
+        prepared.port.clone(),
+        prepared.config,
+        Some(prepared.encoding.clone()),
+    )
+    .await
+    .map_err(invalid_params)?;
+
+    finish_created_session(
+        runtime,
+        config,
+        session_id,
+        "serial".into(),
+        prepared.target,
+        prepared.title,
+        prepared.encoding,
+        prepared.terminal_mode,
+    )
+    .await
+}
+
+#[cfg(test)]
+async fn connect_prepared_profile(
+    runtime: &ExternalControlRuntime,
+    config: &AppConfig,
+    prepared: PreparedConnection,
+) -> Result<Value, ExternalControlError> {
+    let session_id = Uuid::new_v4().to_string();
+    let protocol =
+        terminal_protocol_from_log_type(&prepared.connection_type).map_err(invalid_params)?;
+    runtime
+        .terminals
+        .register_session_with_encoding(
+            session_id.clone(),
+            protocol,
+            prepared.target.clone(),
+            Some(prepared.encoding.clone()),
+        )
+        .await;
+    finish_created_session(
+        runtime,
+        config,
+        session_id,
+        prepared.connection_type,
+        prepared.target,
+        prepared.title,
+        prepared.encoding,
+        prepared.terminal_mode,
+    )
+    .await
+}
+
+#[cfg(test)]
+async fn connect_prepared_serial_console(
+    runtime: &ExternalControlRuntime,
+    config: &AppConfig,
+    prepared: PreparedSerialConnection,
+) -> Result<Value, ExternalControlError> {
+    let session_id = Uuid::new_v4().to_string();
+    runtime
+        .terminals
+        .register_session_with_encoding(
+            session_id.clone(),
+            TerminalProtocol::Serial,
+            prepared.target.clone(),
+            Some(prepared.encoding.clone()),
+        )
+        .await;
+    finish_created_session(
+        runtime,
+        config,
+        session_id,
+        "serial".into(),
+        prepared.target,
+        prepared.title,
+        prepared.encoding,
+        prepared.terminal_mode,
+    )
+    .await
+}
