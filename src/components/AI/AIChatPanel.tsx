@@ -11,6 +11,7 @@ import type {
   TerminalMode,
 } from "../../types";
 import { useTranslation } from "react-i18next";
+import { EmptyState } from "../Common";
 import AIAssistantLogo from "./AIAssistantLogo";
 import "./AIChatPanel.css";
 
@@ -343,12 +344,15 @@ export default function AIChatPanel({
 
       <div className="ai-panel__messages">
         {messages.length === 0 ? (
-          <div className="ai-panel__welcome">
-            <div className="ai-panel__welcome-icon">
-              <AIAssistantLogo size="lg" />
-            </div>
-            <div className="ai-panel__welcome-text">{t("ai.title")}</div>
-          </div>
+          <EmptyState
+            className="ai-panel__welcome"
+            icon={
+              <div className="ai-panel__welcome-icon">
+                <AIAssistantLogo size="lg" />
+              </div>
+            }
+            title={<span className="ai-panel__welcome-text">{t("ai.title")}</span>}
+          />
         ) : (
           messages.map((msg, i) => {
             const segments =

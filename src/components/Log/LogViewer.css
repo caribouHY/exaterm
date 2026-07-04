@@ -40,18 +40,18 @@
   gap: 6px;
   min-height: 32px;
   padding: 0 12px;
-  border: 1px solid rgba(244, 71, 71, 0.45);
-  border-radius: 4px;
-  background: rgba(244, 71, 71, 0.12);
-  color: #f48771;
+  border: 1px solid var(--accent-danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--accent-danger-muted);
+  color: var(--accent-red);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
 }
 
 .log-viewer__delete-button:hover:not(:disabled) {
-  background: rgba(244, 71, 71, 0.2);
-  color: #ffb3a8;
+  background: var(--accent-danger-muted-hover);
+  color: var(--text-on-danger);
 }
 
 .log-viewer__delete-button:disabled {
@@ -60,23 +60,11 @@
 }
 
 .log-viewer__status {
-  padding: 8px 10px;
   margin-bottom: 16px;
-  border: 1px solid var(--border-secondary);
-  border-radius: 4px;
-  color: var(--text-secondary);
-  background: var(--bg-surface);
-  font-size: 12px;
 }
 
 .log-viewer__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
   padding: 40px;
-  color: var(--text-secondary);
-  font-size: 13px;
 }
 
 .log-table {
@@ -117,17 +105,17 @@
 }
 
 .log-table__type--ssh {
-  background: rgba(0, 122, 204, 0.15);
+  background: var(--accent-blue-muted);
   color: var(--accent-blue);
 }
 
 .log-table__type--serial {
-  background: rgba(78, 201, 176, 0.15);
+  background: var(--accent-green-muted);
   color: var(--accent-green);
 }
 
 .log-table__type--telnet {
-  background: rgba(204, 167, 0, 0.15);
+  background: var(--accent-yellow-muted);
   color: var(--accent-yellow);
 }
 

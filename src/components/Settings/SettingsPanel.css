@@ -120,9 +120,9 @@
   position: absolute;
   inset: 0;
   background: var(--border-secondary);
-  border-radius: 12px;
+  border-radius: var(--radius-full);
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: background var(--transition-normal);
 }
 
 .toggle input:checked + .toggle-track {
@@ -136,10 +136,10 @@
   left: 3px;
   width: 18px;
   height: 18px;
-  background: #fff;
-  border-radius: 50%;
-  transition: transform 0.2s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  background: var(--text-on-accent);
+  border-radius: var(--radius-full);
+  transition: transform var(--transition-normal);
+  box-shadow: var(--shadow-toggle-thumb);
 }
 
 .toggle input:checked + .toggle-track::after {

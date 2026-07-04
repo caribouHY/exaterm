@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Aligned the desktop UI styling rules and shared dark-theme tokens for more consistent future interface changes.
+
 ### Added
 
 - Added PowerShell-style right-click copy and paste in terminal sessions.

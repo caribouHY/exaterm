@@ -10,6 +10,7 @@ Use this checklist before and after code changes. It is intentionally short and 
 - Check whether the change touches logs, secrets, connection details, terminal output, prompts, or API keys.
 - For config changes, inspect both `src-tauri/src/config.rs` and `src/types/index.ts`.
 - For UI text changes, inspect both `src/locales/en.json` and `src/locales/ja.json`.
+- For UI, CSS, or visual design changes, read `ai-docs/UI_DESIGN_GUIDELINES.md`.
 - For Tauri command changes, inspect the command module and `src-tauri/src/lib.rs`.
 - Use the current config guide paths: `docs/CONFIG_JSON_GUIDE.en.md` and `docs/CONFIG_JSON_GUIDE.ja.md`.
 - Do not rely on a root-level `CONFIG_JSON_GUIDE.md`.

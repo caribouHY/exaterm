@@ -29,6 +29,17 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
+import {
+  FeedbackMessage,
+  ModalBody,
+  ModalBusy,
+  ModalDescription,
+  ModalFooter,
+  ModalFrame,
+  ModalHeader,
+  ModalTarget,
+  ModalTitle,
+} from "./components/Common";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -1039,30 +1050,35 @@ export default function App() {
       )}
       {activeMcpCredentialPrompt && (
         <div className="app-credential-overlay">
-          <div
+          <ModalFrame
             className="app-credential-modal"
             role="dialog"
-            aria-modal="true"
-            aria-labelledby="mcp-credential-title"
-            aria-describedby="mcp-credential-description"
+            ariaModal
+            ariaLabelledBy="mcp-credential-title"
+            ariaDescribedBy="mcp-credential-description"
           >
-            <div className="app-credential-modal__header">
+            <ModalHeader className="app-credential-modal__header">
               <div>
                 <div className="app-credential-modal__eyebrow">
                   {t("mcp.credential_request_title")}
                 </div>
-                <div className="app-credential-modal__title" id="mcp-credential-title">
+                <ModalTitle className="app-credential-modal__title" id="mcp-credential-title">
                   {activeMcpCredentialPrompt.auth_method === "public_key"
                     ? t("connection.key_passphrase_prompt_title")
                     : t("connection.password_prompt_title")}
-                </div>
+                </ModalTitle>
               </div>
-            </div>
-            <div className="app-credential-modal__body">
-              <div className="app-credential-modal__target">{activeMcpCredentialPrompt.target}</div>
-              <p className="app-credential-modal__description" id="mcp-credential-description">
+            </ModalHeader>
+            <ModalBody className="app-credential-modal__body">
+              <ModalTarget className="app-credential-modal__target">
+                {activeMcpCredentialPrompt.target}
+              </ModalTarget>
+              <ModalDescription
+                className="app-credential-modal__description"
+                id="mcp-credential-description"
+              >
                 {t("mcp.credential_request_desc")}
-              </p>
+              </ModalDescription>
               <label className="label" htmlFor="mcp-credential-input">
                 {activeMcpCredentialPrompt.auth_method === "public_key"
                   ? t("connection.key_passphrase")
@@ -1087,15 +1103,16 @@ export default function App() {
                 }}
               />
               {activeMcpCredentialPrompt.error && (
-                <div className="app-credential-modal__error">{activeMcpCredentialPrompt.error}</div>
+                <FeedbackMessage tone="error" className="app-credential-modal__error">
+                  {activeMcpCredentialPrompt.error}
+                </FeedbackMessage>
               )}
-            </div>
-            <div className="app-credential-modal__footer">
+            </ModalBody>
+            <ModalFooter className="app-credential-modal__footer">
               {activeMcpCredentialPrompt.submitting ? (
-                <div className="app-credential-modal__submitting">
-                  <div className="app-credential-modal__spinner" />
+                <ModalBusy className="app-credential-modal__submitting">
                   {t("connection.connecting")}
-                </div>
+                </ModalBusy>
               ) : (
                 <>
                   <button
@@ -1112,8 +1129,8 @@ export default function App() {
                   </button>
                 </>
               )}
-            </div>
-          </div>
+            </ModalFooter>
+          </ModalFrame>
         </div>
       )}
     </div>

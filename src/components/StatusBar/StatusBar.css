@@ -34,7 +34,10 @@
   color: inherit;
   font-family: inherit;
   font-size: inherit;
-  transition: background 0.2s;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
 }
 
 .statusbar__item--clickable:hover {
@@ -85,10 +88,10 @@
   position: absolute;
   bottom: 100%;
   right: 0;
-  background: #252526;
+  background: var(--bg-menu);
   border: 1px solid var(--border-primary);
-  border-radius: 4px;
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.5);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
   display: flex;
   flex-direction: column;
   min-width: 120px;
@@ -109,15 +112,18 @@
   text-align: left;
   background: transparent;
   border: none;
-  color: #ccc;
+  color: var(--text-primary);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.1s;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
 }
 
 .statusbar__menu-item:hover {
-  background: #37373d;
-  color: #fff;
+  background: var(--bg-active);
+  color: var(--text-on-accent);
 }
 
 .statusbar__menu-item:disabled {
@@ -127,7 +133,7 @@
 
 .statusbar__menu-item:disabled:hover {
   background: transparent;
-  color: #ccc;
+  color: var(--text-primary);
 }
 
 .statusbar__menu-item--active {
@@ -138,12 +144,12 @@
 .statusbar__dot {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
 }
 
 .statusbar__dot--connected {
   background: var(--status-connected);
-  box-shadow: 0 0 6px var(--status-connected);
+  box-shadow: var(--shadow-status-connected);
 }
 
 .statusbar__dot--disconnected {
