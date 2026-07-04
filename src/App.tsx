@@ -641,6 +641,38 @@ export default function App() {
     [applyWorkspaceSnapshot, handleCrossWindowDragCancel, utilityTabs.length]
   );
 
+  const handleMoveTabToNewWindow = useCallback(
+    async (tabId: string) => {
+      try {
+        await terminalViewRefs.current.get(tabId)?.flushLogBuffersForMove();
+      } catch (error) {
+        console.warn("Failed to flush terminal log buffers before tab move:", error);
+      }
+
+      try {
+        const result = await invoke<WorkspaceDragDropResult>("workspace_tab_detach_to_new_window", {
+          tabId,
+          fromWindowId: windowIdRef.current,
+        });
+        result.snapshots.forEach(applyWorkspaceSnapshot);
+        const sourceSnapshot = result.snapshots.find(
+          (snapshot) => snapshot.window_id === windowIdRef.current
+        );
+        if (
+          result.source_window_id === windowIdRef.current &&
+          result.target_window_id !== windowIdRef.current &&
+          sourceSnapshot?.window.tab_order.length === 0 &&
+          utilityTabs.length === 0
+        ) {
+          await getCurrentWindow().close();
+        }
+      } catch (error) {
+        console.error("Failed to move workspace tab to a new window:", error);
+      }
+    },
+    [applyWorkspaceSnapshot, utilityTabs.length]
+  );
+
   const handleTerminalData = useCallback((tabId: string, data: string) => {
     // Keep last 2000 chars per tab for AI context.
     const nextBuffer = ((terminalBuffers.current.get(tabId) || "") + data).slice(-2000);
@@ -917,6 +949,7 @@ export default function App() {
                 closingTabIds={closingTabIds}
                 onSelectTab={handleSelectTab}
                 onCloseTab={handleCloseTab}
+                onMoveTabToNewWindow={handleMoveTabToNewWindow}
                 onAddTab={openConnection}
                 onReorderTabs={handleReorderTabs}
                 windowId={windowIdRef.current}

@@ -8,6 +8,7 @@ import type {
   WorkspaceDragPreview,
   WorkspacePointerPosition,
 } from "../../types";
+import { PopoverMenu, type PopoverMenuItem } from "../Common";
 import "./TerminalTabs.css";
 
 interface TerminalTabsProps {
@@ -16,6 +17,7 @@ interface TerminalTabsProps {
   closingTabIds: string[];
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => Promise<void>;
+  onMoveTabToNewWindow: (id: string) => Promise<void>;
   onAddTab: () => void;
   onReorderTabs: (draggedId: string, targetId: string, dropSide: TabDropSide) => void;
   windowId: string;
@@ -46,6 +48,12 @@ interface PointerDragState {
   crossWindowStarted: boolean;
 }
 
+interface TabContextMenuState {
+  tabId: string;
+  x: number;
+  y: number;
+}
+
 interface ForeignDropTarget {
   targetIndex: number;
   indicatorLeft: number;
@@ -53,6 +61,9 @@ interface ForeignDropTarget {
 
 const DRAG_START_DISTANCE = 4;
 const DROP_SLOT_HYSTERESIS_PX = 14;
+const CONTEXT_MENU_WIDTH = 220;
+const CONTEXT_MENU_MAX_HEIGHT = 96;
+const CONTEXT_MENU_VIEWPORT_MARGIN = 8;
 
 export default function TerminalTabs({
   tabs,
@@ -60,6 +71,7 @@ export default function TerminalTabs({
   closingTabIds,
   onSelectTab,
   onCloseTab,
+  onMoveTabToNewWindow,
   onAddTab,
   onReorderTabs,
   windowId,
@@ -72,6 +84,7 @@ export default function TerminalTabs({
 }: TerminalTabsProps) {
   const { t } = useTranslation();
   const tabsRef = useRef<HTMLDivElement | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const pointerDragState = useRef<PointerDragState | null>(null);
   const dropTargetRef = useRef<TabDropTarget | null>(null);
   const foreignHoverIndexRef = useRef<number | null>(null);
@@ -79,6 +92,7 @@ export default function TerminalTabs({
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<TabDropTarget | null>(null);
   const [foreignDropTarget, setForeignDropTarget] = useState<ForeignDropTarget | null>(null);
+  const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null);
 
   const updateDropTarget = (target: TabDropTarget | null) => {
     dropTargetRef.current = target;
@@ -238,6 +252,21 @@ export default function TerminalTabs({
     updateDropTarget(null);
   };
 
+  const closeContextMenu = () => {
+    setContextMenu(null);
+  };
+
+  const getContextMenuPosition = (clientX: number, clientY: number) => ({
+    x: Math.max(
+      CONTEXT_MENU_VIEWPORT_MARGIN,
+      Math.min(clientX, window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_VIEWPORT_MARGIN)
+    ),
+    y: Math.max(
+      CONTEXT_MENU_VIEWPORT_MARGIN,
+      Math.min(clientY, window.innerHeight - CONTEXT_MENU_MAX_HEIGHT - CONTEXT_MENU_VIEWPORT_MARGIN)
+    ),
+  });
+
   const canDropOnTab = (sourceTabId: string, target: TabDropTarget | null) =>
     Boolean(
       target &&
@@ -269,6 +298,37 @@ export default function TerminalTabs({
       onCrossWindowDragHover(nextIndex);
     }
   }, [dragPreview, windowId, closingTabIds, tabs]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (!contextMenuRef.current?.contains(event.target as Node)) {
+        closeContextMenu();
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeContextMenu();
+      }
+    };
+
+    const handleWindowChange = () => {
+      closeContextMenu();
+    };
+
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", handleWindowChange);
+    window.addEventListener("blur", handleWindowChange);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", handleWindowChange);
+      window.removeEventListener("blur", handleWindowChange);
+    };
+  }, [contextMenu]);
 
   const handlePointerMove = (e: PointerEvent<HTMLButtonElement>) => {
     const dragState = pointerDragState.current;
@@ -362,6 +422,35 @@ export default function TerminalTabs({
     }
   };
 
+  const contextMenuTab = contextMenu
+    ? tabs.find((tab) => tab.id === contextMenu.tabId) || null
+    : null;
+  const contextMenuItems: PopoverMenuItem[] = contextMenuTab
+    ? [
+        ...(contextMenuTab.kind === "terminal"
+          ? [
+              {
+                key: "move_to_new_window",
+                label: t("terminal.tab_menu.move_to_new_window"),
+                disabled: closingTabIds.includes(contextMenuTab.id),
+                action: () => {
+                  void onMoveTabToNewWindow(contextMenuTab.id);
+                },
+              },
+              { key: "separator-move-close", separator: true as const },
+            ]
+          : []),
+        {
+          key: "close",
+          label: t("terminal.tab_menu.close"),
+          disabled: closingTabIds.includes(contextMenuTab.id),
+          action: () => {
+            void onCloseTab(contextMenuTab.id);
+          },
+        },
+      ]
+    : [];
+
   return (
     <div className="terminal-tabs" ref={tabsRef}>
       {tabs.map((tab) => {
@@ -392,6 +481,17 @@ export default function TerminalTabs({
                 crossWindowStarted: false,
               };
               e.currentTarget.setPointerCapture(e.pointerId);
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              resetDragState();
+              const position = getContextMenuPosition(e.clientX, e.clientY);
+              setContextMenu({
+                tabId: tab.id,
+                x: position.x,
+                y: position.y,
+              });
             }}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
@@ -460,6 +560,21 @@ export default function TerminalTabs({
           className="terminal-tabs__drop-indicator terminal-tabs__drop-indicator--foreign"
           style={{ left: `${foreignDropTarget.indicatorLeft}px` }}
         />
+      )}
+      {contextMenu && contextMenuItems.length > 0 && (
+        <div
+          ref={contextMenuRef}
+          className="terminal-tabs__context-menu"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+        >
+          <PopoverMenu
+            items={contextMenuItems}
+            onAction={(action) => {
+              action();
+              closeContextMenu();
+            }}
+          />
+        </div>
       )}
     </div>
   );

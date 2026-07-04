@@ -382,6 +382,29 @@ impl WorkspaceState {
         ])
     }
 
+    pub async fn validate_tab_move_source(
+        &self,
+        tab_id: &str,
+        from_window_id: &str,
+    ) -> Result<(), String> {
+        let model = self.model.lock().await;
+        let source_window = model
+            .windows
+            .get(from_window_id)
+            .ok_or_else(|| "移動元ウィンドウが見つかりません".to_string())?;
+        if !source_window.tab_order.iter().any(|id| id == tab_id) {
+            return Err("移動元タブが見つかりません".to_string());
+        }
+        let tab = model
+            .tabs
+            .get(tab_id)
+            .ok_or_else(|| "タブが見つかりません".to_string())?;
+        if tab.owner_window_id != from_window_id {
+            return Err("タブの所有ウィンドウが一致しません".to_string());
+        }
+        Ok(())
+    }
+
     pub async fn remove_tab(
         &self,
         window_id: String,
@@ -904,6 +927,39 @@ pub async fn workspace_tab_drag_drop(
 }
 
 #[tauri::command]
+pub async fn workspace_tab_detach_to_new_window(
+    app: AppHandle,
+    state: tauri::State<'_, WorkspaceState>,
+    tab_id: String,
+    from_window_id: String,
+) -> Result<WorkspaceDragDropResult, String> {
+    state
+        .validate_tab_move_source(&tab_id, &from_window_id)
+        .await?;
+
+    let window_id = format!("workspace-{}", Uuid::new_v4().simple());
+    create_workspace_window(&app, &window_id)?;
+    let snapshot = state
+        .register_window(window_id.clone(), window_id.clone(), true)
+        .await;
+    emit_workspace_updated(&app, &snapshot);
+
+    let snapshots = state
+        .move_tab(tab_id.clone(), from_window_id.clone(), window_id.clone(), 0)
+        .await?;
+    emit_workspace_updates(&app, &snapshots);
+
+    Ok(WorkspaceDragDropResult {
+        action: "detach".to_string(),
+        tab_id,
+        source_window_id: from_window_id,
+        target_window_id: Some(window_id.clone()),
+        created_window_id: Some(window_id),
+        snapshots,
+    })
+}
+
+#[tauri::command]
 pub async fn workspace_tab_drag_cancel(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
@@ -1134,6 +1190,30 @@ mod tests {
         assert_eq!(main.window.tab_order, vec!["s1"]);
         assert_eq!(main.tabs[0].owner_window_id, "main");
         assert!(main.tabs[0].is_connected);
+    }
+
+    #[tokio::test]
+    async fn tab_move_source_validation_rejects_wrong_window_without_changes() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state
+            .register_window("other".into(), "other".into(), true)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+
+        let error = state
+            .validate_tab_move_source("s1", "other")
+            .await
+            .unwrap_err();
+        let main = state.snapshot_for_window("main".into()).await;
+        let other = state.snapshot_for_window("other".into()).await;
+
+        assert!(error.contains("移動元タブ"));
+        assert_eq!(main.window.tab_order, vec!["s1"]);
+        assert!(other.window.tab_order.is_empty());
+        assert_eq!(main.tabs[0].owner_window_id, "main");
     }
 
     #[tokio::test]
