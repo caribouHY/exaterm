@@ -38,7 +38,7 @@ const SHADOW_ALLOWLIST = [
 
 export async function collectCssFiles(directory) {
   const resolvedDirectory = path.resolve(directory);
-  const entries = await readdir(resolvedDirectory, { withFileTypes: true });
+  const entries = await readdir(path.resolve(directory), { withFileTypes: true });
   const files = await Promise.all(
     entries.map(async (entry) => {
       const fullPath = path.join(resolvedDirectory, entry.name);
@@ -235,7 +235,7 @@ export async function checkCssFiles(cssFiles) {
   for (const filePath of cssFiles) {
     const resolvedFilePath = path.resolve(filePath);
     const file = toRepoPath(resolvedFilePath);
-    const content = await readFile(resolvedFilePath, "utf8");
+    const content = await readFile(path.resolve(filePath), "utf8");
     const ignoredRanges = file === INDEX_CSS ? findRootTokenRanges(content) : [];
     const declarations = findDeclarations(content, ignoredRanges);
 
