@@ -80,11 +80,11 @@
   width: 48px;
   height: 48px;
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, #c586c0, #569cd6);
+  background: var(--accent-purple-blue-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--text-on-accent);
   opacity: 0.85;
 }
 
@@ -129,7 +129,7 @@
 
 .ai-message--user .ai-message__content {
   background: var(--accent-blue);
-  color: #fff;
+  color: var(--text-on-accent);
   border-bottom-right-radius: 2px;
   white-space: pre-wrap;
 }
@@ -145,9 +145,9 @@
 .ai-message__content code {
   font-family: var(--font-mono);
   font-size: 12px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--bg-code-inline);
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .ai-markdown {
@@ -314,7 +314,7 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  color: #fff;
+  color: var(--text-on-accent);
   background: var(--accent-blue);
   border: none;
   border-radius: var(--radius-sm);
@@ -367,8 +367,8 @@
   height: 30px;
   flex-shrink: 0;
   color: var(--accent-green);
-  background: rgba(78, 201, 176, 0.08);
-  border: 1px solid rgba(78, 201, 176, 0.2);
+  background: var(--accent-success-muted);
+  border: 1px solid var(--accent-success-border);
   border-radius: var(--radius-sm);
   padding: 0;
   cursor: pointer;
@@ -381,11 +381,11 @@
 
 .ai-panel__context-btn:hover,
 .ai-panel__context-btn:focus-visible {
-  background: rgba(78, 201, 176, 0.15);
+  background: var(--accent-success-muted-hover);
 }
 
 .ai-panel__context-btn:focus-visible {
-  outline: 2px solid var(--border-focus);
+  outline: var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -421,7 +421,7 @@
 }
 
 .ai-panel__context-btn--active {
-  background: rgba(78, 201, 176, 0.2);
+  background: var(--accent-success-muted-active);
   border-color: var(--accent-green);
 }
 
@@ -433,7 +433,7 @@
   width: 6px;
   height: 6px;
   background: var(--accent-green);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   box-shadow: 0 0 0 2px var(--bg-surface);
 }
 
@@ -479,7 +479,7 @@
   background: var(--accent-blue);
   border: none;
   border-radius: var(--radius-sm);
-  color: #fff;
+  color: var(--text-on-accent);
   cursor: pointer;
   transition: background var(--transition-fast);
   flex-shrink: 0;
@@ -508,7 +508,7 @@
   width: 6px;
   height: 6px;
   background: var(--accent-blue);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   animation: pulse 1.2s infinite;
 }
 

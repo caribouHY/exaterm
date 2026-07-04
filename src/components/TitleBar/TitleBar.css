@@ -23,14 +23,14 @@
 .titlebar__logo {
   width: 16px;
   height: 16px;
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));
-  border-radius: 3px;
+  background: var(--accent-brand-gradient);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 10px;
   font-weight: 700;
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .titlebar__name {
@@ -189,5 +189,5 @@
 
 .titlebar__btn--close:hover {
   background: var(--accent-red);
-  color: #fff;
+  color: var(--text-on-danger);
 }
