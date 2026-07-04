@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 const SRC_DIR = path.join(process.cwd(), "src");
 const INDEX_CSS = "src/index.css";
@@ -35,11 +36,12 @@ const SHADOW_ALLOWLIST = [
   },
 ];
 
-async function collectCssFiles(directory) {
-  const entries = await readdir(directory, { withFileTypes: true });
+export async function collectCssFiles(directory) {
+  const resolvedDirectory = path.resolve(directory);
+  const entries = await readdir(resolvedDirectory, { withFileTypes: true });
   const files = await Promise.all(
     entries.map(async (entry) => {
-      const fullPath = path.join(directory, entry.name);
+      const fullPath = path.join(resolvedDirectory, entry.name);
       if (entry.isDirectory()) {
         return collectCssFiles(fullPath);
       }
@@ -50,15 +52,15 @@ async function collectCssFiles(directory) {
   return files.flat();
 }
 
-function toRepoPath(filePath) {
+export function toRepoPath(filePath) {
   return path.relative(process.cwd(), filePath).replaceAll(path.sep, "/");
 }
 
-function stripCommentsPreservingLines(content) {
+export function stripCommentsPreservingLines(content) {
   return content.replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n]/g, " "));
 }
 
-function findRootTokenRanges(content) {
+export function findRootTokenRanges(content) {
   const ranges = [];
   const rootPattern = /:root\s*\{/g;
   let match;
@@ -68,7 +70,7 @@ function findRootTokenRanges(content) {
     let depth = 0;
 
     for (let index = match.index; index < content.length; index += 1) {
-      const char = content[index];
+      const char = content.charAt(index);
       if (char === "{") {
         depth += 1;
       } else if (char === "}") {
@@ -85,21 +87,21 @@ function findRootTokenRanges(content) {
   return ranges;
 }
 
-function isInsideRange(index, ranges) {
+export function isInsideRange(index, ranges) {
   return ranges.some(([start, end]) => index >= start && index < end);
 }
 
-function lineForIndex(content, index) {
+export function lineForIndex(content, index) {
   let line = 1;
   for (let cursor = 0; cursor < index; cursor += 1) {
-    if (content[cursor] === "\n") {
+    if (content.charAt(cursor) === "\n") {
       line += 1;
     }
   }
   return line;
 }
 
-function findDeclarations(content, ignoredRanges) {
+export function findDeclarations(content, ignoredRanges = []) {
   const cleanContent = stripCommentsPreservingLines(content);
   const lines = cleanContent.split("\n");
   const lineOffsets = [];
@@ -112,9 +114,9 @@ function findDeclarations(content, ignoredRanges) {
   }
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const line = lines[lineIndex];
+    const line = lines.at(lineIndex) ?? "";
     const match = line.match(/^\s*([a-zA-Z-]+)\s*:\s*(.*)$/);
-    const propertyStart = lineOffsets[lineIndex] + line.search(/\S/);
+    const propertyStart = (lineOffsets.at(lineIndex) ?? 0) + line.search(/\S/);
 
     if (!match || isInsideRange(propertyStart, ignoredRanges) || match[1].startsWith("--")) {
       continue;
@@ -123,7 +125,7 @@ function findDeclarations(content, ignoredRanges) {
     let value = match[2];
     while (!value.includes(";") && lineIndex < lines.length - 1) {
       lineIndex += 1;
-      value += ` ${lines[lineIndex].trim()}`;
+      value += ` ${(lines.at(lineIndex) ?? "").trim()}`;
     }
 
     declarations.push({
@@ -136,17 +138,17 @@ function findDeclarations(content, ignoredRanges) {
   return declarations;
 }
 
-function stripVarFunctions(value) {
+export function stripVarFunctions(value) {
   let result = "";
   for (let index = 0; index < value.length; index += 1) {
     if (value.slice(index, index + 4).toLowerCase() !== "var(") {
-      result += value[index];
+      result += value.charAt(index);
       continue;
     }
 
     let depth = 0;
     for (; index < value.length; index += 1) {
-      const char = value[index];
+      const char = value.charAt(index);
       if (char === "(") {
         depth += 1;
       } else if (char === ")") {
@@ -160,12 +162,12 @@ function stripVarFunctions(value) {
   return result;
 }
 
-function findVarToken(value) {
+export function findVarToken(value) {
   return value.match(/var\(\s*(--[\w-]+)/)?.[1];
 }
 
-function isAllowedShadow(file, declaration) {
-  if (/^var\(\s*--shadow-[\w-]+\s*\)$/.test(declaration.value)) {
+export function isAllowedShadow(file, declaration) {
+  if (declaration.value === "none" || /var\(\s*--shadow-[\w-]+\s*\)/.test(declaration.value)) {
     return true;
   }
 
@@ -177,7 +179,7 @@ function isAllowedShadow(file, declaration) {
   );
 }
 
-function checkDeclaration(file, declaration) {
+export function checkDeclaration(file, declaration) {
   const issues = [];
   const valueWithoutVars = stripVarFunctions(declaration.value);
 
@@ -197,7 +199,7 @@ function checkDeclaration(file, declaration) {
     });
   }
 
-  if (declaration.property === "border-radius") {
+  if (declaration.property.endsWith("radius")) {
     const token = findVarToken(declaration.value);
     if (!ZERO_RADIUS.test(declaration.value) && (!token || !ALLOWED_RADIUS_TOKENS.has(token))) {
       issues.push({
@@ -223,33 +225,46 @@ function checkDeclaration(file, declaration) {
   return issues;
 }
 
-function formatIssue(issue) {
+export function formatIssue(issue) {
   return `${issue.file}:${issue.line} [${issue.rule}] ${issue.property}: ${issue.value}\n  ${issue.message}`;
 }
 
-const cssFiles = await collectCssFiles(SRC_DIR);
-const issues = [];
+export async function checkCssFiles(cssFiles) {
+  const issues = [];
 
-for (const filePath of cssFiles) {
-  const file = toRepoPath(filePath);
-  const content = await readFile(filePath, "utf8");
-  const ignoredRanges = file === INDEX_CSS ? findRootTokenRanges(content) : [];
-  const declarations = findDeclarations(content, ignoredRanges);
+  for (const filePath of cssFiles) {
+    const resolvedFilePath = path.resolve(filePath);
+    const file = toRepoPath(resolvedFilePath);
+    const content = await readFile(resolvedFilePath, "utf8");
+    const ignoredRanges = file === INDEX_CSS ? findRootTokenRanges(content) : [];
+    const declarations = findDeclarations(content, ignoredRanges);
 
-  for (const declaration of declarations) {
-    issues.push(
-      ...checkDeclaration(file, declaration).map((issue) => ({
-        ...issue,
-        file,
-      }))
-    );
+    for (const declaration of declarations) {
+      issues.push(
+        ...checkDeclaration(file, declaration).map((issue) => ({
+          ...issue,
+          file,
+        }))
+      );
+    }
+  }
+
+  return issues;
+}
+
+export async function run() {
+  const cssFiles = await collectCssFiles(SRC_DIR);
+  const issues = await checkCssFiles(cssFiles);
+
+  if (issues.length > 0) {
+    console.error("CSS convention check failed:\n");
+    console.error(issues.map(formatIssue).join("\n\n"));
+    process.exitCode = 1;
+  } else {
+    console.log(`CSS convention check passed (${cssFiles.length} files).`);
   }
 }
 
-if (issues.length > 0) {
-  console.error("CSS convention check failed:\n");
-  console.error(issues.map(formatIssue).join("\n\n"));
-  process.exitCode = 1;
-} else {
-  console.log(`CSS convention check passed (${cssFiles.length} files).`);
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await run();
 }

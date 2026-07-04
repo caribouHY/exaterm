@@ -123,7 +123,7 @@
 .ai-message--user .ai-message__content {
   background: var(--accent-blue);
   color: var(--text-on-accent);
-  border-bottom-right-radius: 2px;
+  border-bottom-right-radius: var(--radius-sm);
   white-space: pre-wrap;
 }
 
