@@ -188,6 +188,7 @@ pub fn run() {
             terminal_control::terminal_output_snapshot_get,
             workspace::workspace_snapshot_get,
             workspace::workspace_tab_activate,
+            workspace::workspace_tab_detach_to_new_window,
             workspace::workspace_tab_drag_cancel,
             workspace::workspace_tab_drag_drop,
             workspace::workspace_tab_drag_hover,

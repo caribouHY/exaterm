@@ -4,6 +4,7 @@ export type PopoverMenuItem =
       label: string;
       shortcut?: string;
       active?: boolean;
+      disabled?: boolean;
       action: () => void;
     }
   | {
@@ -34,7 +35,9 @@ export function PopoverMenu({ items, onAction, className = "" }: PopoverMenuProp
               item.active ? "ui-popover-menu__item--active" : ""
             }`}
             role="menuitem"
+            disabled={item.disabled}
             onClick={() => {
+              if (item.disabled) return;
               onAction(item.action);
             }}
           >
