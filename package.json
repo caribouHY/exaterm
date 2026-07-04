@@ -7,13 +7,14 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "check:css": "node scripts/check-css-conventions.mjs",
     "prepare:sidecars": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sidecars.ps1",
     "preview": "vite preview",
     "tauri": "tauri",
     "format": "pnpm run format:frontend && pnpm run format:rust",
     "format:check": "pnpm run format:frontend:check && pnpm run format:rust:check",
-    "format:frontend": "prettier --write \"src/**/*.{ts,tsx,css,json}\" \"*.{html,json,ts}\" \".github/**/*.yml\" \".vscode/*.json\" \"ai-docs/**/*.md\" \"docs/**/*.md\" \"src-tauri/*.json\"",
-    "format:frontend:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\" \"*.{html,json,ts}\" \".github/**/*.yml\" \".vscode/*.json\" \"ai-docs/**/*.md\" \"docs/**/*.md\" \"src-tauri/*.json\"",
+    "format:frontend": "prettier --write \"src/**/*.{ts,tsx,css,json}\" \"scripts/**/*.mjs\" \"*.{html,json,ts}\" \".github/**/*.yml\" \".vscode/*.json\" \"ai-docs/**/*.md\" \"docs/**/*.md\" \"src-tauri/*.json\"",
+    "format:frontend:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\" \"scripts/**/*.mjs\" \"*.{html,json,ts}\" \".github/**/*.yml\" \".vscode/*.json\" \"ai-docs/**/*.md\" \"docs/**/*.md\" \"src-tauri/*.json\"",
     "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml",
     "format:rust:check": "cargo fmt --manifest-path src-tauri/Cargo.toml --check"
   },
