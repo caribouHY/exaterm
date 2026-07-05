@@ -124,7 +124,7 @@ async fn open_jump_direct_tcpip(
             handle
                 .channel_open_direct_tcpip(target_host, u32::from(target_port), "127.0.0.1", 0)
                 .await
-                .map_err(|error| format!("SSH踏み台チャネルオープンエラー: {}", error))
+                .map_err(|error| format!("Failed to open the SSH jump channel: {}", error))
         },
     )
     .await;

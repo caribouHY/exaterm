@@ -25,7 +25,9 @@ pub(super) fn build_auth_request(
         "public_key" => {
             let private_key_path = private_key_path.unwrap_or_default().trim().to_string();
             if private_key_path.is_empty() {
-                return Err("SSH公開鍵認証エラー: 秘密鍵ファイルを指定してください".to_string());
+                return Err(
+                    "SSH public key authentication error: specify a private key file".to_string(),
+                );
             }
 
             let key_passphrase = key_passphrase
@@ -37,7 +39,7 @@ pub(super) fn build_auth_request(
                 key_passphrase,
             })
         }
-        _ => Err("SSH認証方式が不正です".to_string()),
+        _ => Err("The SSH authentication method is invalid".to_string()),
     }
 }
 
@@ -109,11 +111,11 @@ pub(super) fn private_key_format_hint(secret: &str) -> Result<(), String> {
 
     match first_line.map(str::trim) {
         Some(line) if line.starts_with("ssh-") => Err(
-            "秘密鍵ファイルではなく公開鍵ファイルが指定されています。秘密鍵本体を指定してください"
+            "A public key file was specified instead of a private key file. Specify the private key itself."
                 .to_string(),
         ),
         Some(line) if line.starts_with("PuTTY-User-Key-File-") => Err(
-            "PuTTY形式(.ppk)の秘密鍵は直接読み込めません。OpenSSH形式の秘密鍵に変換してください"
+            "PuTTY-format (.ppk) private keys cannot be loaded directly. Convert the key to OpenSSH format."
                 .to_string(),
         ),
         Some(line)
@@ -122,13 +124,13 @@ pub(super) fn private_key_format_hint(secret: &str) -> Result<(), String> {
                 && !line.contains("PRIVATE KEY") =>
         {
             Err(
-                "秘密鍵ファイルではなく公開鍵ファイルが指定されています。秘密鍵本体を指定してください"
+                "A public key file was specified instead of a private key file. Specify the private key itself."
                     .to_string(),
             )
         }
         Some(line) if is_supported_private_key_header(line) => Ok(()),
         _ => Err(
-            "OpenSSH/PEM形式の秘密鍵ファイルを指定してください。公開鍵ファイルは秘密鍵として使用できません"
+            "Specify an OpenSSH or PEM private key file. Public key files cannot be used as private keys."
                 .to_string(),
         ),
     }
@@ -138,7 +140,7 @@ fn read_private_key_secret(path: &str) -> Result<(PathBuf, String), String> {
     let path = normalize_auth_path(path);
     let secret = fs::read_to_string(&path).map_err(|error| {
         format!(
-            "秘密鍵ファイルを開けません: {} ({})",
+            "Failed to open the private key file: {} ({})",
             path.to_string_lossy(),
             error
         )
@@ -149,7 +151,7 @@ fn read_private_key_secret(path: &str) -> Result<(PathBuf, String), String> {
 
 pub fn private_key_requires_passphrase(path: &str) -> Result<bool, String> {
     if path.trim().is_empty() {
-        return Err("秘密鍵ファイルを指定してください".to_string());
+        return Err("Specify a private key file".to_string());
     }
 
     let (_path, secret) = read_private_key_secret(path)?;
@@ -158,16 +160,16 @@ pub fn private_key_requires_passphrase(path: &str) -> Result<bool, String> {
         Ok(_) => Ok(false),
         Err(russh::keys::Error::KeyIsEncrypted) => Ok(true),
         Err(russh::keys::Error::CouldNotReadKey) => Err(
-            "秘密鍵を読み込めません。鍵形式、パスフレーズ、またはファイル内容を確認してください"
+            "Failed to load the private key. Check the key format, passphrase, or file contents."
                 .to_string(),
         ),
-        Err(other) => Err(format!("秘密鍵を読み込めません: {}", other)),
+        Err(other) => Err(format!("Failed to load the private key: {}", other)),
     }
 }
 
 pub fn ssh_private_key_requires_passphrase(private_key_path: String) -> Result<bool, String> {
     private_key_requires_passphrase(&private_key_path)
-        .map_err(|error| format!("SSH公開鍵認証エラー: {}", error))
+        .map_err(|error| format!("SSH public key authentication error: {}", error))
 }
 
 fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<PrivateKey, String> {
@@ -175,13 +177,13 @@ fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<Pri
     private_key_format_hint(&secret)?;
     decode_secret_key(&secret, passphrase).map_err(|error| match error {
         russh::keys::Error::KeyIsEncrypted => {
-            "秘密鍵はパスフレーズで暗号化されています。鍵パスフレーズを入力してください".to_string()
+            "The private key is encrypted with a passphrase. Enter the key passphrase.".to_string()
         }
         russh::keys::Error::CouldNotReadKey => {
-            "秘密鍵を読み込めません。鍵形式、パスフレーズ、またはファイル内容を確認してください"
+            "Failed to load the private key. Check the key format, passphrase, or file contents."
                 .to_string()
         }
-        other => format!("秘密鍵を読み込めません: {}", other),
+        other => format!("Failed to load the private key: {}", other),
     })
 }
 
@@ -195,15 +197,15 @@ pub(super) async fn authenticate_ssh(
             handle
                 .authenticate_password(username, &password)
                 .await
-                .map_err(|e| format!("SSH認証エラー: {}", e))?,
-            "SSH認証失敗: ユーザー名またはパスワードが正しくありません",
+                .map_err(|e| format!("SSH authentication error: {}", e))?,
+            "SSH authentication failed: the username or password is incorrect",
         ),
         SshAuthRequest::PublicKey {
             private_key_path,
             key_passphrase,
         } => {
             let key = load_private_key_for_auth(&private_key_path, key_passphrase.as_deref())
-                .map_err(|e| format!("SSH公開鍵認証エラー: {}", e))?;
+                .map_err(|e| format!("SSH public key authentication error: {}", e))?;
 
             (
                 handle
@@ -212,8 +214,8 @@ pub(super) async fn authenticate_ssh(
                         PrivateKeyWithHashAlg::new(Arc::new(key), None),
                     )
                     .await
-                    .map_err(|e| format!("SSH公開鍵認証エラー: {}", e))?,
-                "SSH公開鍵認証失敗: ユーザー名、秘密鍵、公開鍵の登録状態、またはパスフレーズを確認してください",
+                    .map_err(|e| format!("SSH public key authentication error: {}", e))?,
+                "SSH public key authentication failed: check the username, private key, public key registration, or passphrase.",
             )
         }
     };

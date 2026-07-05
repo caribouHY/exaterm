@@ -177,7 +177,7 @@ impl ExternalControlService {
             Ok(())
         } else {
             Err(permission_denied(
-                "外部制御からの新規接続は無効です。external_control.connect_enabled=true にしてください",
+                "New connections from external control are disabled. Set external_control.connect_enabled=true.",
             ))
         }
     }
@@ -192,7 +192,9 @@ impl ExternalControlService {
         {
             config::config_read()
                 .map(|config| config.external_control.connect_enabled)
-                .map_err(|error| internal_error(format!("設定読み込みエラー: {error}")))
+                .map_err(|error| {
+                    internal_error(format!("Failed to load the configuration: {error}"))
+                })
         }
     }
 }
@@ -209,7 +211,7 @@ pub(super) fn load_app_config(
     #[cfg(not(test))]
     {
         config::config_read()
-            .map_err(|error| internal_error(format!("設定読み込みエラー: {error}")))
+            .map_err(|error| internal_error(format!("Failed to load the configuration: {error}")))
     }
 }
 
@@ -224,6 +226,6 @@ pub(super) fn load_serial_ports(
 
     #[cfg(not(test))]
     {
-        crate::serial::serial_list_ports().map_err(internal_error)
+        crate::serial::list_ports().map_err(internal_error)
     }
 }

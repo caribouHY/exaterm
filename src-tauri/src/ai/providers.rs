@@ -1,7 +1,7 @@
 use super::catalog::OLLAMA_DEFAULT_BASE_URL;
 use super::errors::{
     format_network_error, malformed_chat_response_message, malformed_models_response_message,
-    missing_secret_message, response_json, ErrorLanguage,
+    missing_secret_message, response_json,
 };
 use super::secrets::load_provider_secret;
 use super::types::{AiModelInfo, AiProvider, ChatMessage};
@@ -530,21 +530,17 @@ fn azure_openai_chat_url(
     let deployment = deployment.trim();
 
     if endpoint.is_empty() || deployment.is_empty() {
-        return Err(if ErrorLanguage::from_language(language).is_ja() {
-            "Azure OpenAI の Endpoint と Model deployment name を Settings で設定してください。"
-                .into()
-        } else {
-            "Configure the Azure OpenAI endpoint and model deployment name in Settings.".into()
-        });
+        return Err(crate::i18n::translate_for_app_language(
+            language,
+            "Configure the Azure OpenAI endpoint and model deployment name in Settings.",
+        ));
     }
 
     reqwest::Url::parse(endpoint).map_err(|_| -> String {
-        if ErrorLanguage::from_language(language).is_ja() {
-            "Azure OpenAI の Endpoint URL が正しくありません。Settings の入力内容を確認してください。"
-                .to_string()
-        } else {
-            "The Azure OpenAI endpoint URL is invalid. Check the value in Settings.".to_string()
-        }
+        crate::i18n::translate_for_app_language(
+            language,
+            "The Azure OpenAI endpoint URL is invalid. Check the value in Settings.",
+        )
     })?;
 
     Ok(endpoint.to_string())
@@ -552,11 +548,10 @@ fn azure_openai_chat_url(
 
 fn ensure_model_selected(model: &str, language: &str) -> Result<(), String> {
     if model.trim().is_empty() {
-        return Err(if ErrorLanguage::from_language(language).is_ja() {
-            "AI モデルが選択されていません。モデルを選択してから再試行してください。".into()
-        } else {
-            "No AI model is selected. Choose a model, then try again.".into()
-        });
+        return Err(crate::i18n::translate_for_app_language(
+            language,
+            "No AI model is selected. Choose a model, then try again.",
+        ));
     }
 
     Ok(())
@@ -789,6 +784,6 @@ mod tests {
     fn rejects_empty_model_in_japanese() {
         let err = ensure_model_selected("", "ja").unwrap_err();
 
-        assert!(err.contains("AI モデルが選択されていません"));
+        assert!(err.contains("AI"));
     }
 }

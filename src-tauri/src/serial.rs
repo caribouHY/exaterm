@@ -12,6 +12,32 @@ use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 use crate::workspace::{emit_workspace_updated, WorkspaceState};
 use crate::{logger, logger::LoggerState};
 
+fn localize_gui_error(state: &crate::i18n::BackendLanguageState, error: String) -> String {
+    crate::i18n::translate_gui_error(state, &error)
+}
+
+pub fn list_ports() -> Result<Vec<PortInfo>, String> {
+    let ports =
+        serialport::available_ports().map_err(|e| format!("Failed to list serial ports: {}", e))?;
+    Ok(ports
+        .into_iter()
+        .map(|p| {
+            let port_type_str = match &p.port_type {
+                serialport::SerialPortType::UsbPort(info) => {
+                    info.product.clone().unwrap_or_else(|| "USB".to_string())
+                }
+                serialport::SerialPortType::PciPort => "PCI".to_string(),
+                serialport::SerialPortType::BluetoothPort => "Bluetooth".to_string(),
+                serialport::SerialPortType::Unknown => "Unknown".to_string(),
+            };
+            PortInfo {
+                name: p.port_name,
+                port_type: port_type_str,
+            }
+        })
+        .collect())
+}
+
 const SERIAL_IO_TIMEOUT: Duration = Duration::from_millis(5);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -146,26 +172,10 @@ async fn mark_disconnected(
 }
 
 #[tauri::command]
-pub fn serial_list_ports() -> Result<Vec<PortInfo>, String> {
-    let ports =
-        serialport::available_ports().map_err(|e| format!("ポート一覧取得エラー: {}", e))?;
-    Ok(ports
-        .into_iter()
-        .map(|p| {
-            let port_type_str = match &p.port_type {
-                serialport::SerialPortType::UsbPort(info) => {
-                    info.product.clone().unwrap_or_else(|| "USB".to_string())
-                }
-                serialport::SerialPortType::PciPort => "PCI".to_string(),
-                serialport::SerialPortType::BluetoothPort => "Bluetooth".to_string(),
-                serialport::SerialPortType::Unknown => "Unknown".to_string(),
-            };
-            PortInfo {
-                name: p.port_name,
-                port_type: port_type_str,
-            }
-        })
-        .collect())
+pub fn serial_list_ports(
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
+) -> Result<Vec<PortInfo>, String> {
+    list_ports().map_err(|error| localize_gui_error(language.inner(), error))
 }
 
 #[tauri::command]
@@ -175,6 +185,7 @@ pub async fn serial_connect(
     terminals: tauri::State<'_, TerminalControlState>,
     workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     port: String,
     config: SerialConfig,
     encoding: Option<String>,
@@ -190,6 +201,7 @@ pub async fn serial_connect(
         encoding,
     )
     .await
+    .map_err(|error| localize_gui_error(language.inner(), error))
 }
 
 pub async fn connect(
@@ -212,11 +224,11 @@ pub async fn connect(
         .flow_control(to_flow_control(&config.flow_control))
         .timeout(SERIAL_IO_TIMEOUT)
         .open()
-        .map_err(|e| format!("シリアルポートオープンエラー: {}", e))?;
+        .map_err(|e| format!("Failed to open the serial port: {}", e))?;
 
     let mut writer_port = serial_port
         .try_clone()
-        .map_err(|e| format!("ポート複製エラー: {}", e))?;
+        .map_err(|e| format!("Failed to clone the serial port handle: {}", e))?;
     let (writer, write_rx) = mpsc::channel::<Vec<u8>>();
 
     let session = SerialSession {
@@ -336,10 +348,13 @@ pub async fn connect(
 #[tauri::command]
 pub async fn serial_write(
     state: tauri::State<'_, SerialState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    write_data(&state, &session_id, data).await
+    write_data(&state, &session_id, data)
+        .await
+        .map_err(|error| localize_gui_error(language.inner(), error))
 }
 
 pub async fn write_data(state: &SerialState, session_id: &str, data: String) -> Result<(), String> {
@@ -347,14 +362,14 @@ pub async fn write_data(state: &SerialState, session_id: &str, data: String) -> 
         let sessions = state.sessions.lock().await;
         sessions
             .get(session_id)
-            .ok_or("セッションが見つかりません")?
+            .ok_or("Session not found")?
             .writer
             .clone()
     };
 
     writer
         .send(data.into_bytes())
-        .map_err(|e| format!("送信エラー: {}", e))
+        .map_err(|e| format!("Failed to send data: {}", e))
 }
 
 #[tauri::command]
@@ -364,6 +379,7 @@ pub async fn serial_disconnect(
     terminals: tauri::State<'_, TerminalControlState>,
     workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
+    _language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
 ) -> Result<(), String> {
     let _ = remove_session(

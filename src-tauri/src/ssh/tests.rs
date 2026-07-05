@@ -305,7 +305,7 @@ fn public_key_auth_requires_private_key_path() {
     )
     .unwrap_err();
 
-    assert!(error.contains("秘密鍵ファイル"));
+    assert!(error.contains("private key file"));
 }
 
 #[test]
@@ -341,14 +341,14 @@ fn private_key_hint_rejects_public_key_files() {
         private_key_format_hint("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEexample user@example\n")
             .unwrap_err();
 
-    assert!(error.contains("公開鍵ファイル"));
+    assert!(error.contains("public key file"));
 }
 
 #[test]
 fn private_key_hint_rejects_putty_keys() {
     let error = private_key_format_hint("PuTTY-User-Key-File-3: ssh-ed25519\n").unwrap_err();
 
-    assert!(error.contains("PuTTY形式"));
+    assert!(error.contains("PuTTY-format"));
 }
 
 #[test]
@@ -407,12 +407,12 @@ fn private_key_requires_passphrase_rejects_public_key_files() {
 
     let error = private_key_requires_passphrase(path.to_str().unwrap()).unwrap_err();
 
-    assert!(error.contains("公開鍵ファイル"));
+    assert!(error.contains("public key file"));
 }
 
 #[test]
 fn private_key_requires_passphrase_rejects_empty_path() {
     let error = private_key_requires_passphrase("  ").unwrap_err();
 
-    assert!(error.contains("秘密鍵ファイル"));
+    assert!(error.contains("private key file"));
 }

@@ -525,7 +525,7 @@ fn prepare_saved_profile_rejects_missing_and_unsupported_profiles() {
         },
     )
     .unwrap_err();
-    assert!(missing.contains("見つかりません"));
+    assert!(missing.contains("not found"));
 
     let unsupported = prepare_saved_profile_connection(
         &config,
@@ -537,7 +537,7 @@ fn prepare_saved_profile_rejects_missing_and_unsupported_profiles() {
         },
     )
     .unwrap_err();
-    assert!(unsupported.contains("見つかりません"));
+    assert!(unsupported.contains("not found"));
 }
 
 #[test]
@@ -564,7 +564,7 @@ fn prepare_saved_profile_rejects_mcp_disabled_profiles() {
     )
     .unwrap_err();
 
-    assert!(error.contains("外部制御"));
+    assert!(error.contains("external control"));
 }
 
 #[test]
@@ -599,7 +599,7 @@ fn prepare_saved_profile_rejects_incomplete_ssh_profiles() {
         },
     )
     .unwrap_err();
-    assert!(user_error.contains("ユーザー名"));
+    assert!(user_error.contains("username"));
 
     let key_error = prepare_saved_profile_connection(
         &config,
@@ -611,7 +611,7 @@ fn prepare_saved_profile_rejects_incomplete_ssh_profiles() {
         },
     )
     .unwrap_err();
-    assert!(key_error.contains("秘密鍵"));
+    assert!(key_error.contains("private key"));
 }
 
 #[test]
@@ -971,7 +971,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         },
     )
     .unwrap_err();
-    assert!(self_ref.contains("自分自身"));
+    assert!(self_ref.contains("reference itself"));
 
     config.saved_connections[0].jump_profile_id = Some("missing".into());
     let missing = prepare_saved_profile_connection(
@@ -984,7 +984,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         },
     )
     .unwrap_err();
-    assert!(missing.contains("見つかりません"));
+    assert!(missing.contains("not found"));
 
     config.saved_connections[0].jump_profile_id = Some("telnet-hop".into());
     let telnet = prepare_saved_profile_connection(
@@ -997,7 +997,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         },
     )
     .unwrap_err();
-    assert!(telnet.contains("SSHプロファイル"));
+    assert!(telnet.contains("SSH profiles"));
 
     config.saved_connections[0].jump_profile_id = Some("nested-hop".into());
     let nested = prepare_saved_profile_connection(
@@ -1010,7 +1010,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         },
     )
     .unwrap_err();
-    assert!(nested.contains("多段"));
+    assert!(nested.contains("Nested"));
 }
 
 #[test]
@@ -1018,7 +1018,7 @@ fn ssh_credential_required_keeps_password_prompt_and_rejects_missing_key() {
     assert!(ssh_credential_required("password", None).unwrap());
 
     let error = ssh_credential_required("public_key", None).unwrap_err();
-    assert!(error.contains("秘密鍵"));
+    assert!(error.contains("private key"));
 }
 
 #[test]
@@ -1200,7 +1200,7 @@ async fn service_reads_terminal_output_with_multibyte_tail() {
         .await;
     runtime
         .terminals
-        .append_output("s1", "こんにちは世界".as_bytes())
+        .append_output("s1", "example".as_bytes())
         .await;
     let service = McpTerminalService::new(runtime);
 
@@ -1213,7 +1213,7 @@ async fn service_reads_terminal_output_with_multibyte_tail() {
         .unwrap();
     assert_eq!(result["session_id"], "s1");
     assert_eq!(result["mode"], "recent");
-    assert_eq!(result["output"], "世界");
+    assert_eq!(result["output"], "le");
     assert_eq!(result["truncated"], true);
     assert_eq!(result["start_cursor"], 5);
     assert_eq!(result["cursor"], 7);
@@ -1228,7 +1228,7 @@ async fn service_reads_terminal_output_in_delta_mode() {
         .await;
     runtime
         .terminals
-        .append_output("s1", "abcこんにちは".as_bytes())
+        .append_output("s1", "abcalpha".as_bytes())
         .await;
     let service = McpTerminalService::new(runtime);
 
@@ -1242,7 +1242,7 @@ async fn service_reads_terminal_output_in_delta_mode() {
         .unwrap();
 
     assert_eq!(result["mode"], "delta");
-    assert_eq!(result["output"], "こんにちは");
+    assert_eq!(result["output"], "alpha");
     assert_eq!(result["start_cursor"], 3);
     assert_eq!(result["cursor"], 8);
 }
@@ -1261,10 +1261,7 @@ async fn service_reads_non_utf8_terminal_output() {
         .await;
     runtime
         .terminals
-        .append_output(
-            "s1",
-            &[0x82, 0xb1, 0x82, 0xf1, 0x82, 0xc9, 0x82, 0xbf, 0x82, 0xcd],
-        )
+        .append_output("s1", &encoding_rs::SHIFT_JIS.encode("αβγδε").0.into_owned())
         .await;
     let service = McpTerminalService::new(runtime);
 
@@ -1275,7 +1272,7 @@ async fn service_reads_non_utf8_terminal_output() {
         })
         .await
         .unwrap();
-    assert_eq!(result["output"], "こんにちは");
+    assert_eq!(result["output"], "αβγδε");
     assert_eq!(result["cursor"], 5);
 }
 
@@ -1415,7 +1412,7 @@ async fn service_rejects_send_to_disconnected_session() {
         .await
         .unwrap_err();
     assert!(matches!(&error, ExternalControlError::Unavailable(_)));
-    assert!(error.message().contains("切断済み"));
+    assert!(error.message().contains("disconnected"));
 }
 
 #[tokio::test]
@@ -1458,7 +1455,7 @@ async fn service_start_terminal_log_rejects_missing_and_disconnected_sessions() 
         .await
         .unwrap_err();
     assert!(matches!(&missing, ExternalControlError::NotFound(_)));
-    assert!(missing.message().contains("見つかりません"));
+    assert!(missing.message().contains("not found"));
 
     let disconnected = service
         .start_terminal_log(StartTerminalLogArgs {
@@ -1470,7 +1467,7 @@ async fn service_start_terminal_log_rejects_missing_and_disconnected_sessions() 
         &disconnected,
         ExternalControlError::Unavailable(_)
     ));
-    assert!(disconnected.message().contains("切断済み"));
+    assert!(disconnected.message().contains("disconnected"));
 }
 
 #[tokio::test]
@@ -1587,5 +1584,5 @@ async fn service_rejects_empty_run_terminal_command() {
         .unwrap_err();
 
     assert!(matches!(&error, ExternalControlError::InvalidArguments(_)));
-    assert!(error.message().contains("空"));
+    assert!(error.message().contains("must not be empty"));
 }

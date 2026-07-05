@@ -8,6 +8,13 @@ use uuid::Uuid;
 
 const MAIN_WINDOW_ID: &str = "main";
 
+fn localize<T>(
+    language: &tauri::State<'_, crate::i18n::BackendLanguageState>,
+    result: Result<T, String>,
+) -> Result<T, String> {
+    result.map_err(|error| crate::i18n::translate_gui_error(language.inner(), &error))
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct WorkspaceSnapshot {
     pub window_id: String,
@@ -264,9 +271,9 @@ impl WorkspaceState {
         let window = model
             .windows
             .get_mut(&window_id)
-            .ok_or_else(|| "ウィンドウが見つかりません".to_string())?;
+            .ok_or_else(|| "Window not found".to_string())?;
         if !window.tab_order.contains(&tab_id) {
-            return Err("タブがこのウィンドウにありません".to_string());
+            return Err("The tab does not belong to this window".to_string());
         }
         window.active_tab_id = Some(tab_id);
         model.last_focused_window = Some(window_id.clone());
@@ -284,7 +291,7 @@ impl WorkspaceState {
         let window = model
             .windows
             .get_mut(&window_id)
-            .ok_or_else(|| "ウィンドウが見つかりません".to_string())?;
+            .ok_or_else(|| "Window not found".to_string())?;
         if dragged_tab_id == target_tab_id {
             return Ok(snapshot_for_locked(&model, &window_id));
         }
@@ -292,19 +299,19 @@ impl WorkspaceState {
             .tab_order
             .iter()
             .position(|id| id == &dragged_tab_id)
-            .ok_or_else(|| "移動元タブが見つかりません".to_string())?;
+            .ok_or_else(|| "Source tab not found".to_string())?;
         let _target_index = window
             .tab_order
             .iter()
             .position(|id| id == &target_tab_id)
-            .ok_or_else(|| "移動先タブが見つかりません".to_string())?;
+            .ok_or_else(|| "Destination tab not found".to_string())?;
 
         let dragged = window.tab_order.remove(dragged_index);
         let target_index_after_removal = window
             .tab_order
             .iter()
             .position(|id| id == &target_tab_id)
-            .ok_or_else(|| "移動先タブが見つかりません".to_string())?;
+            .ok_or_else(|| "Destination tab not found".to_string())?;
         let insert_index = if drop_side == "after" {
             target_index_after_removal + 1
         } else {
@@ -323,23 +330,23 @@ impl WorkspaceState {
     ) -> Result<Vec<WorkspaceSnapshot>, String> {
         let mut model = self.model.lock().await;
         if !model.windows.contains_key(&to_window_id) {
-            return Err("移動先ウィンドウが見つかりません".to_string());
+            return Err("Destination window not found".to_string());
         }
 
         let source_window = model
             .windows
             .get(&from_window_id)
-            .ok_or_else(|| "移動元ウィンドウが見つかりません".to_string())?;
+            .ok_or_else(|| "Source window not found".to_string())?;
         if !source_window.tab_order.contains(&tab_id) {
-            return Err("移動元タブが見つかりません".to_string());
+            return Err("Source tab not found".to_string());
         }
 
         let tab = model
             .tabs
             .get_mut(&tab_id)
-            .ok_or_else(|| "タブが見つかりません".to_string())?;
+            .ok_or_else(|| "Tab not found".to_string())?;
         if tab.owner_window_id != from_window_id {
-            return Err("タブの所有ウィンドウが一致しません".to_string());
+            return Err("The tab owner window does not match".to_string());
         }
         tab.owner_window_id = to_window_id.clone();
 
@@ -347,7 +354,7 @@ impl WorkspaceState {
             let window = model
                 .windows
                 .get_mut(&from_window_id)
-                .ok_or_else(|| "ウィンドウが見つかりません".to_string())?;
+                .ok_or_else(|| "Window not found".to_string())?;
             window.tab_order.retain(|id| id != &tab_id);
             let insert_index = target_index.min(window.tab_order.len());
             window.tab_order.insert(insert_index, tab_id);
@@ -358,7 +365,7 @@ impl WorkspaceState {
             let source = model
                 .windows
                 .get_mut(&from_window_id)
-                .ok_or_else(|| "移動元ウィンドウが見つかりません".to_string())?;
+                .ok_or_else(|| "Source window not found".to_string())?;
             source.tab_order.retain(|id| id != &tab_id);
             if source.active_tab_id.as_deref() == Some(tab_id.as_str()) {
                 source.active_tab_id = source.tab_order.last().cloned();
@@ -369,7 +376,7 @@ impl WorkspaceState {
             let destination = model
                 .windows
                 .get_mut(&to_window_id)
-                .ok_or_else(|| "移動先ウィンドウが見つかりません".to_string())?;
+                .ok_or_else(|| "Destination window not found".to_string())?;
             destination.tab_order.retain(|id| id != &tab_id);
             let insert_index = target_index.min(destination.tab_order.len());
             destination.tab_order.insert(insert_index, tab_id.clone());
@@ -391,16 +398,16 @@ impl WorkspaceState {
         let source_window = model
             .windows
             .get(from_window_id)
-            .ok_or_else(|| "移動元ウィンドウが見つかりません".to_string())?;
+            .ok_or_else(|| "Source window not found".to_string())?;
         if !source_window.tab_order.iter().any(|id| id == tab_id) {
-            return Err("移動元タブが見つかりません".to_string());
+            return Err("Source tab not found".to_string());
         }
         let tab = model
             .tabs
             .get(tab_id)
-            .ok_or_else(|| "タブが見つかりません".to_string())?;
+            .ok_or_else(|| "Tab not found".to_string())?;
         if tab.owner_window_id != from_window_id {
-            return Err("タブの所有ウィンドウが一致しません".to_string());
+            return Err("The tab owner window does not match".to_string());
         }
         Ok(())
     }
@@ -415,7 +422,7 @@ impl WorkspaceState {
         let window = model
             .windows
             .get_mut(&window_id)
-            .ok_or_else(|| "ウィンドウが見つかりません".to_string())?;
+            .ok_or_else(|| "Window not found".to_string())?;
         window.tab_order.retain(|id| id != &tab_id);
         if window.active_tab_id.as_deref() == Some(tab_id.as_str()) {
             window.active_tab_id = window.tab_order.last().cloned();
@@ -433,7 +440,7 @@ impl WorkspaceState {
             let tab = model
                 .tabs
                 .get_mut(&tab_id)
-                .ok_or_else(|| "タブが見つかりません".to_string())?;
+                .ok_or_else(|| "Tab not found".to_string())?;
             apply_metadata_patch(tab, patch);
             tab.owner_window_id.clone()
         };
@@ -466,16 +473,16 @@ impl WorkspaceState {
         let window = model
             .windows
             .get(&window_id)
-            .ok_or_else(|| "ウィンドウが見つかりません".to_string())?;
+            .ok_or_else(|| "Window not found".to_string())?;
         if !window.tab_order.contains(&tab_id) {
-            return Err("タブがこのウィンドウにありません".to_string());
+            return Err("The tab does not belong to this window".to_string());
         }
         let tab = model
             .tabs
             .get(&tab_id)
-            .ok_or_else(|| "タブが見つかりません".to_string())?;
+            .ok_or_else(|| "Tab not found".to_string())?;
         if tab.owner_window_id != window_id {
-            return Err("タブの所有ウィンドウが一致しません".to_string());
+            return Err("The tab owner window does not match".to_string());
         }
 
         model.drag = Some(WorkspaceDragSession {
@@ -533,13 +540,13 @@ impl WorkspaceState {
         let mut drag = model
             .drag
             .take()
-            .ok_or_else(|| "ドラッグ中のタブがありません".to_string())?;
+            .ok_or_else(|| "No tab is currently being dragged".to_string())?;
         drag.pointer_screen_position = pointer_screen_position;
         if !model.tabs.contains_key(&drag.tab_id) {
-            return Err("タブが見つかりません".to_string());
+            return Err("Tab not found".to_string());
         }
         if !model.windows.contains_key(&drag.source_window_id) {
-            return Err("移動元ウィンドウが見つかりません".to_string());
+            return Err("Source window not found".to_string());
         }
 
         Ok(WorkspaceDragDropIntent {
@@ -750,7 +757,7 @@ fn create_workspace_window(app: &AppHandle, window_id: &str) -> Result<(), Strin
         .transparent(false)
         .focused(true)
         .build()
-        .map_err(|error| format!("ウィンドウ作成エラー: {error}"))?;
+        .map_err(|error| format!("Failed to create the window: {error}"))?;
 
     if let Some(window) = app.get_webview_window(window_id) {
         if let Err(error) = window.set_focus() {
@@ -764,9 +771,10 @@ fn create_workspace_window(app: &AppHandle, window_id: &str) -> Result<(), Strin
 #[tauri::command]
 pub async fn workspace_window_create(
     app: AppHandle,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
 ) -> Result<WorkspaceWindowCreateResult, String> {
     let window_id = format!("workspace-{}", Uuid::new_v4().simple());
-    create_workspace_window(&app, &window_id)?;
+    localize(&language, create_workspace_window(&app, &window_id))?;
 
     Ok(WorkspaceWindowCreateResult { window_id })
 }
@@ -811,32 +819,43 @@ pub async fn workspace_window_focus(
 pub async fn workspace_tab_move(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     tab_id: String,
     from_window_id: String,
     to_window_id: String,
     target_index: usize,
 ) -> Result<WorkspaceSnapshot, String> {
-    let snapshots = state
-        .move_tab(tab_id, from_window_id, to_window_id.clone(), target_index)
-        .await?;
+    let snapshots = localize(
+        &language,
+        state
+            .move_tab(tab_id, from_window_id, to_window_id.clone(), target_index)
+            .await,
+    )?;
     emit_workspace_updates(&app, &snapshots);
-    snapshots
-        .into_iter()
-        .find(|snapshot| snapshot.window_id == to_window_id)
-        .ok_or_else(|| "移動先スナップショットが見つかりません".to_string())
+    localize(
+        &language,
+        snapshots
+            .into_iter()
+            .find(|snapshot| snapshot.window_id == to_window_id)
+            .ok_or_else(|| "Destination snapshot not found".to_string()),
+    )
 }
 
 #[tauri::command]
 pub async fn workspace_tab_drag_start(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     window_id: String,
     tab_id: String,
     pointer_screen_position: WorkspacePointerPosition,
 ) -> Result<WorkspaceDragPreview, String> {
-    let preview = state
-        .drag_start(window_id, tab_id, pointer_screen_position)
-        .await?;
+    let preview = localize(
+        &language,
+        state
+            .drag_start(window_id, tab_id, pointer_screen_position)
+            .await,
+    )?;
     emit_workspace_drag_preview(&app, &preview);
     Ok(preview)
 }
@@ -868,6 +887,7 @@ pub async fn workspace_tab_drag_hover(
 pub async fn workspace_tab_drag_drop(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     pointer_screen_position: WorkspacePointerPosition,
 ) -> Result<WorkspaceDragDropResult, String> {
     let intent = match state.drag_drop_prepare(pointer_screen_position).await {
@@ -875,7 +895,7 @@ pub async fn workspace_tab_drag_drop(
         Err(error) => {
             let preview = state.drag_cancel().await;
             emit_workspace_drag_preview(&app, &preview);
-            return Err(error);
+            return Err(crate::i18n::translate_gui_error(language.inner(), &error));
         }
     };
 
@@ -887,7 +907,7 @@ pub async fn workspace_tab_drag_drop(
             if let Err(error) = create_workspace_window(&app, &window_id) {
                 let preview = state.drag_cancel().await;
                 emit_workspace_drag_preview(&app, &preview);
-                return Err(error);
+                return Err(crate::i18n::translate_gui_error(language.inner(), &error));
             }
             let snapshot = state
                 .register_window(window_id.clone(), window_id.clone(), true)
@@ -909,7 +929,7 @@ pub async fn workspace_tab_drag_drop(
     let preview = state.drag_cancel().await;
     emit_workspace_drag_preview(&app, &preview);
 
-    let snapshots = move_result?;
+    let snapshots = localize(&language, move_result)?;
     emit_workspace_updates(&app, &snapshots);
 
     Ok(WorkspaceDragDropResult {
@@ -930,23 +950,30 @@ pub async fn workspace_tab_drag_drop(
 pub async fn workspace_tab_detach_to_new_window(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     tab_id: String,
     from_window_id: String,
 ) -> Result<WorkspaceDragDropResult, String> {
-    state
-        .validate_tab_move_source(&tab_id, &from_window_id)
-        .await?;
+    localize(
+        &language,
+        state
+            .validate_tab_move_source(&tab_id, &from_window_id)
+            .await,
+    )?;
 
     let window_id = format!("workspace-{}", Uuid::new_v4().simple());
-    create_workspace_window(&app, &window_id)?;
+    localize(&language, create_workspace_window(&app, &window_id))?;
     let snapshot = state
         .register_window(window_id.clone(), window_id.clone(), true)
         .await;
     emit_workspace_updated(&app, &snapshot);
 
-    let snapshots = state
-        .move_tab(tab_id.clone(), from_window_id.clone(), window_id.clone(), 0)
-        .await?;
+    let snapshots = localize(
+        &language,
+        state
+            .move_tab(tab_id.clone(), from_window_id.clone(), window_id.clone(), 0)
+            .await,
+    )?;
     emit_workspace_updates(&app, &snapshots);
 
     Ok(WorkspaceDragDropResult {
@@ -1009,10 +1036,11 @@ pub async fn workspace_tab_register(
 pub async fn workspace_tab_activate(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     window_id: String,
     tab_id: String,
 ) -> Result<WorkspaceSnapshot, String> {
-    let snapshot = state.activate_tab(window_id, tab_id).await?;
+    let snapshot = localize(&language, state.activate_tab(window_id, tab_id).await)?;
     emit_workspace_updated(&app, &snapshot);
     Ok(snapshot)
 }
@@ -1021,14 +1049,18 @@ pub async fn workspace_tab_activate(
 pub async fn workspace_tab_reorder(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     window_id: String,
     dragged_tab_id: String,
     target_tab_id: String,
     drop_side: String,
 ) -> Result<WorkspaceSnapshot, String> {
-    let snapshot = state
-        .reorder_tab(window_id, dragged_tab_id, target_tab_id, drop_side)
-        .await?;
+    let snapshot = localize(
+        &language,
+        state
+            .reorder_tab(window_id, dragged_tab_id, target_tab_id, drop_side)
+            .await,
+    )?;
     emit_workspace_updated(&app, &snapshot);
     Ok(snapshot)
 }
@@ -1037,10 +1069,11 @@ pub async fn workspace_tab_reorder(
 pub async fn workspace_tab_remove(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     window_id: String,
     tab_id: String,
 ) -> Result<WorkspaceSnapshot, String> {
-    let snapshot = state.remove_tab(window_id, tab_id).await?;
+    let snapshot = localize(&language, state.remove_tab(window_id, tab_id).await)?;
     emit_workspace_updated(&app, &snapshot);
     Ok(snapshot)
 }
@@ -1049,10 +1082,11 @@ pub async fn workspace_tab_remove(
 pub async fn workspace_tab_update_metadata(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     tab_id: String,
     patch: WorkspaceTabMetadataPatch,
 ) -> Result<WorkspaceSnapshot, String> {
-    let snapshot = state.update_tab_metadata(tab_id, patch).await?;
+    let snapshot = localize(&language, state.update_tab_metadata(tab_id, patch).await)?;
     emit_workspace_updated(&app, &snapshot);
     Ok(snapshot)
 }
@@ -1186,7 +1220,7 @@ mod tests {
             .unwrap_err();
         let main = state.snapshot_for_window("main".into()).await;
 
-        assert!(error.contains("移動先ウィンドウ"));
+        assert!(error.contains("Destination window"));
         assert_eq!(main.window.tab_order, vec!["s1"]);
         assert_eq!(main.tabs[0].owner_window_id, "main");
         assert!(main.tabs[0].is_connected);
@@ -1210,7 +1244,7 @@ mod tests {
         let main = state.snapshot_for_window("main".into()).await;
         let other = state.snapshot_for_window("other".into()).await;
 
-        assert!(error.contains("移動元タブ"));
+        assert!(error.contains("Source tab"));
         assert_eq!(main.window.tab_order, vec!["s1"]);
         assert!(other.window.tab_order.is_empty());
         assert_eq!(main.tabs[0].owner_window_id, "main");

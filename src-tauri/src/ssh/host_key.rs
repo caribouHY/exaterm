@@ -228,7 +228,7 @@ async fn connect_probe_via_jump(
         run_ssh_operation_with_timeout(SSH_CONNECT_TIMEOUT, SSH_CONNECT_TIMEOUT_ERROR, async {
             russh::client::connect_stream(context.config, stream, context.handler)
                 .await
-                .map_err(|error| format!("SSH接続エラー: {}", error))
+                .map_err(|error| format!("SSH connection error: {}", error))
         })
         .await
         .map_err(|error| {
@@ -264,7 +264,7 @@ async fn connect_probe_direct(
                 context.handler,
             )
             .await
-            .map_err(|error| format!("SSH接続エラー: {}", error))
+            .map_err(|error| format!("SSH connection error: {}", error))
         })
         .await
         .map_err(|error| {
@@ -309,10 +309,10 @@ fn collected_probe_result(
 ) -> Result<(HostKeyCheckResult, PendingHostKey), String> {
     let result = verifier
         .last_result()
-        .ok_or_else(|| "SSHホスト鍵を取得できませんでした".to_string())?;
+        .ok_or_else(|| "Failed to retrieve the SSH host key".to_string())?;
     let observed_key = verifier
         .observed_key()
-        .ok_or_else(|| "SSHホスト鍵を取得できませんでした".to_string())?;
+        .ok_or_else(|| "Failed to retrieve the SSH host key".to_string())?;
     Ok((result, observed_key))
 }
 
@@ -388,7 +388,7 @@ pub async fn ssh_trust_host_key(
     let pending_key = {
         let pending = state.pending_host_keys.lock().await;
         pending.get(&endpoint).cloned().ok_or_else(|| {
-            "直前に取得したSSHホスト鍵が見つかりません。もう一度接続してください。".to_string()
+            "The most recently retrieved SSH host key was not found. Connect again.".to_string()
         })?
     };
 
