@@ -284,7 +284,9 @@ impl ExternalControlCredentialState {
 
         if let Err(error) = app.emit("external-control://credential-request", &payload) {
             self.pending.lock().await.remove(&request_id);
-            return Err(format!("外部制御の認証入力リクエスト送信エラー: {error}"));
+            return Err(format!(
+                "Failed to send the external control credential prompt request: {error}"
+            ));
         }
 
         match time::timeout(
@@ -294,10 +296,12 @@ impl ExternalControlCredentialState {
         .await
         {
             Ok(Ok(credential)) => Ok(credential),
-            Ok(Err(_)) => Err("外部制御の認証入力リクエストが完了しませんでした".into()),
+            Ok(Err(_)) => {
+                Err("The external control credential prompt request did not complete".into())
+            }
             Err(_) => {
                 self.pending.lock().await.remove(&request_id);
-                Err("外部制御の認証入力がタイムアウトしました".into())
+                Err("The external control credential prompt timed out".into())
             }
         }
     }
@@ -308,10 +312,12 @@ impl ExternalControlCredentialState {
             .lock()
             .await
             .remove(&request_id)
-            .ok_or_else(|| "外部制御の認証入力リクエストが見つかりません".to_string())?;
-        sender
-            .send(credential)
-            .map_err(|_| "外部制御の認証入力リクエストはすでに終了しています".to_string())
+            .ok_or_else(|| {
+                "The external control credential prompt request was not found".to_string()
+            })?;
+        sender.send(credential).map_err(|_| {
+            "The external control credential prompt request has already finished".to_string()
+        })
     }
 }
 
@@ -348,7 +354,9 @@ impl ExternalControlLogControlState {
 
         if let Err(error) = app.emit(event, &payload) {
             self.pending.lock().await.remove(&request_id);
-            return Err(format!("外部制御のログ制御リクエスト送信エラー: {error}"));
+            return Err(format!(
+                "Failed to send the external control log control request: {error}"
+            ));
         }
 
         match time::timeout(
@@ -358,10 +366,10 @@ impl ExternalControlLogControlState {
         .await
         {
             Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err("外部制御のログ制御リクエストが完了しませんでした".into()),
+            Ok(Err(_)) => Err("The external control log control request did not complete".into()),
             Err(_) => {
                 self.pending.lock().await.remove(&request_id);
-                Err("外部制御のログ制御リクエストがタイムアウトしました".into())
+                Err("The external control log control request timed out".into())
             }
         }
     }
@@ -377,14 +385,14 @@ impl ExternalControlLogControlState {
             .lock()
             .await
             .remove(&request_id)
-            .ok_or_else(|| "外部制御のログ制御リクエストが見つかりません".to_string())?;
+            .ok_or_else(|| "The external control log control request was not found".to_string())?;
         let result = match error {
             Some(error) => Err(error),
             None => Ok(ExternalControlLogControlAck { file_path }),
         };
-        sender
-            .send(result)
-            .map_err(|_| "外部制御のログ制御リクエストはすでに終了しています".to_string())
+        sender.send(result).map_err(|_| {
+            "The external control log control request has already finished".to_string()
+        })
     }
 }
 

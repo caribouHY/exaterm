@@ -138,6 +138,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       await refreshSecretStatus();
 
       const resolvedLanguage = resolveAppLanguage(normalizedConfig.language);
+      await invoke("backend_language_set", { language: resolvedLanguage });
       if (resolvedLanguage !== i18n.language) {
         void i18n.changeLanguage(resolvedLanguage);
       }

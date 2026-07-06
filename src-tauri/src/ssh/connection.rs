@@ -368,7 +368,7 @@ async fn open_target_session_channel(
             handle
                 .channel_open_session()
                 .await
-                .map_err(|e| format!("SSHチャネルオープンエラー: {}", e))
+                .map_err(|e| format!("Failed to open the SSH channel: {}", e))
         },
     )
     .await;
@@ -400,7 +400,7 @@ async fn request_target_pty(
         channel
             .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
             .await
-            .map_err(|_| "PTYリクエストエラー".to_string())
+            .map_err(|_| "PTY request failed".to_string())
     })
     .await;
     if let Err(error) = result {
@@ -423,7 +423,7 @@ async fn request_target_shell(
             channel
                 .request_shell(false)
                 .await
-                .map_err(|_| "シェルリクエストエラー".to_string())
+                .map_err(|_| "Shell request failed".to_string())
         })
         .await;
     if let Err(error) = result {

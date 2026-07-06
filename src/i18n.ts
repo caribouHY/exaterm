@@ -33,13 +33,22 @@ i18n.use(initReactI18next).init({
   },
 });
 
+function syncBackendLanguage(language: "en" | "ja") {
+  void invoke("backend_language_set", { language }).catch(console.error);
+}
+
 // Load the language from config on startup
 invoke<{ language?: string } | null>("config_load")
   .then((config) => {
-    if (config && config.language) {
-      i18n.changeLanguage(resolveAppLanguage(config.language));
+    const language = resolveAppLanguage(config?.language);
+    syncBackendLanguage(language);
+    if (language !== i18n.language) {
+      void i18n.changeLanguage(language);
     }
   })
-  .catch(console.error);
+  .catch((error) => {
+    console.error(error);
+    syncBackendLanguage(resolveAppLanguage("system"));
+  });
 
 export default i18n;

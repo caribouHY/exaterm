@@ -2,38 +2,14 @@ use reqwest::{Response, StatusCode};
 
 use super::types::AiProvider;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErrorLanguage {
-    English,
-    Japanese,
-}
-
-impl ErrorLanguage {
-    pub fn from_language(language: &str) -> Self {
-        if language.starts_with("ja") {
-            Self::Japanese
-        } else {
-            Self::English
-        }
-    }
-
-    pub fn is_ja(self) -> bool {
-        matches!(self, Self::Japanese)
-    }
-}
-
 pub fn missing_secret_message(provider: &AiProvider, language: &str) -> String {
-    if ErrorLanguage::from_language(language).is_ja() {
-        format!(
-            "{} の API キーが設定されていません。Settings で API キーを保存してから再試行してください。",
-            provider.display_name()
-        )
-    } else {
-        format!(
+    crate::i18n::translate_for_app_language(
+        language,
+        &format!(
             "{} API key is not configured. Save the API key in Settings, then try again.",
             provider.display_name()
-        )
-    }
+        ),
+    )
 }
 
 pub async fn response_json(
@@ -53,19 +29,14 @@ pub async fn response_json(
     }
 
     serde_json::from_str(&text).map_err(|_| {
-        if ErrorLanguage::from_language(language).is_ja() {
-            format!(
-                "{} の {} 応答を解析できませんでした。しばらくしてから再試行してください。",
-                provider.display_name(),
-                operation
-            )
-        } else {
-            format!(
+        crate::i18n::translate_for_app_language(
+            language,
+            &format!(
                 "Could not parse the {} {} response. Try again later.",
                 provider.display_name(),
                 operation
-            )
-        }
+            ),
+        )
     })
 }
 
@@ -74,31 +45,18 @@ pub fn format_network_error(
     language: &str,
     error: &reqwest::Error,
 ) -> String {
-    if ErrorLanguage::from_language(language).is_ja() {
-        match provider {
-            AiProvider::Ollama => format!(
-                "Ollama に接続できませんでした。Ollama が起動していること、Base URL が正しいことを確認してください。詳細: {}",
-                error
-            ),
-            _ => format!(
-                "{} に接続できませんでした。ネットワーク接続、プロキシ、ファイアウォール設定を確認してください。詳細: {}",
-                provider.display_name(),
-                error
-            ),
-        }
-    } else {
-        match provider {
-            AiProvider::Ollama => format!(
-                "Could not connect to Ollama. Check that Ollama is running and the Base URL is correct. Details: {}",
-                error
-            ),
-            _ => format!(
-                "Could not connect to {}. Check your network connection, proxy, and firewall settings. Details: {}",
-                provider.display_name(),
-                error
-            ),
-        }
-    }
+    let message = match provider {
+        AiProvider::Ollama => format!(
+            "Could not connect to Ollama. Check that Ollama is running and the Base URL is correct. Details: {}",
+            error
+        ),
+        _ => format!(
+            "Could not connect to {}. Check your network connection, proxy, and firewall settings. Details: {}",
+            provider.display_name(),
+            error
+        ),
+    };
+    crate::i18n::translate_for_app_language(language, &message)
 }
 
 pub fn format_http_error(
@@ -114,44 +72,22 @@ pub fn format_http_error(
         format!(" Provider message: {}", provider_message)
     };
 
-    let ja = ErrorLanguage::from_language(language).is_ja();
     let base = match status.as_u16() {
-        401 | 403 if ja => format!(
-            "{} の認証に失敗しました。API キーが正しいこと、必要な権限があることを確認してください。",
-            provider.display_name()
-        ),
         401 | 403 => format!(
             "{} authentication failed. Check that the API key is correct and has the required permissions.",
-            provider.display_name()
-        ),
-        404 if ja => format!(
-            "{} のエンドポイントまたはモデルが見つかりません。選択したモデルが現在利用可能か確認してください。",
             provider.display_name()
         ),
         404 => format!(
             "{} endpoint or model was not found. Check that the selected model is currently available.",
             provider.display_name()
         ),
-        429 if ja => format!(
-            "{} のレート制限またはクォータに達しました。利用上限を確認するか、時間を置いて再試行してください。",
-            provider.display_name()
-        ),
         429 => format!(
             "{} rate limit or quota was reached. Check your usage limits or try again later.",
-            provider.display_name()
-        ),
-        500..=599 if ja => format!(
-            "{} 側で一時的な障害が発生しています。時間を置いて再試行してください。",
             provider.display_name()
         ),
         500..=599 => format!(
             "{} is currently returning a server error. Try again later.",
             provider.display_name()
-        ),
-        _ if ja => format!(
-            "{} が HTTP {} を返しました。設定と選択したモデルを確認してください。",
-            provider.display_name(),
-            status.as_u16()
         ),
         _ => format!(
             "{} returned HTTP {}. Check your settings and selected model.",
@@ -160,7 +96,7 @@ pub fn format_http_error(
         ),
     };
 
-    format!("{}{}", base, detail)
+    crate::i18n::translate_for_app_language(language, &format!("{}{}", base, detail))
 }
 
 fn extract_provider_error_message(body: &str) -> String {
@@ -184,19 +120,14 @@ pub fn malformed_models_response_message(
     language: &str,
     body: &serde_json::Value,
 ) -> String {
-    if ErrorLanguage::from_language(language).is_ja() {
-        format!(
-            "{} の応答から利用可能なモデルを取得できませんでした。応答形式が変わった可能性があります。詳細: {}",
-            provider.display_name(),
-            body
-        )
-    } else {
-        format!(
+    crate::i18n::translate_for_app_language(
+        language,
+        &format!(
             "Could not read available models from the {} response. The response format may have changed. Details: {}",
             provider.display_name(),
             body
-        )
-    }
+        ),
+    )
 }
 
 pub fn malformed_chat_response_message(
@@ -204,19 +135,14 @@ pub fn malformed_chat_response_message(
     language: &str,
     body: &serde_json::Value,
 ) -> String {
-    if ErrorLanguage::from_language(language).is_ja() {
-        format!(
-            "{} のチャット応答を読み取れませんでした。時間を置いて再試行してください。詳細: {}",
-            provider.display_name(),
-            body
-        )
-    } else {
-        format!(
+    crate::i18n::translate_for_app_language(
+        language,
+        &format!(
             "Could not read the {} chat response. Try again later. Details: {}",
             provider.display_name(),
             body
-        )
-    }
+        ),
+    )
 }
 
 #[cfg(test)]
@@ -228,7 +154,7 @@ mod tests {
         let body = r#"{"error":{"message":"Incorrect API key provided"}}"#;
         let message = format_http_error(&AiProvider::OpenAi, "ja", StatusCode::UNAUTHORIZED, body);
 
-        assert!(message.contains("OpenAI の認証に失敗しました"));
+        assert!(message.contains("OpenAI"));
         assert!(message.contains("Incorrect API key provided"));
     }
 

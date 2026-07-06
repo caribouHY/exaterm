@@ -113,7 +113,7 @@ pub fn write_trusted_host_with_path<P: AsRef<Path>>(
     match inspection.status {
         HostKeyCheckStatus::Trusted => return Ok(()),
         HostKeyCheckStatus::Mismatch if !replace => {
-            return Err("保存済みのSSHホスト鍵と一致しません".to_string())
+            return Err("The saved SSH host key does not match".to_string())
         }
         _ => {}
     }

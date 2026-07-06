@@ -2,6 +2,7 @@ mod ai;
 mod cli;
 mod config;
 mod external_control;
+mod i18n;
 mod logger;
 mod mcp;
 mod serial;
@@ -17,6 +18,7 @@ use external_control::{
     spawn_gui_control_plane, ExternalControlCredentialState, ExternalControlLogControlState,
     ExternalControlRuntime,
 };
+use i18n::BackendLanguageState;
 use logger::LoggerState;
 use serial::SerialState;
 use ssh::SshState;
@@ -68,6 +70,7 @@ pub fn run() {
     let logger_state = LoggerState::new();
     let external_control_credential_state = ExternalControlCredentialState::new();
     let external_control_log_control_state = ExternalControlLogControlState::new();
+    let backend_language_state = BackendLanguageState::default();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -82,6 +85,7 @@ pub fn run() {
         .manage(logger_state.clone())
         .manage(external_control_credential_state.clone())
         .manage(external_control_log_control_state.clone())
+        .manage(backend_language_state)
         .on_window_event({
             let workspace_state = workspace_state.clone();
             move |window, event| match event {
@@ -210,6 +214,7 @@ pub fn run() {
             // Config
             config::config_load,
             config::config_save,
+            i18n::backend_language_set,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ExaTerm");

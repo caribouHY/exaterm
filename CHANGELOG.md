@@ -18,6 +18,7 @@
 - Fixed SSH sessions so remote disconnects are reflected more reliably in the UI.
 - Improved SSH connections so stalled connection setup no longer leaves the connection dialog waiting indefinitely.
 - Improved SSH sessions so stalled input sends and terminal resizes time out instead of waiting indefinitely.
+- Fixed backend error messages so the desktop UI now follows the selected app language while Terminal CLI and external control keep stable English responses.
 
 ## v0.7.1
 

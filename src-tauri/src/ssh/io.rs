@@ -35,17 +35,17 @@ pub(super) const SSH_PTY_TIMEOUT: Duration = Duration::from_secs(10);
 pub(super) const SSH_SHELL_TIMEOUT: Duration = Duration::from_secs(10);
 const SSH_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 const SSH_RESIZE_TIMEOUT: Duration = Duration::from_secs(5);
-pub(super) const SSH_CONNECT_TIMEOUT_ERROR: &str = "SSH接続がタイムアウトしました";
-pub(super) const SSH_AUTH_TIMEOUT_ERROR: &str = "SSH認証がタイムアウトしました";
-pub(super) const SSH_CHANNEL_OPEN_TIMEOUT_ERROR: &str = "SSHチャネルオープンがタイムアウトしました";
+pub(super) const SSH_CONNECT_TIMEOUT_ERROR: &str = "SSH connection timed out";
+pub(super) const SSH_AUTH_TIMEOUT_ERROR: &str = "SSH authentication timed out";
+pub(super) const SSH_CHANNEL_OPEN_TIMEOUT_ERROR: &str = "Opening the SSH channel timed out";
 pub(super) const SSH_JUMP_CHANNEL_OPEN_TIMEOUT_ERROR: &str =
-    "SSH踏み台チャネルオープンがタイムアウトしました";
-pub(super) const SSH_PTY_TIMEOUT_ERROR: &str = "PTYリクエストがタイムアウトしました";
-pub(super) const SSH_SHELL_TIMEOUT_ERROR: &str = "シェルリクエストがタイムアウトしました";
-pub(super) const SSH_WRITE_ERROR: &str = "SSH送信エラー";
-pub(super) const SSH_WRITE_TIMEOUT_ERROR: &str = "SSH送信がタイムアウトしました";
-const SSH_RESIZE_ERROR: &str = "SSHリサイズエラー";
-const SSH_RESIZE_TIMEOUT_ERROR: &str = "SSHリサイズがタイムアウトしました";
+    "Opening the SSH jump channel timed out";
+pub(super) const SSH_PTY_TIMEOUT_ERROR: &str = "PTY request timed out";
+pub(super) const SSH_SHELL_TIMEOUT_ERROR: &str = "Shell request timed out";
+pub(super) const SSH_WRITE_ERROR: &str = "SSH send error";
+pub(super) const SSH_WRITE_TIMEOUT_ERROR: &str = "SSH send timed out";
+const SSH_RESIZE_ERROR: &str = "SSH resize error";
+const SSH_RESIZE_TIMEOUT_ERROR: &str = "SSH resize timed out";
 
 pub(super) struct SshReadRequest {
     pub(super) data: Vec<u8>,
@@ -362,10 +362,7 @@ pub async fn ssh_write(
 pub async fn write_data(state: &SshState, session_id: &str, data: String) -> Result<(), String> {
     let session = {
         let sessions = state.sessions.lock().await;
-        sessions
-            .get(session_id)
-            .ok_or("セッションが見つかりません")?
-            .clone()
+        sessions.get(session_id).ok_or("Session not found")?.clone()
     };
 
     let channel = session.lock().await.channel.clone();
@@ -397,7 +394,7 @@ pub async fn ssh_resize(
         let sessions = state.sessions.lock().await;
         sessions
             .get(&session_id)
-            .ok_or("セッションが見つかりません")?
+            .ok_or("Session not found")?
             .clone()
     };
 

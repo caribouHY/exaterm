@@ -67,19 +67,19 @@ impl SshDiagnostic {
 pub(super) fn host_key_error_message(result: &HostKeyCheckResult) -> String {
     match result.status {
         HostKeyCheckStatus::Unknown => format!(
-            "SSHホスト鍵が未信頼です。接続前にフィンガープリントを確認してください: SHA256:{}",
+            "The SSH host key is untrusted. Verify the fingerprint before connecting: SHA256:{}",
             result.fingerprint
         ),
         HostKeyCheckStatus::Mismatch => format!(
-            "SSHホスト鍵が一致しません。MITMの可能性があります。保存済み: {} / 受信: SHA256:{}",
+            "The SSH host key does not match. A MITM attack may be in progress. Saved: {} / Received: SHA256:{}",
             result
                 .known_fingerprint
                 .as_deref()
                 .map(|fingerprint| format!("SHA256:{}", fingerprint))
-                .unwrap_or_else(|| "不明".to_string()),
+                .unwrap_or_else(|| "unknown".to_string()),
             result.fingerprint
         ),
-        HostKeyCheckStatus::Trusted => "SSHホスト鍵検証エラー".to_string(),
+        HostKeyCheckStatus::Trusted => "SSH host key verification error".to_string(),
     }
 }
 
@@ -89,7 +89,7 @@ pub(super) fn map_connect_error(error: russh::Error, verifier: &HostKeyVerifier)
             return host_key_error_message(&result);
         }
     }
-    format!("SSH接続エラー: {}", error)
+    format!("SSH connection error: {}", error)
 }
 
 pub(super) fn emit_host_key_diagnostic(diagnostic: &SshDiagnostic, result: &HostKeyCheckResult) {

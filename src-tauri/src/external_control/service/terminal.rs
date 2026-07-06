@@ -131,17 +131,15 @@ impl ExternalControlService {
             .terminals
             .session_info(&args.session_id)
             .await
-            .ok_or_else(|| not_found("セッションが見つかりません"))?;
+            .ok_or_else(|| not_found("Session not found"))?;
 
         if info.status != TerminalStatus::Connected {
-            return Err(unavailable("セッションは切断済みです"));
+            return Err(unavailable("The session is already disconnected"));
         }
 
-        let logger_state = self
-            .runtime
-            .logger
-            .as_ref()
-            .ok_or_else(|| internal_error("外部制御ログ開始に必要なロガー状態がありません"))?;
+        let logger_state = self.runtime.logger.as_ref().ok_or_else(|| {
+            internal_error("Logger state required to start external control logging is unavailable")
+        })?;
         if let Some(session) = logger::manual_log_session(logger_state, &args.session_id).await {
             return Ok(json!({
                 "session_id": args.session_id,
@@ -174,13 +172,11 @@ impl ExternalControlService {
             .terminals
             .session_info(&args.session_id)
             .await
-            .ok_or_else(|| not_found("セッションが見つかりません"))?;
+            .ok_or_else(|| not_found("Session not found"))?;
 
-        let logger_state = self
-            .runtime
-            .logger
-            .as_ref()
-            .ok_or_else(|| internal_error("外部制御ログ停止に必要なロガー状態がありません"))?;
+        let logger_state = self.runtime.logger.as_ref().ok_or_else(|| {
+            internal_error("Logger state required to stop external control logging is unavailable")
+        })?;
         if logger::manual_log_session(logger_state, &args.session_id)
             .await
             .is_none()
@@ -208,11 +204,11 @@ impl ExternalControlService {
         args: RunTerminalCommandArgs,
     ) -> Result<Value, ExternalControlError> {
         if args.command.trim().is_empty() {
-            return Err(invalid_params("送信するコマンドが空です"));
+            return Err(invalid_params("The command to send must not be empty"));
         }
         if args.command.chars().count() > MAX_INPUT_CHARS {
             return Err(invalid_params(format!(
-                "コマンドは{}文字以内で指定してください",
+                "Commands must be no longer than {} characters",
                 MAX_INPUT_CHARS
             )));
         }
@@ -277,14 +273,12 @@ async fn request_manual_log_start(
     runtime: &ExternalControlRuntime,
     info: &crate::terminal_control::TerminalSessionInfo,
 ) -> Result<String, String> {
-    let app = runtime
-        .app
-        .as_ref()
-        .ok_or_else(|| "外部制御ログ開始に必要なアプリハンドルがありません".to_string())?;
-    let log_control = runtime
-        .log_control
-        .as_ref()
-        .ok_or_else(|| "外部制御ログ開始に必要なログ制御状態がありません".to_string())?;
+    let app = runtime.app.as_ref().ok_or_else(|| {
+        "App handle required to start external control logging is unavailable".to_string()
+    })?;
+    let log_control = runtime.log_control.as_ref().ok_or_else(|| {
+        "Log control state required to start external control logging is unavailable".to_string()
+    })?;
     let ack = log_control
         .request(
             app,
@@ -297,8 +291,9 @@ async fn request_manual_log_start(
             },
         )
         .await?;
-    ack.file_path
-        .ok_or_else(|| "外部制御ログ開始応答にログファイルパスがありません".to_string())
+    ack.file_path.ok_or_else(|| {
+        "The external control log start response did not include a log file path".to_string()
+    })
 }
 
 #[cfg(test)]
@@ -306,10 +301,9 @@ async fn request_manual_log_start(
     runtime: &ExternalControlRuntime,
     info: &crate::terminal_control::TerminalSessionInfo,
 ) -> Result<String, String> {
-    let logger_state = runtime
-        .logger
-        .as_ref()
-        .ok_or_else(|| "外部制御ログ開始に必要なロガー状態がありません".to_string())?;
+    let logger_state = runtime.logger.as_ref().ok_or_else(|| {
+        "Logger state required to start external control logging is unavailable".to_string()
+    })?;
     logger::start_manual_log(
         logger_state,
         info.session_id.clone(),
@@ -326,14 +320,12 @@ async fn request_manual_log_stop(
     runtime: &ExternalControlRuntime,
     info: &crate::terminal_control::TerminalSessionInfo,
 ) -> Result<(), String> {
-    let app = runtime
-        .app
-        .as_ref()
-        .ok_or_else(|| "外部制御ログ停止に必要なアプリハンドルがありません".to_string())?;
-    let log_control = runtime
-        .log_control
-        .as_ref()
-        .ok_or_else(|| "外部制御ログ停止に必要なログ制御状態がありません".to_string())?;
+    let app = runtime.app.as_ref().ok_or_else(|| {
+        "App handle required to stop external control logging is unavailable".to_string()
+    })?;
+    let log_control = runtime.log_control.as_ref().ok_or_else(|| {
+        "Log control state required to stop external control logging is unavailable".to_string()
+    })?;
     log_control
         .request(
             app,
@@ -354,10 +346,9 @@ async fn request_manual_log_stop(
     runtime: &ExternalControlRuntime,
     info: &crate::terminal_control::TerminalSessionInfo,
 ) -> Result<(), String> {
-    let logger_state = runtime
-        .logger
-        .as_ref()
-        .ok_or_else(|| "外部制御ログ停止に必要なロガー状態がありません".to_string())?;
+    let logger_state = runtime.logger.as_ref().ok_or_else(|| {
+        "Logger state required to stop external control logging is unavailable".to_string()
+    })?;
     logger::stop_manual_log(logger_state, &info.session_id).await
 }
 
@@ -368,7 +359,7 @@ async fn send_terminal_input_to_runtime(
 ) -> Result<(), ExternalControlError> {
     if data.chars().count() > MAX_INPUT_CHARS {
         return Err(invalid_params(format!(
-            "入力は{}文字以内で指定してください",
+            "Input must be no longer than {} characters",
             MAX_INPUT_CHARS
         )));
     }
@@ -377,10 +368,10 @@ async fn send_terminal_input_to_runtime(
         .terminals
         .session_info(session_id)
         .await
-        .ok_or_else(|| not_found("セッションが見つかりません"))?;
+        .ok_or_else(|| not_found("Session not found"))?;
 
     if info.status != TerminalStatus::Connected {
-        return Err(unavailable("セッションは切断済みです"));
+        return Err(unavailable("The session is already disconnected"));
     }
 
     match info.protocol {

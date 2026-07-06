@@ -74,7 +74,7 @@ pub(crate) fn normalize_profile_auth_method(value: Option<&str>) -> Result<Strin
     match value.map(str::trim).filter(|value| !value.is_empty()) {
         None | Some("password") => Ok("password".into()),
         Some("public_key") => Ok("public_key".into()),
-        Some(_) => Err("SSH認証方式が不正です".into()),
+        Some(_) => Err("The SSH authentication method is invalid".into()),
     }
 }
 
@@ -89,17 +89,17 @@ pub(crate) fn ssh_credential_required(
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| {
-                    "保存済みSSHプロファイルに秘密鍵ファイルが設定されていません".to_string()
+                    "The saved SSH profile does not have a private key file configured".to_string()
                 })?;
             ssh::private_key_requires_passphrase(private_key_path)
         }
-        _ => Err("SSH認証方式が不正です".into()),
+        _ => Err("The SSH authentication method is invalid".into()),
     }
 }
 
 pub(crate) fn available_serial_port_names(ports: &[serial::PortInfo]) -> String {
     if ports.is_empty() {
-        "なし".into()
+        "none".into()
     } else {
         ports
             .iter()
@@ -113,7 +113,7 @@ pub(crate) fn normalize_serial_data_bits(value: Option<u8>) -> Result<u8, String
     let value = value.unwrap_or(DEFAULT_SERIAL_DATA_BITS);
     match value {
         5 | 6 | 7 | 8 => Ok(value),
-        _ => Err("data_bits は 5, 6, 7, 8 のいずれかを指定してください".into()),
+        _ => Err("data_bits must be 5, 6, 7, or 8".into()),
     }
 }
 
@@ -121,7 +121,7 @@ pub(crate) fn normalize_serial_stop_bits(value: Option<u8>) -> Result<u8, String
     let value = value.unwrap_or(DEFAULT_SERIAL_STOP_BITS);
     match value {
         1 | 2 => Ok(value),
-        _ => Err("stop_bits は 1 または 2 を指定してください".into()),
+        _ => Err("stop_bits must be 1 or 2".into()),
     }
 }
 
@@ -131,21 +131,21 @@ pub(crate) fn prepare_serial_console_connection(
 ) -> Result<PreparedSerialConnection, String> {
     let port = args.port.trim().to_string();
     if port.is_empty() {
-        return Err("port を指定してください".into());
+        return Err("Specify port".into());
     }
     if !available_ports
         .iter()
         .any(|available| available.name == port)
     {
         return Err(format!(
-            "指定されたシリアルポートが見つかりません: {port}。利用可能: {}",
+            "The specified serial port was not found: {port}. Available: {}",
             available_serial_port_names(available_ports)
         ));
     }
 
     let baud_rate = args.baud_rate.unwrap_or(DEFAULT_SERIAL_BAUD_RATE);
     if baud_rate == 0 {
-        return Err("baud_rate は 1 以上で指定してください".into());
+        return Err("baud_rate must be at least 1".into());
     }
 
     let terminal_mode = args.terminal_mode.unwrap_or_default().as_str().to_string();
@@ -248,19 +248,21 @@ pub(crate) fn prepare_saved_profile_connection(
 ) -> Result<PreparedConnection, String> {
     let profile_id = args.profile_id.trim();
     if profile_id.is_empty() {
-        return Err("profile_id を指定してください".into());
+        return Err("Specify profile_id".into());
     }
 
     let profile = find_saved_profile(config, profile_id, &args.connection_type)?;
     if !profile_external_control_enabled(profile) {
-        return Err("この保存済みプロファイルは外部制御からの利用が無効です".into());
+        return Err("This saved profile is disabled for external control".into());
     }
 
     let metadata = prepare_profile_metadata(profile, &args)?;
     match metadata.connection_type.as_str() {
         "ssh" => prepare_ssh_profile_connection(config, profile, metadata),
         "telnet" => prepare_telnet_profile_connection(profile, metadata),
-        _ => Err("外部制御の新規接続は保存済みSSH/Telnetプロファイルのみ対応しています".into()),
+        _ => Err(
+            "New external control connections only support saved SSH and Telnet profiles".into(),
+        ),
     }
 }
 
@@ -276,7 +278,7 @@ fn find_saved_profile<'a>(
             profile.id == profile_id
                 && normalize_profile_type(&profile.connection_type) == connection_type.as_str()
         })
-        .ok_or_else(|| "保存済みプロファイルが見つかりません".to_string())
+        .ok_or_else(|| "Saved profile not found".to_string())
 }
 
 #[derive(Debug, Clone)]
@@ -297,7 +299,7 @@ fn prepare_profile_metadata(
     let connection_type = normalize_profile_type(&profile.connection_type);
     let host = normalize_profile_host(profile);
     if host.is_empty() {
-        return Err("保存済みプロファイルにホストが設定されていません".into());
+        return Err("The saved profile does not have a host configured".into());
     }
 
     Ok(PreparedProfileMetadata {
@@ -317,11 +319,13 @@ fn prepare_ssh_profile_connection(
     metadata: PreparedProfileMetadata,
 ) -> Result<PreparedConnection, String> {
     let username = normalize_profile_string(profile.username.as_deref())
-        .ok_or_else(|| "保存済みSSHプロファイルにユーザー名が設定されていません".to_string())?;
+        .ok_or_else(|| "The saved SSH profile does not have a username configured".to_string())?;
     let auth_method = normalize_profile_auth_method(profile.auth_method.as_deref())?;
     let private_key_path = normalize_profile_string(profile.private_key_path.as_deref());
     if auth_method == "public_key" && private_key_path.is_none() {
-        return Err("保存済みSSHプロファイルに秘密鍵ファイルが設定されていません".to_string());
+        return Err(
+            "The saved SSH profile does not have a private key file configured".to_string(),
+        );
     }
 
     let port = profile.port.unwrap_or(22);

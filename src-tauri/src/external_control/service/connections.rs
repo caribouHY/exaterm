@@ -75,7 +75,7 @@ fn terminal_protocol_from_log_type(value: &str) -> Result<TerminalProtocol, Stri
         "ssh" => Ok(TerminalProtocol::Ssh),
         "serial" => Ok(TerminalProtocol::Serial),
         "telnet" => Ok(TerminalProtocol::Telnet),
-        _ => Err(format!("不明な接続種別: {value}")),
+        _ => Err(format!("Unknown connection type: {value}")),
     }
 }
 
@@ -85,10 +85,9 @@ async fn connect_prepared_profile(
     config: &AppConfig,
     prepared: PreparedConnection,
 ) -> Result<Value, ExternalControlError> {
-    let app = runtime
-        .app
-        .as_ref()
-        .ok_or_else(|| internal_error("外部制御接続に必要なアプリハンドルがありません"))?;
+    let app = runtime.app.as_ref().ok_or_else(|| {
+        internal_error("App handle required for external control connections is unavailable")
+    })?;
     let session_id = connect_prepared_profile_session(runtime, app, &prepared).await?;
 
     finish_created_session(
@@ -157,10 +156,9 @@ async fn connect_prepared_ssh_profile(
     prepared: &PreparedConnection,
     parts: PreparedSshProfileParts<'_>,
 ) -> Result<String, ExternalControlError> {
-    let credentials = runtime
-        .credentials
-        .as_ref()
-        .ok_or_else(|| internal_error("外部制御の認証入力に必要な状態がありません"))?;
+    let credentials = runtime.credentials.as_ref().ok_or_else(|| {
+        internal_error("Credential prompt state required for external control is unavailable")
+    })?;
     let jump_credential = request_jump_credential(credentials, app, parts.jump_profile).await?;
     verify_profile_host_key(
         parts.host,
@@ -369,7 +367,7 @@ async fn request_profile_credential(
         .await
         .map_err(invalid_params)?
         .map(Some)
-        .ok_or_else(|| invalid_params("外部制御の認証入力がキャンセルされました"))
+        .ok_or_else(|| invalid_params("The external control credential prompt was cancelled"))
 }
 
 async fn finish_created_session(
@@ -435,10 +433,9 @@ async fn finish_created_session(
         .await;
     #[cfg(not(test))]
     {
-        let app = runtime
-            .app
-            .as_ref()
-            .ok_or_else(|| internal_error("外部制御接続に必要なアプリハンドルがありません"))?;
+        let app = runtime.app.as_ref().ok_or_else(|| {
+            internal_error("App handle required for external control connections is unavailable")
+        })?;
         emit_workspace_updated(app, &_workspace_snapshot);
     }
 
@@ -451,10 +448,9 @@ async fn connect_prepared_serial_console(
     config: &AppConfig,
     prepared: PreparedSerialConnection,
 ) -> Result<Value, ExternalControlError> {
-    let app = runtime
-        .app
-        .as_ref()
-        .ok_or_else(|| internal_error("外部制御接続に必要なアプリハンドルがありません"))?;
+    let app = runtime.app.as_ref().ok_or_else(|| {
+        internal_error("App handle required for external control connections is unavailable")
+    })?;
 
     let session_id = crate::serial::connect(
         app,

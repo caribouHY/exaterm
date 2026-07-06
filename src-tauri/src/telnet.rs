@@ -12,6 +12,10 @@ use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 use crate::workspace::{emit_workspace_updated, WorkspaceState};
 use crate::{logger, logger::LoggerState};
 
+fn localize_gui_error(state: &crate::i18n::BackendLanguageState, error: String) -> String {
+    crate::i18n::translate_gui_error(state, &error)
+}
+
 const IAC: u8 = 255;
 const DONT: u8 = 254;
 const DO: u8 = 253;
@@ -257,6 +261,7 @@ pub async fn telnet_connect(
     terminals: tauri::State<'_, TerminalControlState>,
     workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     host: String,
     port: u16,
     cols: u32,
@@ -276,6 +281,7 @@ pub async fn telnet_connect(
         encoding,
     )
     .await
+    .map_err(|error| localize_gui_error(language.inner(), error))
 }
 
 pub async fn connect(
@@ -293,7 +299,7 @@ pub async fn connect(
     let session_id = Uuid::new_v4().to_string();
     let stream = TcpStream::connect((host.as_str(), port))
         .await
-        .map_err(|e| format!("Telnet接続エラー: {}", e))?;
+        .map_err(|e| format!("Failed to connect over Telnet: {}", e))?;
     let (mut reader, mut writer_stream) = stream.into_split();
     let (writer, mut write_rx) = mpsc::channel::<Vec<u8>>(64);
 
@@ -405,10 +411,13 @@ pub async fn connect(
 #[tauri::command]
 pub async fn telnet_write(
     state: tauri::State<'_, TelnetState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    write_data(&state, &session_id, data).await
+    write_data(&state, &session_id, data)
+        .await
+        .map_err(|error| localize_gui_error(language.inner(), error))
 }
 
 pub async fn write_data(state: &TelnetState, session_id: &str, data: String) -> Result<(), String> {
@@ -416,7 +425,7 @@ pub async fn write_data(state: &TelnetState, session_id: &str, data: String) -> 
         let sessions = state.sessions.lock().await;
         sessions
             .get(session_id)
-            .ok_or("セッションが見つかりません")?
+            .ok_or("Session not found")?
             .writer
             .clone()
     };
@@ -424,12 +433,13 @@ pub async fn write_data(state: &TelnetState, session_id: &str, data: String) -> 
     writer
         .send(escape_user_data(data))
         .await
-        .map_err(|e| format!("送信エラー: {}", e))
+        .map_err(|e| format!("Failed to send data: {}", e))
 }
 
 #[tauri::command]
 pub async fn telnet_resize(
     state: tauri::State<'_, TelnetState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     cols: u32,
     rows: u32,
@@ -438,7 +448,7 @@ pub async fn telnet_resize(
         let sessions = state.sessions.lock().await;
         sessions
             .get(&session_id)
-            .ok_or("セッションが見つかりません")?
+            .ok_or("Session not found")?
             .writer
             .clone()
     };
@@ -446,7 +456,12 @@ pub async fn telnet_resize(
     writer
         .send(build_naws(clamp_dimension(cols), clamp_dimension(rows)))
         .await
-        .map_err(|e| format!("リサイズ送信エラー: {}", e))
+        .map_err(|e| {
+            localize_gui_error(
+                language.inner(),
+                format!("Failed to send the resize request: {}", e),
+            )
+        })
 }
 
 #[tauri::command]
@@ -456,6 +471,7 @@ pub async fn telnet_disconnect(
     terminals: tauri::State<'_, TerminalControlState>,
     workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
+    _language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
 ) -> Result<(), String> {
     if let Some(session) = remove_session(
