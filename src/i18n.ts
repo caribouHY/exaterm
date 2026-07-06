@@ -43,7 +43,7 @@ invoke<{ language?: string } | null>("config_load")
     const language = resolveAppLanguage(config?.language);
     syncBackendLanguage(language);
     if (language !== i18n.language) {
-      i18n.changeLanguage(language);
+      void i18n.changeLanguage(language);
     }
   })
   .catch((error) => {
