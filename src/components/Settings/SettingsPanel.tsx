@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { Check } from "lucide-react";
-import type { AppConfig, AiSecretStatus } from "../../types";
+import type { AppConfig, AiSecretStatus, LogFormat } from "../../types";
 import { useTranslation } from "react-i18next";
 import { resolveAppLanguage } from "../../i18n";
 import "./SettingsPanel.css";
@@ -96,6 +96,7 @@ const LANGUAGE_OPTIONS: LanguageOption[] = [
   { value: "en", label: "English" },
   { value: "ja", label: "日本語" },
 ];
+const LOG_FORMAT_OPTIONS: LogFormat[] = ["display", "strip_controls"];
 
 function normalizeExternalControlConfig(config: AppConfig): AppConfig {
   return {
@@ -118,6 +119,10 @@ function parseBoundedNumber(value: string, currentValue: number, min: number, ma
   }
 
   return Math.min(Math.max(parsed, min), max);
+}
+
+function isLogFormat(value: string): value is LogFormat {
+  return LOG_FORMAT_OPTIONS.includes(value as LogFormat);
 }
 
 export default function SettingsPanel({ onSave }: SettingsPanelProps) {
@@ -229,13 +234,26 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       </div>
     );
 
-  const update = (path: string, value: unknown) => {
-    const newConfig = JSON.parse(JSON.stringify(config));
-    const keys = path.split(".");
-    let obj = newConfig;
-    for (let i = 0; i < keys.length - 1; i++) obj = obj[keys[i]];
-    obj[keys[keys.length - 1]] = value;
-    setConfig(newConfig);
+  const updateLanguage = (language: AppConfig["language"]) => {
+    setConfig((prev) => (prev ? { ...prev, language } : prev));
+  };
+
+  const updateAiConfig = (patch: Partial<AppConfig["ai"]>) => {
+    setConfig((prev) => (prev ? { ...prev, ai: { ...prev.ai, ...patch } } : prev));
+  };
+
+  const updateExternalControlConfig = (patch: Partial<AppConfig["external_control"]>) => {
+    setConfig((prev) =>
+      prev ? { ...prev, external_control: { ...prev.external_control, ...patch } } : prev
+    );
+  };
+
+  const updateTerminalConfig = (patch: Partial<AppConfig["terminal"]>) => {
+    setConfig((prev) => (prev ? { ...prev, terminal: { ...prev.terminal, ...patch } } : prev));
+  };
+
+  const updateSshConfig = (patch: Partial<AppConfig["ssh"]>) => {
+    setConfig((prev) => (prev ? { ...prev, ssh: { ...prev.ssh, ...patch } } : prev));
   };
 
   const clearSecret = async (provider: SecretProvider, key: SecretKey) => {
@@ -338,7 +356,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               className="select"
               value={config.language}
               onChange={(e) => {
-                update("language", e.target.value);
+                updateLanguage(e.target.value);
               }}
             >
               {LANGUAGE_OPTIONS.map((option) => (
@@ -360,7 +378,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               className="select"
               value={config.ai.default_provider}
               onChange={(e) => {
-                update("ai.default_provider", e.target.value);
+                updateAiConfig({ default_provider: e.target.value });
               }}
             >
               <option value="OpenAi">OpenAI</option>
@@ -384,7 +402,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <input
               type="checkbox"
               checked={Boolean(config.ai.azure_openai_enabled)}
-              onChange={(e) => update("ai.azure_openai_enabled", e.target.checked)}
+              onChange={(e) => updateAiConfig({ azure_openai_enabled: e.target.checked })}
             />
             <span className="toggle-track" />
           </label>
@@ -396,7 +414,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             className="input"
             type="text"
             value={config.ai.azure_openai_endpoint}
-            onChange={(e) => update("ai.azure_openai_endpoint", e.target.value)}
+            onChange={(e) => updateAiConfig({ azure_openai_endpoint: e.target.value })}
             placeholder="https://your-resource.openai.azure.com/openai/v1/chat/completions"
           />
         </div>
@@ -407,7 +425,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             className="input"
             type="text"
             value={config.ai.azure_openai_deployment}
-            onChange={(e) => update("ai.azure_openai_deployment", e.target.value)}
+            onChange={(e) => updateAiConfig({ azure_openai_deployment: e.target.value })}
             placeholder="my-gpt4o-deployment"
           />
         </div>
@@ -421,7 +439,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <input
               type="checkbox"
               checked={Boolean(config.ai.ollama_enabled)}
-              onChange={(e) => update("ai.ollama_enabled", e.target.checked)}
+              onChange={(e) => updateAiConfig({ ollama_enabled: e.target.checked })}
             />
             <span className="toggle-track" />
           </label>
@@ -433,7 +451,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             className="input"
             type="text"
             value={config.ai.ollama_base_url}
-            onChange={(e) => update("ai.ollama_base_url", e.target.value)}
+            onChange={(e) => updateAiConfig({ ollama_base_url: e.target.value })}
             placeholder="http://localhost:11434"
           />
         </div>
@@ -451,7 +469,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               type="checkbox"
               checked={Boolean(config.external_control.enabled)}
               onChange={(e) => {
-                update("external_control.enabled", e.target.checked);
+                updateExternalControlConfig({ enabled: e.target.checked });
               }}
             />
             <span className="toggle-track" />
@@ -467,7 +485,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               type="checkbox"
               checked={Boolean(config.external_control.cli_enabled)}
               onChange={(e) => {
-                update("external_control.cli_enabled", e.target.checked);
+                updateExternalControlConfig({ cli_enabled: e.target.checked });
               }}
             />
             <span className="toggle-track" />
@@ -483,7 +501,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               type="checkbox"
               checked={Boolean(config.external_control.connect_enabled)}
               onChange={(e) => {
-                update("external_control.connect_enabled", e.target.checked);
+                updateExternalControlConfig({ connect_enabled: e.target.checked });
               }}
             />
             <span className="toggle-track" />
@@ -502,7 +520,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               type="checkbox"
               checked={Boolean(config.external_control.mcp_enabled)}
               onChange={(e) => {
-                update("external_control.mcp_enabled", e.target.checked);
+                updateExternalControlConfig({ mcp_enabled: e.target.checked });
               }}
             />
             <span className="toggle-track" />
@@ -526,7 +544,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               type="checkbox"
               checked={Boolean(config.ssh.allow_legacy_algorithms)}
               onChange={(e) => {
-                update("ssh.allow_legacy_algorithms", e.target.checked);
+                updateSshConfig({ allow_legacy_algorithms: e.target.checked });
               }}
             />
             <span className="toggle-track" />
@@ -544,15 +562,14 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               type="number"
               value={config.terminal.font_size}
               onChange={(e) => {
-                update(
-                  "terminal.font_size",
-                  parseBoundedNumber(
+                updateTerminalConfig({
+                  font_size: parseBoundedNumber(
                     e.target.value,
                     config.terminal.font_size,
                     FONT_SIZE_MIN,
                     FONT_SIZE_MAX
-                  )
-                );
+                  ),
+                });
               }}
               min={FONT_SIZE_MIN}
               max={FONT_SIZE_MAX}
@@ -565,15 +582,14 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               type="number"
               value={config.terminal.scrollback}
               onChange={(e) => {
-                update(
-                  "terminal.scrollback",
-                  parseBoundedNumber(
+                updateTerminalConfig({
+                  scrollback: parseBoundedNumber(
                     e.target.value,
                     config.terminal.scrollback,
                     SCROLLBACK_MIN,
                     SCROLLBACK_MAX
-                  )
-                );
+                  ),
+                });
               }}
               min={SCROLLBACK_MIN}
               max={SCROLLBACK_MAX}
@@ -586,7 +602,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             className="input"
             value={config.terminal.font_family}
             onChange={(e) => {
-              update("terminal.font_family", e.target.value);
+              updateTerminalConfig({ font_family: e.target.value });
             }}
           />
         </div>
@@ -604,7 +620,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               type="checkbox"
               checked={config.terminal.auto_session_log}
               onChange={(e) => {
-                update("terminal.auto_session_log", e.target.checked);
+                updateTerminalConfig({ auto_session_log: e.target.checked });
               }}
             />
             <span className="toggle-track" />
@@ -616,7 +632,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             className="select"
             value={config.terminal.log_format || "display"}
             onChange={(e) => {
-              update("terminal.log_format", e.target.value);
+              if (isLogFormat(e.target.value)) {
+                updateTerminalConfig({ log_format: e.target.value });
+              }
             }}
           >
             <option value="display">{t("settings.log_format_display")}</option>
@@ -633,7 +651,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               type="checkbox"
               checked={config.terminal.include_log_header ?? false}
               onChange={(e) => {
-                update("terminal.include_log_header", e.target.checked);
+                updateTerminalConfig({ include_log_header: e.target.checked });
               }}
             />
             <span className="toggle-track" />
