@@ -78,26 +78,38 @@ fn translate_to_japanese(message: &str) -> String {
 }
 
 fn translate_special_case(message: &str) -> Option<String> {
-    if let Some(rest) = message.strip_prefix("The specified serial port was not found: ") {
-        if let Some((port, available)) = rest.split_once(". Available: ") {
-            return Some(format!(
-                "指定されたシリアルポートが見つかりません: {port}。利用可能: {available}"
-            ));
-        }
+    translate_external_control_case(message)
+        .or_else(|| translate_ai_provider_case(message))
+        .or_else(|| translate_ssh_host_key_case(message))
+}
+
+fn translate_external_control_case(message: &str) -> Option<String> {
+    if let Some((port, available)) = strip_prefix_split(
+        message,
+        "The specified serial port was not found: ",
+        ". Available: ",
+    ) {
+        return Some(format!(
+            "指定されたシリアルポートが見つかりません: {port}。利用可能: {available}"
+        ));
     }
 
-    if let Some(rest) = message.strip_prefix("Commands must be no longer than ") {
-        if let Some(limit) = rest.strip_suffix(" characters") {
-            return Some(format!("コマンドは{}文字以内で指定してください", limit));
-        }
+    if let Some(limit) =
+        strip_prefix_suffix(message, "Commands must be no longer than ", " characters")
+    {
+        return Some(format!("コマンドは{}文字以内で指定してください", limit));
     }
 
-    if let Some(rest) = message.strip_prefix("Input must be no longer than ") {
-        if let Some(limit) = rest.strip_suffix(" characters") {
-            return Some(format!("入力は{}文字以内で指定してください", limit));
-        }
+    if let Some(limit) =
+        strip_prefix_suffix(message, "Input must be no longer than ", " characters")
+    {
+        return Some(format!("入力は{}文字以内で指定してください", limit));
     }
 
+    None
+}
+
+fn translate_ai_provider_case(message: &str) -> Option<String> {
     if let Some(provider) = message
         .strip_suffix(" API key is not configured. Save the API key in Settings, then try again.")
     {
@@ -107,19 +119,26 @@ fn translate_special_case(message: &str) -> Option<String> {
         ));
     }
 
-    if let Some(rest) = message.strip_prefix("Could not parse the ") {
-        if let Some(provider) = rest.strip_suffix(" model list response. Try again later.") {
-            return Some(format!(
-                "{} の model list 応答を解析できませんでした。しばらくしてから再試行してください。",
-                provider
-            ));
-        }
-        if let Some(provider) = rest.strip_suffix(" chat response. Try again later.") {
-            return Some(format!(
-                "{} の chat 応答を解析できませんでした。しばらくしてから再試行してください。",
-                provider
-            ));
-        }
+    if let Some(provider) = strip_prefix_suffix(
+        message,
+        "Could not parse the ",
+        " model list response. Try again later.",
+    ) {
+        return Some(format!(
+            "{} の model list 応答を解析できませんでした。しばらくしてから再試行してください。",
+            provider
+        ));
+    }
+
+    if let Some(provider) = strip_prefix_suffix(
+        message,
+        "Could not parse the ",
+        " chat response. Try again later.",
+    ) {
+        return Some(format!(
+            "{} の chat 応答を解析できませんでした。しばらくしてから再試行してください。",
+            provider
+        ));
     }
 
     if let Some(details) = message.strip_prefix(
@@ -131,107 +150,144 @@ fn translate_special_case(message: &str) -> Option<String> {
         ));
     }
 
-    if let Some(rest) = message.strip_prefix("Could not connect to ") {
-        if let Some((provider, details)) = rest
-            .split_once(". Check your network connection, proxy, and firewall settings. Details: ")
-        {
-            return Some(format!(
-                "{} に接続できませんでした。ネットワーク接続、プロキシ、ファイアウォール設定を確認してください。詳細: {}",
-                provider, details
-            ));
-        }
+    if let Some((provider, details)) = strip_prefix_split(
+        message,
+        "Could not connect to ",
+        ". Check your network connection, proxy, and firewall settings. Details: ",
+    ) {
+        return Some(format!(
+            "{} に接続できませんでした。ネットワーク接続、プロキシ、ファイアウォール設定を確認してください。詳細: {}",
+            provider, details
+        ));
     }
 
-    if let Some(rest) = message.strip_prefix("Could not read available models from the ") {
-        if let Some((provider, details)) =
-            rest.split_once(" response. The response format may have changed. Details: ")
-        {
-            return Some(format!(
-                "{} の応答から利用可能なモデルを取得できませんでした。応答形式が変わった可能性があります。詳細: {}",
-                provider, details
-            ));
-        }
+    if let Some((provider, details)) = strip_prefix_split(
+        message,
+        "Could not read available models from the ",
+        " response. The response format may have changed. Details: ",
+    ) {
+        return Some(format!(
+            "{} の応答から利用可能なモデルを取得できませんでした。応答形式が変わった可能性があります。詳細: {}",
+            provider, details
+        ));
     }
 
-    if let Some(rest) = message.strip_prefix("Could not read the ") {
-        if let Some((provider, details)) =
-            rest.split_once(" chat response. Try again later. Details: ")
-        {
-            return Some(format!(
-                "{} のチャット応答を読み取れませんでした。時間を置いて再試行してください。詳細: {}",
-                provider, details
-            ));
-        }
+    if let Some((provider, details)) = strip_prefix_split(
+        message,
+        "Could not read the ",
+        " chat response. Try again later. Details: ",
+    ) {
+        return Some(format!(
+            "{} のチャット応答を読み取れませんでした。時間を置いて再試行してください。詳細: {}",
+            provider, details
+        ));
     }
 
-    if let Some(rest) = message.strip_prefix(
+    translate_ai_http_error_case(message)
+}
+
+fn translate_ssh_host_key_case(message: &str) -> Option<String> {
+    if let Some(fingerprint) = message.strip_prefix(
         "The SSH host key is untrusted. Verify the fingerprint before connecting: SHA256:",
     ) {
         return Some(format!(
             "SSHホスト鍵が未信頼です。接続前にフィンガープリントを確認してください: SHA256:{}",
-            rest
+            fingerprint
         ));
     }
 
-    if let Some(rest) = message
-        .strip_prefix("The SSH host key does not match. A MITM attack may be in progress. Saved: ")
-    {
-        if let Some((saved, received)) = rest.split_once(" / Received: SHA256:") {
-            return Some(format!(
-                "SSHホスト鍵が一致しません。MITMの可能性があります。保存済み: {} / 受信: SHA256:{}",
-                saved, received
-            ));
-        }
+    if let Some((saved, received)) = strip_prefix_split(
+        message,
+        "The SSH host key does not match. A MITM attack may be in progress. Saved: ",
+        " / Received: SHA256:",
+    ) {
+        return Some(format!(
+            "SSHホスト鍵が一致しません。MITMの可能性があります。保存済み: {} / 受信: SHA256:{}",
+            saved, received
+        ));
     }
 
-    if let Some(rest) = message.strip_suffix(
+    None
+}
+
+fn translate_ai_http_error_case(message: &str) -> Option<String> {
+    let (base, provider_detail) = split_base_and_provider_detail(message);
+
+    if let Some(provider) = base.strip_suffix(
         " authentication failed. Check that the API key is correct and has the required permissions.",
     ) {
         return Some(format!(
             "{} の認証に失敗しました。API キーが正しいこと、必要な権限があることを確認してください。",
-            rest
-        ));
+            provider
+        ) + provider_detail);
     }
 
-    if let Some(rest) = message.strip_suffix(
+    if let Some(provider) = base.strip_suffix(
         " endpoint or model was not found. Check that the selected model is currently available.",
     ) {
         return Some(format!(
             "{} のエンドポイントまたはモデルが見つかりません。選択したモデルが現在利用可能か確認してください。",
-            rest
-        ));
+            provider
+        ) + provider_detail);
     }
 
-    if let Some(rest) = message.strip_suffix(
+    if let Some(provider) = base.strip_suffix(
         " rate limit or quota was reached. Check your usage limits or try again later.",
     ) {
         return Some(format!(
             "{} のレート制限またはクォータに達しました。利用上限を確認するか、時間を置いて再試行してください。",
-            rest
-        ));
+            provider
+        ) + provider_detail);
     }
 
-    if let Some(rest) =
-        message.strip_suffix(" is currently returning a server error. Try again later.")
+    if let Some(provider) =
+        base.strip_suffix(" is currently returning a server error. Try again later.")
     {
-        return Some(format!(
-            "{} 側で一時的な障害が発生しています。時間を置いて再試行してください。",
-            rest
-        ));
+        return Some(
+            format!(
+                "{} 側で一時的な障害が発生しています。時間を置いて再試行してください。",
+                provider
+            ) + provider_detail,
+        );
     }
 
-    if let Some(rest) = message.strip_prefix("") {
-        if let Some((provider, status)) = rest.split_once(" returned HTTP ") {
-            if let Some(status) = status.strip_suffix(". Check your settings and selected model.") {
-                return Some(format!(
-                    "{} が HTTP {} を返しました。設定と選択したモデルを確認してください。",
-                    provider, status
-                ));
-            }
-        }
+    if let Some((provider, status)) =
+        base.split_once(" returned HTTP ")
+            .and_then(|(provider, status)| {
+                status
+                    .strip_suffix(". Check your settings and selected model.")
+                    .map(|status| (provider, status))
+            })
+    {
+        return Some(
+            format!(
+                "{} が HTTP {} を返しました。設定と選択したモデルを確認してください。",
+                provider, status
+            ) + provider_detail,
+        );
     }
 
     None
+}
+
+fn strip_prefix_suffix<'a>(message: &'a str, prefix: &str, suffix: &str) -> Option<&'a str> {
+    message.strip_prefix(prefix)?.strip_suffix(suffix)
+}
+
+fn strip_prefix_split<'a>(
+    message: &'a str,
+    prefix: &str,
+    delimiter: &str,
+) -> Option<(&'a str, &'a str)> {
+    message.strip_prefix(prefix)?.split_once(delimiter)
+}
+
+fn split_base_and_provider_detail(message: &str) -> (&str, &str) {
+    if let Some(index) = message.find(" Provider message: ") {
+        message.split_at(index)
+    } else {
+        (message, "")
+    }
 }
 
 fn translate_prefixed(message: &str) -> Option<String> {
@@ -535,6 +591,94 @@ mod tests {
         assert_eq!(
             translate_for_app_language("en", "Window not found"),
             "Window not found"
+        );
+    }
+
+    #[test]
+    fn translates_serial_port_not_found_to_japanese() {
+        assert_eq!(
+            translate_for_app_language(
+                "ja",
+                "The specified serial port was not found: COM9. Available: COM1, COM3"
+            ),
+            "指定されたシリアルポートが見つかりません: COM9。利用可能: COM1, COM3"
+        );
+    }
+
+    #[test]
+    fn translates_external_control_input_limits_to_japanese() {
+        assert_eq!(
+            translate_for_app_language("ja", "Commands must be no longer than 4096 characters"),
+            "コマンドは4096文字以内で指定してください"
+        );
+        assert_eq!(
+            translate_for_app_language("ja", "Input must be no longer than 4096 characters"),
+            "入力は4096文字以内で指定してください"
+        );
+    }
+
+    #[test]
+    fn translates_ai_missing_api_key_to_japanese() {
+        assert_eq!(
+            translate_for_app_language(
+                "ja",
+                "OpenAI API key is not configured. Save the API key in Settings, then try again."
+            ),
+            "OpenAI の API キーが設定されていません。Settings で API キーを保存してから再試行してください。"
+        );
+    }
+
+    #[test]
+    fn translates_ai_http_errors_with_provider_detail_to_japanese() {
+        for (message, expected) in [
+            (
+                "OpenAI authentication failed. Check that the API key is correct and has the required permissions. Provider message: bad key",
+                "OpenAI の認証に失敗しました。API キーが正しいこと、必要な権限があることを確認してください。 Provider message: bad key",
+            ),
+            (
+                "Gemini endpoint or model was not found. Check that the selected model is currently available. Provider message: model missing",
+                "Gemini のエンドポイントまたはモデルが見つかりません。選択したモデルが現在利用可能か確認してください。 Provider message: model missing",
+            ),
+            (
+                "Anthropic rate limit or quota was reached. Check your usage limits or try again later. Provider message: quota exceeded",
+                "Anthropic のレート制限またはクォータに達しました。利用上限を確認するか、時間を置いて再試行してください。 Provider message: quota exceeded",
+            ),
+            (
+                "OpenAI is currently returning a server error. Try again later. Provider message: overloaded",
+                "OpenAI 側で一時的な障害が発生しています。時間を置いて再試行してください。 Provider message: overloaded",
+            ),
+            (
+                "Azure OpenAI returned HTTP 400. Check your settings and selected model. Provider message: bad request",
+                "Azure OpenAI が HTTP 400 を返しました。設定と選択したモデルを確認してください。 Provider message: bad request",
+            ),
+        ] {
+            assert_eq!(translate_for_app_language("ja", message), expected);
+        }
+    }
+
+    #[test]
+    fn translates_ssh_host_key_messages_to_japanese() {
+        assert_eq!(
+            translate_for_app_language(
+                "ja",
+                "The SSH host key is untrusted. Verify the fingerprint before connecting: SHA256:abc123"
+            ),
+            "SSHホスト鍵が未信頼です。接続前にフィンガープリントを確認してください: SHA256:abc123"
+        );
+        assert_eq!(
+            translate_for_app_language(
+                "ja",
+                "The SSH host key does not match. A MITM attack may be in progress. Saved: SHA256:old / Received: SHA256:new"
+            ),
+            "SSHホスト鍵が一致しません。MITMの可能性があります。保存済み: SHA256:old / 受信: SHA256:new"
+        );
+    }
+
+    #[test]
+    fn leaves_unknown_japanese_message_fallback_as_is() {
+        assert_eq!(
+            translate_for_app_language("ja", "An untranslated backend error"),
+            "An untranslated backend error"
         );
     }
 }
