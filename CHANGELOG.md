@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Reorganized Settings into desktop-style categories with navigation for easier scanning.
 - Aligned the desktop UI styling rules and shared dark-theme tokens for more consistent future interface changes.
 
 ### Added

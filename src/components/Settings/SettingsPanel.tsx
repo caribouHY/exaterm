@@ -27,6 +27,11 @@ type LanguageOption = {
   label?: string;
   labelKey?: "settings.language_system";
 };
+type SettingsCategoryId = "general" | "ai" | "logs" | "external_control";
+type SettingsCategory = {
+  id: SettingsCategoryId;
+  labelKey: string;
+};
 
 const MASKED_VALUE = "••••••••";
 const FONT_SIZE_MIN = 8;
@@ -97,6 +102,12 @@ const LANGUAGE_OPTIONS: LanguageOption[] = [
   { value: "ja", label: "日本語" },
 ];
 const LOG_FORMAT_OPTIONS: LogFormat[] = ["display", "strip_controls"];
+const SETTINGS_CATEGORIES: SettingsCategory[] = [
+  { id: "general", labelKey: "settings.category.general" },
+  { id: "ai", labelKey: "settings.category.ai" },
+  { id: "logs", labelKey: "settings.category.logs" },
+  { id: "external_control", labelKey: "settings.category.external_control" },
+];
 
 function normalizeExternalControlConfig(config: AppConfig): AppConfig {
   return {
@@ -137,6 +148,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   const [secretEdits, setSecretEdits] = useState<SecretEdits>(EMPTY_SECRET_EDITS);
   const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [secretEditMode, setSecretEditMode] = useState<SecretEditMode>(EMPTY_SECRET_EDIT_MODE);
+  const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>("general");
 
   const refreshSecretStatus = async () => {
     try {
@@ -344,319 +356,376 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     );
   };
 
+  const renderActiveCategory = () => {
+    switch (activeCategory) {
+      case "general":
+        return (
+          <div className="settings-section">
+            <div className="settings-section__title">{t("settings.language")}</div>
+            <div className="settings-row">
+              <div>
+                <select
+                  className="select"
+                  value={config.language}
+                  onChange={(e) => {
+                    updateLanguage(e.target.value);
+                  }}
+                >
+                  {LANGUAGE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.labelKey ? t(option.labelKey) : option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="settings-section__title">{t("settings.terminal_settings")}</div>
+            <div className="settings-row">
+              <div>
+                <label className="label">{t("settings.font_size")}</label>
+                <input
+                  className="input"
+                  type="number"
+                  value={config.terminal.font_size}
+                  onChange={(e) => {
+                    updateTerminalConfig({
+                      font_size: parseBoundedNumber(
+                        e.target.value,
+                        config.terminal.font_size,
+                        FONT_SIZE_MIN,
+                        FONT_SIZE_MAX
+                      ),
+                    });
+                  }}
+                  min={FONT_SIZE_MIN}
+                  max={FONT_SIZE_MAX}
+                />
+              </div>
+              <div>
+                <label className="label">{t("settings.scrollback")}</label>
+                <input
+                  className="input"
+                  type="number"
+                  value={config.terminal.scrollback}
+                  onChange={(e) => {
+                    updateTerminalConfig({
+                      scrollback: parseBoundedNumber(
+                        e.target.value,
+                        config.terminal.scrollback,
+                        SCROLLBACK_MIN,
+                        SCROLLBACK_MAX
+                      ),
+                    });
+                  }}
+                  min={SCROLLBACK_MIN}
+                  max={SCROLLBACK_MAX}
+                />
+              </div>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label className="label">{t("settings.font_family")}</label>
+              <input
+                className="input"
+                value={config.terminal.font_family}
+                onChange={(e) => {
+                  updateTerminalConfig({ font_family: e.target.value });
+                }}
+              />
+            </div>
+
+            <div className="settings-section__title">{t("settings.ssh_settings")}</div>
+            <div className="settings-toggle-row">
+              <div className="settings-toggle-label">
+                <span>{t("settings.allow_legacy_ssh_algorithms")}</span>
+                <small>{t("settings.allow_legacy_ssh_algorithms_desc")}</small>
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.ssh.allow_legacy_algorithms)}
+                  onChange={(e) => {
+                    updateSshConfig({ allow_legacy_algorithms: e.target.checked });
+                  }}
+                />
+                <span className="toggle-track" />
+              </label>
+            </div>
+          </div>
+        );
+
+      case "ai":
+        return (
+          <div className="settings-section">
+            <div className="settings-section__title">{t("settings.ai_provider")}</div>
+            <div className="settings-row">
+              <div>
+                <label className="label">{t("settings.default_provider")}</label>
+                <select
+                  className="select"
+                  value={config.ai.default_provider}
+                  onChange={(e) => {
+                    updateAiConfig({ default_provider: e.target.value });
+                  }}
+                >
+                  <option value="OpenAi">OpenAI</option>
+                  <option value="AzureOpenAi">Azure OpenAI</option>
+                  <option value="Anthropic">Anthropic</option>
+                  <option value="Gemini">Google Gemini</option>
+                  <option value="OpenRouter">OpenRouter</option>
+                  <option value="Ollama">Ollama</option>
+                </select>
+              </div>
+            </div>
+
+            {SECRET_FIELDS.map(renderSecretField)}
+
+            <div className="settings-toggle-row">
+              <div className="settings-toggle-label">
+                <span>{t("settings.azure_openai_enabled")}</span>
+                <small>{t("settings.azure_openai_enabled_desc")}</small>
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.ai.azure_openai_enabled)}
+                  onChange={(e) => updateAiConfig({ azure_openai_enabled: e.target.checked })}
+                />
+                <span className="toggle-track" />
+              </label>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label className="label">{t("settings.azure_openai_endpoint")}</label>
+              <input
+                className="input"
+                type="text"
+                value={config.ai.azure_openai_endpoint}
+                onChange={(e) => updateAiConfig({ azure_openai_endpoint: e.target.value })}
+                placeholder="https://your-resource.openai.azure.com/openai/v1/chat/completions"
+              />
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label className="label">{t("settings.azure_openai_deployment")}</label>
+              <input
+                className="input"
+                type="text"
+                value={config.ai.azure_openai_deployment}
+                onChange={(e) => updateAiConfig({ azure_openai_deployment: e.target.value })}
+                placeholder="my-gpt4o-deployment"
+              />
+            </div>
+
+            <div className="settings-toggle-row">
+              <div className="settings-toggle-label">
+                <span>{t("settings.ollama_enabled")}</span>
+                <small>{t("settings.ollama_enabled_desc")}</small>
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.ai.ollama_enabled)}
+                  onChange={(e) => updateAiConfig({ ollama_enabled: e.target.checked })}
+                />
+                <span className="toggle-track" />
+              </label>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label className="label">{t("settings.ollama_url")}</label>
+              <input
+                className="input"
+                type="text"
+                value={config.ai.ollama_base_url}
+                onChange={(e) => updateAiConfig({ ollama_base_url: e.target.value })}
+                placeholder="http://localhost:11434"
+              />
+            </div>
+          </div>
+        );
+
+      case "external_control":
+        return (
+          <div className="settings-section">
+            <div className="settings-section__title">{t("settings.mcp_settings")}</div>
+            <div className="settings-toggle-row">
+              <div className="settings-toggle-label">
+                <span>{t("settings.mcp_enabled")}</span>
+                <small>{t("settings.mcp_enabled_desc")}</small>
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.external_control.enabled)}
+                  onChange={(e) => {
+                    updateExternalControlConfig({ enabled: e.target.checked });
+                  }}
+                />
+                <span className="toggle-track" />
+              </label>
+            </div>
+            <div className="settings-toggle-row">
+              <div className="settings-toggle-label">
+                <span>{t("settings.mcp_cli_enabled")}</span>
+                <small>{t("settings.mcp_cli_enabled_desc")}</small>
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.external_control.cli_enabled)}
+                  onChange={(e) => {
+                    updateExternalControlConfig({ cli_enabled: e.target.checked });
+                  }}
+                />
+                <span className="toggle-track" />
+              </label>
+            </div>
+            <div className="settings-toggle-row">
+              <div className="settings-toggle-label">
+                <span>{t("settings.mcp_connect_enabled")}</span>
+                <small>{t("settings.mcp_connect_enabled_desc")}</small>
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.external_control.connect_enabled)}
+                  onChange={(e) => {
+                    updateExternalControlConfig({ connect_enabled: e.target.checked });
+                  }}
+                />
+                <span className="toggle-track" />
+              </label>
+            </div>
+            <div className="settings-section__title" style={{ marginTop: 20 }}>
+              {t("settings.mcp_adapter_title")}
+            </div>
+            <div className="settings-toggle-row">
+              <div className="settings-toggle-label">
+                <span>{t("settings.mcp_stdio_enabled")}</span>
+                <small>{t("settings.mcp_stdio_enabled_desc")}</small>
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.external_control.mcp_enabled)}
+                  onChange={(e) => {
+                    updateExternalControlConfig({ mcp_enabled: e.target.checked });
+                  }}
+                />
+                <span className="toggle-track" />
+              </label>
+            </div>
+            <p className="settings-help">{t("settings.mcp_restart_notice")}</p>
+            {t("settings.mcp_loopback_warning") && (
+              <p className="settings-help">{t("settings.mcp_loopback_warning")}</p>
+            )}
+          </div>
+        );
+
+      case "logs":
+        return (
+          <div className="settings-section">
+            <div className="settings-section__title">{t("settings.log_settings")}</div>
+            <div className="settings-toggle-row">
+              <div className="settings-toggle-label">
+                <span>{t("settings.auto_session_log")}</span>
+                <small>{t("settings.auto_session_log_desc")}</small>
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.terminal.auto_session_log}
+                  onChange={(e) => {
+                    updateTerminalConfig({ auto_session_log: e.target.checked });
+                  }}
+                />
+                <span className="toggle-track" />
+              </label>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label className="label">{t("settings.log_format")}</label>
+              <select
+                className="select"
+                value={config.terminal.log_format || "display"}
+                onChange={(e) => {
+                  if (isLogFormat(e.target.value)) {
+                    updateTerminalConfig({ log_format: e.target.value });
+                  }
+                }}
+              >
+                <option value="display">{t("settings.log_format_display")}</option>
+                <option value="strip_controls">{t("settings.log_format_strip_controls")}</option>
+              </select>
+            </div>
+            <div className="settings-toggle-row">
+              <div className="settings-toggle-label">
+                <span>{t("settings.include_log_header")}</span>
+                <small>{t("settings.include_log_header_desc")}</small>
+              </div>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={config.terminal.include_log_header ?? false}
+                  onChange={(e) => {
+                    updateTerminalConfig({ include_log_header: e.target.checked });
+                  }}
+                />
+                <span className="toggle-track" />
+              </label>
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="settings-panel">
       <h2>{t("settings.title")}</h2>
 
-      <div className="settings-section">
-        <div className="settings-section__title">{t("settings.language")}</div>
-        <div className="settings-row">
-          <div>
-            <select
-              className="select"
-              value={config.language}
-              onChange={(e) => {
-                updateLanguage(e.target.value);
+      <div className="settings-category-select">
+        <label className="label" htmlFor="settings-category-select">
+          {t("settings.category_select_label")}
+        </label>
+        <select
+          id="settings-category-select"
+          className="select"
+          value={activeCategory}
+          onChange={(e) => {
+            setActiveCategory(e.target.value as SettingsCategoryId);
+          }}
+        >
+          {SETTINGS_CATEGORIES.map((category) => (
+            <option key={category.id} value={category.id}>
+              {t(category.labelKey)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="settings-layout">
+        <nav className="settings-category-nav" aria-label={t("settings.category_select_label")}>
+          {SETTINGS_CATEGORIES.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              className={`settings-category-button ${
+                activeCategory === category.id ? "settings-category-button--active" : ""
+              }`}
+              aria-current={activeCategory === category.id ? "page" : undefined}
+              onClick={() => {
+                setActiveCategory(category.id);
               }}
             >
-              {LANGUAGE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.labelKey ? t(option.labelKey) : option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
+              {t(category.labelKey)}
+            </button>
+          ))}
+        </nav>
 
-      <div className="settings-section">
-        <div className="settings-section__title">{t("settings.ai_provider")}</div>
-        <div className="settings-row">
-          <div>
-            <label className="label">{t("settings.default_provider")}</label>
-            <select
-              className="select"
-              value={config.ai.default_provider}
-              onChange={(e) => {
-                updateAiConfig({ default_provider: e.target.value });
-              }}
-            >
-              <option value="OpenAi">OpenAI</option>
-              <option value="AzureOpenAi">Azure OpenAI</option>
-              <option value="Anthropic">Anthropic</option>
-              <option value="Gemini">Google Gemini</option>
-              <option value="OpenRouter">OpenRouter</option>
-              <option value="Ollama">Ollama</option>
-            </select>
-          </div>
-        </div>
-
-        {SECRET_FIELDS.map(renderSecretField)}
-
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.azure_openai_enabled")}</span>
-            <small>{t("settings.azure_openai_enabled_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.ai.azure_openai_enabled)}
-              onChange={(e) => updateAiConfig({ azure_openai_enabled: e.target.checked })}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
-          <label className="label">{t("settings.azure_openai_endpoint")}</label>
-          <input
-            className="input"
-            type="text"
-            value={config.ai.azure_openai_endpoint}
-            onChange={(e) => updateAiConfig({ azure_openai_endpoint: e.target.value })}
-            placeholder="https://your-resource.openai.azure.com/openai/v1/chat/completions"
-          />
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
-          <label className="label">{t("settings.azure_openai_deployment")}</label>
-          <input
-            className="input"
-            type="text"
-            value={config.ai.azure_openai_deployment}
-            onChange={(e) => updateAiConfig({ azure_openai_deployment: e.target.value })}
-            placeholder="my-gpt4o-deployment"
-          />
-        </div>
-
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.ollama_enabled")}</span>
-            <small>{t("settings.ollama_enabled_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.ai.ollama_enabled)}
-              onChange={(e) => updateAiConfig({ ollama_enabled: e.target.checked })}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
-          <label className="label">{t("settings.ollama_url")}</label>
-          <input
-            className="input"
-            type="text"
-            value={config.ai.ollama_base_url}
-            onChange={(e) => updateAiConfig({ ollama_base_url: e.target.value })}
-            placeholder="http://localhost:11434"
-          />
-        </div>
-      </div>
-
-      <div className="settings-section">
-        <div className="settings-section__title">{t("settings.mcp_settings")}</div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.mcp_enabled")}</span>
-            <small>{t("settings.mcp_enabled_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.external_control.enabled)}
-              onChange={(e) => {
-                updateExternalControlConfig({ enabled: e.target.checked });
-              }}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.mcp_cli_enabled")}</span>
-            <small>{t("settings.mcp_cli_enabled_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.external_control.cli_enabled)}
-              onChange={(e) => {
-                updateExternalControlConfig({ cli_enabled: e.target.checked });
-              }}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.mcp_connect_enabled")}</span>
-            <small>{t("settings.mcp_connect_enabled_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.external_control.connect_enabled)}
-              onChange={(e) => {
-                updateExternalControlConfig({ connect_enabled: e.target.checked });
-              }}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-        <div className="settings-section__title" style={{ marginTop: 20 }}>
-          {t("settings.mcp_adapter_title")}
-        </div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.mcp_stdio_enabled")}</span>
-            <small>{t("settings.mcp_stdio_enabled_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.external_control.mcp_enabled)}
-              onChange={(e) => {
-                updateExternalControlConfig({ mcp_enabled: e.target.checked });
-              }}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-        <p className="settings-help">{t("settings.mcp_restart_notice")}</p>
-        {t("settings.mcp_loopback_warning") && (
-          <p className="settings-help">{t("settings.mcp_loopback_warning")}</p>
-        )}
-      </div>
-
-      <div className="settings-section">
-        <div className="settings-section__title">{t("settings.ssh_settings")}</div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.allow_legacy_ssh_algorithms")}</span>
-            <small>{t("settings.allow_legacy_ssh_algorithms_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.ssh.allow_legacy_algorithms)}
-              onChange={(e) => {
-                updateSshConfig({ allow_legacy_algorithms: e.target.checked });
-              }}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-      </div>
-
-      <div className="settings-section">
-        <div className="settings-section__title">{t("settings.terminal_settings")}</div>
-        <div className="settings-row">
-          <div>
-            <label className="label">{t("settings.font_size")}</label>
-            <input
-              className="input"
-              type="number"
-              value={config.terminal.font_size}
-              onChange={(e) => {
-                updateTerminalConfig({
-                  font_size: parseBoundedNumber(
-                    e.target.value,
-                    config.terminal.font_size,
-                    FONT_SIZE_MIN,
-                    FONT_SIZE_MAX
-                  ),
-                });
-              }}
-              min={FONT_SIZE_MIN}
-              max={FONT_SIZE_MAX}
-            />
-          </div>
-          <div>
-            <label className="label">{t("settings.scrollback")}</label>
-            <input
-              className="input"
-              type="number"
-              value={config.terminal.scrollback}
-              onChange={(e) => {
-                updateTerminalConfig({
-                  scrollback: parseBoundedNumber(
-                    e.target.value,
-                    config.terminal.scrollback,
-                    SCROLLBACK_MIN,
-                    SCROLLBACK_MAX
-                  ),
-                });
-              }}
-              min={SCROLLBACK_MIN}
-              max={SCROLLBACK_MAX}
-            />
-          </div>
-        </div>
-        <div>
-          <label className="label">{t("settings.font_family")}</label>
-          <input
-            className="input"
-            value={config.terminal.font_family}
-            onChange={(e) => {
-              updateTerminalConfig({ font_family: e.target.value });
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="settings-section">
-        <div className="settings-section__title">{t("settings.log_settings")}</div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.auto_session_log")}</span>
-            <small>{t("settings.auto_session_log_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={config.terminal.auto_session_log}
-              onChange={(e) => {
-                updateTerminalConfig({ auto_session_log: e.target.checked });
-              }}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-        <div style={{ marginBottom: 14 }}>
-          <label className="label">{t("settings.log_format")}</label>
-          <select
-            className="select"
-            value={config.terminal.log_format || "display"}
-            onChange={(e) => {
-              if (isLogFormat(e.target.value)) {
-                updateTerminalConfig({ log_format: e.target.value });
-              }
-            }}
-          >
-            <option value="display">{t("settings.log_format_display")}</option>
-            <option value="strip_controls">{t("settings.log_format_strip_controls")}</option>
-          </select>
-        </div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.include_log_header")}</span>
-            <small>{t("settings.include_log_header_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={config.terminal.include_log_header ?? false}
-              onChange={(e) => {
-                updateTerminalConfig({ include_log_header: e.target.checked });
-              }}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
+        <div className="settings-content">{renderActiveCategory()}</div>
       </div>
 
       <div className="settings-actions">
