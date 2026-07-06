@@ -1,6 +1,8 @@
 {
   "settings.title": "Settings",
   "settings.loading": "Loading...",
+  "settings.load_failed": "Could not load settings.",
+  "settings.reload": "Reload",
   "settings.language": "Language",
   "settings.language_system": "System",
   "settings.ai_provider": "AI Provider Settings",
@@ -45,6 +47,7 @@
   "settings.include_log_header": "Include Log Header",
   "settings.include_log_header_desc": "Adds session type, target, mode, and start time at the beginning of new log files",
   "settings.save": "Save",
+  "settings.saving": "Saving...",
   "settings.saved": "Saved",
   "settings.change": "Change",
   "settings.clear": "Clear",

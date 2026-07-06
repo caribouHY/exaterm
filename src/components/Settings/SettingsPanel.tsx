@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Check } from "lucide-react";
 import type { AppConfig, AiSecretStatus } from "../../types";
@@ -21,6 +21,10 @@ type LanguageOption = {
 };
 
 const MASKED_VALUE = "••••••••";
+const FONT_SIZE_MIN = 8;
+const FONT_SIZE_MAX = 32;
+const SCROLLBACK_MIN = 100;
+const SCROLLBACK_MAX = 100000;
 const DEFAULT_EXTERNAL_CONTROL_CONFIG = {
   enabled: false,
   connect_enabled: false,
@@ -60,13 +64,30 @@ function normalizeExternalControlConfig(config: AppConfig): AppConfig {
   };
 }
 
+function parseBoundedNumber(value: string, currentValue: number, min: number, max: number): number {
+  if (!value.trim()) {
+    return currentValue;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return currentValue;
+  }
+
+  return Math.min(Math.max(parsed, min), max);
+}
+
 export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   const { t, i18n } = useTranslation();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [secretStatus, setSecretStatus] = useState<AiSecretStatus>(EMPTY_SECRET_STATUS);
   const [secretEdits, setSecretEdits] = useState<SecretEdits>(EMPTY_SECRET_EDITS);
+  const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [secretEditMode, setSecretEditMode] = useState({
     openai: false,
     azure_openai: false,
@@ -85,19 +106,43 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     }
   };
 
+  const clearSavedTimer = () => {
+    if (savedTimeoutRef.current) {
+      clearTimeout(savedTimeoutRef.current);
+      savedTimeoutRef.current = null;
+    }
+  };
+
+  const loadConfig = async () => {
+    setIsLoadingConfig(true);
+    setLoadFailed(false);
+    setError("");
+    try {
+      const cfg = await invoke<AppConfig>("config_load");
+      setConfig(normalizeExternalControlConfig(cfg));
+    } catch (e) {
+      console.error("Failed to load settings:", e);
+      setConfig(null);
+      setLoadFailed(true);
+    } finally {
+      setIsLoadingConfig(false);
+    }
+  };
+
   useEffect(() => {
-    invoke<AppConfig>("config_load")
-      .then((cfg) => {
-        setConfig(normalizeExternalControlConfig(cfg));
-      })
-      .catch(() => {});
+    void loadConfig();
     void refreshSecretStatus();
+    return () => {
+      clearSavedTimer();
+    };
   }, []);
 
   const handleSave = async () => {
-    if (!config) return;
+    if (!config || isSaving) return;
     try {
+      setIsSaving(true);
       setError("");
+      clearSavedTimer();
       const normalizedConfig = normalizeExternalControlConfig(config);
       setConfig(normalizedConfig);
       await invoke("config_save", { config: normalizedConfig });
@@ -144,19 +189,30 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       }
       setSaved(true);
       if (onSave) onSave();
-      setTimeout(() => {
+      savedTimeoutRef.current = setTimeout(() => {
         setSaved(false);
+        savedTimeoutRef.current = null;
       }, 2000);
     } catch (e) {
       console.error(e);
       setError(typeof e === "string" ? e : "Failed to save settings.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   if (!config)
     return (
       <div className="settings-panel">
-        <p>{t("settings.loading")}</p>
+        {isLoadingConfig && <p>{t("settings.loading")}</p>}
+        {loadFailed && (
+          <>
+            <p className="settings-error">{t("settings.load_failed")}</p>
+            <button className="btn btn-primary" onClick={loadConfig}>
+              {t("settings.reload")}
+            </button>
+          </>
+        )}
       </div>
     );
 
@@ -361,7 +417,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           <input
             className="input"
             type="text"
-            value={config.ai.ollama_base_url || "http://localhost:11434"}
+            value={config.ai.ollama_base_url}
             onChange={(e) => update("ai.ollama_base_url", e.target.value)}
             placeholder="http://localhost:11434"
           />
@@ -473,10 +529,18 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               type="number"
               value={config.terminal.font_size}
               onChange={(e) => {
-                update("terminal.font_size", parseInt(e.target.value));
+                update(
+                  "terminal.font_size",
+                  parseBoundedNumber(
+                    e.target.value,
+                    config.terminal.font_size,
+                    FONT_SIZE_MIN,
+                    FONT_SIZE_MAX
+                  )
+                );
               }}
-              min={8}
-              max={32}
+              min={FONT_SIZE_MIN}
+              max={FONT_SIZE_MAX}
             />
           </div>
           <div>
@@ -486,8 +550,18 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               type="number"
               value={config.terminal.scrollback}
               onChange={(e) => {
-                update("terminal.scrollback", parseInt(e.target.value));
+                update(
+                  "terminal.scrollback",
+                  parseBoundedNumber(
+                    e.target.value,
+                    config.terminal.scrollback,
+                    SCROLLBACK_MIN,
+                    SCROLLBACK_MAX
+                  )
+                );
               }}
+              min={SCROLLBACK_MIN}
+              max={SCROLLBACK_MAX}
             />
           </div>
         </div>
@@ -553,8 +627,8 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       </div>
 
       <div className="settings-actions">
-        <button className="btn btn-primary" onClick={handleSave}>
-          {t("settings.save")}
+        <button className="btn btn-primary" onClick={handleSave} disabled={isSaving}>
+          {isSaving ? t("settings.saving") : t("settings.save")}
         </button>
         {saved && (
           <span className="settings-saved">

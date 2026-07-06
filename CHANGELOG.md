@@ -14,6 +14,7 @@
 
 ### Fixed
 
+- Improved Settings so load failures are visible, save actions cannot be repeated while saving, and numeric terminal inputs stay within valid ranges.
 - Improved SSH sessions so overloaded output no longer disappears without warning.
 - Fixed SSH sessions so remote disconnects are reflected more reliably in the UI.
 - Improved SSH connections so stalled connection setup no longer leaves the connection dialog waiting indefinitely.
