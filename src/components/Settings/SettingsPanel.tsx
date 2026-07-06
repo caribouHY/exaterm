@@ -136,9 +136,23 @@ function isLogFormat(value: string): value is LogFormat {
   return LOG_FORMAT_OPTIONS.includes(value as LogFormat);
 }
 
+function areSecretEditsEqual(left: SecretEdits, right: SecretEdits): boolean {
+  return SECRET_FIELDS.every(({ key }) => left[key] === right[key]);
+}
+
+function areSecretEditModesEqual(left: SecretEditMode, right: SecretEditMode): boolean {
+  return SECRET_FIELDS.every(({ key }) => left[key] === right[key]);
+}
+
+function areConfigsEqual(left: AppConfig | null, right: AppConfig | null): boolean {
+  if (!left || !right) return left === right;
+  return JSON.stringify(normalizeExternalControlConfig(left)) === JSON.stringify(right);
+}
+
 export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   const { t, i18n } = useTranslation();
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [initialConfigSnapshot, setInitialConfigSnapshot] = useState<AppConfig | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [loadFailed, setLoadFailed] = useState(false);
@@ -146,8 +160,12 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [secretStatus, setSecretStatus] = useState<AiSecretStatus>(EMPTY_SECRET_STATUS);
   const [secretEdits, setSecretEdits] = useState<SecretEdits>(EMPTY_SECRET_EDITS);
+  const [initialSecretEditsSnapshot, setInitialSecretEditsSnapshot] =
+    useState<SecretEdits>(EMPTY_SECRET_EDITS);
   const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [secretEditMode, setSecretEditMode] = useState<SecretEditMode>(EMPTY_SECRET_EDIT_MODE);
+  const [initialSecretEditModeSnapshot, setInitialSecretEditModeSnapshot] =
+    useState<SecretEditMode>(EMPTY_SECRET_EDIT_MODE);
   const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>("general");
 
   const refreshSecretStatus = async () => {
@@ -173,10 +191,20 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     setError("");
     try {
       const cfg = await invoke<AppConfig>("config_load");
-      setConfig(normalizeExternalControlConfig(cfg));
+      const normalizedConfig = normalizeExternalControlConfig(cfg);
+      const emptySecretEdits = createSecretEdits();
+      const emptySecretEditMode = createSecretEditMode();
+      setConfig(normalizedConfig);
+      setInitialConfigSnapshot(normalizedConfig);
+      setSecretEdits(emptySecretEdits);
+      setInitialSecretEditsSnapshot(emptySecretEdits);
+      setSecretEditMode(emptySecretEditMode);
+      setInitialSecretEditModeSnapshot(emptySecretEditMode);
+      setSaved(false);
     } catch (e) {
       console.error("Failed to load settings:", e);
       setConfig(null);
+      setInitialConfigSnapshot(null);
       setLoadFailed(true);
     } finally {
       setIsLoadingConfig(false);
@@ -191,8 +219,13 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     };
   }, []);
 
+  const hasUnsavedChanges =
+    !areConfigsEqual(config, initialConfigSnapshot) ||
+    !areSecretEditsEqual(secretEdits, initialSecretEditsSnapshot) ||
+    !areSecretEditModesEqual(secretEditMode, initialSecretEditModeSnapshot);
+
   const handleSave = async () => {
-    if (!config || isSaving) return;
+    if (!config || isSaving || !hasUnsavedChanges) return;
     try {
       setIsSaving(true);
       setError("");
@@ -208,8 +241,13 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         }
       }
 
-      setSecretEdits(EMPTY_SECRET_EDITS);
-      setSecretEditMode(EMPTY_SECRET_EDIT_MODE);
+      const emptySecretEdits = createSecretEdits();
+      const emptySecretEditMode = createSecretEditMode();
+      setSecretEdits(emptySecretEdits);
+      setInitialSecretEditsSnapshot(emptySecretEdits);
+      setSecretEditMode(emptySecretEditMode);
+      setInitialSecretEditModeSnapshot(emptySecretEditMode);
+      setInitialConfigSnapshot(normalizedConfig);
       await refreshSecretStatus();
 
       const resolvedLanguage = resolveAppLanguage(normalizedConfig.language);
@@ -229,6 +267,16 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleRevert = () => {
+    if (!initialConfigSnapshot || isSaving) return;
+    clearSavedTimer();
+    setConfig(initialConfigSnapshot);
+    setSecretEdits(initialSecretEditsSnapshot);
+    setSecretEditMode(initialSecretEditModeSnapshot);
+    setSaved(false);
+    setError("");
   };
 
   if (!config)
@@ -729,15 +777,41 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       </div>
 
       <div className="settings-actions">
-        <button className="btn btn-primary" onClick={handleSave} disabled={isSaving}>
-          {isSaving ? t("settings.saving") : t("settings.save")}
-        </button>
-        {saved && (
-          <span className="settings-saved">
-            <Check size={14} /> {t("settings.saved")}
-          </span>
-        )}
-        {error && <span className="settings-error">{error}</span>}
+        <div className="settings-actions__status">
+          {hasUnsavedChanges && (
+            <span className="settings-unsaved">{t("settings.unsaved_changes")}</span>
+          )}
+          {saved && (
+            <span className="settings-saved">
+              <Check size={14} /> {t("settings.saved")}
+            </span>
+          )}
+          {error && <span className="settings-error">{error}</span>}
+        </div>
+        <div className="settings-actions__buttons">
+          {hasUnsavedChanges && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={handleRevert}
+              disabled={isSaving}
+            >
+              {t("settings.revert")}
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleSave}
+            disabled={isSaving || !hasUnsavedChanges}
+          >
+            {isSaving
+              ? t("settings.saving")
+              : hasUnsavedChanges
+                ? t("settings.save_changes")
+                : t("settings.save")}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 .settings-panel {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 32px;
+  padding: 24px 32px 0;
   animation: fadeIn 0.2s ease;
 }
 
@@ -113,8 +113,33 @@
 
 .settings-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 20px;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-height: 52px;
+  margin: 24px -32px 0;
+  padding: var(--space-sm) 32px;
+  border-top: 1px solid var(--border-secondary);
+  background: var(--bg-surface);
+}
+
+.settings-actions__status,
+.settings-actions__buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.settings-actions__status {
+  flex: 1;
+}
+
+.settings-actions__buttons {
+  flex-shrink: 0;
 }
 
 .settings-secret-row {
@@ -130,6 +155,11 @@
   color: var(--accent-green);
   font-size: 12px;
   animation: fadeIn 0.2s ease;
+}
+
+.settings-unsaved {
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .settings-error {
@@ -216,7 +246,7 @@
 
 @media (max-width: 760px) {
   .settings-panel {
-    padding: var(--space-lg);
+    padding: var(--space-lg) var(--space-lg) 0;
   }
 
   .settings-layout {
@@ -229,5 +259,23 @@
 
   .settings-category-select {
     display: block;
+  }
+
+  .settings-actions {
+    flex-direction: column;
+    align-items: stretch;
+    margin-right: calc(var(--space-lg) * -1);
+    margin-left: calc(var(--space-lg) * -1);
+    padding-right: var(--space-lg);
+    padding-left: var(--space-lg);
+  }
+
+  .settings-actions__status,
+  .settings-actions__buttons {
+    width: 100%;
+  }
+
+  .settings-actions__buttons {
+    justify-content: flex-end;
   }
 }
