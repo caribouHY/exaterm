@@ -14,6 +14,7 @@
 
 ### Fixed
 
+- Improved Settings so saved API key deletion asks for confirmation and reports deletion failures.
 - Improved Settings so load failures are visible, save actions cannot be repeated while saving, and numeric terminal inputs stay within valid ranges.
 - Improved SSH sessions so overloaded output no longer disappears without warning.
 - Fixed SSH sessions so remote disconnects are reflected more reliably in the UI.

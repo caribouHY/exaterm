@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { Check } from "lucide-react";
 import type { AppConfig, AiSecretStatus } from "../../types";
 import { useTranslation } from "react-i18next";
@@ -14,6 +15,13 @@ type SecretKey = "openai" | "azure_openai" | "anthropic" | "gemini" | "openroute
 type SecretProvider = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini" | "OpenRouter";
 
 type SecretEdits = Record<SecretKey, string>;
+type SecretEditMode = Record<SecretKey, boolean>;
+type SecretField = {
+  key: SecretKey;
+  provider: SecretProvider;
+  labelKey: string;
+  placeholder: string;
+};
 type LanguageOption = {
   value: AppConfig["language"];
   label?: string;
@@ -32,21 +40,56 @@ const DEFAULT_EXTERNAL_CONTROL_CONFIG = {
   cli_enabled: false,
 };
 
-const EMPTY_SECRET_STATUS: AiSecretStatus = {
-  openai: false,
-  azure_openai: false,
-  anthropic: false,
-  gemini: false,
-  openrouter: false,
+const SECRET_FIELDS: SecretField[] = [
+  { key: "openai", provider: "OpenAi", labelKey: "settings.openai_key", placeholder: "sk-..." },
+  {
+    key: "azure_openai",
+    provider: "AzureOpenAi",
+    labelKey: "settings.azure_openai_key",
+    placeholder: "...",
+  },
+  {
+    key: "anthropic",
+    provider: "Anthropic",
+    labelKey: "settings.anthropic_key",
+    placeholder: "sk-ant-...",
+  },
+  { key: "gemini", provider: "Gemini", labelKey: "settings.gemini_key", placeholder: "AIza..." },
+  {
+    key: "openrouter",
+    provider: "OpenRouter",
+    labelKey: "settings.openrouter_key",
+    placeholder: "sk-or-...",
+  },
+];
+
+const createSecretStatus = (): AiSecretStatus => {
+  const status = {} as AiSecretStatus;
+  for (const { key } of SECRET_FIELDS) {
+    status[key] = false;
+  }
+  return status;
 };
 
-const EMPTY_SECRET_EDITS: SecretEdits = {
-  openai: "",
-  azure_openai: "",
-  anthropic: "",
-  gemini: "",
-  openrouter: "",
+const createSecretEdits = (): SecretEdits => {
+  const edits = {} as SecretEdits;
+  for (const { key } of SECRET_FIELDS) {
+    edits[key] = "";
+  }
+  return edits;
 };
+
+const createSecretEditMode = (): SecretEditMode => {
+  const editMode = {} as SecretEditMode;
+  for (const { key } of SECRET_FIELDS) {
+    editMode[key] = false;
+  }
+  return editMode;
+};
+
+const EMPTY_SECRET_STATUS = createSecretStatus();
+const EMPTY_SECRET_EDITS = createSecretEdits();
+const EMPTY_SECRET_EDIT_MODE = createSecretEditMode();
 
 const LANGUAGE_OPTIONS: LanguageOption[] = [
   { value: "system", labelKey: "settings.language_system" },
@@ -88,13 +131,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   const [secretStatus, setSecretStatus] = useState<AiSecretStatus>(EMPTY_SECRET_STATUS);
   const [secretEdits, setSecretEdits] = useState<SecretEdits>(EMPTY_SECRET_EDITS);
   const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [secretEditMode, setSecretEditMode] = useState({
-    openai: false,
-    azure_openai: false,
-    anthropic: false,
-    gemini: false,
-    openrouter: false,
-  });
+  const [secretEditMode, setSecretEditMode] = useState<SecretEditMode>(EMPTY_SECRET_EDIT_MODE);
 
   const refreshSecretStatus = async () => {
     try {
@@ -147,39 +184,15 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       setConfig(normalizedConfig);
       await invoke("config_save", { config: normalizedConfig });
 
-      if (secretEdits.openai.trim()) {
-        await invoke("ai_secret_set", { provider: "OpenAi", value: secretEdits.openai.trim() });
-      }
-      if (secretEdits.azure_openai.trim()) {
-        await invoke("ai_secret_set", {
-          provider: "AzureOpenAi",
-          value: secretEdits.azure_openai.trim(),
-        });
-      }
-      if (secretEdits.anthropic.trim()) {
-        await invoke("ai_secret_set", {
-          provider: "Anthropic",
-          value: secretEdits.anthropic.trim(),
-        });
-      }
-      if (secretEdits.gemini.trim()) {
-        await invoke("ai_secret_set", { provider: "Gemini", value: secretEdits.gemini.trim() });
-      }
-      if (secretEdits.openrouter.trim()) {
-        await invoke("ai_secret_set", {
-          provider: "OpenRouter",
-          value: secretEdits.openrouter.trim(),
-        });
+      for (const { key, provider } of SECRET_FIELDS) {
+        const value = secretEdits[key].trim();
+        if (value) {
+          await invoke("ai_secret_set", { provider, value });
+        }
       }
 
       setSecretEdits(EMPTY_SECRET_EDITS);
-      setSecretEditMode({
-        openai: false,
-        azure_openai: false,
-        anthropic: false,
-        gemini: false,
-        openrouter: false,
-      });
+      setSecretEditMode(EMPTY_SECRET_EDIT_MODE);
       await refreshSecretStatus();
 
       const resolvedLanguage = resolveAppLanguage(normalizedConfig.language);
@@ -226,13 +239,24 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   };
 
   const clearSecret = async (provider: SecretProvider, key: SecretKey) => {
+    const confirmed = await confirm(t("settings.secret_clear_confirm_message"), {
+      title: t("settings.secret_clear_confirm_title"),
+      kind: "warning",
+      okLabel: t("settings.clear"),
+      cancelLabel: t("settings.cancel"),
+    });
+
+    if (!confirmed) return;
+
     try {
+      setError("");
       await invoke("ai_secret_clear", { provider });
       setSecretEdits((prev) => ({ ...prev, [key]: "" }));
       setSecretEditMode((prev) => ({ ...prev, [key]: false }));
       setSecretStatus((prev) => ({ ...prev, [key]: false }));
-    } catch (e) {
-      console.error(e);
+    } catch {
+      console.error("Failed to clear AI secret.");
+      setError(t("settings.secret_clear_failed"));
     }
   };
 
@@ -246,20 +270,15 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     setSecretEdits((prev) => ({ ...prev, [key]: "" }));
   };
 
-  const renderSecretField = (
-    key: SecretKey,
-    provider: SecretProvider,
-    label: string,
-    placeholder: string
-  ) => {
+  const renderSecretField = ({ key, provider, labelKey, placeholder }: SecretField) => {
     const hasSecret = secretStatus[key];
     const isEditing = secretEditMode[key];
     const canType = !hasSecret || isEditing;
     const value = canType ? secretEdits[key] : MASKED_VALUE;
 
     return (
-      <div style={{ marginBottom: 14 }}>
-        <label className="label">{label}</label>
+      <div key={key} style={{ marginBottom: 14 }}>
+        <label className="label">{t(labelKey)}</label>
         <div className="settings-secret-row">
           <input
             className="input"
@@ -354,11 +373,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           </div>
         </div>
 
-        {renderSecretField("openai", "OpenAi", t("settings.openai_key"), "sk-...")}
-        {renderSecretField("azure_openai", "AzureOpenAi", t("settings.azure_openai_key"), "...")}
-        {renderSecretField("anthropic", "Anthropic", t("settings.anthropic_key"), "sk-ant-...")}
-        {renderSecretField("gemini", "Gemini", t("settings.gemini_key"), "AIza...")}
-        {renderSecretField("openrouter", "OpenRouter", t("settings.openrouter_key"), "sk-or-...")}
+        {SECRET_FIELDS.map(renderSecretField)}
 
         <div className="settings-toggle-row">
           <div className="settings-toggle-label">
