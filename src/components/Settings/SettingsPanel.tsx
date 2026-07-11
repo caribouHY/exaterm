@@ -13,6 +13,7 @@ interface SettingsPanelProps {
 
 type SecretKey = "openai" | "azure_openai" | "anthropic" | "gemini" | "openrouter";
 type SecretProvider = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini" | "OpenRouter";
+type AiProviderId = SecretProvider | "Ollama";
 
 type SecretEdits = Record<SecretKey, string>;
 type SecretEditMode = Record<SecretKey, boolean>;
@@ -21,6 +22,10 @@ type SecretField = {
   provider: SecretProvider;
   labelKey: string;
   placeholder: string;
+};
+type AiProviderOption = {
+  id: AiProviderId;
+  label: string;
 };
 type LanguageOption = {
   value: AppConfig["language"];
@@ -33,7 +38,6 @@ type SettingsCategory = {
   labelKey: string;
 };
 
-const MASKED_VALUE = "••••••••";
 const FONT_SIZE_MIN = 8;
 const FONT_SIZE_MAX = 32;
 const SCROLLBACK_MIN = 100;
@@ -66,6 +70,15 @@ const SECRET_FIELDS: SecretField[] = [
     labelKey: "settings.openrouter_key",
     placeholder: "sk-or-...",
   },
+];
+
+const AI_PROVIDER_OPTIONS: AiProviderOption[] = [
+  { id: "OpenAi", label: "OpenAI" },
+  { id: "AzureOpenAi", label: "Azure OpenAI" },
+  { id: "Anthropic", label: "Anthropic" },
+  { id: "Gemini", label: "Google Gemini" },
+  { id: "OpenRouter", label: "OpenRouter" },
+  { id: "Ollama", label: "Ollama" },
 ];
 
 const createSecretStatus = (): AiSecretStatus => {
@@ -167,6 +180,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   const [initialSecretEditModeSnapshot, setInitialSecretEditModeSnapshot] =
     useState<SecretEditMode>(EMPTY_SECRET_EDIT_MODE);
   const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>("general");
+  const [expandedOtherProvider, setExpandedOtherProvider] = useState<AiProviderId | null>(null);
 
   const refreshSecretStatus = async () => {
     try {
@@ -348,58 +362,160 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     setSecretEdits((prev) => ({ ...prev, [key]: "" }));
   };
 
-  const renderSecretField = ({ key, provider, labelKey, placeholder }: SecretField) => {
+  const getProviderSecretField = (provider: AiProviderId): SecretField | undefined =>
+    SECRET_FIELDS.find((field) => field.provider === provider);
+
+  const getProviderStatus = (provider: AiProviderId): boolean => {
+    if (provider === "Ollama") return Boolean(config.ai.ollama_enabled);
+    const secretField = getProviderSecretField(provider);
+    return Boolean(secretField && secretStatus[secretField.key]);
+  };
+
+  const renderSecretConfiguration = ({ key, provider, labelKey, placeholder }: SecretField) => {
     const hasSecret = secretStatus[key];
     const isEditing = secretEditMode[key];
-    const canType = !hasSecret || isEditing;
-    const value = canType ? secretEdits[key] : MASKED_VALUE;
 
     return (
-      <div key={key} style={{ marginBottom: 14 }}>
-        <label className="label">{t(labelKey)}</label>
+      <div className="settings-provider-detail__secret">
+        <div className="settings-provider-detail__summary">
+          <span className="label">{t(labelKey)}</span>
+          <span
+            className={`settings-provider-status ${
+              hasSecret
+                ? "settings-provider-status--configured"
+                : "settings-provider-status--unconfigured"
+            }`}
+          >
+            {t(hasSecret ? "settings.configured" : "settings.not_configured")}
+          </span>
+        </div>
         <div className="settings-secret-row">
-          <input
-            className="input"
-            type="password"
-            value={value}
-            readOnly={!canType}
-            onChange={(e) => {
-              setSecretEdits((prev) => ({ ...prev, [key]: e.target.value }));
-            }}
-            placeholder={hasSecret ? "" : placeholder}
-          />
+          {isEditing && (
+            <input
+              className="input"
+              type="password"
+              value={secretEdits[key]}
+              onChange={(e) => {
+                setSecretEdits((prev) => ({ ...prev, [key]: e.target.value }));
+              }}
+              placeholder={placeholder}
+              aria-label={t(labelKey)}
+            />
+          )}
+          {!isEditing && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => beginEditSecret(key)}
+            >
+              {t(hasSecret ? "settings.change" : "settings.configure")}
+            </button>
+          )}
           {hasSecret && !isEditing && (
-            <>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  beginEditSecret(key);
-                }}
-              >
-                {t("settings.change")}
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                onClick={() => clearSecret(provider, key)}
-              >
-                {t("settings.clear")}
-              </button>
-            </>
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              onClick={() => clearSecret(provider, key)}
+            >
+              {t("settings.clear")}
+            </button>
           )}
           {isEditing && (
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => {
-                cancelEditSecret(key);
-              }}
+              onClick={() => cancelEditSecret(key)}
             >
               {t("settings.cancel")}
             </button>
           )}
         </div>
+      </div>
+    );
+  };
+
+  const renderAzureOpenAiConfiguration = () => (
+    <div className="settings-provider-detail__options">
+      <div className="settings-toggle-row">
+        <div className="settings-toggle-label">
+          <span>{t("settings.azure_openai_enabled")}</span>
+          <small>{t("settings.azure_openai_enabled_desc")}</small>
+        </div>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={Boolean(config.ai.azure_openai_enabled)}
+            onChange={(e) => updateAiConfig({ azure_openai_enabled: e.target.checked })}
+          />
+          <span className="toggle-track" />
+        </label>
+      </div>
+
+      <div className="settings-provider-detail__field">
+        <label className="label">{t("settings.azure_openai_endpoint")}</label>
+        <input
+          className="input"
+          type="text"
+          value={config.ai.azure_openai_endpoint}
+          onChange={(e) => updateAiConfig({ azure_openai_endpoint: e.target.value })}
+          placeholder="https://your-resource.openai.azure.com/openai/v1/chat/completions"
+          disabled={!config.ai.azure_openai_enabled}
+        />
+      </div>
+
+      <div className="settings-provider-detail__field">
+        <label className="label">{t("settings.azure_openai_deployment")}</label>
+        <input
+          className="input"
+          type="text"
+          value={config.ai.azure_openai_deployment}
+          onChange={(e) => updateAiConfig({ azure_openai_deployment: e.target.value })}
+          placeholder="my-gpt4o-deployment"
+          disabled={!config.ai.azure_openai_enabled}
+        />
+      </div>
+    </div>
+  );
+
+  const renderOllamaConfiguration = () => (
+    <div className="settings-provider-detail__options">
+      <div className="settings-toggle-row">
+        <div className="settings-toggle-label">
+          <span>{t("settings.ollama_enabled")}</span>
+          <small>{t("settings.ollama_enabled_desc")}</small>
+        </div>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={Boolean(config.ai.ollama_enabled)}
+            onChange={(e) => updateAiConfig({ ollama_enabled: e.target.checked })}
+          />
+          <span className="toggle-track" />
+        </label>
+      </div>
+
+      <div className="settings-provider-detail__field">
+        <label className="label">{t("settings.ollama_url")}</label>
+        <input
+          className="input"
+          type="text"
+          value={config.ai.ollama_base_url}
+          onChange={(e) => updateAiConfig({ ollama_base_url: e.target.value })}
+          placeholder="http://localhost:11434"
+          disabled={!config.ai.ollama_enabled}
+        />
+      </div>
+    </div>
+  );
+
+  const renderProviderDetails = (provider: AiProviderId) => {
+    const secretField = getProviderSecretField(provider);
+
+    return (
+      <div className="settings-provider-detail">
+        {secretField && renderSecretConfiguration(secretField)}
+        {provider === "AzureOpenAi" && renderAzureOpenAiConfiguration()}
+        {provider === "Ollama" && renderOllamaConfiguration()}
       </div>
     );
   };
@@ -503,95 +619,104 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         );
 
       case "ai":
+        const defaultProvider =
+          AI_PROVIDER_OPTIONS.find((provider) => provider.id === config.ai.default_provider) ??
+          AI_PROVIDER_OPTIONS[0];
+        const otherProviders = AI_PROVIDER_OPTIONS.filter(
+          (provider) => provider.id !== defaultProvider.id
+        );
+
         return (
           <div className="settings-section">
             <div className="settings-section__title">{t("settings.ai_provider")}</div>
-            <div className="settings-row">
-              <div>
-                <label className="label">{t("settings.default_provider")}</label>
-                <select
-                  className="select"
-                  value={config.ai.default_provider}
-                  onChange={(e) => {
-                    updateAiConfig({ default_provider: e.target.value });
-                  }}
+            <div className="settings-provider-card">
+              <div className="settings-provider-card__header">
+                <div className="settings-provider-card__selector">
+                  <label className="label">{t("settings.default_provider")}</label>
+                  <select
+                    className="select"
+                    value={config.ai.default_provider}
+                    onChange={(e) => {
+                      updateAiConfig({ default_provider: e.target.value });
+                    }}
+                  >
+                    {AI_PROVIDER_OPTIONS.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <span
+                  className={`settings-provider-status ${
+                    getProviderStatus(defaultProvider.id)
+                      ? "settings-provider-status--configured"
+                      : "settings-provider-status--unconfigured"
+                  }`}
                 >
-                  <option value="OpenAi">OpenAI</option>
-                  <option value="AzureOpenAi">Azure OpenAI</option>
-                  <option value="Anthropic">Anthropic</option>
-                  <option value="Gemini">Google Gemini</option>
-                  <option value="OpenRouter">OpenRouter</option>
-                  <option value="Ollama">Ollama</option>
-                </select>
+                  {t(
+                    getProviderStatus(defaultProvider.id)
+                      ? defaultProvider.id === "Ollama"
+                        ? "settings.enabled"
+                        : "settings.configured"
+                      : defaultProvider.id === "Ollama"
+                        ? "settings.disabled"
+                        : "settings.not_configured"
+                  )}
+                </span>
+              </div>
+              <div className="settings-provider-card__body">
+                <div className="settings-provider-card__title">{defaultProvider.label}</div>
+                {renderProviderDetails(defaultProvider.id)}
               </div>
             </div>
 
-            {SECRET_FIELDS.map(renderSecretField)}
-
-            <div className="settings-toggle-row">
-              <div className="settings-toggle-label">
-                <span>{t("settings.azure_openai_enabled")}</span>
-                <small>{t("settings.azure_openai_enabled_desc")}</small>
+            <div className="settings-provider-list">
+              <div className="settings-provider-list__header">
+                <span>{t("settings.other_ai_providers")}</span>
+                <small>{t("settings.ai_provider_status_note")}</small>
               </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={Boolean(config.ai.azure_openai_enabled)}
-                  onChange={(e) => updateAiConfig({ azure_openai_enabled: e.target.checked })}
-                />
-                <span className="toggle-track" />
-              </label>
-            </div>
+              {otherProviders.map((provider) => {
+                const isExpanded = expandedOtherProvider === provider.id;
+                const isConfigured = getProviderStatus(provider.id);
+                const statusKey = isConfigured
+                  ? provider.id === "Ollama"
+                    ? "settings.enabled"
+                    : "settings.configured"
+                  : provider.id === "Ollama"
+                    ? "settings.disabled"
+                    : "settings.not_configured";
 
-            <div style={{ marginBottom: 14 }}>
-              <label className="label">{t("settings.azure_openai_endpoint")}</label>
-              <input
-                className="input"
-                type="text"
-                value={config.ai.azure_openai_endpoint}
-                onChange={(e) => updateAiConfig({ azure_openai_endpoint: e.target.value })}
-                placeholder="https://your-resource.openai.azure.com/openai/v1/chat/completions"
-                disabled={!config.ai.azure_openai_enabled}
-              />
-            </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label className="label">{t("settings.azure_openai_deployment")}</label>
-              <input
-                className="input"
-                type="text"
-                value={config.ai.azure_openai_deployment}
-                onChange={(e) => updateAiConfig({ azure_openai_deployment: e.target.value })}
-                placeholder="my-gpt4o-deployment"
-                disabled={!config.ai.azure_openai_enabled}
-              />
-            </div>
-
-            <div className="settings-toggle-row">
-              <div className="settings-toggle-label">
-                <span>{t("settings.ollama_enabled")}</span>
-                <small>{t("settings.ollama_enabled_desc")}</small>
-              </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={Boolean(config.ai.ollama_enabled)}
-                  onChange={(e) => updateAiConfig({ ollama_enabled: e.target.checked })}
-                />
-                <span className="toggle-track" />
-              </label>
-            </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label className="label">{t("settings.ollama_url")}</label>
-              <input
-                className="input"
-                type="text"
-                value={config.ai.ollama_base_url}
-                onChange={(e) => updateAiConfig({ ollama_base_url: e.target.value })}
-                placeholder="http://localhost:11434"
-                disabled={!config.ai.ollama_enabled}
-              />
+                return (
+                  <div key={provider.id} className="settings-provider-list__item">
+                    <div className="settings-provider-list__row">
+                      <span className="settings-provider-list__name">{provider.label}</span>
+                      <span
+                        className={`settings-provider-status ${
+                          isConfigured
+                            ? "settings-provider-status--configured"
+                            : "settings-provider-status--unconfigured"
+                        }`}
+                      >
+                        {t(statusKey)}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        aria-expanded={isExpanded}
+                        onClick={() => {
+                          setExpandedOtherProvider((current) =>
+                            current === provider.id ? null : provider.id
+                          );
+                        }}
+                      >
+                        {t(isConfigured ? "settings.change" : "settings.configure")}
+                      </button>
+                    </div>
+                    {isExpanded && renderProviderDetails(provider.id)}
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
