@@ -551,6 +551,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
                 value={config.ai.azure_openai_endpoint}
                 onChange={(e) => updateAiConfig({ azure_openai_endpoint: e.target.value })}
                 placeholder="https://your-resource.openai.azure.com/openai/v1/chat/completions"
+                disabled={!config.ai.azure_openai_enabled}
               />
             </div>
 
@@ -562,6 +563,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
                 value={config.ai.azure_openai_deployment}
                 onChange={(e) => updateAiConfig({ azure_openai_deployment: e.target.value })}
                 placeholder="my-gpt4o-deployment"
+                disabled={!config.ai.azure_openai_enabled}
               />
             </div>
 
@@ -588,6 +590,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
                 value={config.ai.ollama_base_url}
                 onChange={(e) => updateAiConfig({ ollama_base_url: e.target.value })}
                 placeholder="http://localhost:11434"
+                disabled={!config.ai.ollama_enabled}
               />
             </div>
           </div>
@@ -613,6 +616,9 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
                 <span className="toggle-track" />
               </label>
             </div>
+            {!config.external_control.enabled && (
+              <p className="settings-help">{t("settings.mcp_children_disabled_desc")}</p>
+            )}
             <div className="settings-toggle-row">
               <div className="settings-toggle-label">
                 <span>{t("settings.mcp_cli_enabled")}</span>
@@ -622,6 +628,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
                 <input
                   type="checkbox"
                   checked={Boolean(config.external_control.cli_enabled)}
+                  disabled={!config.external_control.enabled}
                   onChange={(e) => {
                     updateExternalControlConfig({ cli_enabled: e.target.checked });
                   }}
@@ -638,6 +645,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
                 <input
                   type="checkbox"
                   checked={Boolean(config.external_control.connect_enabled)}
+                  disabled={!config.external_control.enabled}
                   onChange={(e) => {
                     updateExternalControlConfig({ connect_enabled: e.target.checked });
                   }}
@@ -657,6 +665,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
                 <input
                   type="checkbox"
                   checked={Boolean(config.external_control.mcp_enabled)}
+                  disabled={!config.external_control.enabled}
                   onChange={(e) => {
                     updateExternalControlConfig({ mcp_enabled: e.target.checked });
                   }}

@@ -27,6 +27,7 @@
   "settings.mcp_settings": "External Control Settings",
   "settings.mcp_enabled": "Enable External Control",
   "settings.mcp_enabled_desc": "Master permission for trusted local CLI and MCP clients; enable each interface separately",
+  "settings.mcp_children_disabled_desc": "Enable external control to change these interfaces.",
   "settings.mcp_stdio_enabled": "Enable MCP Compatibility Adapter",
   "settings.mcp_stdio_enabled_desc": "Lets local MCP clients launch exaterm-mcp and use the existing MCP integration through the ExaTerm GUI",
   "settings.mcp_cli_enabled": "Enable Terminal CLI",

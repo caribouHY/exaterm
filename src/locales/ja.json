@@ -27,6 +27,7 @@
   "settings.mcp_settings": "外部制御設定",
   "settings.mcp_enabled": "外部制御を有効化",
   "settings.mcp_enabled_desc": "信頼済みローカル CLI / MCP クライアントに対するマスター許可です。各インターフェースは別途有効化します",
+  "settings.mcp_children_disabled_desc": "各インターフェースを変更するには外部制御を有効にしてください。",
   "settings.mcp_stdio_enabled": "MCP 互換アダプターを有効化",
   "settings.mcp_stdio_enabled_desc": "ローカル MCP クライアントが exaterm-mcp を起動し、既存の MCP 連携を ExaTerm GUI 経由で利用できるようにします",
   "settings.mcp_cli_enabled": "ターミナル CLI を有効化",

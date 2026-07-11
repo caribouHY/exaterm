@@ -227,6 +227,11 @@
   background: var(--accent-blue);
 }
 
+.toggle input:disabled + .toggle-track {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .toggle-track::after {
   content: "";
   position: absolute;
