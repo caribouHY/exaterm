@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
-import { Check } from "lucide-react";
+import { Check, CircleAlert } from "lucide-react";
 import type { AppConfig, AiSecretStatus, LogFormat } from "../../types";
 import { useTranslation } from "react-i18next";
 import { resolveAppLanguage } from "../../i18n";
@@ -293,13 +293,20 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     setError("");
   };
 
+  const renderError = (message: string) => (
+    <span className="settings-error" role="alert">
+      <CircleAlert size={14} aria-hidden="true" />
+      <span>{message}</span>
+    </span>
+  );
+
   if (!config)
     return (
       <div className="settings-panel">
         {isLoadingConfig && <p>{t("settings.loading")}</p>}
         {loadFailed && (
           <>
-            <p className="settings-error">{t("settings.load_failed")}</p>
+            {renderError(t("settings.load_failed"))}
             <button className="btn btn-primary" onClick={loadConfig}>
               {t("settings.reload")}
             </button>
@@ -371,14 +378,45 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     return Boolean(secretField && secretStatus[secretField.key]);
   };
 
+  const renderToggle = (
+    id: string,
+    label: string,
+    description: string,
+    checked: boolean,
+    onChange: (checked: boolean) => void,
+    disabled = false
+  ) => (
+    <div className="settings-toggle-row">
+      <label className="settings-toggle-label" htmlFor={id}>
+        <span>{label}</span>
+        <small id={`${id}-description`}>{description}</small>
+      </label>
+      <span className="toggle">
+        <input
+          id={id}
+          type="checkbox"
+          role="switch"
+          aria-describedby={`${id}-description`}
+          checked={checked}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+        <label className="toggle-track" htmlFor={id} aria-hidden="true" />
+      </span>
+    </div>
+  );
+
   const renderSecretConfiguration = ({ key, provider, labelKey, placeholder }: SecretField) => {
     const hasSecret = secretStatus[key];
     const isEditing = secretEditMode[key];
+    const inputId = `settings-${key}-api-key`;
 
     return (
       <div className="settings-provider-detail__secret">
         <div className="settings-provider-detail__summary">
-          <span className="label">{t(labelKey)}</span>
+          <label className="label" htmlFor={inputId}>
+            {t(labelKey)}
+          </label>
           <span
             className={`settings-provider-status ${
               hasSecret
@@ -393,13 +431,13 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           {isEditing && (
             <input
               className="input"
+              id={inputId}
               type="password"
               value={secretEdits[key]}
               onChange={(e) => {
                 setSecretEdits((prev) => ({ ...prev, [key]: e.target.value }));
               }}
               placeholder={placeholder}
-              aria-label={t(labelKey)}
             />
           )}
           {!isEditing && (
@@ -436,25 +474,21 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
 
   const renderAzureOpenAiConfiguration = () => (
     <div className="settings-provider-detail__options">
-      <div className="settings-toggle-row">
-        <div className="settings-toggle-label">
-          <span>{t("settings.azure_openai_enabled")}</span>
-          <small>{t("settings.azure_openai_enabled_desc")}</small>
-        </div>
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={Boolean(config.ai.azure_openai_enabled)}
-            onChange={(e) => updateAiConfig({ azure_openai_enabled: e.target.checked })}
-          />
-          <span className="toggle-track" />
-        </label>
-      </div>
+      {renderToggle(
+        "settings-azure-openai-enabled",
+        t("settings.azure_openai_enabled"),
+        t("settings.azure_openai_enabled_desc"),
+        Boolean(config.ai.azure_openai_enabled),
+        (azure_openai_enabled) => updateAiConfig({ azure_openai_enabled })
+      )}
 
       <div className="settings-provider-detail__field">
-        <label className="label">{t("settings.azure_openai_endpoint")}</label>
+        <label className="label" htmlFor="settings-azure-openai-endpoint">
+          {t("settings.azure_openai_endpoint")}
+        </label>
         <input
           className="input"
+          id="settings-azure-openai-endpoint"
           type="text"
           value={config.ai.azure_openai_endpoint}
           onChange={(e) => updateAiConfig({ azure_openai_endpoint: e.target.value })}
@@ -464,9 +498,12 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       </div>
 
       <div className="settings-provider-detail__field">
-        <label className="label">{t("settings.azure_openai_deployment")}</label>
+        <label className="label" htmlFor="settings-azure-openai-deployment">
+          {t("settings.azure_openai_deployment")}
+        </label>
         <input
           className="input"
+          id="settings-azure-openai-deployment"
           type="text"
           value={config.ai.azure_openai_deployment}
           onChange={(e) => updateAiConfig({ azure_openai_deployment: e.target.value })}
@@ -479,25 +516,21 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
 
   const renderOllamaConfiguration = () => (
     <div className="settings-provider-detail__options">
-      <div className="settings-toggle-row">
-        <div className="settings-toggle-label">
-          <span>{t("settings.ollama_enabled")}</span>
-          <small>{t("settings.ollama_enabled_desc")}</small>
-        </div>
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={Boolean(config.ai.ollama_enabled)}
-            onChange={(e) => updateAiConfig({ ollama_enabled: e.target.checked })}
-          />
-          <span className="toggle-track" />
-        </label>
-      </div>
+      {renderToggle(
+        "settings-ollama-enabled",
+        t("settings.ollama_enabled"),
+        t("settings.ollama_enabled_desc"),
+        Boolean(config.ai.ollama_enabled),
+        (ollama_enabled) => updateAiConfig({ ollama_enabled })
+      )}
 
       <div className="settings-provider-detail__field">
-        <label className="label">{t("settings.ollama_url")}</label>
+        <label className="label" htmlFor="settings-ollama-url">
+          {t("settings.ollama_url")}
+        </label>
         <input
           className="input"
+          id="settings-ollama-url"
           type="text"
           value={config.ai.ollama_base_url}
           onChange={(e) => updateAiConfig({ ollama_base_url: e.target.value })}
@@ -528,7 +561,11 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <div className="settings-section__title">{t("settings.language")}</div>
             <div className="settings-row">
               <div>
+                <label className="label" htmlFor="settings-language">
+                  {t("settings.language")}
+                </label>
                 <select
+                  id="settings-language"
                   className="select"
                   value={config.language}
                   onChange={(e) => {
@@ -547,9 +584,12 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <div className="settings-section__title">{t("settings.terminal_settings")}</div>
             <div className="settings-row">
               <div>
-                <label className="label">{t("settings.font_size")}</label>
+                <label className="label" htmlFor="settings-font-size">
+                  {t("settings.font_size")}
+                </label>
                 <input
                   className="input"
+                  id="settings-font-size"
                   type="number"
                   value={config.terminal.font_size}
                   onChange={(e) => {
@@ -567,9 +607,12 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
                 />
               </div>
               <div>
-                <label className="label">{t("settings.scrollback")}</label>
+                <label className="label" htmlFor="settings-scrollback">
+                  {t("settings.scrollback")}
+                </label>
                 <input
                   className="input"
+                  id="settings-scrollback"
                   type="number"
                   value={config.terminal.scrollback}
                   onChange={(e) => {
@@ -588,9 +631,12 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               </div>
             </div>
             <div style={{ marginBottom: 14 }}>
-              <label className="label">{t("settings.font_family")}</label>
+              <label className="label" htmlFor="settings-font-family">
+                {t("settings.font_family")}
+              </label>
               <input
                 className="input"
+                id="settings-font-family"
                 value={config.terminal.font_family}
                 onChange={(e) => {
                   updateTerminalConfig({ font_family: e.target.value });
@@ -599,22 +645,13 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             </div>
 
             <div className="settings-section__title">{t("settings.ssh_settings")}</div>
-            <div className="settings-toggle-row">
-              <div className="settings-toggle-label">
-                <span>{t("settings.allow_legacy_ssh_algorithms")}</span>
-                <small>{t("settings.allow_legacy_ssh_algorithms_desc")}</small>
-              </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={Boolean(config.ssh.allow_legacy_algorithms)}
-                  onChange={(e) => {
-                    updateSshConfig({ allow_legacy_algorithms: e.target.checked });
-                  }}
-                />
-                <span className="toggle-track" />
-              </label>
-            </div>
+            {renderToggle(
+              "settings-allow-legacy-ssh-algorithms",
+              t("settings.allow_legacy_ssh_algorithms"),
+              t("settings.allow_legacy_ssh_algorithms_desc"),
+              Boolean(config.ssh.allow_legacy_algorithms),
+              (allow_legacy_algorithms) => updateSshConfig({ allow_legacy_algorithms })
+            )}
           </div>
         );
 
@@ -632,8 +669,11 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             <div className="settings-provider-card">
               <div className="settings-provider-card__header">
                 <div className="settings-provider-card__selector">
-                  <label className="label">{t("settings.default_provider")}</label>
+                  <label className="label" htmlFor="settings-default-provider">
+                    {t("settings.default_provider")}
+                  </label>
                   <select
+                    id="settings-default-provider"
                     className="select"
                     value={config.ai.default_provider}
                     onChange={(e) => {
@@ -725,79 +765,43 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         return (
           <div className="settings-section">
             <div className="settings-section__title">{t("settings.mcp_settings")}</div>
-            <div className="settings-toggle-row">
-              <div className="settings-toggle-label">
-                <span>{t("settings.mcp_enabled")}</span>
-                <small>{t("settings.mcp_enabled_desc")}</small>
-              </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={Boolean(config.external_control.enabled)}
-                  onChange={(e) => {
-                    updateExternalControlConfig({ enabled: e.target.checked });
-                  }}
-                />
-                <span className="toggle-track" />
-              </label>
-            </div>
+            {renderToggle(
+              "settings-external-control-enabled",
+              t("settings.mcp_enabled"),
+              t("settings.mcp_enabled_desc"),
+              Boolean(config.external_control.enabled),
+              (enabled) => updateExternalControlConfig({ enabled })
+            )}
             {!config.external_control.enabled && (
               <p className="settings-help">{t("settings.mcp_children_disabled_desc")}</p>
             )}
-            <div className="settings-toggle-row">
-              <div className="settings-toggle-label">
-                <span>{t("settings.mcp_cli_enabled")}</span>
-                <small>{t("settings.mcp_cli_enabled_desc")}</small>
-              </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={Boolean(config.external_control.cli_enabled)}
-                  disabled={!config.external_control.enabled}
-                  onChange={(e) => {
-                    updateExternalControlConfig({ cli_enabled: e.target.checked });
-                  }}
-                />
-                <span className="toggle-track" />
-              </label>
-            </div>
-            <div className="settings-toggle-row">
-              <div className="settings-toggle-label">
-                <span>{t("settings.mcp_connect_enabled")}</span>
-                <small>{t("settings.mcp_connect_enabled_desc")}</small>
-              </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={Boolean(config.external_control.connect_enabled)}
-                  disabled={!config.external_control.enabled}
-                  onChange={(e) => {
-                    updateExternalControlConfig({ connect_enabled: e.target.checked });
-                  }}
-                />
-                <span className="toggle-track" />
-              </label>
-            </div>
+            {renderToggle(
+              "settings-external-control-cli-enabled",
+              t("settings.mcp_cli_enabled"),
+              t("settings.mcp_cli_enabled_desc"),
+              Boolean(config.external_control.cli_enabled),
+              (cli_enabled) => updateExternalControlConfig({ cli_enabled }),
+              !config.external_control.enabled
+            )}
+            {renderToggle(
+              "settings-external-control-connect-enabled",
+              t("settings.mcp_connect_enabled"),
+              t("settings.mcp_connect_enabled_desc"),
+              Boolean(config.external_control.connect_enabled),
+              (connect_enabled) => updateExternalControlConfig({ connect_enabled }),
+              !config.external_control.enabled
+            )}
             <div className="settings-section__title" style={{ marginTop: 20 }}>
               {t("settings.mcp_adapter_title")}
             </div>
-            <div className="settings-toggle-row">
-              <div className="settings-toggle-label">
-                <span>{t("settings.mcp_stdio_enabled")}</span>
-                <small>{t("settings.mcp_stdio_enabled_desc")}</small>
-              </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={Boolean(config.external_control.mcp_enabled)}
-                  disabled={!config.external_control.enabled}
-                  onChange={(e) => {
-                    updateExternalControlConfig({ mcp_enabled: e.target.checked });
-                  }}
-                />
-                <span className="toggle-track" />
-              </label>
-            </div>
+            {renderToggle(
+              "settings-external-control-stdio-enabled",
+              t("settings.mcp_stdio_enabled"),
+              t("settings.mcp_stdio_enabled_desc"),
+              Boolean(config.external_control.mcp_enabled),
+              (mcp_enabled) => updateExternalControlConfig({ mcp_enabled }),
+              !config.external_control.enabled
+            )}
             <p className="settings-help">{t("settings.mcp_restart_notice")}</p>
             {t("settings.mcp_loopback_warning") && (
               <p className="settings-help">{t("settings.mcp_loopback_warning")}</p>
@@ -809,25 +813,19 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         return (
           <div className="settings-section">
             <div className="settings-section__title">{t("settings.log_settings")}</div>
-            <div className="settings-toggle-row">
-              <div className="settings-toggle-label">
-                <span>{t("settings.auto_session_log")}</span>
-                <small>{t("settings.auto_session_log_desc")}</small>
-              </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={config.terminal.auto_session_log}
-                  onChange={(e) => {
-                    updateTerminalConfig({ auto_session_log: e.target.checked });
-                  }}
-                />
-                <span className="toggle-track" />
-              </label>
-            </div>
+            {renderToggle(
+              "settings-auto-session-log",
+              t("settings.auto_session_log"),
+              t("settings.auto_session_log_desc"),
+              config.terminal.auto_session_log,
+              (auto_session_log) => updateTerminalConfig({ auto_session_log })
+            )}
             <div style={{ marginBottom: 14 }}>
-              <label className="label">{t("settings.log_format")}</label>
+              <label className="label" htmlFor="settings-log-format">
+                {t("settings.log_format")}
+              </label>
               <select
+                id="settings-log-format"
                 className="select"
                 value={config.terminal.log_format || "display"}
                 onChange={(e) => {
@@ -840,22 +838,13 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
                 <option value="strip_controls">{t("settings.log_format_strip_controls")}</option>
               </select>
             </div>
-            <div className="settings-toggle-row">
-              <div className="settings-toggle-label">
-                <span>{t("settings.include_log_header")}</span>
-                <small>{t("settings.include_log_header_desc")}</small>
-              </div>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={config.terminal.include_log_header ?? false}
-                  onChange={(e) => {
-                    updateTerminalConfig({ include_log_header: e.target.checked });
-                  }}
-                />
-                <span className="toggle-track" />
-              </label>
-            </div>
+            {renderToggle(
+              "settings-include-log-header",
+              t("settings.include_log_header"),
+              t("settings.include_log_header_desc"),
+              config.terminal.include_log_header ?? false,
+              (include_log_header) => updateTerminalConfig({ include_log_header })
+            )}
           </div>
         );
 
@@ -920,7 +909,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
               <Check size={14} /> {t("settings.saved")}
             </span>
           )}
-          {error && <span className="settings-error">{error}</span>}
+          {error && renderError(error)}
         </div>
         <div className="settings-actions__buttons">
           {hasUnsavedChanges && (

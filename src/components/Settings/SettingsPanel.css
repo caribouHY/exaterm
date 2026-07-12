@@ -296,8 +296,16 @@
 .settings-error {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   color: var(--accent-red);
   font-size: 12px;
+}
+
+.settings-panel .input:focus-visible,
+.settings-panel .select:focus-visible,
+.toggle input:focus-visible + .toggle-track {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .settings-help {
