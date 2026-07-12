@@ -1,6 +1,9 @@
 .settings-panel {
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
   padding: 24px 32px 0;
   animation: fadeIn 0.2s ease;
 }
@@ -19,8 +22,10 @@
 .settings-layout {
   display: grid;
   grid-template-columns: minmax(160px, 200px) minmax(0, 1fr);
+  flex: 1;
   gap: var(--space-xl);
-  align-items: flex-start;
+  min-height: 0;
+  align-items: stretch;
 }
 
 .settings-category-nav {
@@ -78,6 +83,9 @@
 
 .settings-content {
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-xl);
 }
 
 .settings-content .settings-section {
@@ -113,14 +121,12 @@
 
 .settings-actions {
   display: flex;
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-md);
+  flex-shrink: 0;
   min-height: 52px;
-  margin: 24px -32px 0;
+  margin: 0 -32px;
   padding: var(--space-sm) 32px;
   border-top: 1px solid var(--border-secondary);
   background: var(--bg-surface);
@@ -395,6 +401,7 @@
 
   .settings-layout {
     display: block;
+    overflow-y: auto;
   }
 
   .settings-category-nav {
@@ -412,6 +419,10 @@
     margin-left: calc(var(--space-lg) * -1);
     padding-right: var(--space-lg);
     padding-left: var(--space-lg);
+  }
+
+  .settings-content {
+    overflow-y: visible;
   }
 
   .settings-actions__status,

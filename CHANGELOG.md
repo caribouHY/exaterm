@@ -17,6 +17,7 @@
 
 ### Fixed
 
+- Fixed the Settings save bar so it stays at the bottom of the panel regardless of category content length.
 - Improved Settings so saved API key deletion asks for confirmation and reports deletion failures.
 - Improved Settings so load failures are visible, save actions cannot be repeated while saving, and numeric terminal inputs stay within valid ranges.
 - Improved SSH sessions so overloaded output no longer disappears without warning.
