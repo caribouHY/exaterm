@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Refactored the Settings panel into focused components to make future settings changes safer.
 - Reorganized Settings into desktop-style categories with navigation for easier scanning.
 - Improved Settings with a sticky save bar that tracks unsaved changes and can revert pending edits.
 - Aligned the desktop UI styling rules and shared dark-theme tokens for more consistent future interface changes.
