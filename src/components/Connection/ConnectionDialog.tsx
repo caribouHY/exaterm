@@ -32,6 +32,7 @@ import { useStartupConnectionRequest } from "./useStartupConnectionRequest";
 import "./ConnectionDialog.css";
 
 export default function ConnectionDialog({
+  initialValues,
   startupRequest,
   onStartupRequestHandled,
   onClose,
@@ -41,6 +42,7 @@ export default function ConnectionDialog({
   const overlayMouseDownStartedRef = useRef(false);
   const connectingRef = useRef(false);
   const startupRequestHandledRef = useRef(false);
+  const initialValuesAppliedRef = useRef(false);
   const [tab, setTab] = useState<ConnectionType>("ssh");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
@@ -58,6 +60,7 @@ export default function ConnectionDialog({
   const [authMethod, setAuthMethod] = useState<"password" | "public_key">("password");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [jumpProfileId, setJumpProfileId] = useState("");
+  const [missingInitialJumpProfileId, setMissingInitialJumpProfileId] = useState("");
   const [jumpCredential, setJumpCredential] = useState("");
   const [encoding, setEncoding] = useState<"utf-8" | "shift-jis" | "euc-jp">("utf-8");
   const [sshTerminalMode, setSshTerminalMode] = useState(DEFAULT_TERMINAL_MODE);
@@ -114,16 +117,64 @@ export default function ConnectionDialog({
   );
   const jumpProfileOptions = sshProfiles.filter((profile) => profile.id !== selectedProfileIds.ssh);
 
+  const handleJumpProfileChange = useCallback((value: string) => {
+    setMissingInitialJumpProfileId("");
+    setError("");
+    setJumpProfileId(value);
+  }, []);
+
   useEffect(() => {
     if (!jumpProfileId) return;
     if (jumpProfileId === selectedProfileIds.ssh) {
+      setMissingInitialJumpProfileId("");
       setJumpProfileId("");
       return;
     }
     if (!sshProfiles.some((profile) => profile.id === jumpProfileId)) {
+      if (jumpProfileId === missingInitialJumpProfileId) return;
       setJumpProfileId("");
     }
-  }, [jumpProfileId, selectedProfileIds.ssh, sshProfiles]);
+  }, [jumpProfileId, missingInitialJumpProfileId, selectedProfileIds.ssh, sshProfiles]);
+
+  useEffect(() => {
+    if (!initialValues || initialValuesAppliedRef.current || startupRequest || !config) return;
+    initialValuesAppliedRef.current = true;
+    setError("");
+
+    if (initialValues.connectionInfo.kind === "ssh") {
+      const info = initialValues.connectionInfo;
+      const missingJumpProfileId =
+        info.jump_profile_id && !sshProfiles.some((profile) => profile.id === info.jump_profile_id)
+          ? info.jump_profile_id
+          : "";
+      setTab("ssh");
+      setSelectedProfileIds((current) => ({ ...current, ssh: "" }));
+      setSshProfileName("");
+      setHost(info.host);
+      setPort(String(info.port));
+      setUsername(info.username);
+      setAuthMethod(normalizeSshAuthMethod(info.auth_method));
+      setPrivateKeyPath(info.private_key_path ?? "");
+      setJumpProfileId(info.jump_profile_id ?? "");
+      setMissingInitialJumpProfileId(missingJumpProfileId);
+      setJumpCredential("");
+      setEncoding(initialValues.encoding);
+      setSshTerminalMode(initialValues.terminalMode);
+      if (missingJumpProfileId) {
+        setError(t("connection.jump_profile_not_found", { profile: missingJumpProfileId }));
+      }
+      return;
+    }
+
+    const info = initialValues.connectionInfo;
+    setTab("telnet");
+    setSelectedProfileIds((current) => ({ ...current, telnet: "" }));
+    setTelnetProfileName("");
+    setTelnetHost(info.host);
+    setTelnetPort(String(info.port));
+    setTelnetEncoding(initialValues.encoding);
+    setTelnetTerminalMode(initialValues.terminalMode);
+  }, [config, initialValues, sshProfiles, startupRequest, t]);
 
   const getProfileDisplayName = (profile: SavedConnection) => {
     return profile.id || t("connection.unnamed_profile");
@@ -141,7 +192,7 @@ export default function ConnectionDialog({
       setUsername,
       setAuthMethod,
       setPrivateKeyPath,
-      setJumpProfileId,
+      setJumpProfileId: handleJumpProfileChange,
       setJumpCredential,
       setEncoding,
       setTerminalMode: setSshTerminalMode,
@@ -427,7 +478,7 @@ export default function ConnectionDialog({
     onSelectPrivateKeyFile: () => {
       void selectSshAuthFile();
     },
-    onJumpProfileChange: setJumpProfileId,
+    onJumpProfileChange: handleJumpProfileChange,
     onEncodingChange: (value) => {
       setEncoding(normalizeEncoding(value));
     },

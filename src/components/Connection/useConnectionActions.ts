@@ -8,6 +8,7 @@ import type {
   SavedConnection,
   SshAuthMethod,
   TerminalMode,
+  WorkspaceConnectionInfo,
 } from "../../types";
 import type { SshCredentialPrompt, SshHostKeyCheck } from "./connectionDialogTypes";
 import { getConnectionErrorMessage, normalizeSshAuthMethod } from "./connectionProfileUtils";
@@ -59,7 +60,8 @@ interface UseConnectionActionsParams {
     title: string,
     isAutoLogging: boolean,
     encoding?: Encoding,
-    terminalMode?: TerminalMode
+    terminalMode?: TerminalMode,
+    connectionInfo?: WorkspaceConnectionInfo
   ) => void | Promise<void>;
   t: (key: string, options?: Record<string, unknown>) => string;
 }
@@ -172,7 +174,16 @@ export const useConnectionActions = ({
         `${ssh.username}@${ssh.host}`,
         autoLog,
         ssh.encoding,
-        ssh.terminalMode
+        ssh.terminalMode,
+        {
+          kind: "ssh",
+          host: ssh.host,
+          port: sshPort,
+          username: ssh.username,
+          auth_method: promptAuthMethod,
+          private_key_path: ssh.privateKeyPath || null,
+          jump_profile_id: ssh.jumpProfileId || null,
+        }
       );
     },
     [diagnostics, onConnect, ssh, sshProfiles]
@@ -447,7 +458,12 @@ export const useConnectionActions = ({
           `${telnet.host}:${parsedTelnetPort}`,
           autoLog,
           telnet.encoding,
-          telnet.terminalMode
+          telnet.terminalMode,
+          {
+            kind: "telnet",
+            host: telnet.host,
+            port: parsedTelnetPort,
+          }
         );
         return;
       }

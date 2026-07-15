@@ -7,9 +7,17 @@ import type {
   SavedConnection,
   SshAuthMethod,
   TerminalMode,
+  WorkspaceConnectionInfo,
 } from "../../types";
 
+export interface ConnectionDialogInitialValues {
+  connectionInfo: WorkspaceConnectionInfo;
+  encoding: Encoding;
+  terminalMode: TerminalMode;
+}
+
 export interface ConnectionDialogProps {
+  initialValues?: ConnectionDialogInitialValues | null;
   startupRequest?: import("../../types").StartupCliRequest | null;
   onStartupRequestHandled?: () => void;
   onClose: () => void;
@@ -19,7 +27,8 @@ export interface ConnectionDialogProps {
     title: string,
     isAutoLogging: boolean,
     encoding?: Encoding,
-    terminalMode?: TerminalMode
+    terminalMode?: TerminalMode,
+    connectionInfo?: WorkspaceConnectionInfo
   ) => void | Promise<void>;
 }
 

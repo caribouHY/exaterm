@@ -10,6 +10,7 @@
 
 ### Added
 
+- Added a terminal tab action for opening a prefilled new SSH or Telnet connection to the same destination without retaining credentials.
 - Added a terminal tab context menu for closing tabs or moving terminal sessions to a new window.
 - Added PowerShell-style right-click copy and paste, with confirmation before multi-line terminal pastes.
 

@@ -206,6 +206,7 @@
   "terminal.multiline_paste_cancel": "キャンセル",
   "terminal.new_tab": "新規タブ",
   "terminal.tab_menu.move_to_new_window": "新規ウィンドウへ移動",
+  "terminal.tab_menu.open_same_destination": "同じ接続先に接続…",
   "terminal.tab_menu.close": "閉じる",
   "titlebar.subtitle": "AIネイティブ ターミナル",
   "titlebar.menu.label": "メニュー",

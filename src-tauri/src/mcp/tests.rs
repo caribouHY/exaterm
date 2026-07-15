@@ -22,7 +22,7 @@ use crate::serial::{self, SerialState};
 use crate::ssh::SshState;
 use crate::telnet::TelnetState;
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
-use crate::workspace::WorkspaceState;
+use crate::workspace::{WorkspaceConnectionInfo, WorkspaceState};
 
 type McpTerminalService = ExternalControlService;
 type McpLogControlState = ExternalControlLogControlState;
@@ -798,6 +798,17 @@ async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
     assert_eq!(snapshot.tabs[0].title, "admin@192.0.2.10");
     assert_eq!(snapshot.tabs[0].encoding, "shift-jis");
     assert_eq!(snapshot.tabs[0].terminal_mode, "cisco_ios");
+    assert_eq!(
+        snapshot.tabs[0].connection_info,
+        Some(WorkspaceConnectionInfo::Ssh {
+            host: "192.0.2.10".into(),
+            port: 2200,
+            username: "admin".into(),
+            auth_method: "password".into(),
+            private_key_path: None,
+            jump_profile_id: Some("bastion".into()),
+        })
+    );
 }
 
 #[tokio::test]
@@ -835,6 +846,14 @@ async fn service_connects_saved_telnet_profile_with_default_port() {
     assert_eq!(session.protocol, TerminalProtocol::Telnet);
     assert_eq!(session.target, "192.0.2.20:23");
     assert_eq!(session.encoding, "euc-jp");
+    let snapshot = runtime.workspace.snapshot_for_window("main".into()).await;
+    assert_eq!(
+        snapshot.tabs[0].connection_info,
+        Some(WorkspaceConnectionInfo::Telnet {
+            host: "192.0.2.20".into(),
+            port: 23,
+        })
+    );
 }
 
 #[test]
@@ -1173,6 +1192,7 @@ async fn service_connects_serial_console_and_registers_workspace_metadata() {
     assert_eq!(snapshot.tabs[0].session_id, session_id);
     assert_eq!(snapshot.tabs[0].title, "COM3");
     assert_eq!(snapshot.tabs[0].terminal_mode, "cisco_ios");
+    assert_eq!(snapshot.tabs[0].connection_info, None);
 }
 
 #[tokio::test]

@@ -206,6 +206,7 @@
   "terminal.multiline_paste_cancel": "Cancel",
   "terminal.new_tab": "New Tab",
   "terminal.tab_menu.move_to_new_window": "Move to New Window",
+  "terminal.tab_menu.open_same_destination": "Connect to Same Destination...",
   "terminal.tab_menu.close": "Close",
   "titlebar.subtitle": "AI-Native Terminal",
   "titlebar.menu.label": "Menu",

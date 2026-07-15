@@ -15,7 +15,7 @@ use crate::telnet;
 use crate::terminal_control::TerminalProtocol;
 #[cfg(not(test))]
 use crate::workspace::emit_workspace_updated;
-use crate::workspace::WorkspaceTabRegisterInput;
+use crate::workspace::{WorkspaceConnectionInfo, WorkspaceTabRegisterInput};
 
 #[cfg(not(test))]
 use super::profiles::ssh_credential_required;
@@ -23,7 +23,6 @@ use super::profiles::{prepare_saved_profile_connection, prepare_serial_console_c
 use super::ExternalControlConnectionCreatedPayload;
 #[cfg(not(test))]
 use super::ExternalControlCredentialRequestPayload;
-#[cfg(not(test))]
 use super::PreparedConnectionKind;
 #[cfg_attr(test, allow(unused_imports))]
 use super::{
@@ -89,6 +88,7 @@ async fn connect_prepared_profile(
         internal_error("App handle required for external control connections is unavailable")
     })?;
     let session_id = connect_prepared_profile_session(runtime, app, &prepared).await?;
+    let connection_info = workspace_connection_info(&prepared);
 
     finish_created_session(
         runtime,
@@ -99,8 +99,33 @@ async fn connect_prepared_profile(
         prepared.title,
         prepared.encoding,
         prepared.terminal_mode,
+        Some(connection_info),
     )
     .await
+}
+
+fn workspace_connection_info(prepared: &PreparedConnection) -> WorkspaceConnectionInfo {
+    match &prepared.kind {
+        PreparedConnectionKind::Ssh {
+            host,
+            port,
+            username,
+            auth_method,
+            private_key_path,
+            jump_profile,
+        } => WorkspaceConnectionInfo::Ssh {
+            host: host.clone(),
+            port: *port,
+            username: username.clone(),
+            auth_method: auth_method.clone(),
+            private_key_path: private_key_path.clone(),
+            jump_profile_id: jump_profile.as_ref().map(|profile| profile.id.clone()),
+        },
+        PreparedConnectionKind::Telnet { host, port } => WorkspaceConnectionInfo::Telnet {
+            host: host.clone(),
+            port: *port,
+        },
+    }
 }
 
 #[cfg(not(test))]
@@ -379,6 +404,7 @@ async fn finish_created_session(
     title: String,
     encoding: String,
     terminal_mode: String,
+    connection_info: Option<WorkspaceConnectionInfo>,
 ) -> Result<Value, ExternalControlError> {
     let auto_logging = if config.terminal.auto_session_log {
         match &runtime.logger {
@@ -428,6 +454,7 @@ async fn finish_created_session(
             title,
             encoding,
             terminal_mode,
+            connection_info,
             is_auto_logging: auto_logging,
         })
         .await;
@@ -474,6 +501,7 @@ async fn connect_prepared_serial_console(
         prepared.title,
         prepared.encoding,
         prepared.terminal_mode,
+        None,
     )
     .await
 }
@@ -485,6 +513,7 @@ async fn connect_prepared_profile(
     prepared: PreparedConnection,
 ) -> Result<Value, ExternalControlError> {
     let session_id = Uuid::new_v4().to_string();
+    let connection_info = workspace_connection_info(&prepared);
     let protocol =
         terminal_protocol_from_log_type(&prepared.connection_type).map_err(invalid_params)?;
     runtime
@@ -505,6 +534,7 @@ async fn connect_prepared_profile(
         prepared.title,
         prepared.encoding,
         prepared.terminal_mode,
+        Some(connection_info),
     )
     .await
 }
@@ -534,6 +564,7 @@ async fn connect_prepared_serial_console(
         prepared.title,
         prepared.encoding,
         prepared.terminal_mode,
+        None,
     )
     .await
 }
