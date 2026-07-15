@@ -224,6 +224,12 @@ body {
   outline-offset: 1px;
 }
 
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .btn-primary {
   background: var(--accent-blue);
   color: var(--text-on-accent);
