@@ -19,7 +19,9 @@ export function ExternalControlSettings({ config, onChange }: ExternalControlSet
         label={t("settings.mcp_enabled")}
         description={t("settings.mcp_enabled_desc")}
         checked={Boolean(config.enabled)}
-        onChange={(enabled) => onChange({ enabled })}
+        onChange={(enabled) => {
+          onChange({ enabled });
+        }}
       />
       {childrenDisabled && (
         <p className="settings-help">{t("settings.mcp_children_disabled_desc")}</p>
@@ -29,7 +31,9 @@ export function ExternalControlSettings({ config, onChange }: ExternalControlSet
         label={t("settings.mcp_cli_enabled")}
         description={t("settings.mcp_cli_enabled_desc")}
         checked={Boolean(config.cli_enabled)}
-        onChange={(cli_enabled) => onChange({ cli_enabled })}
+        onChange={(cli_enabled) => {
+          onChange({ cli_enabled });
+        }}
         disabled={childrenDisabled}
       />
       <SettingsToggle
@@ -37,7 +41,9 @@ export function ExternalControlSettings({ config, onChange }: ExternalControlSet
         label={t("settings.mcp_connect_enabled")}
         description={t("settings.mcp_connect_enabled_desc")}
         checked={Boolean(config.connect_enabled)}
-        onChange={(connect_enabled) => onChange({ connect_enabled })}
+        onChange={(connect_enabled) => {
+          onChange({ connect_enabled });
+        }}
         disabled={childrenDisabled}
       />
       <div className="settings-section__title" style={{ marginTop: 20 }}>
@@ -48,7 +54,9 @@ export function ExternalControlSettings({ config, onChange }: ExternalControlSet
         label={t("settings.mcp_stdio_enabled")}
         description={t("settings.mcp_stdio_enabled_desc")}
         checked={Boolean(config.mcp_enabled)}
-        onChange={(mcp_enabled) => onChange({ mcp_enabled })}
+        onChange={(mcp_enabled) => {
+          onChange({ mcp_enabled });
+        }}
         disabled={childrenDisabled}
       />
       <p className="settings-help">{t("settings.mcp_restart_notice")}</p>

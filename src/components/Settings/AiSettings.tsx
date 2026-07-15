@@ -69,10 +69,18 @@ export function AiSettings({
             hasSecret={secretStatus[secretField.key]}
             isEditing={secretEditMode[secretField.key]}
             value={secretEdits[secretField.key]}
-            onValueChange={(value) => onSecretValueChange(secretField.key, value)}
-            onBeginEdit={() => onBeginSecretEdit(secretField.key)}
-            onCancelEdit={() => onCancelSecretEdit(secretField.key)}
-            onClear={() => onClearSecret(secretField.provider, secretField.key)}
+            onValueChange={(value) => {
+              onSecretValueChange(secretField.key, value);
+            }}
+            onBeginEdit={() => {
+              onBeginSecretEdit(secretField.key);
+            }}
+            onCancelEdit={() => {
+              onCancelSecretEdit(secretField.key);
+            }}
+            onClear={() => {
+              onClearSecret(secretField.provider, secretField.key);
+            }}
           />
         )}
         {provider === "AzureOpenAi" && (
@@ -82,7 +90,9 @@ export function AiSettings({
               label={t("settings.azure_openai_enabled")}
               description={t("settings.azure_openai_enabled_desc")}
               checked={Boolean(config.azure_openai_enabled)}
-              onChange={(azure_openai_enabled) => onConfigChange({ azure_openai_enabled })}
+              onChange={(azure_openai_enabled) => {
+                onConfigChange({ azure_openai_enabled });
+              }}
             />
             <div className="settings-provider-detail__field">
               <label className="label" htmlFor="settings-azure-openai-endpoint">
@@ -93,7 +103,9 @@ export function AiSettings({
                 id="settings-azure-openai-endpoint"
                 type="text"
                 value={config.azure_openai_endpoint}
-                onChange={(event) => onConfigChange({ azure_openai_endpoint: event.target.value })}
+                onChange={(event) => {
+                  onConfigChange({ azure_openai_endpoint: event.target.value });
+                }}
                 placeholder="https://your-resource.openai.azure.com/openai/v1/chat/completions"
                 disabled={!config.azure_openai_enabled}
               />
@@ -107,9 +119,9 @@ export function AiSettings({
                 id="settings-azure-openai-deployment"
                 type="text"
                 value={config.azure_openai_deployment}
-                onChange={(event) =>
-                  onConfigChange({ azure_openai_deployment: event.target.value })
-                }
+                onChange={(event) => {
+                  onConfigChange({ azure_openai_deployment: event.target.value });
+                }}
                 placeholder="my-gpt4o-deployment"
                 disabled={!config.azure_openai_enabled}
               />
@@ -123,7 +135,9 @@ export function AiSettings({
               label={t("settings.ollama_enabled")}
               description={t("settings.ollama_enabled_desc")}
               checked={Boolean(config.ollama_enabled)}
-              onChange={(ollama_enabled) => onConfigChange({ ollama_enabled })}
+              onChange={(ollama_enabled) => {
+                onConfigChange({ ollama_enabled });
+              }}
             />
             <div className="settings-provider-detail__field">
               <label className="label" htmlFor="settings-ollama-url">
@@ -134,7 +148,9 @@ export function AiSettings({
                 id="settings-ollama-url"
                 type="text"
                 value={config.ollama_base_url}
-                onChange={(event) => onConfigChange({ ollama_base_url: event.target.value })}
+                onChange={(event) => {
+                  onConfigChange({ ollama_base_url: event.target.value });
+                }}
                 placeholder="http://localhost:11434"
                 disabled={!config.ollama_enabled}
               />
@@ -171,7 +187,9 @@ export function AiSettings({
               id="settings-default-provider"
               className="select"
               value={config.default_provider}
-              onChange={(event) => onConfigChange({ default_provider: event.target.value })}
+              onChange={(event) => {
+                onConfigChange({ default_provider: event.target.value });
+              }}
             >
               {AI_PROVIDER_OPTIONS.map((provider) => (
                 <option key={provider.id} value={provider.id}>
@@ -222,7 +240,9 @@ export function AiSettings({
                   type="button"
                   className="btn btn-ghost btn-sm"
                   aria-expanded={isExpanded}
-                  onClick={() => onExpandedOtherProviderChange(isExpanded ? null : provider.id)}
+                  onClick={() => {
+                    onExpandedOtherProviderChange(isExpanded ? null : provider.id);
+                  }}
                 >
                   {t(isConfigured ? "settings.change" : "settings.configure")}
                 </button>

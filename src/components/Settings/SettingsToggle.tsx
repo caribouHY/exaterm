@@ -29,7 +29,9 @@ export function SettingsToggle({
           aria-describedby={`${id}-description`}
           checked={checked}
           disabled={disabled}
-          onChange={(event) => onChange(event.target.checked)}
+          onChange={(event) => {
+            onChange(event.target.checked);
+          }}
         />
         <label className="toggle-track" htmlFor={id} aria-hidden="true" />
       </span>

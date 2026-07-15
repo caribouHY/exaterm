@@ -34,7 +34,7 @@ export function TerminalSettings({ config, onChange }: TerminalSettingsProps) {
             id="settings-font-size"
             type="number"
             value={config.font_size}
-            onChange={(event) =>
+            onChange={(event) => {
               onChange({
                 font_size: parseBoundedNumber(
                   event.target.value,
@@ -42,8 +42,8 @@ export function TerminalSettings({ config, onChange }: TerminalSettingsProps) {
                   FONT_SIZE_MIN,
                   FONT_SIZE_MAX
                 ),
-              })
-            }
+              });
+            }}
             min={FONT_SIZE_MIN}
             max={FONT_SIZE_MAX}
           />
@@ -57,7 +57,7 @@ export function TerminalSettings({ config, onChange }: TerminalSettingsProps) {
             id="settings-scrollback"
             type="number"
             value={config.scrollback}
-            onChange={(event) =>
+            onChange={(event) => {
               onChange({
                 scrollback: parseBoundedNumber(
                   event.target.value,
@@ -65,8 +65,8 @@ export function TerminalSettings({ config, onChange }: TerminalSettingsProps) {
                   SCROLLBACK_MIN,
                   SCROLLBACK_MAX
                 ),
-              })
-            }
+              });
+            }}
             min={SCROLLBACK_MIN}
             max={SCROLLBACK_MAX}
           />
@@ -80,7 +80,9 @@ export function TerminalSettings({ config, onChange }: TerminalSettingsProps) {
           className="input"
           id="settings-font-family"
           value={config.font_family}
-          onChange={(event) => onChange({ font_family: event.target.value })}
+          onChange={(event) => {
+            onChange({ font_family: event.target.value });
+          }}
         />
       </div>
     </>

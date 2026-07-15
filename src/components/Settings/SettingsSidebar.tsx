@@ -19,7 +19,9 @@ export function SettingsSidebar({ activeCategory, onCategoryChange }: SettingsSi
           id="settings-category-select"
           className="select"
           value={activeCategory}
-          onChange={(event) => onCategoryChange(event.target.value as SettingsCategoryId)}
+          onChange={(event) => {
+            onCategoryChange(event.target.value as SettingsCategoryId);
+          }}
         >
           {SETTINGS_CATEGORIES.map((category) => (
             <option key={category.id} value={category.id}>
@@ -38,7 +40,9 @@ export function SettingsSidebar({ activeCategory, onCategoryChange }: SettingsSi
               activeCategory === category.id ? "settings-category-button--active" : ""
             }`}
             aria-current={activeCategory === category.id ? "page" : undefined}
-            onClick={() => onCategoryChange(category.id)}
+            onClick={() => {
+              onCategoryChange(category.id);
+            }}
           >
             {t(category.labelKey)}
           </button>

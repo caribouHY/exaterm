@@ -46,21 +46,48 @@ export const SECRET_FIELDS: SecretFieldDefinition[] = [
 ];
 
 export function createSecretStatus(): AiSecretStatus {
-  const status = {} as AiSecretStatus;
-  for (const { key } of SECRET_FIELDS) status[key] = false;
-  return status;
+  return {
+    openai: false,
+    azure_openai: false,
+    anthropic: false,
+    gemini: false,
+    openrouter: false,
+  };
 }
 
 export function createSecretEdits(): SecretEdits {
-  const edits = {} as SecretEdits;
-  for (const { key } of SECRET_FIELDS) edits[key] = "";
-  return edits;
+  return {
+    openai: "",
+    azure_openai: "",
+    anthropic: "",
+    gemini: "",
+    openrouter: "",
+  };
 }
 
 export function createSecretEditMode(): SecretEditMode {
-  const editMode = {} as SecretEditMode;
-  for (const { key } of SECRET_FIELDS) editMode[key] = false;
-  return editMode;
+  return {
+    openai: false,
+    azure_openai: false,
+    anthropic: false,
+    gemini: false,
+    openrouter: false,
+  };
+}
+
+export function getSecretEdit(edits: SecretEdits, key: SecretKey): string {
+  switch (key) {
+    case "openai":
+      return edits.openai;
+    case "azure_openai":
+      return edits.azure_openai;
+    case "anthropic":
+      return edits.anthropic;
+    case "gemini":
+      return edits.gemini;
+    case "openrouter":
+      return edits.openrouter;
+  }
 }
 
 export function normalizeExternalControlConfig(config: AppConfig): AppConfig {
@@ -81,11 +108,23 @@ export function normalizeExternalControlConfig(config: AppConfig): AppConfig {
 }
 
 export function areSecretEditsEqual(left: SecretEdits, right: SecretEdits): boolean {
-  return SECRET_FIELDS.every(({ key }) => left[key] === right[key]);
+  return (
+    left.openai === right.openai &&
+    left.azure_openai === right.azure_openai &&
+    left.anthropic === right.anthropic &&
+    left.gemini === right.gemini &&
+    left.openrouter === right.openrouter
+  );
 }
 
 export function areSecretEditModesEqual(left: SecretEditMode, right: SecretEditMode): boolean {
-  return SECRET_FIELDS.every(({ key }) => left[key] === right[key]);
+  return (
+    left.openai === right.openai &&
+    left.azure_openai === right.azure_openai &&
+    left.anthropic === right.anthropic &&
+    left.gemini === right.gemini &&
+    left.openrouter === right.openrouter
+  );
 }
 
 export function areConfigsEqual(left: AppConfig | null, right: AppConfig | null): boolean {

@@ -44,7 +44,9 @@ export function GeneralSettings({
             id="settings-language"
             className="select"
             value={language}
-            onChange={(event) => onLanguageChange(event.target.value)}
+            onChange={(event) => {
+              onLanguageChange(event.target.value);
+            }}
           >
             {LANGUAGE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -63,7 +65,9 @@ export function GeneralSettings({
         label={t("settings.allow_legacy_ssh_algorithms")}
         description={t("settings.allow_legacy_ssh_algorithms_desc")}
         checked={Boolean(sshConfig.allow_legacy_algorithms)}
-        onChange={(allow_legacy_algorithms) => onSshChange({ allow_legacy_algorithms })}
+        onChange={(allow_legacy_algorithms) => {
+          onSshChange({ allow_legacy_algorithms });
+        }}
       />
     </div>
   );

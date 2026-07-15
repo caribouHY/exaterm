@@ -48,7 +48,9 @@ export function SecretField({
             id={inputId}
             type="password"
             value={value}
-            onChange={(event) => onValueChange(event.target.value)}
+            onChange={(event) => {
+              onValueChange(event.target.value);
+            }}
             placeholder={field.placeholder}
           />
         )}

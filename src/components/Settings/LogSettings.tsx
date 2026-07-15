@@ -24,7 +24,9 @@ export function LogSettings({ config, onChange }: LogSettingsProps) {
         label={t("settings.auto_session_log")}
         description={t("settings.auto_session_log_desc")}
         checked={config.auto_session_log}
-        onChange={(auto_session_log) => onChange({ auto_session_log })}
+        onChange={(auto_session_log) => {
+          onChange({ auto_session_log });
+        }}
       />
       <div style={{ marginBottom: 14 }}>
         <label className="label" htmlFor="settings-log-format">
@@ -33,7 +35,7 @@ export function LogSettings({ config, onChange }: LogSettingsProps) {
         <select
           id="settings-log-format"
           className="select"
-          value={config.log_format || "display"}
+          value={config.log_format}
           onChange={(event) => {
             if (isLogFormat(event.target.value)) onChange({ log_format: event.target.value });
           }}
@@ -46,8 +48,10 @@ export function LogSettings({ config, onChange }: LogSettingsProps) {
         id="settings-include-log-header"
         label={t("settings.include_log_header")}
         description={t("settings.include_log_header_desc")}
-        checked={config.include_log_header ?? false}
-        onChange={(include_log_header) => onChange({ include_log_header })}
+        checked={config.include_log_header}
+        onChange={(include_log_header) => {
+          onChange({ include_log_header });
+        }}
       />
     </div>
   );

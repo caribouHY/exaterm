@@ -18,6 +18,7 @@ import {
   createSecretEditMode,
   createSecretEdits,
   createSecretStatus,
+  getSecretEdit,
   normalizeExternalControlConfig,
   type AiProviderId,
   type SecretEditMode,
@@ -116,7 +117,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       await invoke("config_save", { config: normalizedConfig });
 
       for (const { key, provider } of SECRET_FIELDS) {
-        const value = secretEdits[key].trim();
+        const value = getSecretEdit(secretEdits, key).trim();
         if (value) await invoke("ai_secret_set", { provider, value });
       }
 
@@ -214,7 +215,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         {loadFailed && (
           <>
             <SettingsError message={t("settings.load_failed")} />
-            <button className="btn btn-primary" onClick={loadConfig}>
+            <button className="btn btn-primary" onClick={() => void loadConfig()}>
               {t("settings.reload")}
             </button>
           </>
@@ -245,10 +246,12 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             secretEditMode={secretEditMode}
             expandedOtherProvider={expandedOtherProvider}
             onConfigChange={updateAiConfig}
-            onExpandedOtherProviderChange={setExpandedOtherProvider}
-            onSecretValueChange={(key, value) =>
-              setSecretEdits((previous) => ({ ...previous, [key]: value }))
-            }
+            onExpandedOtherProviderChange={(provider) => {
+              setExpandedOtherProvider(provider);
+            }}
+            onSecretValueChange={(key, value) => {
+              setSecretEdits((previous) => ({ ...previous, [key]: value }));
+            }}
             onBeginSecretEdit={(key) => {
               setSecretEditMode((previous) => ({ ...previous, [key]: true }));
               setSecretEdits((previous) => ({ ...previous, [key]: "" }));
