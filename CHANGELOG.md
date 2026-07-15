@@ -4,22 +4,18 @@
 
 ### Changed
 
-- Refactored the Settings panel into focused components to make future settings changes safer.
-- Reorganized Settings into desktop-style categories with navigation for easier scanning.
-- Improved Settings with a sticky save bar that tracks unsaved changes and can revert pending edits.
+- Improved the desktop Settings experience with clearer categories, accessibility, save and revert feedback, and safer dependent-control behavior.
+- Made AI provider setup and saved API-key management easier to understand and safer to use.
 - Aligned the desktop UI styling rules and shared dark-theme tokens for more consistent future interface changes.
 
 ### Added
 
-- Added a tab right-click menu for closing tabs and moving terminal sessions to a new window.
-- Added PowerShell-style right-click copy and paste in terminal sessions.
-- Added a confirmation dialog that shows clipboard content before pasting multiple lines into a terminal session.
+- Added a terminal tab context menu for closing tabs or moving terminal sessions to a new window.
+- Added PowerShell-style right-click copy and paste, with confirmation before multi-line terminal pastes.
 
 ### Fixed
 
-- Fixed the Settings save bar so it stays at the bottom of the panel regardless of category content length.
-- Improved Settings so saved API key deletion asks for confirmation and reports deletion failures.
-- Improved Settings so load failures are visible, save actions cannot be repeated while saving, and numeric terminal inputs stay within valid ranges.
+- Improved Settings reliability with an anchored save bar, clearer load and save errors, and validated terminal input ranges.
 - Improved SSH sessions so overloaded output no longer disappears without warning.
 - Fixed SSH sessions so remote disconnects are reflected more reliably in the UI.
 - Improved SSH connections so stalled connection setup no longer leaves the connection dialog waiting indefinitely.
