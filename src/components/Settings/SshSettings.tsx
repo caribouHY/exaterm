@@ -74,7 +74,9 @@ export function SshSettings({
             className="select"
             value={config.algorithm_mode}
             disabled={!catalog}
-            onChange={(event) => setMode(event.target.value as SshConfig["algorithm_mode"])}
+            onChange={(event) => {
+              setMode(event.target.value as SshConfig["algorithm_mode"]);
+            }}
           >
             <option value="default">{t("settings.ssh_algorithm_mode_default")}</option>
             <option value="custom">{t("settings.ssh_algorithm_mode_custom")}</option>
@@ -99,7 +101,9 @@ export function SshSettings({
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => onChange({ algorithms: recommendedSelection(catalog) })}
+              onClick={() => {
+                onChange({ algorithms: recommendedSelection(catalog) });
+              }}
             >
               {t("settings.ssh_algorithm_restore_recommended")}
             </button>
