@@ -127,8 +127,28 @@ export interface TerminalConfig {
 export type LogFormat = "display" | "strip_controls";
 
 export interface SshConfig {
-  allow_legacy_algorithms: boolean;
+  algorithm_mode: SshAlgorithmMode;
+  algorithms: SshAlgorithmSelection;
 }
+
+export type SshAlgorithmMode = "default" | "custom";
+export type SshAlgorithmGroup = "kex" | "host_key" | "cipher" | "mac" | "compression";
+
+export interface SshAlgorithmSelection {
+  kex: string[];
+  host_key: string[];
+  cipher: string[];
+  mac: string[];
+  compression: string[];
+}
+
+export interface SshAlgorithmCatalogItem {
+  name: string;
+  recommended: boolean;
+  compatibility: boolean;
+}
+
+export type SshAlgorithmCatalog = Record<SshAlgorithmGroup, SshAlgorithmCatalogItem[]>;
 
 export type TerminalMode = "general" | "cisco_ios";
 

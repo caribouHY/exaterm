@@ -20,6 +20,8 @@ pub use io::{write_data, SshState};
 pub use profiles::resolve_jump_profile;
 pub use types::{SshConnectOptions, SshConnectResult, SshJumpProfile, SshProbeHostKeyOptions};
 
+pub(crate) use client_config::{legacy_algorithm_selection, validate_algorithm_config};
+
 type SshCommandState<'a> = tauri::State<'a, SshState>;
 type TerminalCommandState<'a> = tauri::State<'a, crate::terminal_control::TerminalControlState>;
 type WorkspaceCommandState<'a> = tauri::State<'a, crate::workspace::WorkspaceState>;
@@ -31,6 +33,11 @@ fn localize<T>(
     result: Result<T, String>,
 ) -> Result<T, String> {
     result.map_err(|error| crate::i18n::translate_gui_error(language.inner(), &error))
+}
+
+#[tauri::command]
+pub fn ssh_algorithm_catalog() -> client_config::SshAlgorithmCatalog {
+    client_config::algorithm_catalog()
 }
 
 #[tauri::command]

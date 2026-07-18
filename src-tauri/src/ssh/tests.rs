@@ -11,7 +11,7 @@ use super::auth::{
     build_auth_request, is_supported_private_key_header, normalize_auth_path,
     private_key_format_hint, SUPPORTED_PRIVATE_KEY_LABELS,
 };
-use super::client_config::build_client_config;
+use super::client_config::{algorithm_catalog, build_client_config, validate_algorithm_config};
 use super::diagnostics::{normalize_diagnostic_role, ssh_diagnostic_event_name};
 use super::host_key::{HostKeyVerificationMode, HostKeyVerifier};
 use super::io::{
@@ -21,7 +21,7 @@ use super::io::{
 };
 use super::private_key_requires_passphrase;
 use super::types::SshAuthRequest;
-use crate::config::SshConfig;
+use crate::config::{SshAlgorithmSelection, SshConfig};
 use crate::ssh_known_hosts::HostKeyCheckStatus;
 
 fn preferred_names<T: AsRef<str>>(items: &[T]) -> Vec<&str> {
@@ -240,7 +240,7 @@ fn verifier_rejects_mismatched_keys_in_enforce_mode() {
 
 #[test]
 fn default_client_config_keeps_russh_defaults() {
-    let config = build_client_config(&SshConfig::default());
+    let config = build_client_config(&SshConfig::default()).unwrap();
     let default = russh::client::Config::default();
 
     assert_eq!(
@@ -264,8 +264,10 @@ fn default_client_config_keeps_russh_defaults() {
 #[test]
 fn legacy_client_config_appends_legacy_algorithms() {
     let config = build_client_config(&SshConfig {
-        allow_legacy_algorithms: true,
-    });
+        algorithm_mode: "custom".into(),
+        algorithms: crate::ssh::legacy_algorithm_selection(),
+    })
+    .unwrap();
 
     let kex = preferred_names(config.preferred.kex.as_ref());
     let cipher = preferred_names(config.preferred.cipher.as_ref());
@@ -281,6 +283,72 @@ fn legacy_client_config_appends_legacy_algorithms() {
     assert!(mac.contains(&"hmac-sha1"));
     assert!(mac.contains(&"hmac-sha1-etm@openssh.com"));
     assert!(key.contains(&"ssh-rsa"));
+}
+
+#[test]
+fn algorithm_catalog_excludes_internal_algorithms_and_marks_defaults() {
+    let catalog = algorithm_catalog();
+
+    assert!(!catalog.kex.iter().any(|item| item.name == "none"));
+    assert!(!catalog.cipher.iter().any(|item| item.name == "none"));
+    assert!(!catalog.cipher.iter().any(|item| item.name == "clear"));
+    assert!(!catalog
+        .kex
+        .iter()
+        .any(|item| item.name.starts_with("ext-info-") || item.name.starts_with("kex-strict-")));
+    assert!(catalog.kex.iter().any(|item| item.recommended));
+    assert!(catalog.host_key.iter().any(|item| item.recommended));
+    assert!(catalog.cipher.iter().any(|item| item.recommended));
+    assert!(catalog.mac.iter().any(|item| item.recommended));
+    assert!(catalog.compression.iter().any(|item| item.recommended));
+}
+
+fn minimal_custom_config() -> SshConfig {
+    SshConfig {
+        algorithm_mode: "custom".into(),
+        algorithms: SshAlgorithmSelection {
+            kex: vec!["curve25519-sha256".into()],
+            host_key: vec!["ssh-ed25519".into()],
+            cipher: vec!["aes128-ctr".into()],
+            mac: vec!["hmac-sha2-256".into()],
+            compression: vec!["none".into()],
+        },
+    }
+}
+
+#[test]
+fn custom_client_config_uses_catalog_order_and_keeps_kex_extensions() {
+    let mut ssh_config = minimal_custom_config();
+    ssh_config.algorithms.cipher = vec!["aes128-ctr".into(), "aes256-ctr".into()];
+
+    let config = build_client_config(&ssh_config).unwrap();
+    let ciphers = preferred_names(config.preferred.cipher.as_ref());
+    let kex = preferred_names(config.preferred.kex.as_ref());
+
+    assert_eq!(ciphers, vec!["aes256-ctr", "aes128-ctr"]);
+    assert!(kex.contains(&"ext-info-c"));
+    assert!(kex.contains(&"kex-strict-c-v00@openssh.com"));
+}
+
+#[test]
+fn custom_algorithm_validation_rejects_empty_unknown_and_duplicate_values() {
+    let mut ssh_config = minimal_custom_config();
+    ssh_config.algorithms.mac.clear();
+    assert!(validate_algorithm_config(&ssh_config)
+        .unwrap_err()
+        .contains("MAC must not be empty"));
+
+    ssh_config = minimal_custom_config();
+    ssh_config.algorithms.cipher = vec!["unknown-cipher".into()];
+    assert!(validate_algorithm_config(&ssh_config)
+        .unwrap_err()
+        .contains("Unsupported SSH cipher algorithm"));
+
+    ssh_config = minimal_custom_config();
+    ssh_config.algorithms.kex.push("curve25519-sha256".into());
+    assert!(validate_algorithm_config(&ssh_config)
+        .unwrap_err()
+        .contains("Duplicate SSH key exchange algorithm"));
 }
 
 #[test]
