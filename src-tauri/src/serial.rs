@@ -348,16 +348,22 @@ pub async fn connect(
 #[tauri::command]
 pub async fn serial_write(
     state: tauri::State<'_, SerialState>,
+    terminals: tauri::State<'_, TerminalControlState>,
     language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    write_data(&state, &session_id, data)
+    write_data(&state, terminals.inner(), &session_id, data)
         .await
         .map_err(|error| localize_gui_error(language.inner(), error))
 }
 
-pub async fn write_data(state: &SerialState, session_id: &str, data: String) -> Result<(), String> {
+pub async fn write_data(
+    state: &SerialState,
+    terminals: &TerminalControlState,
+    session_id: &str,
+    data: String,
+) -> Result<(), String> {
     let writer = {
         let sessions = state.sessions.lock().await;
         sessions
@@ -368,7 +374,7 @@ pub async fn write_data(state: &SerialState, session_id: &str, data: String) -> 
     };
 
     writer
-        .send(data.into_bytes())
+        .send(terminals.encode_input(session_id, &data).await?)
         .map_err(|e| format!("Failed to send data: {}", e))
 }
 

@@ -198,8 +198,8 @@ fn build_naws(cols: u16, rows: u16) -> Vec<u8> {
     ]
 }
 
-fn escape_user_data(data: String) -> Vec<u8> {
-    escape_iac_bytes(data.into_bytes())
+fn escape_user_data(data: Vec<u8>) -> Vec<u8> {
+    escape_iac_bytes(data)
 }
 
 fn escape_iac_bytes(data: Vec<u8>) -> Vec<u8> {
@@ -411,16 +411,22 @@ pub async fn connect(
 #[tauri::command]
 pub async fn telnet_write(
     state: tauri::State<'_, TelnetState>,
+    terminals: tauri::State<'_, TerminalControlState>,
     language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    write_data(&state, &session_id, data)
+    write_data(&state, terminals.inner(), &session_id, data)
         .await
         .map_err(|error| localize_gui_error(language.inner(), error))
 }
 
-pub async fn write_data(state: &TelnetState, session_id: &str, data: String) -> Result<(), String> {
+pub async fn write_data(
+    state: &TelnetState,
+    terminals: &TerminalControlState,
+    session_id: &str,
+    data: String,
+) -> Result<(), String> {
     let writer = {
         let sessions = state.sessions.lock().await;
         sessions
@@ -431,7 +437,9 @@ pub async fn write_data(state: &TelnetState, session_id: &str, data: String) -> 
     };
 
     writer
-        .send(escape_user_data(data))
+        .send(escape_user_data(
+            terminals.encode_input(session_id, &data).await?,
+        ))
         .await
         .map_err(|e| format!("Failed to send data: {}", e))
 }
@@ -536,7 +544,7 @@ mod tests {
     #[test]
     fn user_data_escapes_iac_bytes() {
         assert_eq!(
-            escape_iac_bytes(vec![b'a', IAC, b'b']),
+            escape_user_data(vec![b'a', IAC, b'b']),
             vec![b'a', IAC, IAC, b'b']
         );
     }

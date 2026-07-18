@@ -149,6 +149,24 @@ impl TerminalControlState {
         Ok(())
     }
 
+    pub async fn encode_input(&self, session_id: &str, input: &str) -> Result<Vec<u8>, String> {
+        let encoding = {
+            let sessions = self.sessions.lock().await;
+            sessions
+                .get(session_id)
+                .ok_or_else(|| "Session not found".to_string())?
+                .info
+                .encoding
+                .clone()
+        };
+
+        Ok(terminal_encoding(Some(&encoding))
+            .0
+            .encode(input)
+            .0
+            .into_owned())
+    }
+
     pub async fn mark_disconnected(&self, session_id: &str) {
         let mut sessions = self.sessions.lock().await;
         if let Some(session) = sessions.get_mut(session_id) {
@@ -490,6 +508,63 @@ mod tests {
         let snapshot = state.read_output("s1", 100).await.unwrap();
         assert_eq!(snapshot.output, "alpha");
         assert_eq!(state.session_info("s1").await.unwrap().encoding, "utf-8");
+    }
+
+    #[tokio::test]
+    async fn input_is_encoded_with_the_session_encoding() {
+        let state = TerminalControlState::new();
+        state
+            .register_session_with_encoding(
+                "s1".into(),
+                TerminalProtocol::Ssh,
+                "host:22".into(),
+                Some("shift-jis".into()),
+            )
+            .await;
+        state
+            .register_session_with_encoding(
+                "s2".into(),
+                TerminalProtocol::Telnet,
+                "host:23".into(),
+                Some("euc-jp".into()),
+            )
+            .await;
+        state
+            .register_session("s3".into(), TerminalProtocol::Serial, "COM1".into())
+            .await;
+
+        assert_eq!(
+            state.encode_input("s1", "日本語").await.unwrap(),
+            encode_shift_jis("日本語")
+        );
+        assert_eq!(
+            state.encode_input("s2", "日本語").await.unwrap(),
+            encode_euc_jp("日本語")
+        );
+        assert_eq!(
+            state.encode_input("s3", "日本語").await.unwrap(),
+            "日本語".as_bytes()
+        );
+    }
+
+    #[tokio::test]
+    async fn input_encoding_uses_the_latest_session_setting() {
+        let state = TerminalControlState::new();
+        state
+            .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+            .await;
+
+        assert_eq!(
+            state.encode_input("s1", "日本語").await.unwrap(),
+            "日本語".as_bytes()
+        );
+
+        state.set_encoding("s1", "shift-jis").await.unwrap();
+
+        assert_eq!(
+            state.encode_input("s1", "日本語").await.unwrap(),
+            encode_shift_jis("日本語")
+        );
     }
 
     #[tokio::test]

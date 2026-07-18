@@ -17,6 +17,7 @@
 
 ### Fixed
 
+- Fixed terminal input encoding so the selected UTF-8, Shift_JIS, or EUC-JP setting is applied to outgoing SSH, Serial, Telnet, and external-control input.
 - Improved Settings reliability with an anchored save bar, clearer load and save errors, and validated terminal input ranges.
 - Improved SSH sessions so overloaded output no longer disappears without warning.
 - Fixed SSH sessions so remote disconnects are reflected more reliably in the UI.
