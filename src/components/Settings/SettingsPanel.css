@@ -334,6 +334,14 @@
   margin: 0;
 }
 
+.settings-ssh__mode {
+  max-width: 380px;
+}
+
+.settings-ssh__custom {
+  padding-right: var(--space-md);
+}
+
 .settings-ssh__group {
   border-top: 1px solid var(--border-subtle);
 }
@@ -352,6 +360,11 @@
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
+  list-style: none;
+}
+
+.settings-ssh__group summary::-webkit-details-marker {
+  display: none;
 }
 
 .settings-ssh__group summary:focus-visible {
@@ -363,6 +376,21 @@
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 400;
+}
+
+.settings-ssh__group-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.settings-ssh__group-chevron {
+  color: var(--text-secondary);
+}
+
+.settings-ssh__group[open] .settings-ssh__group-chevron {
+  transform: rotate(180deg);
 }
 
 .settings-ssh__algorithm-list {
@@ -534,6 +562,10 @@
   .settings-ssh__custom-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .settings-ssh__custom {
+    padding-right: 0;
   }
 
   .settings-ssh__algorithm-list {

@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type {
   SshAlgorithmCatalog,
@@ -64,7 +65,7 @@ export function SshSettings({
     <div className="settings-ssh">
       <div className="settings-section__title">{t("settings.ssh_settings")}</div>
       <div className="settings-row">
-        <div>
+        <div className="settings-ssh__mode">
           <label className="label" htmlFor="settings-ssh-algorithm-mode">
             {t("settings.ssh_algorithm_mode")}
           </label>
@@ -110,9 +111,16 @@ export function SshSettings({
               <details className="settings-ssh__group" key={group}>
                 <summary>
                   <span>{t(`settings.ssh_algorithm_group.${group}`)}</span>
-                  <small>
-                    {t("settings.ssh_algorithm_selected_count", { count: selected.length })}
-                  </small>
+                  <span className="settings-ssh__group-meta">
+                    <small>
+                      {t("settings.ssh_algorithm_selected_count", { count: selected.length })}
+                    </small>
+                    <ChevronDown
+                      className="settings-ssh__group-chevron"
+                      size={14}
+                      aria-hidden="true"
+                    />
+                  </span>
                 </summary>
                 <div className="settings-ssh__algorithm-list">
                   {catalog[group].map((item) => {
