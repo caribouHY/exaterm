@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crate::ai::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
 use crate::terminal_control::TerminalControlState;
 
-const CURRENT_CONFIG_VERSION: u32 = 2;
+const CURRENT_CONFIG_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppConfig {
@@ -112,17 +112,79 @@ fn default_ollama_url() -> String {
     "http://localhost:11434".into()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SshConfig {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SshAlgorithmSelection {
     #[serde(default)]
-    pub allow_legacy_algorithms: bool,
+    pub kex: Vec<String>,
+    #[serde(default)]
+    pub host_key: Vec<String>,
+    #[serde(default)]
+    pub cipher: Vec<String>,
+    #[serde(default)]
+    pub mac: Vec<String>,
+    #[serde(default)]
+    pub compression: Vec<String>,
+}
+
+impl Default for SshAlgorithmSelection {
+    fn default() -> Self {
+        Self {
+            kex: Vec::new(),
+            host_key: Vec::new(),
+            cipher: Vec::new(),
+            mac: Vec::new(),
+            compression: Vec::new(),
+        }
+    }
+}
+
+fn default_ssh_algorithm_mode() -> String {
+    "default".into()
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct SshConfigInput {
+    algorithm_mode: Option<String>,
+    algorithms: Option<SshAlgorithmSelection>,
+    allow_legacy_algorithms: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SshConfig {
+    pub algorithm_mode: String,
+    pub algorithms: SshAlgorithmSelection,
 }
 
 impl Default for SshConfig {
     fn default() -> Self {
         Self {
-            allow_legacy_algorithms: false,
+            algorithm_mode: default_ssh_algorithm_mode(),
+            algorithms: SshAlgorithmSelection::default(),
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for SshConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let input = SshConfigInput::deserialize(deserializer)?;
+        if let Some(algorithm_mode) = input.algorithm_mode {
+            return Ok(Self {
+                algorithm_mode,
+                algorithms: input.algorithms.unwrap_or_default(),
+            });
+        }
+
+        if input.allow_legacy_algorithms.unwrap_or(false) {
+            return Ok(Self {
+                algorithm_mode: "custom".into(),
+                algorithms: crate::ssh::legacy_algorithm_selection(),
+            });
+        }
+
+        Ok(Self::default())
     }
 }
 
@@ -353,7 +415,9 @@ pub(crate) fn config_read() -> Result<AppConfig, String> {
     if path.exists() {
         let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
         let cfg: AppConfig = serde_json::from_str(&data).map_err(|e| e.to_string())?;
-        Ok(cfg.migrate())
+        let cfg = cfg.migrate();
+        crate::ssh::validate_algorithm_config(&cfg.ssh)?;
+        Ok(cfg)
     } else {
         Ok(AppConfig::default())
     }
@@ -365,6 +429,7 @@ pub fn config_save(
     config: AppConfig,
 ) -> Result<(), String> {
     let config = config.migrate();
+    crate::ssh::validate_algorithm_config(&config.ssh)?;
     config_write(&config)?;
     terminals.set_output_limit_from_scrollback(config.terminal.scrollback);
     Ok(())
@@ -405,7 +470,8 @@ mod tests {
         assert!(!cfg.terminal.auto_session_log);
         assert_eq!(cfg.terminal.log_format, "display");
         assert!(!cfg.terminal.include_log_header);
-        assert!(!cfg.ssh.allow_legacy_algorithms);
+        assert_eq!(cfg.ssh.algorithm_mode, "default");
+        assert_eq!(cfg.ssh.algorithms, SshAlgorithmSelection::default());
         assert!(cfg.saved_connections.is_empty());
     }
 
@@ -433,7 +499,15 @@ mod tests {
         assert!(cfg.terminal.auto_session_log);
         assert_eq!(cfg.terminal.log_format, "display");
         assert!(!cfg.terminal.include_log_header);
-        assert!(cfg.ssh.allow_legacy_algorithms);
+        assert_eq!(cfg.ssh.algorithm_mode, "custom");
+        assert!(cfg
+            .ssh
+            .algorithms
+            .kex
+            .contains(&"diffie-hellman-group1-sha1".to_string()));
+        let serialized = serde_json::to_value(&cfg).unwrap();
+        assert!(serialized["ssh"].get("allow_legacy_algorithms").is_none());
+        assert_eq!(serialized["ssh"]["algorithm_mode"], "custom");
         assert_eq!(cfg.saved_connections[0].id, "dev box");
         assert_eq!(cfg.saved_connections[0].encoding, None);
         assert_eq!(cfg.saved_connections[0].terminal_mode, None);

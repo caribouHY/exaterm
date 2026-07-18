@@ -57,7 +57,14 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "include_log_header": false
   },
   "ssh": {
-    "allow_legacy_algorithms": false
+    "algorithm_mode": "default",
+    "algorithms": {
+      "kex": [],
+      "host_key": [],
+      "cipher": [],
+      "mac": [],
+      "compression": []
+    }
   },
   "saved_connections": []
 }
@@ -208,26 +215,20 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 
 ## ssh
 
-| パラメータ                    | 型      | 既定値  | 説明                                                                                                                  |
-| ----------------------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
-| `ssh.allow_legacy_algorithms` | boolean | `false` | `true` にすると、現代的な SSH 既定アルゴリズムに対応していない古い機器向けに、レガシー SSH アルゴリズムも提示します。 |
-
-### レガシー SSH アルゴリズムの注意
-
-古い SSH サーバーやネットワーク機器へ接続する必要がある場合を除き、`ssh.allow_legacy_algorithms` は `false` のままにしてください。有効にすると、SHA-1 ベースの鍵交換、CBC/3DES 暗号、`ssh-rsa` ホスト鍵など、強度の低い互換アルゴリズムを許可します。
+| パラメータ                   | 型     | 既定値      | 説明                                                                             |
+| ---------------------------- | ------ | ----------- | -------------------------------------------------------------------------------- |
+| `ssh.algorithm_mode`         | 文字列 | `"default"` | 推奨設定は `"default"`、設定した許可リストを使う場合は `"custom"` を指定します。 |
+| `ssh.algorithms.kex`         | 配列   | `[]`        | カスタム設定で許可する鍵交換アルゴリズムです。                                   |
+| `ssh.algorithms.host_key`    | 配列   | `[]`        | カスタム設定で許可するサーバーホスト鍵アルゴリズムです。                         |
+| `ssh.algorithms.cipher`      | 配列   | `[]`        | カスタム設定で許可する共通鍵暗号です。                                           |
+| `ssh.algorithms.mac`         | 配列   | `[]`        | カスタム設定で許可するメッセージ認証アルゴリズムです。                           |
+| `ssh.algorithms.compression` | 配列   | `[]`        | カスタム設定で許可する圧縮アルゴリズムです。                                     |
 
 ### 利用可能な SSH アルゴリズム
 
-ExaTerm は次の SSH アルゴリズムを提示します。レガシー追加分は、`ssh.allow_legacy_algorithms` を `true` にした場合のみ提示されます。
+設定画面には、同梱する SSH ライブラリが対応しているアルゴリズム一覧を表示します。カスタム設定では、すべての分類で1件以上選択してください。JSON 配列の記載順ではなく、ExaTerm の組み込み優先順でネゴシエーションします。SHA-1 鍵交換、CBC/3DES 暗号、`ssh-rsa` などは互換用として表示します。
 
-| カテゴリ | 既定で利用可能                                                                                                                               | レガシー追加分                                                                           |
-| -------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| 鍵交換   | `curve25519-sha256`, `curve25519-sha256@libssh.org`, `diffie-hellman-group16-sha512`, `diffie-hellman-group14-sha256`                        | `diffie-hellman-group1-sha1`, `diffie-hellman-group14-sha1`                              |
-| 暗号     | `chacha20-poly1305@openssh.com`, `aes256-gcm@openssh.com`, `aes256-ctr`, `aes192-ctr`, `aes128-ctr`                                          | `aes128-cbc`, `aes192-cbc`, `aes256-cbc`, `3des-cbc`                                     |
-| MAC      | `hmac-sha2-512-etm@openssh.com`, `hmac-sha2-256-etm@openssh.com`, `hmac-sha2-512`, `hmac-sha2-256`, `hmac-sha1-etm@openssh.com`, `hmac-sha1` | 追加される MAC アルゴリズムはありません。現在の既定値に `hmac-sha1` 系が含まれています。 |
-| ホスト鍵 | `ssh-ed25519`, `ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp521`, `rsa-sha2-256`, `rsa-sha2-512`                                                  | `ssh-rsa`                                                                                |
-
-Strict key exchange や extension info などの SSH 内部拡張マーカーは、ユーザーが直接設定するものではないため、この一覧には含めていません。
+未知の名前、重複、空の分類は拒否されます。Strict key exchange や extension info などの SSH 内部拡張マーカーは自動管理されるため、設定には追加しないでください。
 
 ## saved_connections
 
@@ -347,15 +348,22 @@ OpenRouter API キーは設定画面から保存してください。ExaTerm は
 
 実際の `terminal` オブジェクトには他の項目も残してください。上記は変更箇所だけを示した例です。
 
-### レガシー SSH アルゴリズムを許可する
+### SSH アルゴリズムを選択する
 
 ```json
 "ssh": {
-  "allow_legacy_algorithms": true
+  "algorithm_mode": "custom",
+  "algorithms": {
+    "kex": ["curve25519-sha256", "diffie-hellman-group14-sha1"],
+    "host_key": ["ssh-ed25519", "ssh-rsa"],
+    "cipher": ["aes256-ctr", "aes128-cbc"],
+    "mac": ["hmac-sha2-256", "hmac-sha1"],
+    "compression": ["none"]
+  }
 }
 ```
 
-既定の SSH アルゴリズムでは接続できない古い機器に限って使用してください。
+カスタム設定は設定画面から作成することを推奨します。既存の `allow_legacy_algorithms` 設定は自動的に移行されます。
 
 ## トラブルシューティング
 
@@ -364,6 +372,6 @@ OpenRouter API キーは設定画面から保存してください。ExaTerm は
 | ExaTerm が設定を読み込めない | JSON の構文を確認してください。特に余分なカンマ、引用符、波括弧の不足を確認します。                                                                                                                                                                                                                      |
 | 設定を変更しても反映されない | ExaTerm を再起動するか、設定画面で保存し直してください。                                                                                                                                                                                                                                                 |
 | AI プロバイダが表示されない  | クラウド系プロバイダは API キー登録が必要です。Azure OpenAI は `azure_openai_enabled`、`azure_openai_endpoint`、`azure_openai_deployment` も確認してください。OpenRouter は設定画面で OpenRouter API キーを保存してください。Ollama は `ollama_enabled` と Ollama サーバーの起動状態を確認してください。 |
-| 古い SSH 機器に接続できない  | 共通の SSH アルゴリズムがないことを示すエラーの場合は、`ssh.allow_legacy_algorithms` を `true` にして再接続してください。不要になったら無効に戻してください。                                                                                                                                            |
+| 古い SSH 機器に接続できない  | 共通の SSH アルゴリズムがないことを示すエラーの場合は、設定画面でカスタム選択に切り替え、その機器に必要な互換用アルゴリズムだけを有効にしてください。                                                                                                                                                    |
 | 文字が見づらい               | `terminal.font_size` または `terminal.font_family` を調整してください。                                                                                                                                                                                                                                  |
 | ログを残したくない           | `terminal.auto_session_log` を `false` にしてください。既に作成済みのログは必要に応じて `%AppData%\ExaTerm\logs` から削除してください。                                                                                                                                                                  |

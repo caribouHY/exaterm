@@ -172,7 +172,7 @@ fn prepare_connect(
     )?;
     let app_config = config_load()?;
     let jump_profile = resolve_jump_profile(&app_config, options.jump_profile_id.as_deref(), None)?;
-    let config = Arc::new(build_client_config(&app_config.ssh));
+    let config = Arc::new(build_client_config(&app_config.ssh)?);
     let host_verifier = HostKeyVerifier::enforce(options.host.clone(), options.port);
     let (read_tx, read_rx) = mpsc::channel::<SshReadRequest>(SSH_READ_QUEUE_CAPACITY);
     let handler = SshClientHandler {

@@ -1,15 +1,19 @@
 import { useTranslation } from "react-i18next";
 import type { AppConfig } from "../../types";
-import { SettingsToggle } from "./SettingsToggle";
+import type { SshAlgorithmCatalog } from "../../types";
+import { SshSettings } from "./SshSettings";
 import { TerminalSettings } from "./TerminalSettings";
 
 interface GeneralSettingsProps {
   language: AppConfig["language"];
   terminalConfig: AppConfig["terminal"];
   sshConfig: AppConfig["ssh"];
+  sshAlgorithmCatalog: SshAlgorithmCatalog | null;
+  sshAlgorithmCatalogLoadFailed: boolean;
   onLanguageChange: (language: AppConfig["language"]) => void;
   onTerminalChange: (patch: Partial<AppConfig["terminal"]>) => void;
   onSshChange: (patch: Partial<AppConfig["ssh"]>) => void;
+  onReloadSshAlgorithmCatalog: () => void;
 }
 
 const LANGUAGE_OPTIONS: Array<{
@@ -26,9 +30,12 @@ export function GeneralSettings({
   language,
   terminalConfig,
   sshConfig,
+  sshAlgorithmCatalog,
+  sshAlgorithmCatalogLoadFailed,
   onLanguageChange,
   onTerminalChange,
   onSshChange,
+  onReloadSshAlgorithmCatalog,
 }: GeneralSettingsProps) {
   const { t } = useTranslation();
 
@@ -59,15 +66,12 @@ export function GeneralSettings({
 
       <TerminalSettings config={terminalConfig} onChange={onTerminalChange} />
 
-      <div className="settings-section__title">{t("settings.ssh_settings")}</div>
-      <SettingsToggle
-        id="settings-allow-legacy-ssh-algorithms"
-        label={t("settings.allow_legacy_ssh_algorithms")}
-        description={t("settings.allow_legacy_ssh_algorithms_desc")}
-        checked={Boolean(sshConfig.allow_legacy_algorithms)}
-        onChange={(allow_legacy_algorithms) => {
-          onSshChange({ allow_legacy_algorithms });
-        }}
+      <SshSettings
+        config={sshConfig}
+        catalog={sshAlgorithmCatalog}
+        catalogLoadFailed={sshAlgorithmCatalogLoadFailed}
+        onChange={onSshChange}
+        onReloadCatalog={onReloadSshAlgorithmCatalog}
       />
     </div>
   );

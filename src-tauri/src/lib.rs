@@ -154,6 +154,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // SSH
             startup_cli_request_get,
+            ssh::ssh_algorithm_catalog,
             ssh::ssh_probe_host_key,
             ssh::ssh_trust_host_key,
             ssh::ssh_private_key_requires_passphrase,

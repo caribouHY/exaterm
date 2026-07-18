@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
-import type { AiSecretStatus, AppConfig } from "../../types";
+import type { AiSecretStatus, AppConfig, SshAlgorithmCatalog } from "../../types";
 import { resolveAppLanguage } from "../../i18n";
 import { AiSettings } from "./AiSettings";
 import { ExternalControlSettings } from "./ExternalControlSettings";
@@ -42,6 +42,8 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   const [loadFailed, setLoadFailed] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [sshAlgorithmCatalog, setSshAlgorithmCatalog] = useState<SshAlgorithmCatalog | null>(null);
+  const [sshAlgorithmCatalogLoadFailed, setSshAlgorithmCatalogLoadFailed] = useState(false);
   const [secretStatus, setSecretStatus] = useState<AiSecretStatus>(createSecretStatus);
   const [secretEdits, setSecretEdits] = useState<SecretEdits>(createSecretEdits);
   const [initialSecretEditsSnapshot, setInitialSecretEditsSnapshot] =
@@ -59,6 +61,17 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     } catch (refreshError) {
       console.error("Failed to load AI secret status:", refreshError);
       setSecretStatus(createSecretStatus());
+    }
+  };
+
+  const loadSshAlgorithmCatalog = async () => {
+    setSshAlgorithmCatalogLoadFailed(false);
+    try {
+      setSshAlgorithmCatalog(await invoke<SshAlgorithmCatalog>("ssh_algorithm_catalog"));
+    } catch (catalogError) {
+      console.error("Failed to load SSH algorithm catalog:", catalogError);
+      setSshAlgorithmCatalog(null);
+      setSshAlgorithmCatalogLoadFailed(true);
     }
   };
 
@@ -98,6 +111,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   useEffect(() => {
     void loadConfig();
     void refreshSecretStatus();
+    void loadSshAlgorithmCatalog();
     return clearSavedTimer;
   }, []);
 
@@ -232,9 +246,12 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             language={config.language}
             terminalConfig={config.terminal}
             sshConfig={config.ssh}
+            sshAlgorithmCatalog={sshAlgorithmCatalog}
+            sshAlgorithmCatalogLoadFailed={sshAlgorithmCatalogLoadFailed}
             onLanguageChange={updateLanguage}
             onTerminalChange={updateTerminalConfig}
             onSshChange={updateSshConfig}
+            onReloadSshAlgorithmCatalog={() => void loadSshAlgorithmCatalog()}
           />
         );
       case "ai":
