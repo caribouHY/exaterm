@@ -22,7 +22,9 @@ import type {
   WorkspaceSnapshot,
   WorkspaceTabInfo,
   WorkspaceWindowCreateResult,
+  WorkspaceConnectionInfo,
 } from "./types";
+import type { ConnectionDialogInitialValues } from "./components/Connection/connectionDialogTypes";
 import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -106,6 +108,7 @@ function workspaceTabToTabInfo(tab: WorkspaceTabInfo): TabInfo {
     isConnected: tab.is_connected,
     encoding: tab.encoding,
     terminalMode: tab.terminal_mode,
+    connectionInfo: tab.connection_info ?? undefined,
     isAutoLogging: tab.is_auto_logging,
     isManualLogging: tab.is_manual_logging,
     isLoggingPaused: tab.is_logging_paused,
@@ -122,6 +125,8 @@ export default function App() {
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [closingTabIds, setClosingTabIds] = useState<string[]>([]);
   const [showConnection, setShowConnection] = useState(false);
+  const [connectionInitialValues, setConnectionInitialValues] =
+    useState<ConnectionDialogInitialValues | null>(null);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [aiPanelWidth, setAiPanelWidth] = useState(AI_PANEL_DEFAULT_WIDTH);
   const [isDragging, setIsDragging] = useState(false);
@@ -200,7 +205,8 @@ export default function App() {
       title: string,
       isAutoLogging: boolean,
       encoding: Encoding = "utf-8",
-      terminalMode: TerminalMode = DEFAULT_TERMINAL_MODE
+      terminalMode: TerminalMode = DEFAULT_TERMINAL_MODE,
+      connectionInfo?: WorkspaceConnectionInfo
     ) => {
       const snapshot = await invoke<WorkspaceSnapshot>("workspace_tab_register", {
         windowId: windowIdRef.current,
@@ -209,9 +215,11 @@ export default function App() {
         title,
         encoding,
         terminalMode,
+        connectionInfo,
         isAutoLogging,
       });
       applyWorkspaceSnapshot(snapshot);
+      setConnectionInitialValues(null);
       setShowConnection(false);
     },
     [applyWorkspaceSnapshot]
@@ -823,6 +831,18 @@ export default function App() {
 
   const openConnection = useCallback(() => {
     void loadConnectionDialog();
+    setConnectionInitialValues(null);
+    setShowConnection(true);
+  }, []);
+
+  const openSameDestination = useCallback((tab: TabInfo) => {
+    if (!tab.connectionInfo || tab.connectionType === "serial") return;
+    void loadConnectionDialog();
+    setConnectionInitialValues({
+      connectionInfo: tab.connectionInfo,
+      encoding: tab.encoding,
+      terminalMode: tab.terminalMode,
+    });
     setShowConnection(true);
   }, []);
 
@@ -950,6 +970,7 @@ export default function App() {
                 onSelectTab={handleSelectTab}
                 onCloseTab={handleCloseTab}
                 onMoveTabToNewWindow={handleMoveTabToNewWindow}
+                onOpenSameDestination={openSameDestination}
                 onAddTab={openConnection}
                 onReorderTabs={handleReorderTabs}
                 windowId={windowIdRef.current}
@@ -1070,11 +1091,13 @@ export default function App() {
       {showConnection && (
         <Suspense fallback={<div aria-hidden="true" />}>
           <ConnectionDialog
+            initialValues={connectionInitialValues}
             startupRequest={startupCliRequest}
             onStartupRequestHandled={() => {
               setStartupCliRequest(null);
             }}
             onClose={() => {
+              setConnectionInitialValues(null);
               setShowConnection(false);
             }}
             onConnect={handleConnect}

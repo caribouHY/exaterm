@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import type {
   AppTabInfo,
   ConnectionType,
+  TabInfo,
   WorkspaceDragPreview,
   WorkspacePointerPosition,
 } from "../../types";
@@ -18,6 +19,7 @@ interface TerminalTabsProps {
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => Promise<void>;
   onMoveTabToNewWindow: (id: string) => Promise<void>;
+  onOpenSameDestination: (tab: TabInfo) => void;
   onAddTab: () => void;
   onReorderTabs: (draggedId: string, targetId: string, dropSide: TabDropSide) => void;
   windowId: string;
@@ -62,7 +64,7 @@ interface ForeignDropTarget {
 const DRAG_START_DISTANCE = 4;
 const DROP_SLOT_HYSTERESIS_PX = 14;
 const CONTEXT_MENU_WIDTH = 220;
-const CONTEXT_MENU_MAX_HEIGHT = 96;
+const CONTEXT_MENU_MAX_HEIGHT = 128;
 const CONTEXT_MENU_VIEWPORT_MARGIN = 8;
 
 export default function TerminalTabs({
@@ -72,6 +74,7 @@ export default function TerminalTabs({
   onSelectTab,
   onCloseTab,
   onMoveTabToNewWindow,
+  onOpenSameDestination,
   onAddTab,
   onReorderTabs,
   windowId,
@@ -429,6 +432,17 @@ export default function TerminalTabs({
     ? [
         ...(contextMenuTab.kind === "terminal"
           ? [
+              ...(contextMenuTab.connectionType !== "serial" && contextMenuTab.connectionInfo
+                ? [
+                    {
+                      key: "open_same_destination",
+                      label: t("terminal.tab_menu.open_same_destination"),
+                      action: () => {
+                        onOpenSameDestination(contextMenuTab);
+                      },
+                    },
+                  ]
+                : []),
               {
                 key: "move_to_new_window",
                 label: t("terminal.tab_menu.move_to_new_window"),

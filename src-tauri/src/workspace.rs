@@ -78,11 +78,29 @@ pub struct WorkspaceTab {
     pub owner_window_id: String,
     pub encoding: String,
     pub terminal_mode: String,
+    pub connection_info: Option<WorkspaceConnectionInfo>,
     pub is_connected: bool,
     pub is_auto_logging: bool,
     pub is_manual_logging: bool,
     pub is_logging_paused: bool,
     pub manual_log_file_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkspaceConnectionInfo {
+    Ssh {
+        host: String,
+        port: u16,
+        username: String,
+        auth_method: String,
+        private_key_path: Option<String>,
+        jump_profile_id: Option<String>,
+    },
+    Telnet {
+        host: String,
+        port: u16,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -242,6 +260,7 @@ impl WorkspaceState {
             owner_window_id: owner_window_id.clone(),
             encoding: input.encoding,
             terminal_mode: input.terminal_mode,
+            connection_info: input.connection_info,
             is_connected: true,
             is_auto_logging: input.is_auto_logging,
             is_manual_logging: false,
@@ -567,6 +586,7 @@ pub struct WorkspaceTabRegisterInput {
     pub title: String,
     pub encoding: String,
     pub terminal_mode: String,
+    pub connection_info: Option<WorkspaceConnectionInfo>,
     pub is_auto_logging: bool,
 }
 
@@ -1014,6 +1034,7 @@ pub async fn workspace_tab_register(
     title: String,
     encoding: String,
     terminal_mode: String,
+    connection_info: Option<WorkspaceConnectionInfo>,
     is_auto_logging: bool,
 ) -> Result<WorkspaceSnapshot, String> {
     let snapshot = state
@@ -1025,6 +1046,7 @@ pub async fn workspace_tab_register(
             title,
             encoding,
             terminal_mode,
+            connection_info,
             is_auto_logging,
         })
         .await;
@@ -1104,6 +1126,7 @@ mod tests {
             title: format!("{session_id}-title"),
             encoding: "utf-8".into(),
             terminal_mode: "general".into(),
+            connection_info: None,
             is_auto_logging: false,
         }
     }
@@ -1118,6 +1141,86 @@ mod tests {
         assert_eq!(snapshot.window_id, "main");
         assert!(snapshot.tabs.is_empty());
         assert!(snapshot.window.tab_order.is_empty());
+    }
+
+    #[tokio::test]
+    async fn connection_info_survives_workspace_move() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state
+            .register_window("other".into(), "other".into(), false)
+            .await;
+        let mut ssh_input = input("s1", Some("main"));
+        ssh_input.connection_info = Some(WorkspaceConnectionInfo::Ssh {
+            host: "example.invalid".into(),
+            port: 2222,
+            username: "operator".into(),
+            auth_method: "public_key".into(),
+            private_key_path: Some("C:\\keys\\id_ed25519".into()),
+            jump_profile_id: Some("bastion".into()),
+        });
+        state.register_tab(ssh_input).await;
+
+        let snapshots = state
+            .move_tab("s1".into(), "main".into(), "other".into(), 0)
+            .await
+            .unwrap();
+        let moved = snapshots
+            .iter()
+            .find(|snapshot| snapshot.window_id == "other")
+            .unwrap();
+
+        assert_eq!(
+            moved.tabs[0].connection_info,
+            Some(WorkspaceConnectionInfo::Ssh {
+                host: "example.invalid".into(),
+                port: 2222,
+                username: "operator".into(),
+                auth_method: "public_key".into(),
+                private_key_path: Some("C:\\keys\\id_ed25519".into()),
+                jump_profile_id: Some("bastion".into()),
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn workspace_supports_telnet_info_and_serial_without_info() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        let mut telnet_input = input("t1", Some("main"));
+        telnet_input.connection_type = TerminalProtocol::Telnet;
+        telnet_input.connection_info = Some(WorkspaceConnectionInfo::Telnet {
+            host: "example.invalid".into(),
+            port: 2323,
+        });
+        state.register_tab(telnet_input).await;
+        let mut serial_input = input("serial1", Some("main"));
+        serial_input.connection_type = TerminalProtocol::Serial;
+        state.register_tab(serial_input).await;
+
+        let snapshot = state.snapshot_for_window("main".into()).await;
+        let telnet = snapshot
+            .tabs
+            .iter()
+            .find(|tab| tab.session_id == "t1")
+            .unwrap();
+        let serial = snapshot
+            .tabs
+            .iter()
+            .find(|tab| tab.session_id == "serial1")
+            .unwrap();
+        assert_eq!(
+            telnet.connection_info,
+            Some(WorkspaceConnectionInfo::Telnet {
+                host: "example.invalid".into(),
+                port: 2323,
+            })
+        );
+        assert_eq!(serial.connection_info, None);
     }
 
     #[tokio::test]
