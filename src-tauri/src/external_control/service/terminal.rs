@@ -375,9 +375,15 @@ async fn send_terminal_input_to_runtime(
     }
 
     match info.protocol {
-        TerminalProtocol::Ssh => ssh::write_data(&runtime.ssh, session_id, data).await,
-        TerminalProtocol::Serial => serial::write_data(&runtime.serial, session_id, data).await,
-        TerminalProtocol::Telnet => telnet::write_data(&runtime.telnet, session_id, data).await,
+        TerminalProtocol::Ssh => {
+            ssh::write_data(&runtime.ssh, &runtime.terminals, session_id, data).await
+        }
+        TerminalProtocol::Serial => {
+            serial::write_data(&runtime.serial, &runtime.terminals, session_id, data).await
+        }
+        TerminalProtocol::Telnet => {
+            telnet::write_data(&runtime.telnet, &runtime.terminals, session_id, data).await
+        }
     }
     .map_err(internal_error)
 }

@@ -97,11 +97,15 @@ pub async fn ssh_connect(
 #[tauri::command]
 pub async fn ssh_write(
     state: SshCommandState<'_>,
+    terminals: TerminalCommandState<'_>,
     language: LanguageCommandState<'_>,
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    localize(&language, io::ssh_write(state, session_id, data).await)
+    localize(
+        &language,
+        io::ssh_write(state, terminals, session_id, data).await,
+    )
 }
 
 #[tauri::command]

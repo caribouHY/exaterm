@@ -353,17 +353,24 @@ pub(super) fn spawn_ssh_read_processor(
 
 pub async fn ssh_write(
     state: tauri::State<'_, SshState>,
+    terminals: tauri::State<'_, crate::terminal_control::TerminalControlState>,
     session_id: String,
     data: String,
 ) -> Result<(), String> {
-    write_data(&state, &session_id, data).await
+    write_data(&state, terminals.inner(), &session_id, data).await
 }
 
-pub async fn write_data(state: &SshState, session_id: &str, data: String) -> Result<(), String> {
+pub async fn write_data(
+    state: &SshState,
+    terminals: &crate::terminal_control::TerminalControlState,
+    session_id: &str,
+    data: String,
+) -> Result<(), String> {
     let session = {
         let sessions = state.sessions.lock().await;
         sessions.get(session_id).ok_or("Session not found")?.clone()
     };
+    let data = terminals.encode_input(session_id, &data).await?;
 
     let channel = session.lock().await.channel.clone();
     run_ssh_channel_operation_with_timeout(
@@ -373,7 +380,7 @@ pub async fn write_data(state: &SshState, session_id: &str, data: String) -> Res
             channel
                 .lock()
                 .await
-                .data_bytes(data.into_bytes())
+                .data_bytes(data)
                 .await
                 .map_err(|_| SSH_WRITE_ERROR.to_string())
         },
