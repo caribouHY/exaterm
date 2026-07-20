@@ -247,6 +247,7 @@ export interface WindowWorkspaceSnapshot {
 }
 
 export interface WorkspaceSnapshot {
+  revision: number;
   window_id: string;
   window: WindowWorkspaceSnapshot;
   tabs: WorkspaceTabInfo[];

@@ -231,6 +231,7 @@ export default function App() {
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
   const tabsRef = useRef<TabInfo[]>([]);
   const activeTabIdRef = useRef<string | null>(null);
+  const lastAppliedWorkspaceRevisionRef = useRef<number | null>(null);
   const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
 
   const appTabs: AppTabInfo[] = useMemo(
@@ -259,6 +260,9 @@ export default function App() {
   const applyWorkspaceSnapshot = useCallback(
     (snapshot: WorkspaceSnapshot) => {
       if (snapshot.window_id !== windowIdRef.current) return;
+      const lastAppliedRevision = lastAppliedWorkspaceRevisionRef.current;
+      if (lastAppliedRevision !== null && snapshot.revision <= lastAppliedRevision) return;
+      lastAppliedWorkspaceRevisionRef.current = snapshot.revision;
       const terminalTabs = snapshot.tabs.map(workspaceTabToTabInfo);
       const currentTerminalIds = tabsRef.current.map((tab) => tab.id);
       tabsRef.current = terminalTabs;
