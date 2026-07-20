@@ -42,7 +42,9 @@ export function useWorkspaceTabMovement({
     (tabId: string, pointerScreenPosition: WorkspacePointerPosition) => {
       workspaceClient
         .startDrag(tabs.windowId, tabId, pointerScreenPosition)
-        .then((preview) => tabs.setDragPreview(preview.active ? preview : null))
+        .then((preview) => {
+          tabs.setDragPreview(preview.active ? preview : null);
+        })
         .catch((error) => {
           console.error("Failed to start workspace tab drag:", error);
         });
@@ -69,7 +71,9 @@ export function useWorkspaceTabMovement({
   const cancelCrossWindowDrag = useCallback(() => {
     workspaceClient
       .cancelDrag()
-      .then(() => tabs.setDragPreview(null))
+      .then(() => {
+        tabs.setDragPreview(null);
+      })
       .catch((error) => {
         console.error("Failed to cancel workspace tab drag:", error);
       });

@@ -611,7 +611,9 @@ export default function App() {
                 dragPreview={workspaceDragPreview}
                 onCrossWindowDragStart={workspaceTabMovement.startCrossWindowDrag}
                 onCrossWindowDragUpdate={workspaceTabMovement.updateCrossWindowDrag}
-                onCrossWindowDragDrop={workspaceTabMovement.dropCrossWindowDrag}
+                onCrossWindowDragDrop={(tabId, pointerScreenPosition) => {
+                  void workspaceTabMovement.dropCrossWindowDrag(tabId, pointerScreenPosition);
+                }}
                 onCrossWindowDragCancel={workspaceTabMovement.cancelCrossWindowDrag}
                 onCrossWindowDragHover={workspaceTabMovement.hoverCrossWindowDrag}
               />
