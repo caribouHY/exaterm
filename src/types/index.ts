@@ -250,7 +250,12 @@ export interface WorkspaceSnapshot {
   window_id: string;
   window: WindowWorkspaceSnapshot;
   tabs: WorkspaceTabInfo[];
+  tab_update?: WorkspaceTabUpdate | null;
 }
+
+export type WorkspaceTabUpdate =
+  | { kind: "connected"; tab_id: string }
+  | { kind: "moved"; tab_id: string; target_index: number };
 
 export interface WorkspaceWindowCreateResult {
   window_id: string;
