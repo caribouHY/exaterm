@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.8.0
+
 ### Changed
 
 - Improved the desktop Settings experience with clearer categories, accessibility, save and revert feedback, and safer dependent-control behavior.
