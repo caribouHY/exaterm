@@ -420,10 +420,7 @@ impl WorkspaceState {
                 .windows
                 .get_mut(&from_window_id)
                 .ok_or_else(|| "Source window not found".to_string())?;
-            source.tab_order.retain(|id| id != &tab_id);
-            if source.active_tab_id.as_deref() == Some(tab_id.as_str()) {
-                source.active_tab_id = source.tab_order.last().cloned();
-            }
+            remove_tab_from_window(source, &tab_id);
         }
 
         let destination_target_index;
@@ -488,10 +485,7 @@ impl WorkspaceState {
             .windows
             .get_mut(&window_id)
             .ok_or_else(|| "Window not found".to_string())?;
-        window.tab_order.retain(|id| id != &tab_id);
-        if window.active_tab_id.as_deref() == Some(tab_id.as_str()) {
-            window.active_tab_id = window.tab_order.last().cloned();
-        }
+        remove_tab_from_window(window, &tab_id);
         advance_revision_if_changed(&mut model, &previous);
         Ok(snapshot_for_locked(&model, &window_id))
     }
@@ -759,10 +753,26 @@ fn ensure_window(model: &mut WorkspaceModel, window_id: &str, label: &str) {
 
 fn remove_tab_from_all_windows(model: &mut WorkspaceModel, tab_id: &str) {
     for window in model.windows.values_mut() {
-        window.tab_order.retain(|id| id != tab_id);
-        if window.active_tab_id.as_deref() == Some(tab_id) {
-            window.active_tab_id = window.tab_order.last().cloned();
-        }
+        remove_tab_from_window(window, tab_id);
+    }
+}
+
+fn remove_tab_from_window(window: &mut WindowWorkspace, tab_id: &str) {
+    let Some(removed_index) = window.tab_order.iter().position(|id| id == tab_id) else {
+        return;
+    };
+    let removed_active_tab = window.active_tab_id.as_deref() == Some(tab_id);
+    window.tab_order.remove(removed_index);
+    if removed_active_tab {
+        window.active_tab_id = window
+            .tab_order
+            .get(removed_index)
+            .or_else(|| {
+                removed_index
+                    .checked_sub(1)
+                    .and_then(|index| window.tab_order.get(index))
+            })
+            .cloned();
     }
 }
 
@@ -1435,6 +1445,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(snapshot.window.tab_order, vec!["s3", "s1", "s2"]);
+        assert_eq!(snapshot.window.active_tab_id.as_deref(), Some("s3"));
         assert!(snapshot
             .tabs
             .iter()
@@ -1481,6 +1492,97 @@ mod tests {
                 target_index: 0
             })
         );
+    }
+
+    #[tokio::test]
+    async fn moving_active_middle_tab_selects_right_neighbor_in_source() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state
+            .register_window("other".into(), "other".into(), false)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+        state.register_tab(input("s2", Some("main"))).await;
+        state.register_tab(input("s3", Some("main"))).await;
+        state
+            .activate_tab("main".into(), "s2".into())
+            .await
+            .unwrap();
+
+        let snapshots = state
+            .move_tab("s2".into(), "main".into(), "other".into(), 0)
+            .await
+            .unwrap();
+        let main = snapshots
+            .iter()
+            .find(|snapshot| snapshot.window_id == "main")
+            .unwrap();
+        let other = snapshots
+            .iter()
+            .find(|snapshot| snapshot.window_id == "other")
+            .unwrap();
+
+        assert_eq!(main.window.tab_order, vec!["s1", "s3"]);
+        assert_eq!(main.window.active_tab_id.as_deref(), Some("s3"));
+        assert_eq!(other.window.active_tab_id.as_deref(), Some("s2"));
+    }
+
+    #[tokio::test]
+    async fn moving_active_last_tab_selects_left_neighbor_in_source() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state
+            .register_window("other".into(), "other".into(), false)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+        state.register_tab(input("s2", Some("main"))).await;
+        state.register_tab(input("s3", Some("main"))).await;
+
+        let snapshots = state
+            .move_tab("s3".into(), "main".into(), "other".into(), 0)
+            .await
+            .unwrap();
+        let main = snapshots
+            .iter()
+            .find(|snapshot| snapshot.window_id == "main")
+            .unwrap();
+
+        assert_eq!(main.window.tab_order, vec!["s1", "s2"]);
+        assert_eq!(main.window.active_tab_id.as_deref(), Some("s2"));
+    }
+
+    #[tokio::test]
+    async fn moving_inactive_tab_preserves_source_active_and_activates_destination() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state
+            .register_window("other".into(), "other".into(), false)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+        state.register_tab(input("s2", Some("main"))).await;
+        state.register_tab(input("d1", Some("other"))).await;
+
+        let snapshots = state
+            .move_tab("s1".into(), "main".into(), "other".into(), 1)
+            .await
+            .unwrap();
+        let main = snapshots
+            .iter()
+            .find(|snapshot| snapshot.window_id == "main")
+            .unwrap();
+        let other = snapshots
+            .iter()
+            .find(|snapshot| snapshot.window_id == "other")
+            .unwrap();
+
+        assert_eq!(main.window.active_tab_id.as_deref(), Some("s2"));
+        assert_eq!(other.window.active_tab_id.as_deref(), Some("s1"));
     }
 
     #[tokio::test]
@@ -1704,7 +1806,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn removing_active_tab_selects_valid_fallback_or_null() {
+    async fn removing_active_middle_tab_selects_right_neighbor() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+        state.register_tab(input("s2", Some("main"))).await;
+        state.register_tab(input("s3", Some("main"))).await;
+        state
+            .activate_tab("main".into(), "s2".into())
+            .await
+            .unwrap();
+
+        let snapshot = state.remove_tab("main".into(), "s2".into()).await.unwrap();
+
+        assert_eq!(snapshot.window.tab_order, vec!["s1", "s3"]);
+        assert_eq!(snapshot.window.active_tab_id.as_deref(), Some("s3"));
+    }
+
+    #[tokio::test]
+    async fn removing_active_last_tab_selects_left_neighbor_then_null() {
         let state = WorkspaceState::new();
         state
             .register_window("main".into(), "main".into(), true)

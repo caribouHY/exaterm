@@ -99,27 +99,27 @@ function orderAppTabs(appTabs: AppTabInfo[], tabOrder: string[]) {
   return [...orderedTabs, ...newTabs];
 }
 
-function getCloseFocusNeighbors(appTabs: AppTabInfo[], closingTabId: string) {
-  const closingIndex = appTabs.findIndex((tab) => tab.id === closingTabId);
-  if (closingIndex < 0) return { rightId: null, leftId: null };
+function getRemovalFocusNeighbors(appTabs: AppTabInfo[], removedTabId: string) {
+  const removedIndex = appTabs.findIndex((tab) => tab.id === removedTabId);
+  if (removedIndex < 0) return { rightId: null, leftId: null };
 
   return {
-    rightId: appTabs[closingIndex + 1]?.id ?? null,
-    leftId: appTabs[closingIndex - 1]?.id ?? null,
+    rightId: appTabs[removedIndex + 1]?.id ?? null,
+    leftId: appTabs[removedIndex - 1]?.id ?? null,
   };
 }
 
-function resolveCloseFocusTarget(
+function resolveRemovalFocusTarget(
   appTabs: AppTabInfo[],
   closingTabIds: Set<string>,
-  closedTabId: string,
+  removedTabId: string,
   rightId: string | null,
   leftId: string | null,
   activeTabId: string | null
 ) {
   const availableTabIds = new Set(
     appTabs
-      .filter((tab) => tab.id !== closedTabId && !closingTabIds.has(tab.id))
+      .filter((tab) => tab.id !== removedTabId && !closingTabIds.has(tab.id))
       .map((tab) => tab.id)
   );
 
@@ -439,6 +439,29 @@ export default function App() {
     [applyWorkspaceSnapshot, setSelectedTab]
   );
 
+  const selectTabProgrammatically = useCallback(
+    (id: string | null) => {
+      if (!id) {
+        setSelectedTab(null, false);
+        return;
+      }
+
+      const tab = appTabsRef.current.find((item) => item.id === id);
+      setSelectedTab(id, false);
+      if (tab?.kind === "terminal") {
+        invoke<WorkspaceSnapshot>("workspace_tab_activate", {
+          windowId: windowIdRef.current,
+          tabId: id,
+        })
+          .then(applyWorkspaceSnapshot)
+          .catch((error) => {
+            console.error("Failed to activate workspace tab:", error);
+          });
+      }
+    },
+    [applyWorkspaceSnapshot, setSelectedTab]
+  );
+
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
@@ -711,12 +734,12 @@ export default function App() {
     async (id: string) => {
       const wasActive = activeTabIdRef.current === id;
       const selectionEpoch = selectionEpochRef.current;
-      const { rightId, leftId } = getCloseFocusNeighbors(appTabsRef.current, id);
+      const { rightId, leftId } = getRemovalFocusNeighbors(appTabsRef.current, id);
 
       const focusAfterClose = () => {
         if (!wasActive || selectionEpochRef.current !== selectionEpoch) return;
 
-        const focusTargetId = resolveCloseFocusTarget(
+        const focusTargetId = resolveRemovalFocusTarget(
           appTabsRef.current,
           closingTabIdsRef.current,
           id,
@@ -724,22 +747,7 @@ export default function App() {
           leftId,
           activeTabIdRef.current
         );
-        if (focusTargetId) {
-          const focusTarget = appTabsRef.current.find((tab) => tab.id === focusTargetId);
-          setSelectedTab(focusTargetId, false);
-          if (focusTarget?.kind === "terminal") {
-            invoke<WorkspaceSnapshot>("workspace_tab_activate", {
-              windowId: windowIdRef.current,
-              tabId: focusTargetId,
-            })
-              .then(applyWorkspaceSnapshot)
-              .catch((error) => {
-                console.error("Failed to activate workspace tab:", error);
-              });
-          }
-        } else {
-          setSelectedTab(null, false);
-        }
+        selectTabProgrammatically(focusTargetId);
       };
 
       if (id === "settings" || id === "logs") {
@@ -761,7 +769,7 @@ export default function App() {
       if (!closed) return;
       focusAfterClose();
     },
-    [applyWorkspaceSnapshot, disconnectTab, setSelectedTab]
+    [disconnectTab, selectTabProgrammatically]
   );
 
   const handleReorderTabs = useCallback(
@@ -851,6 +859,10 @@ export default function App() {
 
   const handleCrossWindowDragDrop = useCallback(
     async (tabId: string, pointerScreenPosition: WorkspacePointerPosition) => {
+      const wasActive = activeTabIdRef.current === tabId;
+      const selectionEpoch = selectionEpochRef.current;
+      const { rightId, leftId } = getRemovalFocusNeighbors(appTabsRef.current, tabId);
+
       if (tabId) {
         try {
           await terminalViewRefs.current.get(tabId)?.flushLogBuffersForMove();
@@ -868,11 +880,25 @@ export default function App() {
         const sourceSnapshot = result.snapshots.find(
           (snapshot) => snapshot.window_id === windowIdRef.current
         );
-        if (
+        const movedFromCurrentWindow =
           result.source_window_id === windowIdRef.current &&
-          result.target_window_id !== windowIdRef.current &&
+          result.target_window_id !== windowIdRef.current;
+        if (movedFromCurrentWindow && wasActive && selectionEpochRef.current === selectionEpoch) {
+          selectTabProgrammatically(
+            resolveRemovalFocusTarget(
+              appTabsRef.current,
+              closingTabIdsRef.current,
+              tabId,
+              rightId,
+              leftId,
+              activeTabIdRef.current
+            )
+          );
+        }
+        if (
+          movedFromCurrentWindow &&
           sourceSnapshot?.window.tab_order.length === 0 &&
-          utilityTabs.length === 0
+          utilityTabsRef.current.length === 0
         ) {
           await getCurrentWindow().close();
         }
@@ -881,11 +907,15 @@ export default function App() {
         handleCrossWindowDragCancel();
       }
     },
-    [applyWorkspaceSnapshot, handleCrossWindowDragCancel, utilityTabs.length]
+    [applyWorkspaceSnapshot, handleCrossWindowDragCancel, selectTabProgrammatically]
   );
 
   const handleMoveTabToNewWindow = useCallback(
     async (tabId: string) => {
+      const wasActive = activeTabIdRef.current === tabId;
+      const selectionEpoch = selectionEpochRef.current;
+      const { rightId, leftId } = getRemovalFocusNeighbors(appTabsRef.current, tabId);
+
       try {
         await terminalViewRefs.current.get(tabId)?.flushLogBuffersForMove();
       } catch (error) {
@@ -901,11 +931,25 @@ export default function App() {
         const sourceSnapshot = result.snapshots.find(
           (snapshot) => snapshot.window_id === windowIdRef.current
         );
-        if (
+        const movedFromCurrentWindow =
           result.source_window_id === windowIdRef.current &&
-          result.target_window_id !== windowIdRef.current &&
+          result.target_window_id !== windowIdRef.current;
+        if (movedFromCurrentWindow && wasActive && selectionEpochRef.current === selectionEpoch) {
+          selectTabProgrammatically(
+            resolveRemovalFocusTarget(
+              appTabsRef.current,
+              closingTabIdsRef.current,
+              tabId,
+              rightId,
+              leftId,
+              activeTabIdRef.current
+            )
+          );
+        }
+        if (
+          movedFromCurrentWindow &&
           sourceSnapshot?.window.tab_order.length === 0 &&
-          utilityTabs.length === 0
+          utilityTabsRef.current.length === 0
         ) {
           await getCurrentWindow().close();
         }
@@ -913,7 +957,7 @@ export default function App() {
         console.error("Failed to move workspace tab to a new window:", error);
       }
     },
-    [applyWorkspaceSnapshot, utilityTabs.length]
+    [applyWorkspaceSnapshot, selectTabProgrammatically]
   );
 
   const handleTerminalData = useCallback((tabId: string, data: string) => {
