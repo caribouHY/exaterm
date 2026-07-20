@@ -43,6 +43,7 @@ Avoid changes that remount terminal views or drop active tab state unless the ta
 - `src-tauri/src/config.rs` loads, defaults, migrates legacy `mcp` settings into
   `external_control`, and saves user settings.
 - `src-tauri/src/logger.rs` handles optional plaintext terminal session logs and the log index.
+- `src-tauri/src/workspace.rs` is the workspace facade; `src-tauri/src/workspace/model.rs` owns workspace data and invariants, `state.rs` provides the async shared-state API, and `commands.rs` owns Tauri commands, window creation, and workspace events.
 - `src-tauri/src/external_control/` owns the typed terminal-operation API, GUI-local control protocol, client discovery, and GUI startup flow used by `exaterm-mcp` and `exaterm-cli`.
 - `src-tauri/src/mcp/` adapts the typed external-control API to the existing MCP tool behavior.
 - `src-tauri/src/terminal_cli.rs` defines the typed JSON terminal CLI.

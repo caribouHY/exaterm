@@ -10,6 +10,7 @@
 - Added frontend regression coverage for terminal and utility tab ordering, focus, and workspace snapshot reconciliation.
 - Separated frontend workspace tab state, lifecycle, and movement orchestration from the main app shell.
 - Separated terminal tab drag geometry and pointer interaction from tab strip rendering.
+- Separated the Rust workspace domain, shared state, Tauri adapters, and invariant tests into focused modules.
 
 ### Added
 
