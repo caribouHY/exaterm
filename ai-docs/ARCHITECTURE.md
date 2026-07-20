@@ -21,7 +21,8 @@ The app is currently planned and documented around a Windows desktop beta.
 
 ## Frontend Areas
 
-- `src/App.tsx` owns the main shell, active view, terminal tabs, AI panel visibility, config refresh, and tab close/disconnect flow.
+- `src/App.tsx` composes the main shell, terminal views, utility views, AI panel, config refresh, and UI prompts.
+- `src/features/workspace-tabs/` owns the frontend window projection, terminal and utility tab ordering, workspace event subscriptions, tab lifecycle workflows, and cross-window movement requests.
 - `src/components/Terminal/` owns xterm.js rendering, terminal input/output, resize handling, encoding selection support, and optional log append calls.
 - `src/components/Connection/` owns SSH, Serial, and Telnet connection forms, SSH host-key confirmation, serial port listing, and session start.
 - `src/components/Settings/` owns config editing and AI API key save/clear UI.
@@ -64,7 +65,7 @@ Preserve the opt-in logging model unless the task explicitly changes it.
 ## Important Data Flow
 
 - Frontend calls Rust through `@tauri-apps/api/core` `invoke`.
-- SSH, Serial, and Telnet connection dialogs start backend sessions, then `App.tsx` creates tabs from returned session IDs.
+- SSH, Serial, and Telnet connection dialogs start backend sessions, then the frontend workspace-tab lifecycle registers tabs from returned session IDs.
 - Terminal input writes to the matching backend command (`ssh_write`, `serial_write`, or `telnet_write`); terminal output is rendered by xterm.js and may be appended to logs only when auto session logging is enabled.
 - Settings are loaded through `config_load` and saved through `config_save`.
 - AI chat loads configured provider/model preferences, checks secret status for cloud providers, and calls `ai_chat`.

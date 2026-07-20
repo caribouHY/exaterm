@@ -43,13 +43,19 @@ ExaTerm is a Tauri v2 desktop application.
 
 ### Frontend Runtime
 
-`src/App.tsx` currently owns the main UI shell:
+`src/App.tsx` composes the main UI shell:
 
-- terminal tab list, tab order, active tab, and close state
-- utility tabs for Settings and Logs
 - AI panel visibility, width, messages, provider, and selected model
 - config refresh and startup CLI request handling
 - MCP credential and log-control prompts
+- terminal views, Settings, Logs, TitleBar, StatusBar, and connection-dialog presentation
+
+`src/features/workspace-tabs/` owns the frontend workspace projection:
+
+- backend terminal-tab snapshots combined with window-local Settings and Logs tabs
+- visible tab order, active app tab, close state, and workspace revision handling
+- workspace window registration, focus reporting, and workspace event subscriptions
+- terminal-tab registration, close/disconnect, reorder, cross-window move, and detach workflows
 
 Terminal rendering lives under `src/components/Terminal/`.
 `TerminalView` owns the xterm.js instance, backend output listeners, resize handling,
@@ -153,13 +159,13 @@ credential prompts remain owned by the GUI.
 
 Current ownership:
 
-- Backend owns network/device sessions, decoded output buffers, and log state.
-- Frontend owns visible tab placement and active tab state.
+- Backend owns network/device sessions, decoded output buffers, log state, terminal-tab placement, and active terminal tab per window.
+- Frontend owns each window's backend workspace projection, local utility-tab placement, and active app view.
 - MCP exposes backend runtime state but depends on the GUI process being alive.
 
 Future ownership direction:
 
-- Cross-window tab placement should move from `App.tsx` to a backend workspace state.
+- Keep cross-window terminal placement backend-owned while allowing the frontend projection protocol to evolve from full snapshots to versioned deltas if needed.
 - External control should connect through a local control plane instead of assuming a
   manually launched GUI.
 - Terminal sessions should remain single-owner runtime resources even when their visible

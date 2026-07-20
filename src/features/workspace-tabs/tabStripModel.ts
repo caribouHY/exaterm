@@ -37,6 +37,41 @@ export function reorderTabIds(
   return nextOrder;
 }
 
+export interface TabReorderPlan {
+  previousOrder: string[];
+  nextOrder: string[];
+  persistToWorkspace: boolean;
+}
+
+export function planTabReorder(
+  appTabs: AppTabInfo[],
+  draggedId: string,
+  targetId: string,
+  dropSide: "before" | "after"
+): TabReorderPlan | null {
+  if (draggedId === targetId) return null;
+
+  const draggedTab = appTabs.find((tab) => tab.id === draggedId);
+  const targetTab = appTabs.find((tab) => tab.id === targetId);
+  if (!draggedTab || !targetTab) return null;
+
+  const previousOrder = appTabs.map((tab) => tab.id);
+  const nextOrder = reorderTabIds(previousOrder, draggedId, targetId, dropSide);
+  if (tabOrdersEqual(previousOrder, nextOrder)) return null;
+
+  const terminalTabIds = new Set(
+    appTabs.filter((tab) => tab.kind === "terminal").map((tab) => tab.id)
+  );
+  const currentTerminalOrder = previousOrder.filter((id) => terminalTabIds.has(id));
+  const nextTerminalOrder = nextOrder.filter((id) => terminalTabIds.has(id));
+  const persistToWorkspace = !tabOrdersEqual(currentTerminalOrder, nextTerminalOrder);
+  if (persistToWorkspace && (draggedTab.kind !== "terminal" || targetTab.kind !== "terminal")) {
+    return null;
+  }
+
+  return { previousOrder, nextOrder, persistToWorkspace };
+}
+
 export function tabOrdersEqual(left: string[], right: string[]) {
   if (left.length !== right.length) return false;
 

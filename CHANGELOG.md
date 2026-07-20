@@ -8,6 +8,7 @@
 - Made AI provider setup and saved API-key management easier to understand and safer to use.
 - Aligned the desktop UI styling rules and shared dark-theme tokens for more consistent future interface changes.
 - Added frontend regression coverage for terminal and utility tab ordering, focus, and workspace snapshot reconciliation.
+- Separated frontend workspace tab state, lifecycle, and movement orchestration from the main app shell.
 
 ### Added
 
