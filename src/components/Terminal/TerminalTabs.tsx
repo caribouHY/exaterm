@@ -1,6 +1,5 @@
 import { FileText, Monitor, Network, Settings, Usb, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { PointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   AppTabInfo,
@@ -11,6 +10,8 @@ import type {
   WorkspacePointerPosition,
 } from "../../types";
 import { PopoverMenu, type PopoverMenuItem } from "../Common";
+import { clampContextMenuPosition, type TabDropSide } from "./tabDragGeometry";
+import { useTabPointerDrag } from "./useTabPointerDrag";
 import "./TerminalTabs.css";
 
 interface TerminalTabsProps {
@@ -35,42 +36,11 @@ interface TerminalTabsProps {
   ) => void;
 }
 
-type TabDropSide = "before" | "after";
-
-interface TabDropTarget {
-  tabId: string;
-  side: TabDropSide;
-  indicatorLeft: number;
-  slotIndex: number;
-}
-
-interface PointerDragState {
-  tabId: string;
-  pointerId: number;
-  startX: number;
-  startY: number;
-  active: boolean;
-  isTerminalTab: boolean;
-  crossWindowStarted: boolean;
-}
-
 interface TabContextMenuState {
   tabId: string;
   x: number;
   y: number;
 }
-
-interface ForeignDropTarget {
-  targetIndex: number;
-  indicatorLeft: number;
-  placement: ForeignTabPlacement;
-}
-
-const DRAG_START_DISTANCE = 4;
-const DROP_SLOT_HYSTERESIS_PX = 14;
-const CONTEXT_MENU_WIDTH = 220;
-const CONTEXT_MENU_MAX_HEIGHT = 128;
-const CONTEXT_MENU_VIEWPORT_MARGIN = 8;
 
 export default function TerminalTabs({
   tabs,
@@ -95,15 +65,21 @@ export default function TerminalTabs({
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
   const addTabRef = useRef<HTMLButtonElement | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
-  const pointerDragState = useRef<PointerDragState | null>(null);
-  const dropTargetRef = useRef<TabDropTarget | null>(null);
-  const foreignHoverSignatureRef = useRef<string | null>(null);
-  const suppressNextClick = useRef(false);
-  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<TabDropTarget | null>(null);
-  const [foreignDropTarget, setForeignDropTarget] = useState<ForeignDropTarget | null>(null);
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null);
   const visibleTabOrder = tabs.map((tab) => tab.id).join("\u0000");
+  const pointerDrag = useTabPointerDrag({
+    containerRef: tabsRef,
+    tabs,
+    closingTabIds,
+    windowId,
+    dragPreview,
+    onReorderTabs,
+    onCrossWindowDragStart,
+    onCrossWindowDragUpdate,
+    onCrossWindowDragDrop,
+    onCrossWindowDragCancel,
+    onCrossWindowDragHover,
+  });
 
   const ensureActiveTabVisible = useCallback(() => {
     if (!activeTabId) return;
@@ -147,230 +123,9 @@ export default function TerminalTabs({
     };
   }, [activeTabId, ensureActiveTabVisible, visibleTabOrder]);
 
-  const updateDropTarget = (target: TabDropTarget | null) => {
-    dropTargetRef.current = target;
-    setDropTarget(target);
-  };
-
-  const getDropTargetAtPoint = (
-    sourceTabId: string,
-    clientX: number,
-    clientY: number,
-    currentTarget: TabDropTarget | null
-  ): TabDropTarget | null => {
-    const container = tabsRef.current;
-    if (!container) return null;
-
-    const containerRect = container.getBoundingClientRect();
-    if (
-      clientY < containerRect.top ||
-      clientY > containerRect.bottom ||
-      clientX < containerRect.left ||
-      clientX > containerRect.right
-    ) {
-      return null;
-    }
-
-    const candidates = Array.from(container.querySelectorAll<HTMLElement>("[data-terminal-tab-id]"))
-      .map((element) => {
-        const tabId = element.dataset.terminalTabId;
-        if (!tabId || tabId === sourceTabId || closingTabIds.includes(tabId)) return null;
-
-        const rect = element.getBoundingClientRect();
-        return {
-          tabId,
-          centerX: rect.left + rect.width / 2,
-          left: rect.left,
-          right: rect.right,
-        };
-      })
-      .filter((item): item is NonNullable<typeof item> => Boolean(item));
-
-    if (candidates.length === 0) return null;
-
-    let slotIndex = candidates.findIndex((candidate) => clientX < candidate.centerX);
-    if (slotIndex === -1) {
-      slotIndex = candidates.length;
-    }
-
-    if (currentTarget) {
-      if (slotIndex > currentTarget.slotIndex) {
-        const boundary = candidates[currentTarget.slotIndex]?.centerX;
-        if (boundary !== undefined && clientX < boundary + DROP_SLOT_HYSTERESIS_PX) {
-          return currentTarget;
-        }
-      } else if (slotIndex < currentTarget.slotIndex) {
-        const boundary = candidates[currentTarget.slotIndex - 1]?.centerX;
-        if (boundary !== undefined && clientX > boundary - DROP_SLOT_HYSTERESIS_PX) {
-          return currentTarget;
-        }
-      }
-    }
-
-    const target =
-      slotIndex < candidates.length
-        ? {
-            tabId: candidates[slotIndex].tabId,
-            side: "before" as const,
-            edgeX: candidates[slotIndex].left,
-          }
-        : {
-            tabId: candidates[candidates.length - 1].tabId,
-            side: "after" as const,
-            edgeX: candidates[candidates.length - 1].right,
-          };
-
-    return {
-      tabId: target.tabId,
-      side: target.side,
-      indicatorLeft: target.edgeX - containerRect.left + container.scrollLeft,
-      slotIndex,
-    };
-  };
-
-  const getPointerScreenPosition = (e: PointerEvent): WorkspacePointerPosition => ({
-    x: e.screenX,
-    y: e.screenY,
-  });
-
-  const getForeignDropTargetAtScreenPoint = (
-    screenX: number,
-    screenY: number
-  ): ForeignDropTarget | null => {
-    const container = tabsRef.current;
-    if (!container) return null;
-
-    const clientX = screenX - window.screenX;
-    const clientY = screenY - window.screenY;
-    const containerRect = container.getBoundingClientRect();
-    if (
-      clientY < containerRect.top ||
-      clientY > containerRect.bottom ||
-      clientX < containerRect.left ||
-      clientX > containerRect.right
-    ) {
-      return null;
-    }
-
-    const candidates = Array.from(container.querySelectorAll<HTMLElement>("[data-terminal-tab-id]"))
-      .map((element) => {
-        const tabId = element.dataset.terminalTabId;
-        if (!tabId || closingTabIds.includes(tabId)) return null;
-
-        const rect = element.getBoundingClientRect();
-        return {
-          tabId,
-          isTerminal: Boolean(element.dataset.workspaceTerminalTabId),
-          centerX: rect.left + rect.width / 2,
-          left: rect.left,
-          right: rect.right,
-        };
-      })
-      .filter((item): item is NonNullable<typeof item> => Boolean(item));
-
-    if (candidates.length === 0) {
-      return {
-        targetIndex: 0,
-        indicatorLeft: clientX - containerRect.left + container.scrollLeft,
-        placement: {
-          tabId: dragPreview?.tab_id ?? "",
-          previousTabId: null,
-          nextTabId: null,
-          visibleSlotIndex: 0,
-        },
-      };
-    }
-
-    let visibleSlotIndex = candidates.findIndex((candidate) => clientX < candidate.centerX);
-    if (visibleSlotIndex === -1) {
-      visibleSlotIndex = candidates.length;
-    }
-
-    const edgeX =
-      visibleSlotIndex < candidates.length
-        ? candidates[visibleSlotIndex].left
-        : candidates[candidates.length - 1].right;
-    const targetIndex = candidates
-      .slice(0, visibleSlotIndex)
-      .filter((candidate) => candidate.isTerminal).length;
-
-    return {
-      targetIndex,
-      indicatorLeft: edgeX - containerRect.left + container.scrollLeft,
-      placement: {
-        tabId: dragPreview?.tab_id ?? "",
-        previousTabId: candidates[visibleSlotIndex - 1]?.tabId ?? null,
-        nextTabId: candidates[visibleSlotIndex]?.tabId ?? null,
-        visibleSlotIndex,
-      },
-    };
-  };
-
-  const clearForeignHover = () => {
-    setForeignDropTarget(null);
-    foreignHoverSignatureRef.current = null;
-  };
-
-  const resetDragState = () => {
-    pointerDragState.current = null;
-    setDraggedTabId(null);
-    updateDropTarget(null);
-  };
-
   const closeContextMenu = () => {
     setContextMenu(null);
   };
-
-  const getContextMenuPosition = (clientX: number, clientY: number) => ({
-    x: Math.max(
-      CONTEXT_MENU_VIEWPORT_MARGIN,
-      Math.min(clientX, window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_VIEWPORT_MARGIN)
-    ),
-    y: Math.max(
-      CONTEXT_MENU_VIEWPORT_MARGIN,
-      Math.min(clientY, window.innerHeight - CONTEXT_MENU_MAX_HEIGHT - CONTEXT_MENU_VIEWPORT_MARGIN)
-    ),
-  });
-
-  const canDropOnTab = (sourceTabId: string, target: TabDropTarget | null) =>
-    Boolean(
-      target &&
-      target.tabId !== sourceTabId &&
-      tabs.some((tab) => tab.id === target.tabId) &&
-      !closingTabIds.includes(target.tabId)
-    );
-
-  useEffect(() => {
-    if (
-      !dragPreview?.active ||
-      !dragPreview.pointer_screen_position ||
-      !dragPreview.tab_id ||
-      dragPreview.source_window_id === windowId
-    ) {
-      clearForeignHover();
-      return;
-    }
-
-    const target = getForeignDropTargetAtScreenPoint(
-      dragPreview.pointer_screen_position.x,
-      dragPreview.pointer_screen_position.y
-    );
-    setForeignDropTarget(target);
-
-    const nextSignature = target
-      ? [
-          target.placement.tabId,
-          target.targetIndex,
-          target.placement.visibleSlotIndex,
-          target.placement.previousTabId,
-          target.placement.nextTabId,
-        ].join("\u0000")
-      : null;
-    if (foreignHoverSignatureRef.current !== nextSignature) {
-      foreignHoverSignatureRef.current = nextSignature;
-      onCrossWindowDragHover(target?.targetIndex ?? null, target?.placement ?? null);
-    }
-  }, [dragPreview, windowId, closingTabIds, tabs]);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -402,81 +157,6 @@ export default function TerminalTabs({
       window.removeEventListener("blur", handleWindowChange);
     };
   }, [contextMenu]);
-
-  const handlePointerMove = (e: PointerEvent<HTMLButtonElement>) => {
-    const dragState = pointerDragState.current;
-    if (!dragState || dragState.pointerId !== e.pointerId) return;
-
-    const distance = Math.hypot(e.clientX - dragState.startX, e.clientY - dragState.startY);
-    if (!dragState.active) {
-      if (distance < DRAG_START_DISTANCE) return;
-      dragState.active = true;
-      setDraggedTabId(dragState.tabId);
-      if (dragState.isTerminalTab) {
-        dragState.crossWindowStarted = true;
-        onCrossWindowDragStart(dragState.tabId, getPointerScreenPosition(e));
-      }
-    }
-
-    e.preventDefault();
-    if (dragState.isTerminalTab) {
-      onCrossWindowDragUpdate(getPointerScreenPosition(e));
-    }
-    const nextDropTarget = getDropTargetAtPoint(
-      dragState.tabId,
-      e.clientX,
-      e.clientY,
-      dropTargetRef.current
-    );
-    updateDropTarget(canDropOnTab(dragState.tabId, nextDropTarget) ? nextDropTarget : null);
-  };
-
-  const handlePointerUp = (e: PointerEvent<HTMLButtonElement>) => {
-    const dragState = pointerDragState.current;
-    if (!dragState || dragState.pointerId !== e.pointerId) return;
-
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-
-    if (dragState.active) {
-      e.preventDefault();
-      e.stopPropagation();
-      const target =
-        getDropTargetAtPoint(dragState.tabId, e.clientX, e.clientY, dropTargetRef.current) ??
-        dropTargetRef.current;
-      if (target && canDropOnTab(dragState.tabId, target)) {
-        onReorderTabs(dragState.tabId, target.tabId, target.side);
-        if (dragState.crossWindowStarted) {
-          onCrossWindowDragCancel();
-        }
-      } else if (
-        dragState.isTerminalTab &&
-        (e.clientX < 0 ||
-          e.clientX > window.innerWidth ||
-          e.clientY < 0 ||
-          e.clientY > window.innerHeight)
-      ) {
-        onCrossWindowDragDrop(dragState.tabId, getPointerScreenPosition(e));
-      } else if (dragState.crossWindowStarted) {
-        onCrossWindowDragCancel();
-      }
-      suppressNextClick.current = true;
-      window.setTimeout(() => {
-        suppressNextClick.current = false;
-      }, 0);
-    }
-
-    resetDragState();
-  };
-
-  const handlePointerCancel = (e: PointerEvent<HTMLButtonElement>) => {
-    const dragState = pointerDragState.current;
-    if (dragState?.pointerId === e.pointerId && dragState.crossWindowStarted) {
-      onCrossWindowDragCancel();
-    }
-    resetDragState();
-  };
 
   const iconFor = (connectionType: ConnectionType) => {
     if (connectionType === "ssh") return <Monitor size={13} />;
@@ -540,7 +220,7 @@ export default function TerminalTabs({
       {tabs.map((tab) => {
         const isClosing = closingTabIds.includes(tab.id);
         const isTerminalTab = tab.kind === "terminal";
-        const isDragging = draggedTabId === tab.id;
+        const isDragging = pointerDrag.draggedTabId === tab.id;
 
         return (
           <button
@@ -562,33 +242,27 @@ export default function TerminalTabs({
               if (isClosing || e.button !== 0) return;
               if ((e.target as HTMLElement).closest(".terminal-tab__close")) return;
 
-              pointerDragState.current = {
-                tabId: tab.id,
-                pointerId: e.pointerId,
-                startX: e.clientX,
-                startY: e.clientY,
-                active: false,
-                isTerminalTab,
-                crossWindowStarted: false,
-              };
-              e.currentTarget.setPointerCapture(e.pointerId);
+              pointerDrag.beginPointerDrag(e, tab.id, isTerminalTab);
             }}
             onContextMenu={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              resetDragState();
-              const position = getContextMenuPosition(e.clientX, e.clientY);
+              pointerDrag.resetPointerDrag();
+              const position = clampContextMenuPosition(
+                { x: e.clientX, y: e.clientY },
+                { width: window.innerWidth, height: window.innerHeight }
+              );
               setContextMenu({
                 tabId: tab.id,
                 x: position.x,
                 y: position.y,
               });
             }}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerCancel}
+            onPointerMove={pointerDrag.handlePointerMove}
+            onPointerUp={pointerDrag.handlePointerUp}
+            onPointerCancel={pointerDrag.handlePointerCancel}
             onClick={(e) => {
-              if (suppressNextClick.current) {
+              if (pointerDrag.consumeSuppressedClick()) {
                 e.preventDefault();
                 e.stopPropagation();
                 return;
@@ -641,16 +315,16 @@ export default function TerminalTabs({
       >
         <Plus size={14} />
       </button>
-      {dropTarget && (
+      {pointerDrag.dropTarget && (
         <span
           className="terminal-tabs__drop-indicator"
-          style={{ left: `${dropTarget.indicatorLeft}px` }}
+          style={{ left: `${pointerDrag.dropTarget.indicatorLeft}px` }}
         />
       )}
-      {foreignDropTarget && (
+      {pointerDrag.foreignDropTarget && (
         <span
           className="terminal-tabs__drop-indicator terminal-tabs__drop-indicator--foreign"
-          style={{ left: `${foreignDropTarget.indicatorLeft}px` }}
+          style={{ left: `${pointerDrag.foreignDropTarget.indicatorLeft}px` }}
         />
       )}
       {contextMenu && contextMenuItems.length > 0 && (
