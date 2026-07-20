@@ -102,8 +102,9 @@ function orderAppTabs(appTabs: AppTabInfo[], tabOrder: string[]) {
 function getCloseFocusTarget(appTabs: AppTabInfo[], closingTabId: string) {
   const closingIndex = appTabs.findIndex((tab) => tab.id === closingTabId);
   if (closingIndex < 0) return null;
+  if (closingIndex < appTabs.length - 1) return appTabs[closingIndex + 1];
 
-  return appTabs[closingIndex + 1] ?? appTabs[closingIndex - 1] ?? null;
+  return closingIndex > 0 ? appTabs[closingIndex - 1] : null;
 }
 
 function insertTerminalAtWorkspaceIndex(
@@ -154,11 +155,9 @@ function reconcileTabOrder(
   const retainedTerminals = nextTerminalOrder.filter(
     (id) => currentTerminalSet.has(id) && nextOrder.includes(id)
   );
-  let retainedIndex = 0;
   nextOrder = nextOrder.map((id) => {
     if (!currentTerminalSet.has(id) || !nextTerminalSet.has(id)) return id;
-    const replacement = retainedTerminals[retainedIndex];
-    retainedIndex += 1;
+    const replacement = retainedTerminals.shift();
     return replacement ?? id;
   });
 
