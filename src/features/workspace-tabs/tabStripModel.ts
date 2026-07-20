@@ -38,7 +38,10 @@ export function reorderTabIds(
 }
 
 export function tabOrdersEqual(left: string[], right: string[]) {
-  return left.length === right.length && left.every((id, index) => id === right[index]);
+  if (left.length !== right.length) return false;
+
+  const rightIds = right.values();
+  return left.every((id) => id === rightIds.next().value);
 }
 
 export function applyForeignTabPlacement(
