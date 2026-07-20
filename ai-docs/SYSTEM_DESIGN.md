@@ -71,12 +71,18 @@ Backend state is managed through Tauri `State` values created in `src-tauri/src/
 - `SshState`, `SerialState`, and `TelnetState` own active protocol sessions.
 - `TerminalControlState` stores a readable decoded output buffer and status per session.
 - `LoggerState` owns automatic and manual plaintext session log state.
+- `WorkspaceState` owns terminal-tab placement, ordering, active terminal tabs, window focus history, and cross-window drag state.
 - `ExternalControlCredentialState` and `ExternalControlLogControlState` bridge external requests that need UI action.
 - `StartupCliState` carries one startup CLI request into the frontend.
 
 The protocol modules start sessions, write input, resize where supported, disconnect, and
 mark `TerminalControlState` as disconnected. Session IDs are UUID-like strings that join
 frontend tabs, protocol sessions, terminal output buffers, logger state, and MCP calls.
+
+The Rust workspace subsystem uses `src-tauri/src/workspace.rs` as its facade. Its domain
+data, snapshots, and invariant validation live in `workspace/model.rs`; the async
+`Arc<Mutex<WorkspaceModel>>` facade lives in `workspace/state.rs`; and Tauri commands,
+window creation, localization, and event emission live in `workspace/commands.rs`.
 
 ### MCP Runtime
 

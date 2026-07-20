@@ -60,11 +60,15 @@ Accepted product direction:
 
 ### Workspace State
 
-Introduce a backend workspace state that owns cross-window placement.
+The backend workspace state owns cross-window placement.
 
-Use this initial module:
+The current module layout is:
 
-- `src-tauri/src/workspace.rs`
+- `src-tauri/src/workspace.rs`: subsystem facade and stable internal imports
+- `src-tauri/src/workspace/model.rs`: workspace data, snapshots, helpers, and invariants
+- `src-tauri/src/workspace/state.rs`: async shared-state facade
+- `src-tauri/src/workspace/commands.rs`: Tauri commands, window creation, and events
+- `src-tauri/src/workspace/tests.rs`: workspace behavior and invariant tests
 
 Use this initial core model:
 
