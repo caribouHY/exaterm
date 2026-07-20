@@ -9,6 +9,7 @@
 - Aligned the desktop UI styling rules and shared dark-theme tokens for more consistent future interface changes.
 - Added frontend regression coverage for terminal and utility tab ordering, focus, and workspace snapshot reconciliation.
 - Separated frontend workspace tab state, lifecycle, and movement orchestration from the main app shell.
+- Separated terminal tab drag geometry and pointer interaction from tab strip rendering.
 
 ### Added
 
