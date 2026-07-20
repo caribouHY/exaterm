@@ -11,6 +11,7 @@ import type {
   UtilityTabKind,
   ConnectionType,
   Encoding,
+  ForeignTabPlacement,
   AppConfig,
   ChatMessage,
   TerminalMode,
@@ -58,6 +59,7 @@ const LogViewer = lazy(loadLogViewer);
 const AI_PANEL_DEFAULT_WIDTH = 340;
 const AI_PANEL_MIN_WIDTH = 200;
 const AI_PANEL_VIEWPORT_MARGIN = 40;
+const FOREIGN_PLACEMENT_CLEAR_DELAY_MS = 250;
 
 function clampAiPanelWidth(width: number, viewportWidth: number) {
   const maxWidth = Math.max(AI_PANEL_MIN_WIDTH, viewportWidth - AI_PANEL_VIEWPORT_MARGIN);
@@ -97,6 +99,58 @@ function orderAppTabs(appTabs: AppTabInfo[], tabOrder: string[]) {
   const newTabs = appTabs.filter((tab) => !orderedIds.has(tab.id));
 
   return [...orderedTabs, ...newTabs];
+}
+
+function reorderTabIds(
+  currentOrder: string[],
+  draggedId: string,
+  targetId: string,
+  dropSide: "before" | "after"
+) {
+  const draggedIndex = currentOrder.indexOf(draggedId);
+  const targetIndex = currentOrder.indexOf(targetId);
+  if (draggedIndex < 0 || targetIndex < 0) return currentOrder;
+
+  const nextOrder = [...currentOrder];
+  const [draggedTabId] = nextOrder.splice(draggedIndex, 1);
+  const targetIndexAfterRemoval = nextOrder.indexOf(targetId);
+  const insertIndex = dropSide === "after" ? targetIndexAfterRemoval + 1 : targetIndexAfterRemoval;
+  nextOrder.splice(insertIndex, 0, draggedTabId);
+  return nextOrder;
+}
+
+function tabOrdersEqual(left: string[], right: string[]) {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function applyForeignTabPlacement(
+  order: string[],
+  terminalOrder: string[],
+  placement: ForeignTabPlacement
+) {
+  const withoutMovedTab = order.filter((id) => id !== placement.tabId);
+  let insertIndex: number;
+  const nextAnchorIndex = placement.nextTabId ? withoutMovedTab.indexOf(placement.nextTabId) : -1;
+  const previousAnchorIndex = placement.previousTabId
+    ? withoutMovedTab.indexOf(placement.previousTabId)
+    : -1;
+
+  if (nextAnchorIndex >= 0) {
+    insertIndex = nextAnchorIndex;
+  } else if (previousAnchorIndex >= 0) {
+    insertIndex = previousAnchorIndex + 1;
+  } else {
+    insertIndex = Math.min(placement.visibleSlotIndex, withoutMovedTab.length);
+  }
+
+  const placedOrder = [
+    ...withoutMovedTab.slice(0, insertIndex),
+    placement.tabId,
+    ...withoutMovedTab.slice(insertIndex),
+  ];
+  const terminalIds = new Set(terminalOrder);
+  const placedTerminalOrder = placedOrder.filter((id) => terminalIds.has(id));
+  return tabOrdersEqual(placedTerminalOrder, terminalOrder) ? placedOrder : order;
 }
 
 function getRemovalFocusNeighbors(appTabs: AppTabInfo[], removedTabId: string) {
@@ -260,6 +314,9 @@ export default function App() {
   const selectionEpochRef = useRef(0);
   const lastAppliedWorkspaceRevisionRef = useRef<number | null>(null);
   const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
+  const foreignTabPlacementRef = useRef<ForeignTabPlacement | null>(null);
+  const activeForeignDragTabIdRef = useRef<string | null>(null);
+  const foreignPlacementClearTimerRef = useRef<number | null>(null);
 
   const appTabs: AppTabInfo[] = useMemo(
     () =>
@@ -301,13 +358,29 @@ export default function App() {
     const currentTerminalIds = tabsRef.current.map((tab) => tab.id);
     tabsRef.current = terminalTabs;
     setTabs(terminalTabs);
-    const nextTabOrder = reconcileTabOrder(
+    let nextTabOrder = reconcileTabOrder(
       tabOrderRef.current,
       currentTerminalIds,
       snapshot.window.tab_order,
       utilityTabsRef.current,
       snapshot.tab_update
     );
+    const foreignPlacement = foreignTabPlacementRef.current;
+    if (
+      snapshot.tab_update?.kind === "moved" &&
+      foreignPlacement?.tabId === snapshot.tab_update.tab_id
+    ) {
+      nextTabOrder = applyForeignTabPlacement(
+        nextTabOrder,
+        snapshot.window.tab_order,
+        foreignPlacement
+      );
+      foreignTabPlacementRef.current = null;
+      if (foreignPlacementClearTimerRef.current !== null) {
+        window.clearTimeout(foreignPlacementClearTimerRef.current);
+        foreignPlacementClearTimerRef.current = null;
+      }
+    }
     tabOrderRef.current = nextTabOrder;
     setTabOrder(nextTabOrder);
     appTabsRef.current = orderAppTabs(
@@ -507,6 +580,29 @@ export default function App() {
     const unlistenWorkspaceDrag = listen<WorkspaceDragPreview>(
       "workspace://drag-preview",
       (event) => {
+        const previewTabId = event.payload.active ? (event.payload.tab_id ?? null) : null;
+        if (previewTabId) {
+          if (activeForeignDragTabIdRef.current !== previewTabId) {
+            foreignTabPlacementRef.current = null;
+          }
+          activeForeignDragTabIdRef.current = previewTabId;
+          if (foreignPlacementClearTimerRef.current !== null) {
+            window.clearTimeout(foreignPlacementClearTimerRef.current);
+            foreignPlacementClearTimerRef.current = null;
+          }
+        } else if (activeForeignDragTabIdRef.current) {
+          const completedDragTabId = activeForeignDragTabIdRef.current;
+          activeForeignDragTabIdRef.current = null;
+          const placement = foreignTabPlacementRef.current;
+          if (placement?.tabId === completedDragTabId) {
+            foreignPlacementClearTimerRef.current = window.setTimeout(() => {
+              if (foreignTabPlacementRef.current === placement) {
+                foreignTabPlacementRef.current = null;
+              }
+              foreignPlacementClearTimerRef.current = null;
+            }, FOREIGN_PLACEMENT_CLEAR_DELAY_MS);
+          }
+        }
         setWorkspaceDragPreview(event.payload.active ? event.payload : null);
       }
     );
@@ -524,6 +620,9 @@ export default function App() {
     return () => {
       unlistenWorkspace.then((fn) => fn());
       unlistenWorkspaceDrag.then((fn) => fn());
+      if (foreignPlacementClearTimerRef.current !== null) {
+        window.clearTimeout(foreignPlacementClearTimerRef.current);
+      }
       window.removeEventListener("focus", handleFocus);
     };
   }, [applyWorkspaceSnapshot]);
@@ -776,9 +875,28 @@ export default function App() {
     (draggedId: string, targetId: string, dropSide: "before" | "after") => {
       if (draggedId === targetId) return;
 
-      const draggedTab = appTabs.find((tab) => tab.id === draggedId);
-      const targetTab = appTabs.find((tab) => tab.id === targetId);
-      if (draggedTab?.kind === "terminal" && targetTab?.kind === "terminal") {
+      const currentAppTabs = appTabsRef.current;
+      const draggedTab = currentAppTabs.find((tab) => tab.id === draggedId);
+      const targetTab = currentAppTabs.find((tab) => tab.id === targetId);
+      if (!draggedTab || !targetTab) return;
+
+      const visibleOrder = currentAppTabs.map((tab) => tab.id);
+      const nextVisibleOrder = reorderTabIds(visibleOrder, draggedId, targetId, dropSide);
+      if (tabOrdersEqual(visibleOrder, nextVisibleOrder)) return;
+
+      const terminalTabIds = new Set(
+        currentAppTabs.filter((tab) => tab.kind === "terminal").map((tab) => tab.id)
+      );
+      const currentTerminalOrder = visibleOrder.filter((id) => terminalTabIds.has(id));
+      const nextTerminalOrder = nextVisibleOrder.filter((id) => terminalTabIds.has(id));
+
+      if (!tabOrdersEqual(currentTerminalOrder, nextTerminalOrder)) {
+        if (draggedTab.kind !== "terminal" || targetTab.kind !== "terminal") return;
+
+        tabOrderRef.current = nextVisibleOrder;
+        setTabOrder(nextVisibleOrder);
+        appTabsRef.current = orderAppTabs(currentAppTabs, nextVisibleOrder);
+
         invoke<WorkspaceSnapshot>("workspace_tab_reorder", {
           windowId: windowIdRef.current,
           draggedTabId: draggedId,
@@ -788,26 +906,20 @@ export default function App() {
           .then(applyWorkspaceSnapshot)
           .catch((error) => {
             console.error("Failed to reorder workspace tab:", error);
+            if (!tabOrdersEqual(tabOrderRef.current, nextVisibleOrder)) return;
+
+            tabOrderRef.current = visibleOrder;
+            setTabOrder(visibleOrder);
+            appTabsRef.current = orderAppTabs(currentAppTabs, visibleOrder);
           });
         return;
       }
 
-      const visibleOrder = appTabs.map((tab) => tab.id);
-      const draggedIndex = visibleOrder.indexOf(draggedId);
-      const targetIndex = visibleOrder.indexOf(targetId);
-      if (draggedIndex < 0 || targetIndex < 0) return;
-
-      const nextOrder = [...visibleOrder];
-      const [draggedTabId] = nextOrder.splice(draggedIndex, 1);
-      const targetIndexAfterRemoval = nextOrder.indexOf(targetId);
-      const insertIndex =
-        dropSide === "after" ? targetIndexAfterRemoval + 1 : targetIndexAfterRemoval;
-      nextOrder.splice(insertIndex, 0, draggedTabId);
-      tabOrderRef.current = nextOrder;
-      setTabOrder(nextOrder);
-      appTabsRef.current = orderAppTabs(appTabsRef.current, nextOrder);
+      tabOrderRef.current = nextVisibleOrder;
+      setTabOrder(nextVisibleOrder);
+      appTabsRef.current = orderAppTabs(currentAppTabs, nextVisibleOrder);
     },
-    [appTabs, applyWorkspaceSnapshot]
+    [applyWorkspaceSnapshot]
   );
 
   const handleCrossWindowDragStart = useCallback(
@@ -838,14 +950,18 @@ export default function App() {
     []
   );
 
-  const handleCrossWindowDragHover = useCallback((targetIndex: number | null) => {
-    invoke<WorkspaceDragPreview>("workspace_tab_drag_hover", {
-      windowId: windowIdRef.current,
-      targetIndex,
-    }).catch((error) => {
-      console.error("Failed to update workspace tab drag hover:", error);
-    });
-  }, []);
+  const handleCrossWindowDragHover = useCallback(
+    (targetIndex: number | null, placement: ForeignTabPlacement | null) => {
+      foreignTabPlacementRef.current = placement;
+      invoke<WorkspaceDragPreview>("workspace_tab_drag_hover", {
+        windowId: windowIdRef.current,
+        targetIndex,
+      }).catch((error) => {
+        console.error("Failed to update workspace tab drag hover:", error);
+      });
+    },
+    []
+  );
 
   const handleCrossWindowDragCancel = useCallback(() => {
     invoke<WorkspaceDragPreview>("workspace_tab_drag_cancel")

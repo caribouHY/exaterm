@@ -267,6 +267,13 @@ export interface WorkspacePointerPosition {
   y: number;
 }
 
+export interface ForeignTabPlacement {
+  tabId: string;
+  previousTabId: string | null;
+  nextTabId: string | null;
+  visibleSlotIndex: number;
+}
+
 export interface WorkspaceDragPreview {
   active: boolean;
   tab_id?: string | null;
