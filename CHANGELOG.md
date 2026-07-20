@@ -17,6 +17,8 @@
 
 ### Fixed
 
+- Fixed tab focus after closing an active terminal or utility tab so it consistently moves to the right neighbor, or the left neighbor when closing the last tab.
+- Fixed newly connected terminal tabs so they open at the right end of the tab bar and receive focus when Settings or Logs is active.
 - Fixed terminal input encoding so the selected UTF-8, Shift_JIS, or EUC-JP setting is applied to outgoing SSH, Serial, Telnet, and external-control input.
 - Improved Settings reliability with an anchored save bar, clearer load and save errors, and validated terminal input ranges.
 - Improved SSH sessions so overloaded output no longer disappears without warning.

@@ -20,6 +20,15 @@ pub struct WorkspaceSnapshot {
     pub window_id: String,
     pub window: WindowWorkspace,
     pub tabs: Vec<WorkspaceTab>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tab_update: Option<WorkspaceTabUpdate>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WorkspaceTabUpdate {
+    Connected { tab_id: String },
+    Moved { tab_id: String, target_index: usize },
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -276,9 +285,11 @@ impl WorkspaceState {
         if !window.tab_order.contains(&tab_id) {
             window.tab_order.push(tab_id.clone());
         }
-        window.active_tab_id = Some(tab_id);
+        window.active_tab_id = Some(tab_id.clone());
 
-        snapshot_for_locked(&model, &owner_window_id)
+        let mut snapshot = snapshot_for_locked(&model, &owner_window_id);
+        snapshot.tab_update = Some(WorkspaceTabUpdate::Connected { tab_id });
+        snapshot
     }
 
     pub async fn activate_tab(
@@ -376,8 +387,13 @@ impl WorkspaceState {
                 .ok_or_else(|| "Window not found".to_string())?;
             window.tab_order.retain(|id| id != &tab_id);
             let insert_index = target_index.min(window.tab_order.len());
-            window.tab_order.insert(insert_index, tab_id);
-            return Ok(vec![snapshot_for_locked(&model, &from_window_id)]);
+            window.tab_order.insert(insert_index, tab_id.clone());
+            let mut snapshot = snapshot_for_locked(&model, &from_window_id);
+            snapshot.tab_update = Some(WorkspaceTabUpdate::Moved {
+                tab_id,
+                target_index: insert_index,
+            });
+            return Ok(vec![snapshot]);
         }
 
         {
@@ -391,6 +407,7 @@ impl WorkspaceState {
             }
         }
 
+        let destination_target_index;
         {
             let destination = model
                 .windows
@@ -398,14 +415,19 @@ impl WorkspaceState {
                 .ok_or_else(|| "Destination window not found".to_string())?;
             destination.tab_order.retain(|id| id != &tab_id);
             let insert_index = target_index.min(destination.tab_order.len());
+            destination_target_index = insert_index;
             destination.tab_order.insert(insert_index, tab_id.clone());
-            destination.active_tab_id = Some(tab_id);
+            destination.active_tab_id = Some(tab_id.clone());
         }
 
-        Ok(vec![
-            snapshot_for_locked(&model, &from_window_id),
-            snapshot_for_locked(&model, &to_window_id),
-        ])
+        let source_snapshot = snapshot_for_locked(&model, &from_window_id);
+        let mut destination_snapshot = snapshot_for_locked(&model, &to_window_id);
+        destination_snapshot.tab_update = Some(WorkspaceTabUpdate::Moved {
+            tab_id,
+            target_index: destination_target_index,
+        });
+
+        Ok(vec![source_snapshot, destination_snapshot])
     }
 
     pub async fn validate_tab_move_source(
@@ -719,6 +741,7 @@ fn snapshot_for_locked(model: &WorkspaceModel, window_id: &str) -> WorkspaceSnap
         window_id: window_id.to_string(),
         window,
         tabs,
+        tab_update: None,
     }
 }
 
@@ -1234,6 +1257,12 @@ mod tests {
         let duplicate = state.register_tab(input("s1", Some("main"))).await;
 
         assert_eq!(snapshot.window.active_tab_id.as_deref(), Some("s1"));
+        assert_eq!(
+            snapshot.tab_update,
+            Some(WorkspaceTabUpdate::Connected {
+                tab_id: "s1".into()
+            })
+        );
         assert_eq!(duplicate.window.tab_order, vec!["s1"]);
         assert_eq!(duplicate.tabs.len(), 1);
     }
@@ -1307,6 +1336,14 @@ mod tests {
         assert_eq!(other.window.tab_order, vec!["s1", "s2"]);
         assert_eq!(other.tabs[0].owner_window_id, "other");
         assert_eq!(other.window.active_tab_id.as_deref(), Some("s1"));
+        assert_eq!(main.tab_update, None);
+        assert_eq!(
+            other.tab_update,
+            Some(WorkspaceTabUpdate::Moved {
+                tab_id: "s1".into(),
+                target_index: 0
+            })
+        );
     }
 
     #[tokio::test]
