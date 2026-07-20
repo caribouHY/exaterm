@@ -17,6 +17,7 @@ fn localize<T>(
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct WorkspaceSnapshot {
+    pub revision: u64,
     pub window_id: String,
     pub window: WindowWorkspace,
     pub tabs: Vec<WorkspaceTab>,
@@ -125,8 +126,9 @@ pub struct WorkspaceTabMetadataPatch {
     pub manual_log_file_path: Option<String>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 struct WorkspaceModel {
+    revision: u64,
     windows: HashMap<String, WindowWorkspace>,
     tabs: HashMap<String, WorkspaceTab>,
     last_focused_window: Option<String>,
@@ -168,6 +170,7 @@ impl WorkspaceState {
         focused: bool,
     ) -> WorkspaceSnapshot {
         let mut model = self.model.lock().await;
+        let previous = model.clone();
         model
             .windows
             .entry(window_id.clone())
@@ -183,18 +186,22 @@ impl WorkspaceState {
         if focused {
             set_focused_window(&mut model, &window_id);
         }
+        advance_revision_if_changed(&mut model, &previous);
         snapshot_for_locked(&model, &window_id)
     }
 
     pub async fn focus_window(&self, window_id: String) -> WorkspaceSnapshot {
         let mut model = self.model.lock().await;
+        let previous = model.clone();
         ensure_window(&mut model, &window_id, &window_id);
         set_focused_window(&mut model, &window_id);
+        advance_revision_if_changed(&mut model, &previous);
         snapshot_for_locked(&model, &window_id)
     }
 
     pub async fn unregister_window(&self, window_id: String) -> WorkspaceWindowCloseResult {
         let mut model = self.model.lock().await;
+        let previous = model.clone();
         let removed_window = model.windows.remove(&window_id);
         remove_focused_window(&mut model, &window_id);
 
@@ -235,10 +242,14 @@ impl WorkspaceState {
                         }
                     }
 
-                    rehome_window_id = Some(destination_window_id.clone());
-                    snapshots.push(snapshot_for_locked(&model, &destination_window_id));
+                    rehome_window_id = Some(destination_window_id);
                 }
             }
+        }
+
+        advance_revision_if_changed(&mut model, &previous);
+        if let Some(destination_window_id) = &rehome_window_id {
+            snapshots.push(snapshot_for_locked(&model, destination_window_id));
         }
 
         WorkspaceWindowCloseResult {
@@ -250,13 +261,13 @@ impl WorkspaceState {
     }
 
     pub async fn snapshot_for_window(&self, window_id: String) -> WorkspaceSnapshot {
-        let mut model = self.model.lock().await;
-        ensure_window(&mut model, &window_id, &window_id);
+        let model = self.model.lock().await;
         snapshot_for_locked(&model, &window_id)
     }
 
     pub async fn register_tab(&self, input: WorkspaceTabRegisterInput) -> WorkspaceSnapshot {
         let mut model = self.model.lock().await;
+        let previous = model.clone();
         let owner_window_id = choose_owner_window(&mut model, input.window_id.as_deref());
         let tab_id = input.tab_id.unwrap_or_else(|| input.session_id.clone());
         remove_tab_from_all_windows(&mut model, &tab_id);
@@ -287,6 +298,7 @@ impl WorkspaceState {
         }
         window.active_tab_id = Some(tab_id.clone());
 
+        advance_revision_if_changed(&mut model, &previous);
         let mut snapshot = snapshot_for_locked(&model, &owner_window_id);
         snapshot.tab_update = Some(WorkspaceTabUpdate::Connected { tab_id });
         snapshot
@@ -298,6 +310,7 @@ impl WorkspaceState {
         tab_id: String,
     ) -> Result<WorkspaceSnapshot, String> {
         let mut model = self.model.lock().await;
+        let previous = model.clone();
         let window = model
             .windows
             .get_mut(&window_id)
@@ -307,6 +320,7 @@ impl WorkspaceState {
         }
         window.active_tab_id = Some(tab_id);
         model.last_focused_window = Some(window_id.clone());
+        advance_revision_if_changed(&mut model, &previous);
         Ok(snapshot_for_locked(&model, &window_id))
     }
 
@@ -318,6 +332,7 @@ impl WorkspaceState {
         drop_side: String,
     ) -> Result<WorkspaceSnapshot, String> {
         let mut model = self.model.lock().await;
+        let previous = model.clone();
         let window = model
             .windows
             .get_mut(&window_id)
@@ -348,6 +363,7 @@ impl WorkspaceState {
             target_index_after_removal
         };
         window.tab_order.insert(insert_index, dragged);
+        advance_revision_if_changed(&mut model, &previous);
         Ok(snapshot_for_locked(&model, &window_id))
     }
 
@@ -371,6 +387,8 @@ impl WorkspaceState {
             return Err("Source tab not found".to_string());
         }
 
+        let previous = model.clone();
+
         let tab = model
             .tabs
             .get_mut(&tab_id)
@@ -388,6 +406,7 @@ impl WorkspaceState {
             window.tab_order.retain(|id| id != &tab_id);
             let insert_index = target_index.min(window.tab_order.len());
             window.tab_order.insert(insert_index, tab_id.clone());
+            advance_revision_if_changed(&mut model, &previous);
             let mut snapshot = snapshot_for_locked(&model, &from_window_id);
             snapshot.tab_update = Some(WorkspaceTabUpdate::Moved {
                 tab_id,
@@ -401,10 +420,7 @@ impl WorkspaceState {
                 .windows
                 .get_mut(&from_window_id)
                 .ok_or_else(|| "Source window not found".to_string())?;
-            source.tab_order.retain(|id| id != &tab_id);
-            if source.active_tab_id.as_deref() == Some(tab_id.as_str()) {
-                source.active_tab_id = source.tab_order.last().cloned();
-            }
+            remove_tab_from_window(source, &tab_id);
         }
 
         let destination_target_index;
@@ -420,6 +436,7 @@ impl WorkspaceState {
             destination.active_tab_id = Some(tab_id.clone());
         }
 
+        advance_revision_if_changed(&mut model, &previous);
         let source_snapshot = snapshot_for_locked(&model, &from_window_id);
         let mut destination_snapshot = snapshot_for_locked(&model, &to_window_id);
         destination_snapshot.tab_update = Some(WorkspaceTabUpdate::Moved {
@@ -459,15 +476,17 @@ impl WorkspaceState {
         tab_id: String,
     ) -> Result<WorkspaceSnapshot, String> {
         let mut model = self.model.lock().await;
+        if !model.windows.contains_key(&window_id) {
+            return Err("Window not found".to_string());
+        }
+        let previous = model.clone();
         model.tabs.remove(&tab_id);
         let window = model
             .windows
             .get_mut(&window_id)
             .ok_or_else(|| "Window not found".to_string())?;
-        window.tab_order.retain(|id| id != &tab_id);
-        if window.active_tab_id.as_deref() == Some(tab_id.as_str()) {
-            window.active_tab_id = window.tab_order.last().cloned();
-        }
+        remove_tab_from_window(window, &tab_id);
+        advance_revision_if_changed(&mut model, &previous);
         Ok(snapshot_for_locked(&model, &window_id))
     }
 
@@ -477,6 +496,7 @@ impl WorkspaceState {
         patch: WorkspaceTabMetadataPatch,
     ) -> Result<WorkspaceSnapshot, String> {
         let mut model = self.model.lock().await;
+        let previous = model.clone();
         let owner_window_id = {
             let tab = model
                 .tabs
@@ -485,11 +505,13 @@ impl WorkspaceState {
             apply_metadata_patch(tab, patch);
             tab.owner_window_id.clone()
         };
+        advance_revision_if_changed(&mut model, &previous);
         Ok(snapshot_for_locked(&model, &owner_window_id))
     }
 
     pub async fn mark_disconnected(&self, session_id: &str) -> Option<WorkspaceSnapshot> {
         let mut model = self.model.lock().await;
+        let previous = model.clone();
         let owner_window_id = model
             .tabs
             .values_mut()
@@ -501,6 +523,7 @@ impl WorkspaceState {
                 }
                 tab.owner_window_id.clone()
             })?;
+        advance_revision_if_changed(&mut model, &previous);
         Some(snapshot_for_locked(&model, &owner_window_id))
     }
 
@@ -526,6 +549,7 @@ impl WorkspaceState {
             return Err("The tab owner window does not match".to_string());
         }
 
+        let previous_drag = model.drag.clone();
         model.drag = Some(WorkspaceDragSession {
             tab_id,
             source_window_id: window_id,
@@ -534,6 +558,9 @@ impl WorkspaceState {
             target_index: None,
         });
 
+        if model.drag != previous_drag {
+            advance_revision(&mut model);
+        }
         Ok(drag_preview_for_locked(&model))
     }
 
@@ -542,8 +569,12 @@ impl WorkspaceState {
         pointer_screen_position: WorkspacePointerPosition,
     ) -> WorkspaceDragPreview {
         let mut model = self.model.lock().await;
+        let previous_drag = model.drag.clone();
         if let Some(drag) = model.drag.as_mut() {
             drag.pointer_screen_position = pointer_screen_position;
+        }
+        if model.drag != previous_drag {
+            advance_revision(&mut model);
         }
         drag_preview_for_locked(&model)
     }
@@ -554,6 +585,7 @@ impl WorkspaceState {
         target_index: Option<usize>,
     ) -> WorkspaceDragPreview {
         let mut model = self.model.lock().await;
+        let previous_drag = model.drag.clone();
         let window_exists = model.windows.contains_key(&window_id);
         if let Some(drag) = model.drag.as_mut() {
             if window_exists && target_index.is_some() {
@@ -564,12 +596,17 @@ impl WorkspaceState {
                 drag.target_index = None;
             }
         }
+        if model.drag != previous_drag {
+            advance_revision(&mut model);
+        }
         drag_preview_for_locked(&model)
     }
 
     pub async fn drag_cancel(&self) -> WorkspaceDragPreview {
         let mut model = self.model.lock().await;
-        model.drag = None;
+        if model.drag.take().is_some() {
+            advance_revision(&mut model);
+        }
         drag_preview_for_locked(&model)
     }
 
@@ -580,7 +617,7 @@ impl WorkspaceState {
         let mut model = self.model.lock().await;
         let mut drag = model
             .drag
-            .take()
+            .clone()
             .ok_or_else(|| "No tab is currently being dragged".to_string())?;
         drag.pointer_screen_position = pointer_screen_position;
         if !model.tabs.contains_key(&drag.tab_id) {
@@ -589,6 +626,9 @@ impl WorkspaceState {
         if !model.windows.contains_key(&drag.source_window_id) {
             return Err("Source window not found".to_string());
         }
+
+        model.drag = None;
+        advance_revision(&mut model);
 
         Ok(WorkspaceDragDropIntent {
             tab_id: drag.tab_id,
@@ -713,11 +753,40 @@ fn ensure_window(model: &mut WorkspaceModel, window_id: &str, label: &str) {
 
 fn remove_tab_from_all_windows(model: &mut WorkspaceModel, tab_id: &str) {
     for window in model.windows.values_mut() {
-        window.tab_order.retain(|id| id != tab_id);
-        if window.active_tab_id.as_deref() == Some(tab_id) {
-            window.active_tab_id = window.tab_order.last().cloned();
-        }
+        remove_tab_from_window(window, tab_id);
     }
+}
+
+fn remove_tab_from_window(window: &mut WindowWorkspace, tab_id: &str) {
+    let Some(removed_index) = window.tab_order.iter().position(|id| id == tab_id) else {
+        return;
+    };
+    let removed_active_tab = window.active_tab_id.as_deref() == Some(tab_id);
+    window.tab_order.remove(removed_index);
+    if removed_active_tab {
+        window.active_tab_id = window
+            .tab_order
+            .get(removed_index)
+            .or_else(|| {
+                removed_index
+                    .checked_sub(1)
+                    .and_then(|index| window.tab_order.get(index))
+            })
+            .cloned();
+    }
+}
+
+fn advance_revision_if_changed(model: &mut WorkspaceModel, previous: &WorkspaceModel) {
+    if model != previous {
+        advance_revision(model);
+    }
+}
+
+fn advance_revision(model: &mut WorkspaceModel) {
+    model.revision = model
+        .revision
+        .checked_add(1)
+        .expect("workspace revision overflowed");
 }
 
 fn snapshot_for_locked(model: &WorkspaceModel, window_id: &str) -> WorkspaceSnapshot {
@@ -738,6 +807,7 @@ fn snapshot_for_locked(model: &WorkspaceModel, window_id: &str) -> WorkspaceSnap
         .collect();
 
     WorkspaceSnapshot {
+        revision: model.revision,
         window_id: window_id.to_string(),
         window,
         tabs,
@@ -1167,6 +1237,80 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn workspace_revision_increases_only_when_model_changes() {
+        let state = WorkspaceState::new();
+        let initial = state.snapshot_for_window("main".into()).await;
+        let registered = state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        let duplicate_registration = state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        let tab_registered = state.register_tab(input("s1", Some("main"))).await;
+        let duplicate_activation = state
+            .activate_tab("main".into(), "s1".into())
+            .await
+            .unwrap();
+        let metadata_updated = state
+            .update_tab_metadata(
+                "s1".into(),
+                WorkspaceTabMetadataPatch {
+                    title: Some("renamed".into()),
+                    encoding: None,
+                    terminal_mode: None,
+                    is_connected: None,
+                    is_auto_logging: None,
+                    is_manual_logging: None,
+                    is_logging_paused: None,
+                    manual_log_file_path: None,
+                },
+            )
+            .await
+            .unwrap();
+        state
+            .drag_start(
+                "main".into(),
+                "s1".into(),
+                WorkspacePointerPosition { x: 10.0, y: 20.0 },
+            )
+            .await
+            .unwrap();
+        let drag_started = state.snapshot_for_window("main".into()).await;
+        state
+            .drag_update(WorkspacePointerPosition { x: 10.0, y: 20.0 })
+            .await;
+        let duplicate_drag_update = state.snapshot_for_window("main".into()).await;
+        state.drag_cancel().await;
+        let drag_cancelled = state.snapshot_for_window("main".into()).await;
+
+        assert_eq!(initial.revision, 0);
+        assert!(registered.revision > initial.revision);
+        assert_eq!(duplicate_registration.revision, registered.revision);
+        assert!(tab_registered.revision > registered.revision);
+        assert_eq!(duplicate_activation.revision, tab_registered.revision);
+        assert!(metadata_updated.revision > tab_registered.revision);
+        assert!(drag_started.revision > metadata_updated.revision);
+        assert_eq!(duplicate_drag_update.revision, drag_started.revision);
+        assert!(drag_cancelled.revision > drag_started.revision);
+    }
+
+    #[tokio::test]
+    async fn read_only_snapshots_do_not_advance_revision() {
+        let state = WorkspaceState::new();
+        let registered = state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+
+        let first = state.snapshot_for_window("main".into()).await;
+        let second = state.snapshot_for_window("main".into()).await;
+        let missing_window = state.snapshot_for_window("missing".into()).await;
+
+        assert_eq!(first.revision, registered.revision);
+        assert_eq!(second.revision, registered.revision);
+        assert_eq!(missing_window.revision, registered.revision);
+    }
+
+    #[tokio::test]
     async fn connection_info_survives_workspace_move() {
         let state = WorkspaceState::new();
         state
@@ -1301,6 +1445,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(snapshot.window.tab_order, vec!["s3", "s1", "s2"]);
+        assert_eq!(snapshot.window.active_tab_id.as_deref(), Some("s3"));
         assert!(snapshot
             .tabs
             .iter()
@@ -1318,6 +1463,7 @@ mod tests {
             .await;
         state.register_tab(input("s1", Some("main"))).await;
         state.register_tab(input("s2", Some("other"))).await;
+        let before_move_revision = state.snapshot_for_window("main".into()).await.revision;
 
         let snapshots = state
             .move_tab("s1".into(), "main".into(), "other".into(), 0)
@@ -1336,6 +1482,8 @@ mod tests {
         assert_eq!(other.window.tab_order, vec!["s1", "s2"]);
         assert_eq!(other.tabs[0].owner_window_id, "other");
         assert_eq!(other.window.active_tab_id.as_deref(), Some("s1"));
+        assert!(main.revision > before_move_revision);
+        assert_eq!(main.revision, other.revision);
         assert_eq!(main.tab_update, None);
         assert_eq!(
             other.tab_update,
@@ -1344,6 +1492,97 @@ mod tests {
                 target_index: 0
             })
         );
+    }
+
+    #[tokio::test]
+    async fn moving_active_middle_tab_selects_right_neighbor_in_source() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state
+            .register_window("other".into(), "other".into(), false)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+        state.register_tab(input("s2", Some("main"))).await;
+        state.register_tab(input("s3", Some("main"))).await;
+        state
+            .activate_tab("main".into(), "s2".into())
+            .await
+            .unwrap();
+
+        let snapshots = state
+            .move_tab("s2".into(), "main".into(), "other".into(), 0)
+            .await
+            .unwrap();
+        let main = snapshots
+            .iter()
+            .find(|snapshot| snapshot.window_id == "main")
+            .unwrap();
+        let other = snapshots
+            .iter()
+            .find(|snapshot| snapshot.window_id == "other")
+            .unwrap();
+
+        assert_eq!(main.window.tab_order, vec!["s1", "s3"]);
+        assert_eq!(main.window.active_tab_id.as_deref(), Some("s3"));
+        assert_eq!(other.window.active_tab_id.as_deref(), Some("s2"));
+    }
+
+    #[tokio::test]
+    async fn moving_active_last_tab_selects_left_neighbor_in_source() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state
+            .register_window("other".into(), "other".into(), false)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+        state.register_tab(input("s2", Some("main"))).await;
+        state.register_tab(input("s3", Some("main"))).await;
+
+        let snapshots = state
+            .move_tab("s3".into(), "main".into(), "other".into(), 0)
+            .await
+            .unwrap();
+        let main = snapshots
+            .iter()
+            .find(|snapshot| snapshot.window_id == "main")
+            .unwrap();
+
+        assert_eq!(main.window.tab_order, vec!["s1", "s2"]);
+        assert_eq!(main.window.active_tab_id.as_deref(), Some("s2"));
+    }
+
+    #[tokio::test]
+    async fn moving_inactive_tab_preserves_source_active_and_activates_destination() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state
+            .register_window("other".into(), "other".into(), false)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+        state.register_tab(input("s2", Some("main"))).await;
+        state.register_tab(input("d1", Some("other"))).await;
+
+        let snapshots = state
+            .move_tab("s1".into(), "main".into(), "other".into(), 1)
+            .await
+            .unwrap();
+        let main = snapshots
+            .iter()
+            .find(|snapshot| snapshot.window_id == "main")
+            .unwrap();
+        let other = snapshots
+            .iter()
+            .find(|snapshot| snapshot.window_id == "other")
+            .unwrap();
+
+        assert_eq!(main.window.active_tab_id.as_deref(), Some("s2"));
+        assert_eq!(other.window.active_tab_id.as_deref(), Some("s1"));
     }
 
     #[tokio::test]
@@ -1567,7 +1806,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn removing_active_tab_selects_valid_fallback_or_null() {
+    async fn removing_active_middle_tab_selects_right_neighbor() {
+        let state = WorkspaceState::new();
+        state
+            .register_window("main".into(), "main".into(), true)
+            .await;
+        state.register_tab(input("s1", Some("main"))).await;
+        state.register_tab(input("s2", Some("main"))).await;
+        state.register_tab(input("s3", Some("main"))).await;
+        state
+            .activate_tab("main".into(), "s2".into())
+            .await
+            .unwrap();
+
+        let snapshot = state.remove_tab("main".into(), "s2".into()).await.unwrap();
+
+        assert_eq!(snapshot.window.tab_order, vec!["s1", "s3"]);
+        assert_eq!(snapshot.window.active_tab_id.as_deref(), Some("s3"));
+    }
+
+    #[tokio::test]
+    async fn removing_active_last_tab_selects_left_neighbor_then_null() {
         let state = WorkspaceState::new();
         state
             .register_window("main".into(), "main".into(), true)

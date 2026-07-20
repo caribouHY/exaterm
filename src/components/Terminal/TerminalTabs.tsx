@@ -1,10 +1,11 @@
 import { FileText, Monitor, Network, Settings, Usb, Plus, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   AppTabInfo,
   ConnectionType,
+  ForeignTabPlacement,
   TabInfo,
   WorkspaceDragPreview,
   WorkspacePointerPosition,
@@ -28,7 +29,10 @@ interface TerminalTabsProps {
   onCrossWindowDragUpdate: (pointerScreenPosition: WorkspacePointerPosition) => void;
   onCrossWindowDragDrop: (tabId: string, pointerScreenPosition: WorkspacePointerPosition) => void;
   onCrossWindowDragCancel: () => void;
-  onCrossWindowDragHover: (targetIndex: number | null) => void;
+  onCrossWindowDragHover: (
+    targetIndex: number | null,
+    placement: ForeignTabPlacement | null
+  ) => void;
 }
 
 type TabDropSide = "before" | "after";
@@ -59,6 +63,7 @@ interface TabContextMenuState {
 interface ForeignDropTarget {
   targetIndex: number;
   indicatorLeft: number;
+  placement: ForeignTabPlacement;
 }
 
 const DRAG_START_DISTANCE = 4;
@@ -87,15 +92,60 @@ export default function TerminalTabs({
 }: TerminalTabsProps) {
   const { t } = useTranslation();
   const tabsRef = useRef<HTMLDivElement | null>(null);
+  const tabRefs = useRef(new Map<string, HTMLButtonElement>());
+  const addTabRef = useRef<HTMLButtonElement | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const pointerDragState = useRef<PointerDragState | null>(null);
   const dropTargetRef = useRef<TabDropTarget | null>(null);
-  const foreignHoverIndexRef = useRef<number | null>(null);
+  const foreignHoverSignatureRef = useRef<string | null>(null);
   const suppressNextClick = useRef(false);
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<TabDropTarget | null>(null);
   const [foreignDropTarget, setForeignDropTarget] = useState<ForeignDropTarget | null>(null);
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null);
+  const visibleTabOrder = tabs.map((tab) => tab.id).join("\u0000");
+
+  const ensureActiveTabVisible = useCallback(() => {
+    if (!activeTabId) return;
+
+    const container = tabsRef.current;
+    const activeTab = tabRefs.current.get(activeTabId);
+    if (!container || !activeTab) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const activeTabRect = activeTab.getBoundingClientRect();
+    const addTabRect = addTabRef.current?.getBoundingClientRect();
+    const visibleLeft = containerRect.left;
+    const visibleRight = addTabRect
+      ? Math.min(containerRect.right, addTabRect.left)
+      : containerRect.right;
+
+    if (activeTabRect.left < visibleLeft) {
+      container.scrollLeft += activeTabRect.left - visibleLeft;
+    } else if (activeTabRect.right > visibleRight) {
+      container.scrollLeft += activeTabRect.right - visibleRight;
+    }
+  }, [activeTabId]);
+
+  useLayoutEffect(() => {
+    ensureActiveTabVisible();
+
+    if (!activeTabId || typeof ResizeObserver === "undefined") return;
+
+    const container = tabsRef.current;
+    const activeTab = tabRefs.current.get(activeTabId);
+    const addTab = addTabRef.current;
+    if (!container || !activeTab || !addTab) return;
+
+    const resizeObserver = new ResizeObserver(ensureActiveTabVisible);
+    resizeObserver.observe(container);
+    resizeObserver.observe(activeTab);
+    resizeObserver.observe(addTab);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [activeTabId, ensureActiveTabVisible, visibleTabOrder]);
 
   const updateDropTarget = (target: TabDropTarget | null) => {
     dropTargetRef.current = target;
@@ -202,15 +252,15 @@ export default function TerminalTabs({
       return null;
     }
 
-    const candidates = Array.from(
-      container.querySelectorAll<HTMLElement>("[data-workspace-terminal-tab-id]")
-    )
+    const candidates = Array.from(container.querySelectorAll<HTMLElement>("[data-terminal-tab-id]"))
       .map((element) => {
-        const tabId = element.dataset.workspaceTerminalTabId;
+        const tabId = element.dataset.terminalTabId;
         if (!tabId || closingTabIds.includes(tabId)) return null;
 
         const rect = element.getBoundingClientRect();
         return {
+          tabId,
+          isTerminal: Boolean(element.dataset.workspaceTerminalTabId),
           centerX: rect.left + rect.width / 2,
           left: rect.left,
           right: rect.right,
@@ -222,31 +272,43 @@ export default function TerminalTabs({
       return {
         targetIndex: 0,
         indicatorLeft: clientX - containerRect.left + container.scrollLeft,
+        placement: {
+          tabId: dragPreview?.tab_id ?? "",
+          previousTabId: null,
+          nextTabId: null,
+          visibleSlotIndex: 0,
+        },
       };
     }
 
-    let targetIndex = candidates.findIndex((candidate) => clientX < candidate.centerX);
-    if (targetIndex === -1) {
-      targetIndex = candidates.length;
+    let visibleSlotIndex = candidates.findIndex((candidate) => clientX < candidate.centerX);
+    if (visibleSlotIndex === -1) {
+      visibleSlotIndex = candidates.length;
     }
 
     const edgeX =
-      targetIndex < candidates.length
-        ? candidates[targetIndex].left
+      visibleSlotIndex < candidates.length
+        ? candidates[visibleSlotIndex].left
         : candidates[candidates.length - 1].right;
+    const targetIndex = candidates
+      .slice(0, visibleSlotIndex)
+      .filter((candidate) => candidate.isTerminal).length;
 
     return {
       targetIndex,
       indicatorLeft: edgeX - containerRect.left + container.scrollLeft,
+      placement: {
+        tabId: dragPreview?.tab_id ?? "",
+        previousTabId: candidates[visibleSlotIndex - 1]?.tabId ?? null,
+        nextTabId: candidates[visibleSlotIndex]?.tabId ?? null,
+        visibleSlotIndex,
+      },
     };
   };
 
   const clearForeignHover = () => {
     setForeignDropTarget(null);
-    if (foreignHoverIndexRef.current !== null) {
-      foreignHoverIndexRef.current = null;
-      onCrossWindowDragHover(null);
-    }
+    foreignHoverSignatureRef.current = null;
   };
 
   const resetDragState = () => {
@@ -295,10 +357,18 @@ export default function TerminalTabs({
     );
     setForeignDropTarget(target);
 
-    const nextIndex = target?.targetIndex ?? null;
-    if (foreignHoverIndexRef.current !== nextIndex) {
-      foreignHoverIndexRef.current = nextIndex;
-      onCrossWindowDragHover(nextIndex);
+    const nextSignature = target
+      ? [
+          target.placement.tabId,
+          target.targetIndex,
+          target.placement.visibleSlotIndex,
+          target.placement.previousTabId,
+          target.placement.nextTabId,
+        ].join("\u0000")
+      : null;
+    if (foreignHoverSignatureRef.current !== nextSignature) {
+      foreignHoverSignatureRef.current = nextSignature;
+      onCrossWindowDragHover(target?.targetIndex ?? null, target?.placement ?? null);
     }
   }, [dragPreview, windowId, closingTabIds, tabs]);
 
@@ -475,6 +545,13 @@ export default function TerminalTabs({
         return (
           <button
             key={tab.id}
+            ref={(element) => {
+              if (element) {
+                tabRefs.current.set(tab.id, element);
+              } else {
+                tabRefs.current.delete(tab.id);
+              }
+            }}
             type="button"
             className={`terminal-tab ${tab.id === activeTabId ? "terminal-tab--active" : ""} ${
               isDragging ? "terminal-tab--dragging" : ""
@@ -556,6 +633,7 @@ export default function TerminalTabs({
         );
       })}
       <button
+        ref={addTabRef}
         type="button"
         className="terminal-tabs__add"
         onClick={onAddTab}

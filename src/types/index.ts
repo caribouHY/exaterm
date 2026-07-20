@@ -247,6 +247,7 @@ export interface WindowWorkspaceSnapshot {
 }
 
 export interface WorkspaceSnapshot {
+  revision: number;
   window_id: string;
   window: WindowWorkspaceSnapshot;
   tabs: WorkspaceTabInfo[];
@@ -264,6 +265,13 @@ export interface WorkspaceWindowCreateResult {
 export interface WorkspacePointerPosition {
   x: number;
   y: number;
+}
+
+export interface ForeignTabPlacement {
+  tabId: string;
+  previousTabId: string | null;
+  nextTabId: string | null;
+  visibleSlotIndex: number;
 }
 
 export interface WorkspaceDragPreview {

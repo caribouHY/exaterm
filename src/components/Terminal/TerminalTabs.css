@@ -132,12 +132,15 @@
 }
 
 .terminal-tabs__add {
+  position: sticky;
+  right: 0;
+  z-index: 6;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 36px;
   height: 100%;
-  background: transparent;
+  background: var(--bg-surface);
   border: none;
   color: var(--text-muted);
   cursor: pointer;
