@@ -99,12 +99,34 @@ function orderAppTabs(appTabs: AppTabInfo[], tabOrder: string[]) {
   return [...orderedTabs, ...newTabs];
 }
 
-function getCloseFocusTarget(appTabs: AppTabInfo[], closingTabId: string) {
+function getCloseFocusNeighbors(appTabs: AppTabInfo[], closingTabId: string) {
   const closingIndex = appTabs.findIndex((tab) => tab.id === closingTabId);
-  if (closingIndex < 0) return null;
-  if (closingIndex < appTabs.length - 1) return appTabs[closingIndex + 1];
+  if (closingIndex < 0) return { rightId: null, leftId: null };
 
-  return closingIndex > 0 ? appTabs[closingIndex - 1] : null;
+  return {
+    rightId: appTabs[closingIndex + 1]?.id ?? null,
+    leftId: appTabs[closingIndex - 1]?.id ?? null,
+  };
+}
+
+function resolveCloseFocusTarget(
+  appTabs: AppTabInfo[],
+  closingTabIds: Set<string>,
+  closedTabId: string,
+  rightId: string | null,
+  leftId: string | null,
+  activeTabId: string | null
+) {
+  const availableTabIds = new Set(
+    appTabs
+      .filter((tab) => tab.id !== closedTabId && !closingTabIds.has(tab.id))
+      .map((tab) => tab.id)
+  );
+
+  if (rightId && availableTabIds.has(rightId)) return rightId;
+  if (leftId && availableTabIds.has(leftId)) return leftId;
+
+  return activeTabId && availableTabIds.has(activeTabId) ? activeTabId : null;
 }
 
 function insertTerminalAtWorkspaceIndex(
@@ -231,7 +253,11 @@ export default function App() {
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
   const tabsRef = useRef<TabInfo[]>([]);
   const utilityTabsRef = useRef<UtilityTabKind[]>([]);
+  const tabOrderRef = useRef<string[]>([]);
   const activeTabIdRef = useRef<string | null>(null);
+  const appTabsRef = useRef<AppTabInfo[]>([]);
+  const closingTabIdsRef = useRef<Set<string>>(new Set());
+  const selectionEpochRef = useRef(0);
   const lastAppliedWorkspaceRevisionRef = useRef<number | null>(null);
   const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
 
@@ -258,6 +284,14 @@ export default function App() {
       : "terminal";
   const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
 
+  const setSelectedTab = useCallback((id: string | null, userInitiated: boolean) => {
+    if (userInitiated && activeTabIdRef.current !== id) {
+      selectionEpochRef.current += 1;
+    }
+    activeTabIdRef.current = id;
+    setActiveTabId(id);
+  }, []);
+
   const applyWorkspaceSnapshot = useCallback((snapshot: WorkspaceSnapshot) => {
     if (snapshot.window_id !== windowIdRef.current) return;
     const lastAppliedRevision = lastAppliedWorkspaceRevisionRef.current;
@@ -267,44 +301,47 @@ export default function App() {
     const currentTerminalIds = tabsRef.current.map((tab) => tab.id);
     tabsRef.current = terminalTabs;
     setTabs(terminalTabs);
-    setTabOrder((current) =>
-      reconcileTabOrder(
-        current,
-        currentTerminalIds,
-        snapshot.window.tab_order,
-        utilityTabsRef.current,
-        snapshot.tab_update
-      )
+    const nextTabOrder = reconcileTabOrder(
+      tabOrderRef.current,
+      currentTerminalIds,
+      snapshot.window.tab_order,
+      utilityTabsRef.current,
+      snapshot.tab_update
     );
-    setActiveTabId((current) => {
-      if (
-        snapshot.tab_update?.kind === "connected" &&
-        snapshot.tabs.some((tab) => tab.tab_id === snapshot.tab_update?.tab_id)
-      ) {
-        return snapshot.tab_update.tab_id;
-      }
-      if (
-        snapshot.tab_update?.kind === "moved" &&
-        snapshot.window.active_tab_id === snapshot.tab_update.tab_id &&
-        snapshot.tabs.some((tab) => tab.tab_id === snapshot.tab_update?.tab_id)
-      ) {
-        return snapshot.tab_update.tab_id;
-      }
+    tabOrderRef.current = nextTabOrder;
+    setTabOrder(nextTabOrder);
+    appTabsRef.current = orderAppTabs(
+      [...terminalTabs, ...utilityTabsRef.current.map((kind) => ({ kind, id: kind }))],
+      nextTabOrder
+    );
 
+    let nextActiveTabId = activeTabIdRef.current;
+    if (
+      snapshot.tab_update?.kind === "connected" &&
+      snapshot.tabs.some((tab) => tab.tab_id === snapshot.tab_update?.tab_id)
+    ) {
+      nextActiveTabId = snapshot.tab_update.tab_id;
+    } else if (
+      snapshot.tab_update?.kind === "moved" &&
+      snapshot.window.active_tab_id === snapshot.tab_update.tab_id &&
+      snapshot.tabs.some((tab) => tab.tab_id === snapshot.tab_update?.tab_id)
+    ) {
+      nextActiveTabId = snapshot.tab_update.tab_id;
+    } else {
       const currentTabExists =
-        snapshot.tabs.some((tab) => tab.tab_id === current) ||
-        ((current === "settings" || current === "logs") &&
-          utilityTabsRef.current.includes(current));
-      if (currentTabExists) {
-        return current;
+        snapshot.tabs.some((tab) => tab.tab_id === nextActiveTabId) ||
+        ((nextActiveTabId === "settings" || nextActiveTabId === "logs") &&
+          utilityTabsRef.current.includes(nextActiveTabId));
+      if (!currentTabExists) {
+        const workspaceActiveTabId = snapshot.window.active_tab_id;
+        nextActiveTabId =
+          workspaceActiveTabId && snapshot.tabs.some((tab) => tab.tab_id === workspaceActiveTabId)
+            ? workspaceActiveTabId
+            : null;
       }
-
-      const workspaceActiveTabId = snapshot.window.active_tab_id;
-      return workspaceActiveTabId &&
-        snapshot.tabs.some((tab) => tab.tab_id === workspaceActiveTabId)
-        ? workspaceActiveTabId
-        : null;
-    });
+    }
+    activeTabIdRef.current = nextActiveTabId;
+    setActiveTabId(nextActiveTabId);
   }, []);
 
   const updateWorkspaceTabMetadata = useCallback(
@@ -345,15 +382,26 @@ export default function App() {
     [applyWorkspaceSnapshot]
   );
 
-  const openUtilityTab = useCallback((kind: UtilityTabKind) => {
-    const nextUtilityTabs = utilityTabsRef.current.includes(kind)
-      ? utilityTabsRef.current
-      : [...utilityTabsRef.current, kind];
-    utilityTabsRef.current = nextUtilityTabs;
-    setUtilityTabs(nextUtilityTabs);
-    setTabOrder((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
-    setActiveTabId(kind);
-  }, []);
+  const openUtilityTab = useCallback(
+    (kind: UtilityTabKind) => {
+      const nextUtilityTabs = utilityTabsRef.current.includes(kind)
+        ? utilityTabsRef.current
+        : [...utilityTabsRef.current, kind];
+      utilityTabsRef.current = nextUtilityTabs;
+      setUtilityTabs(nextUtilityTabs);
+      const nextTabOrder = tabOrderRef.current.includes(kind)
+        ? tabOrderRef.current
+        : [...tabOrderRef.current, kind];
+      tabOrderRef.current = nextTabOrder;
+      setTabOrder(nextTabOrder);
+      appTabsRef.current = orderAppTabs(
+        [...tabsRef.current, ...nextUtilityTabs.map((tabKind) => ({ kind: tabKind, id: tabKind }))],
+        nextTabOrder
+      );
+      setSelectedTab(kind, true);
+    },
+    [setSelectedTab]
+  );
 
   const handleViewChange = useCallback(
     (view: ViewMode) => {
@@ -363,19 +411,20 @@ export default function App() {
         return;
       }
 
-      setActiveTabId((current) => {
-        const currentIsTerminal = tabsRef.current.some((tab) => tab.id === current);
-        if (currentIsTerminal) return current;
-        return tabsRef.current.length > 0 ? tabsRef.current[tabsRef.current.length - 1].id : null;
-      });
+      const currentIsTerminal = tabsRef.current.some((tab) => tab.id === activeTabIdRef.current);
+      if (currentIsTerminal) return;
+      setSelectedTab(
+        tabsRef.current.length > 0 ? tabsRef.current[tabsRef.current.length - 1].id : null,
+        true
+      );
     },
-    [openUtilityTab]
+    [openUtilityTab, setSelectedTab]
   );
 
   const handleSelectTab = useCallback(
     (id: string) => {
-      const tab = appTabs.find((item) => item.id === id);
-      setActiveTabId(id);
+      const tab = appTabsRef.current.find((item) => item.id === id);
+      setSelectedTab(id, true);
       if (tab?.kind === "terminal") {
         invoke<WorkspaceSnapshot>("workspace_tab_activate", {
           windowId: windowIdRef.current,
@@ -387,7 +436,7 @@ export default function App() {
           });
       }
     },
-    [appTabs, applyWorkspaceSnapshot]
+    [applyWorkspaceSnapshot, setSelectedTab]
   );
 
   useEffect(() => {
@@ -397,6 +446,14 @@ export default function App() {
   useEffect(() => {
     utilityTabsRef.current = utilityTabs;
   }, [utilityTabs]);
+
+  useEffect(() => {
+    tabOrderRef.current = tabOrder;
+  }, [tabOrder]);
+
+  useEffect(() => {
+    appTabsRef.current = appTabs;
+  }, [appTabs]);
 
   useEffect(() => {
     activeTabIdRef.current = activeTabId;
@@ -581,9 +638,9 @@ export default function App() {
 
   useEffect(() => {
     if (activeTabId && !appTabs.some((tab) => tab.id === activeTabId)) {
-      setActiveTabId(appTabs.length > 0 ? appTabs[appTabs.length - 1].id : null);
+      setSelectedTab(appTabs.length > 0 ? appTabs[appTabs.length - 1].id : null, false);
     }
-  }, [activeTabId, appTabs]);
+  }, [activeTabId, appTabs, setSelectedTab]);
 
   const removeTabFromState = useCallback((id: string) => {
     terminalBuffers.current.delete(id);
@@ -605,7 +662,8 @@ export default function App() {
           return true;
         }
 
-        setClosingTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+        closingTabIdsRef.current = new Set(closingTabIdsRef.current).add(id);
+        setClosingTabIds(Array.from(closingTabIdsRef.current));
 
         if (!tab.sessionId) {
           removeTabFromState(id);
@@ -636,7 +694,10 @@ export default function App() {
           return false;
         } finally {
           closeOperationsRef.current.delete(id);
-          setClosingTabIds((prev) => prev.filter((tabId) => tabId !== id));
+          const nextClosingTabIds = new Set(closingTabIdsRef.current);
+          nextClosingTabIds.delete(id);
+          closingTabIdsRef.current = nextClosingTabIds;
+          setClosingTabIds(Array.from(nextClosingTabIds));
         }
       })();
 
@@ -648,34 +709,59 @@ export default function App() {
 
   const handleCloseTab = useCallback(
     async (id: string) => {
-      const wasActive = activeTabId === id;
-      const focusTarget = wasActive ? getCloseFocusTarget(appTabs, id) : null;
+      const wasActive = activeTabIdRef.current === id;
+      const selectionEpoch = selectionEpochRef.current;
+      const { rightId, leftId } = getCloseFocusNeighbors(appTabsRef.current, id);
+
+      const focusAfterClose = () => {
+        if (!wasActive || selectionEpochRef.current !== selectionEpoch) return;
+
+        const focusTargetId = resolveCloseFocusTarget(
+          appTabsRef.current,
+          closingTabIdsRef.current,
+          id,
+          rightId,
+          leftId,
+          activeTabIdRef.current
+        );
+        if (focusTargetId) {
+          const focusTarget = appTabsRef.current.find((tab) => tab.id === focusTargetId);
+          setSelectedTab(focusTargetId, false);
+          if (focusTarget?.kind === "terminal") {
+            invoke<WorkspaceSnapshot>("workspace_tab_activate", {
+              windowId: windowIdRef.current,
+              tabId: focusTargetId,
+            })
+              .then(applyWorkspaceSnapshot)
+              .catch((error) => {
+                console.error("Failed to activate workspace tab:", error);
+              });
+          }
+        } else {
+          setSelectedTab(null, false);
+        }
+      };
 
       if (id === "settings" || id === "logs") {
         const nextUtilityTabs = utilityTabsRef.current.filter((kind) => kind !== id);
         utilityTabsRef.current = nextUtilityTabs;
         setUtilityTabs(nextUtilityTabs);
-        setTabOrder((prev) => prev.filter((tabId) => tabId !== id));
-        if (wasActive) {
-          if (focusTarget) {
-            handleSelectTab(focusTarget.id);
-          } else {
-            setActiveTabId(null);
-          }
-        }
+        const nextTabOrder = tabOrderRef.current.filter((tabId) => tabId !== id);
+        tabOrderRef.current = nextTabOrder;
+        setTabOrder(nextTabOrder);
+        appTabsRef.current = orderAppTabs(
+          [...tabsRef.current, ...nextUtilityTabs.map((kind) => ({ kind, id: kind }))],
+          nextTabOrder
+        );
+        focusAfterClose();
         return;
       }
 
       const closed = await disconnectTab(id);
-      if (!closed || !wasActive) return;
-
-      if (focusTarget) {
-        handleSelectTab(focusTarget.id);
-      } else {
-        setActiveTabId(null);
-      }
+      if (!closed) return;
+      focusAfterClose();
     },
-    [activeTabId, appTabs, disconnectTab, handleSelectTab]
+    [applyWorkspaceSnapshot, disconnectTab, setSelectedTab]
   );
 
   const handleReorderTabs = useCallback(
@@ -709,7 +795,9 @@ export default function App() {
       const insertIndex =
         dropSide === "after" ? targetIndexAfterRemoval + 1 : targetIndexAfterRemoval;
       nextOrder.splice(insertIndex, 0, draggedTabId);
+      tabOrderRef.current = nextOrder;
       setTabOrder(nextOrder);
+      appTabsRef.current = orderAppTabs(appTabsRef.current, nextOrder);
     },
     [appTabs, applyWorkspaceSnapshot]
   );
