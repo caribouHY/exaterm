@@ -34,6 +34,12 @@ pnpm run format:check
 
 ## 検証
 
+フロントエンドのユニットテストを実行します。
+
+```powershell
+pnpm run test:frontend
+```
+
 フロントエンドをビルドします。
 
 ```powershell

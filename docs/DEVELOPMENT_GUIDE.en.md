@@ -34,6 +34,12 @@ Frontend formatting is handled by Prettier. Rust formatting is handled by rustfm
 
 ## Validation
 
+Run frontend unit tests:
+
+```powershell
+pnpm run test:frontend
+```
+
 Build the frontend:
 
 ```powershell
