@@ -1,5 +1,5 @@
 import { FileText, Monitor, Network, Settings, Usb, Plus, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -87,6 +87,8 @@ export default function TerminalTabs({
 }: TerminalTabsProps) {
   const { t } = useTranslation();
   const tabsRef = useRef<HTMLDivElement | null>(null);
+  const tabRefs = useRef(new Map<string, HTMLButtonElement>());
+  const addTabRef = useRef<HTMLButtonElement | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const pointerDragState = useRef<PointerDragState | null>(null);
   const dropTargetRef = useRef<TabDropTarget | null>(null);
@@ -96,6 +98,49 @@ export default function TerminalTabs({
   const [dropTarget, setDropTarget] = useState<TabDropTarget | null>(null);
   const [foreignDropTarget, setForeignDropTarget] = useState<ForeignDropTarget | null>(null);
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null);
+  const visibleTabOrder = tabs.map((tab) => tab.id).join("\u0000");
+
+  const ensureActiveTabVisible = useCallback(() => {
+    if (!activeTabId) return;
+
+    const container = tabsRef.current;
+    const activeTab = tabRefs.current.get(activeTabId);
+    if (!container || !activeTab) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const activeTabRect = activeTab.getBoundingClientRect();
+    const addTabRect = addTabRef.current?.getBoundingClientRect();
+    const visibleLeft = containerRect.left;
+    const visibleRight = addTabRect
+      ? Math.min(containerRect.right, addTabRect.left)
+      : containerRect.right;
+
+    if (activeTabRect.left < visibleLeft) {
+      container.scrollLeft += activeTabRect.left - visibleLeft;
+    } else if (activeTabRect.right > visibleRight) {
+      container.scrollLeft += activeTabRect.right - visibleRight;
+    }
+  }, [activeTabId]);
+
+  useLayoutEffect(() => {
+    ensureActiveTabVisible();
+
+    if (!activeTabId || typeof ResizeObserver === "undefined") return;
+
+    const container = tabsRef.current;
+    const activeTab = tabRefs.current.get(activeTabId);
+    const addTab = addTabRef.current;
+    if (!container || !activeTab || !addTab) return;
+
+    const resizeObserver = new ResizeObserver(ensureActiveTabVisible);
+    resizeObserver.observe(container);
+    resizeObserver.observe(activeTab);
+    resizeObserver.observe(addTab);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [activeTabId, ensureActiveTabVisible, visibleTabOrder]);
 
   const updateDropTarget = (target: TabDropTarget | null) => {
     dropTargetRef.current = target;
@@ -475,6 +520,13 @@ export default function TerminalTabs({
         return (
           <button
             key={tab.id}
+            ref={(element) => {
+              if (element) {
+                tabRefs.current.set(tab.id, element);
+              } else {
+                tabRefs.current.delete(tab.id);
+              }
+            }}
             type="button"
             className={`terminal-tab ${tab.id === activeTabId ? "terminal-tab--active" : ""} ${
               isDragging ? "terminal-tab--dragging" : ""
@@ -556,6 +608,7 @@ export default function TerminalTabs({
         );
       })}
       <button
+        ref={addTabRef}
         type="button"
         className="terminal-tabs__add"
         onClick={onAddTab}
