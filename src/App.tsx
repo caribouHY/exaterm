@@ -99,6 +99,13 @@ function orderAppTabs(appTabs: AppTabInfo[], tabOrder: string[]) {
   return [...orderedTabs, ...newTabs];
 }
 
+function getCloseFocusTarget(appTabs: AppTabInfo[], closingTabId: string) {
+  const closingIndex = appTabs.findIndex((tab) => tab.id === closingTabId);
+  if (closingIndex < 0) return null;
+
+  return appTabs[closingIndex + 1] ?? appTabs[closingIndex - 1] ?? null;
+}
+
 function insertTerminalAtWorkspaceIndex(
   order: string[],
   tabId: string,
@@ -621,15 +628,32 @@ export default function App() {
 
   const handleCloseTab = useCallback(
     async (id: string) => {
+      const wasActive = activeTabId === id;
+      const focusTarget = wasActive ? getCloseFocusTarget(appTabs, id) : null;
+
       if (id === "settings" || id === "logs") {
         setUtilityTabs((prev) => prev.filter((kind) => kind !== id));
         setTabOrder((prev) => prev.filter((tabId) => tabId !== id));
+        if (wasActive) {
+          if (focusTarget) {
+            handleSelectTab(focusTarget.id);
+          } else {
+            setActiveTabId(null);
+          }
+        }
         return;
       }
 
-      await disconnectTab(id);
+      const closed = await disconnectTab(id);
+      if (!closed || !wasActive) return;
+
+      if (focusTarget) {
+        handleSelectTab(focusTarget.id);
+      } else {
+        setActiveTabId(null);
+      }
     },
-    [disconnectTab]
+    [activeTabId, appTabs, disconnectTab, handleSelectTab]
   );
 
   const handleReorderTabs = useCallback(
