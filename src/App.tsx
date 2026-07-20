@@ -230,6 +230,7 @@ export default function App() {
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
   const tabsRef = useRef<TabInfo[]>([]);
+  const utilityTabsRef = useRef<UtilityTabKind[]>([]);
   const activeTabIdRef = useRef<string | null>(null);
   const lastAppliedWorkspaceRevisionRef = useRef<number | null>(null);
   const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
@@ -257,46 +258,54 @@ export default function App() {
       : "terminal";
   const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
 
-  const applyWorkspaceSnapshot = useCallback(
-    (snapshot: WorkspaceSnapshot) => {
-      if (snapshot.window_id !== windowIdRef.current) return;
-      const lastAppliedRevision = lastAppliedWorkspaceRevisionRef.current;
-      if (lastAppliedRevision !== null && snapshot.revision <= lastAppliedRevision) return;
-      lastAppliedWorkspaceRevisionRef.current = snapshot.revision;
-      const terminalTabs = snapshot.tabs.map(workspaceTabToTabInfo);
-      const currentTerminalIds = tabsRef.current.map((tab) => tab.id);
-      tabsRef.current = terminalTabs;
-      setTabs(terminalTabs);
-      setTabOrder((current) =>
-        reconcileTabOrder(
-          current,
-          currentTerminalIds,
-          snapshot.window.tab_order,
-          utilityTabs,
-          snapshot.tab_update
-        )
-      );
-      setActiveTabId((current) => {
-        if (
-          snapshot.tab_update?.kind === "connected" &&
-          snapshot.tabs.some((tab) => tab.tab_id === snapshot.tab_update?.tab_id)
-        ) {
-          return snapshot.tab_update.tab_id;
-        }
-        if (
-          snapshot.tab_update?.kind === "moved" &&
-          snapshot.window.active_tab_id === snapshot.tab_update.tab_id
-        ) {
-          return snapshot.tab_update.tab_id;
-        }
-        if ((current === "settings" || current === "logs") && utilityTabs.includes(current)) {
-          return current;
-        }
-        return snapshot.window.active_tab_id ?? null;
-      });
-    },
-    [utilityTabs]
-  );
+  const applyWorkspaceSnapshot = useCallback((snapshot: WorkspaceSnapshot) => {
+    if (snapshot.window_id !== windowIdRef.current) return;
+    const lastAppliedRevision = lastAppliedWorkspaceRevisionRef.current;
+    if (lastAppliedRevision !== null && snapshot.revision <= lastAppliedRevision) return;
+    lastAppliedWorkspaceRevisionRef.current = snapshot.revision;
+    const terminalTabs = snapshot.tabs.map(workspaceTabToTabInfo);
+    const currentTerminalIds = tabsRef.current.map((tab) => tab.id);
+    tabsRef.current = terminalTabs;
+    setTabs(terminalTabs);
+    setTabOrder((current) =>
+      reconcileTabOrder(
+        current,
+        currentTerminalIds,
+        snapshot.window.tab_order,
+        utilityTabsRef.current,
+        snapshot.tab_update
+      )
+    );
+    setActiveTabId((current) => {
+      if (
+        snapshot.tab_update?.kind === "connected" &&
+        snapshot.tabs.some((tab) => tab.tab_id === snapshot.tab_update?.tab_id)
+      ) {
+        return snapshot.tab_update.tab_id;
+      }
+      if (
+        snapshot.tab_update?.kind === "moved" &&
+        snapshot.window.active_tab_id === snapshot.tab_update.tab_id &&
+        snapshot.tabs.some((tab) => tab.tab_id === snapshot.tab_update?.tab_id)
+      ) {
+        return snapshot.tab_update.tab_id;
+      }
+
+      const currentTabExists =
+        snapshot.tabs.some((tab) => tab.tab_id === current) ||
+        ((current === "settings" || current === "logs") &&
+          utilityTabsRef.current.includes(current));
+      if (currentTabExists) {
+        return current;
+      }
+
+      const workspaceActiveTabId = snapshot.window.active_tab_id;
+      return workspaceActiveTabId &&
+        snapshot.tabs.some((tab) => tab.tab_id === workspaceActiveTabId)
+        ? workspaceActiveTabId
+        : null;
+    });
+  }, []);
 
   const updateWorkspaceTabMetadata = useCallback(
     async (tabId: string, patch: Record<string, unknown>) => {
@@ -337,7 +346,11 @@ export default function App() {
   );
 
   const openUtilityTab = useCallback((kind: UtilityTabKind) => {
-    setUtilityTabs((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
+    const nextUtilityTabs = utilityTabsRef.current.includes(kind)
+      ? utilityTabsRef.current
+      : [...utilityTabsRef.current, kind];
+    utilityTabsRef.current = nextUtilityTabs;
+    setUtilityTabs(nextUtilityTabs);
     setTabOrder((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
     setActiveTabId(kind);
   }, []);
@@ -380,6 +393,10 @@ export default function App() {
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
+
+  useEffect(() => {
+    utilityTabsRef.current = utilityTabs;
+  }, [utilityTabs]);
 
   useEffect(() => {
     activeTabIdRef.current = activeTabId;
@@ -635,7 +652,9 @@ export default function App() {
       const focusTarget = wasActive ? getCloseFocusTarget(appTabs, id) : null;
 
       if (id === "settings" || id === "logs") {
-        setUtilityTabs((prev) => prev.filter((kind) => kind !== id));
+        const nextUtilityTabs = utilityTabsRef.current.filter((kind) => kind !== id);
+        utilityTabsRef.current = nextUtilityTabs;
+        setUtilityTabs(nextUtilityTabs);
         setTabOrder((prev) => prev.filter((tabId) => tabId !== id));
         if (wasActive) {
           if (focusTarget) {
