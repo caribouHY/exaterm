@@ -11,6 +11,7 @@ import {
   applyForeignTabPlacement,
   getRemovalFocusNeighbors,
   orderAppTabs,
+  planTabReorder,
   reconcileTabOrder,
   reconcileWorkspaceSnapshot,
   reorderTabIds,
@@ -138,6 +139,30 @@ describe("reorderTabIds", () => {
 
     expect(reorderTabIds(order, "missing", "b", "before")).toBe(order);
     expect(reorderTabIds(order, "a", "missing", "after")).toBe(order);
+  });
+});
+
+describe("planTabReorder", () => {
+  const tabs = [terminalTab("a"), utilityTab("settings"), terminalTab("b"), utilityTab("logs")];
+
+  it("keeps utility-only ordering local", () => {
+    expect(planTabReorder(tabs, "settings", "b", "after")).toEqual({
+      previousOrder: ["a", "settings", "b", "logs"],
+      nextOrder: ["a", "b", "settings", "logs"],
+      persistToWorkspace: false,
+    });
+  });
+
+  it("persists terminal order changes to the workspace", () => {
+    expect(planTabReorder(tabs, "b", "a", "before")).toEqual({
+      previousOrder: ["a", "settings", "b", "logs"],
+      nextOrder: ["b", "a", "settings", "logs"],
+      persistToWorkspace: true,
+    });
+  });
+
+  it("rejects terminal order changes through a utility target", () => {
+    expect(planTabReorder(tabs, "a", "logs", "after")).toBeNull();
   });
 });
 

@@ -1,34 +1,25 @@
-import { lazy, Suspense, useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { lazy, Suspense, useState, useRef, useCallback, useEffect } from "react";
 import TitleBar from "./components/TitleBar/TitleBar";
 import TerminalTabs from "./components/Terminal/TerminalTabs";
 import TerminalView from "./components/Terminal/TerminalView";
 import type { TerminalViewHandle } from "./components/Terminal/TerminalView";
 import StatusBar from "./components/StatusBar/StatusBar";
 import type {
-  AppTabInfo,
   TabInfo,
   ViewMode,
-  UtilityTabKind,
   ConnectionType,
   Encoding,
-  ForeignTabPlacement,
   AppConfig,
   ChatMessage,
   TerminalMode,
   StartupCliRequest,
   ManualLogWriteMode,
-  WorkspaceDragDropResult,
-  WorkspaceDragPreview,
-  WorkspacePointerPosition,
-  WorkspaceSnapshot,
-  WorkspaceWindowCreateResult,
   WorkspaceConnectionInfo,
 } from "./types";
 import type { ConnectionDialogInitialValues } from "./components/Connection/connectionDialogTypes";
 import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import {
@@ -42,14 +33,9 @@ import {
   ModalTarget,
   ModalTitle,
 } from "./components/Common";
-import {
-  getRemovalFocusNeighbors,
-  orderAppTabs,
-  reconcileWorkspaceSnapshot,
-  reorderTabIds,
-  resolveRemovalFocusTarget,
-  tabOrdersEqual,
-} from "./features/workspace-tabs/tabStripModel";
+import { useWindowTabs } from "./features/workspace-tabs/useWindowTabs";
+import { useTerminalTabLifecycle } from "./features/workspace-tabs/useTerminalTabLifecycle";
+import { useWorkspaceTabMovement } from "./features/workspace-tabs/useWorkspaceTabMovement";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -65,7 +51,6 @@ const LogViewer = lazy(loadLogViewer);
 const AI_PANEL_DEFAULT_WIDTH = 340;
 const AI_PANEL_MIN_WIDTH = 200;
 const AI_PANEL_VIEWPORT_MARGIN = 40;
-const FOREIGN_PLACEMENT_CLEAR_DELAY_MS = 250;
 
 function clampAiPanelWidth(width: number, viewportWidth: number) {
   const maxWidth = Math.max(AI_PANEL_MIN_WIDTH, viewportWidth - AI_PANEL_VIEWPORT_MARGIN);
@@ -98,12 +83,19 @@ interface McpLogControlRequestPayload {
 
 export default function App() {
   const { t } = useTranslation();
-  const windowIdRef = useRef(getCurrentWindow().label || "main");
-  const [tabs, setTabs] = useState<TabInfo[]>([]);
-  const [utilityTabs, setUtilityTabs] = useState<UtilityTabKind[]>([]);
-  const [tabOrder, setTabOrder] = useState<string[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [closingTabIds, setClosingTabIds] = useState<string[]>([]);
+  const windowTabs = useWindowTabs();
+  const {
+    tabs,
+    appTabs,
+    activeTabId,
+    activeTab,
+    activeView,
+    closingTabIds,
+    dragPreview: workspaceDragPreview,
+  } = windowTabs;
+  const getCurrentWindowTabsState = windowTabs.getCurrentState;
+  const openUtilityTab = windowTabs.openUtilityTab;
+  const updateWorkspaceTabMetadata = windowTabs.updateTabMetadata;
   const [showConnection, setShowConnection] = useState(false);
   const [connectionInitialValues, setConnectionInitialValues] =
     useState<ConnectionDialogInitialValues | null>(null);
@@ -118,96 +110,33 @@ export default function App() {
   const [aiSelectedModel, setAiSelectedModel] = useState("");
   const [startupCliRequest, setStartupCliRequest] = useState<StartupCliRequest | null>(null);
   const [mcpCredentialPrompts, setMcpCredentialPrompts] = useState<McpCredentialPromptState[]>([]);
-  const [workspaceDragPreview, setWorkspaceDragPreview] = useState<WorkspaceDragPreview | null>(
-    null
-  );
   const activeTerminalBuffer = useRef("");
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
-  const tabsRef = useRef<TabInfo[]>([]);
-  const utilityTabsRef = useRef<UtilityTabKind[]>([]);
-  const tabOrderRef = useRef<string[]>([]);
-  const activeTabIdRef = useRef<string | null>(null);
-  const appTabsRef = useRef<AppTabInfo[]>([]);
-  const closingTabIdsRef = useRef<Set<string>>(new Set());
-  const selectionEpochRef = useRef(0);
-  const lastAppliedWorkspaceRevisionRef = useRef<number | null>(null);
-  const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
-  const foreignTabPlacementRef = useRef<ForeignTabPlacement | null>(null);
-  const activeForeignDragTabIdRef = useRef<string | null>(null);
-  const foreignPlacementClearTimerRef = useRef<number | null>(null);
-
-  const appTabs: AppTabInfo[] = useMemo(
-    () =>
-      orderAppTabs(
-        [
-          ...tabs,
-          ...utilityTabs.map((kind) => ({
-            kind,
-            id: kind,
-          })),
-        ],
-        tabOrder
-      ),
-    [tabs, utilityTabs, tabOrder]
-  );
-  const activeAppTab = appTabs.find((tab) => tab.id === activeTabId) || null;
-  const activeTab =
-    activeAppTab?.kind === "terminal" ? tabs.find((t) => t.id === activeAppTab.id) || null : null;
-  const activeView: ViewMode =
-    activeAppTab?.kind === "settings" || activeAppTab?.kind === "logs"
-      ? activeAppTab.kind
-      : "terminal";
   const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
 
-  const setSelectedTab = useCallback((id: string | null, userInitiated: boolean) => {
-    if (userInitiated && activeTabIdRef.current !== id) {
-      selectionEpochRef.current += 1;
-    }
-    activeTabIdRef.current = id;
-    setActiveTabId(id);
-  }, []);
-
-  const applyWorkspaceSnapshot = useCallback((snapshot: WorkspaceSnapshot) => {
-    const result = reconcileWorkspaceSnapshot({
-      expectedWindowId: windowIdRef.current,
-      lastAppliedRevision: lastAppliedWorkspaceRevisionRef.current,
-      currentTabs: tabsRef.current,
-      utilityTabs: utilityTabsRef.current,
-      currentTabOrder: tabOrderRef.current,
-      currentActiveTabId: activeTabIdRef.current,
-      foreignPlacement: foreignTabPlacementRef.current,
-      snapshot,
-    });
-    if (!result.applied) return;
-
-    lastAppliedWorkspaceRevisionRef.current = result.revision;
-    tabsRef.current = result.terminalTabs;
-    setTabs(result.terminalTabs);
-    if (result.consumedForeignPlacement) {
-      foreignTabPlacementRef.current = null;
-      if (foreignPlacementClearTimerRef.current !== null) {
-        window.clearTimeout(foreignPlacementClearTimerRef.current);
-        foreignPlacementClearTimerRef.current = null;
+  const removeTerminalFromState = useCallback(
+    (tabId: string) => {
+      terminalBuffers.current.delete(tabId);
+      if (getCurrentWindowTabsState().activeTabId === tabId) {
+        activeTerminalBuffer.current = "";
       }
-    }
-    tabOrderRef.current = result.tabOrder;
-    setTabOrder(result.tabOrder);
-    appTabsRef.current = result.appTabs;
-    activeTabIdRef.current = result.activeTabId;
-    setActiveTabId(result.activeTabId);
+    },
+    [getCurrentWindowTabsState]
+  );
+
+  const flushLogBuffersForMove = useCallback(async (tabId: string) => {
+    await terminalViewRefs.current.get(tabId)?.flushLogBuffersForMove();
   }, []);
 
-  const updateWorkspaceTabMetadata = useCallback(
-    async (tabId: string, patch: Record<string, unknown>) => {
-      const snapshot = await invoke<WorkspaceSnapshot>("workspace_tab_update_metadata", {
-        tabId,
-        patch,
-      });
-      applyWorkspaceSnapshot(snapshot);
-    },
-    [applyWorkspaceSnapshot]
-  );
+  const terminalTabLifecycle = useTerminalTabLifecycle({
+    tabs: windowTabs,
+    onTerminalRemoved: removeTerminalFromState,
+  });
+  const workspaceTabMovement = useWorkspaceTabMovement({
+    tabs: windowTabs,
+    flushLogBuffersForMove,
+  });
 
   const handleConnect = useCallback(
     async (
@@ -219,194 +148,38 @@ export default function App() {
       terminalMode: TerminalMode = DEFAULT_TERMINAL_MODE,
       connectionInfo?: WorkspaceConnectionInfo
     ) => {
-      const snapshot = await invoke<WorkspaceSnapshot>("workspace_tab_register", {
-        windowId: windowIdRef.current,
-        sessionId,
+      await terminalTabLifecycle.registerTerminalTab({
         connectionType: type,
+        sessionId,
         title,
+        isAutoLogging,
         encoding,
         terminalMode,
         connectionInfo,
-        isAutoLogging,
       });
-      applyWorkspaceSnapshot(snapshot);
       setConnectionInitialValues(null);
       setShowConnection(false);
     },
-    [applyWorkspaceSnapshot]
-  );
-
-  const openUtilityTab = useCallback(
-    (kind: UtilityTabKind) => {
-      const nextUtilityTabs = utilityTabsRef.current.includes(kind)
-        ? utilityTabsRef.current
-        : [...utilityTabsRef.current, kind];
-      utilityTabsRef.current = nextUtilityTabs;
-      setUtilityTabs(nextUtilityTabs);
-      const nextTabOrder = tabOrderRef.current.includes(kind)
-        ? tabOrderRef.current
-        : [...tabOrderRef.current, kind];
-      tabOrderRef.current = nextTabOrder;
-      setTabOrder(nextTabOrder);
-      appTabsRef.current = orderAppTabs(
-        [...tabsRef.current, ...nextUtilityTabs.map((tabKind) => ({ kind: tabKind, id: tabKind }))],
-        nextTabOrder
-      );
-      setSelectedTab(kind, true);
-    },
-    [setSelectedTab]
+    [terminalTabLifecycle]
   );
 
   const handleViewChange = useCallback(
     (view: ViewMode) => {
       if (view === "settings" || view === "logs") {
         void (view === "settings" ? loadSettingsPanel() : loadLogViewer());
-        openUtilityTab(view);
+        windowTabs.openUtilityTab(view);
         return;
       }
-
-      const currentIsTerminal = tabsRef.current.some((tab) => tab.id === activeTabIdRef.current);
-      if (currentIsTerminal) return;
-      setSelectedTab(
-        tabsRef.current.length > 0 ? tabsRef.current[tabsRef.current.length - 1].id : null,
-        true
-      );
+      windowTabs.showTerminalView();
     },
-    [openUtilityTab, setSelectedTab]
-  );
-
-  const handleSelectTab = useCallback(
-    (id: string) => {
-      const tab = appTabsRef.current.find((item) => item.id === id);
-      setSelectedTab(id, true);
-      if (tab?.kind === "terminal") {
-        invoke<WorkspaceSnapshot>("workspace_tab_activate", {
-          windowId: windowIdRef.current,
-          tabId: id,
-        })
-          .then(applyWorkspaceSnapshot)
-          .catch((error) => {
-            console.error("Failed to activate workspace tab:", error);
-          });
-      }
-    },
-    [applyWorkspaceSnapshot, setSelectedTab]
-  );
-
-  const selectTabProgrammatically = useCallback(
-    (id: string | null) => {
-      if (!id) {
-        setSelectedTab(null, false);
-        return;
-      }
-
-      const tab = appTabsRef.current.find((item) => item.id === id);
-      setSelectedTab(id, false);
-      if (tab?.kind === "terminal") {
-        invoke<WorkspaceSnapshot>("workspace_tab_activate", {
-          windowId: windowIdRef.current,
-          tabId: id,
-        })
-          .then(applyWorkspaceSnapshot)
-          .catch((error) => {
-            console.error("Failed to activate workspace tab:", error);
-          });
-      }
-    },
-    [applyWorkspaceSnapshot, setSelectedTab]
+    [windowTabs]
   );
 
   useEffect(() => {
-    tabsRef.current = tabs;
-  }, [tabs]);
-
-  useEffect(() => {
-    utilityTabsRef.current = utilityTabs;
-  }, [utilityTabs]);
-
-  useEffect(() => {
-    tabOrderRef.current = tabOrder;
-  }, [tabOrder]);
-
-  useEffect(() => {
-    appTabsRef.current = appTabs;
-  }, [appTabs]);
-
-  useEffect(() => {
-    activeTabIdRef.current = activeTabId;
     activeTerminalBuffer.current = activeTabId
       ? terminalBuffers.current.get(activeTabId) || ""
       : "";
   }, [activeTabId]);
-
-  useEffect(() => {
-    const registerWindow = async () => {
-      try {
-        const snapshot = await invoke<WorkspaceSnapshot>("workspace_window_register", {
-          windowId: windowIdRef.current,
-          label: windowIdRef.current,
-          focused: true,
-        });
-        applyWorkspaceSnapshot(snapshot);
-      } catch (error) {
-        console.error("Failed to register workspace window:", error);
-      }
-    };
-
-    void registerWindow();
-
-    const unlistenWorkspace = listen<WorkspaceSnapshot>("workspace://updated", (event) => {
-      applyWorkspaceSnapshot(event.payload);
-    });
-    const unlistenWorkspaceDrag = listen<WorkspaceDragPreview>(
-      "workspace://drag-preview",
-      (event) => {
-        const previewTabId = event.payload.active ? (event.payload.tab_id ?? null) : null;
-        if (previewTabId) {
-          if (activeForeignDragTabIdRef.current !== previewTabId) {
-            foreignTabPlacementRef.current = null;
-          }
-          activeForeignDragTabIdRef.current = previewTabId;
-          if (foreignPlacementClearTimerRef.current !== null) {
-            window.clearTimeout(foreignPlacementClearTimerRef.current);
-            foreignPlacementClearTimerRef.current = null;
-          }
-        } else if (activeForeignDragTabIdRef.current) {
-          const completedDragTabId = activeForeignDragTabIdRef.current;
-          activeForeignDragTabIdRef.current = null;
-          const placement = foreignTabPlacementRef.current;
-          if (placement?.tabId === completedDragTabId) {
-            foreignPlacementClearTimerRef.current = window.setTimeout(() => {
-              if (foreignTabPlacementRef.current === placement) {
-                foreignTabPlacementRef.current = null;
-              }
-              foreignPlacementClearTimerRef.current = null;
-            }, FOREIGN_PLACEMENT_CLEAR_DELAY_MS);
-          }
-        }
-        setWorkspaceDragPreview(event.payload.active ? event.payload : null);
-      }
-    );
-    const handleFocus = () => {
-      invoke<WorkspaceSnapshot>("workspace_window_focus", {
-        windowId: windowIdRef.current,
-      })
-        .then(applyWorkspaceSnapshot)
-        .catch((error) => {
-          console.error("Failed to focus workspace window:", error);
-        });
-    };
-
-    window.addEventListener("focus", handleFocus);
-    return () => {
-      unlistenWorkspace.then((fn) => fn());
-      unlistenWorkspaceDrag.then((fn) => fn());
-      if (foreignPlacementClearTimerRef.current !== null) {
-        window.clearTimeout(foreignPlacementClearTimerRef.current);
-      }
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, [applyWorkspaceSnapshot]);
 
   useEffect(() => {
     const unlistenCredential = listen<McpCredentialRequestPayload>(
@@ -459,7 +232,9 @@ export default function App() {
       "external-control://log-start-request",
       async (event) => {
         const payload = event.payload;
-        const tab = tabsRef.current.find((item) => item.sessionId === payload.session_id);
+        const tab = getCurrentWindowTabsState().tabs.find(
+          (item) => item.sessionId === payload.session_id
+        );
         if (!tab) {
           await submitLogControl(payload.request_id, null, "セッションが見つかりません");
           return;
@@ -503,7 +278,9 @@ export default function App() {
       "external-control://log-stop-request",
       async (event) => {
         const payload = event.payload;
-        const tab = tabsRef.current.find((item) => item.sessionId === payload.session_id);
+        const tab = getCurrentWindowTabsState().tabs.find(
+          (item) => item.sessionId === payload.session_id
+        );
         if (!tab) {
           await submitLogControl(payload.request_id, null, "セッションが見つかりません");
           return;
@@ -537,334 +314,19 @@ export default function App() {
       unlistenStart.then((fn) => fn());
       unlistenStop.then((fn) => fn());
     };
-  }, []);
+  }, [getCurrentWindowTabsState, updateWorkspaceTabMetadata]);
 
-  useEffect(() => {
-    if (activeTabId && !appTabs.some((tab) => tab.id === activeTabId)) {
-      setSelectedTab(appTabs.length > 0 ? appTabs[appTabs.length - 1].id : null, false);
-    }
-  }, [activeTabId, appTabs, setSelectedTab]);
-
-  const removeTabFromState = useCallback((id: string) => {
-    terminalBuffers.current.delete(id);
-    if (activeTabIdRef.current === id) {
-      activeTerminalBuffer.current = "";
-    }
-  }, []);
-
-  const disconnectTab = useCallback(
-    (id: string) => {
-      const existingOperation = closeOperationsRef.current.get(id);
-      if (existingOperation) {
-        return existingOperation;
-      }
-
-      const operation = (async () => {
-        const tab = tabsRef.current.find((item) => item.id === id);
-        if (!tab) {
-          return true;
-        }
-
-        closingTabIdsRef.current = new Set(closingTabIdsRef.current).add(id);
-        setClosingTabIds(Array.from(closingTabIdsRef.current));
-
-        if (!tab.sessionId) {
-          removeTabFromState(id);
-          return true;
-        }
-
-        const disconnectCommands: Record<ConnectionType, string> = {
-          ssh: "ssh_disconnect",
-          serial: "serial_disconnect",
-          telnet: "telnet_disconnect",
-        };
-        const disconnectCommand = disconnectCommands[tab.connectionType];
-
-        try {
-          await invoke(disconnectCommand, { sessionId: tab.sessionId });
-          const snapshot = await invoke<WorkspaceSnapshot>("workspace_tab_remove", {
-            windowId: windowIdRef.current,
-            tabId: id,
-          });
-          removeTabFromState(id);
-          applyWorkspaceSnapshot(snapshot);
-          return true;
-        } catch (error) {
-          console.error(
-            `Failed to disconnect ${tab.connectionType} session ${tab.sessionId}:`,
-            error
-          );
-          return false;
-        } finally {
-          closeOperationsRef.current.delete(id);
-          const nextClosingTabIds = new Set(closingTabIdsRef.current);
-          nextClosingTabIds.delete(id);
-          closingTabIdsRef.current = nextClosingTabIds;
-          setClosingTabIds(Array.from(nextClosingTabIds));
-        }
-      })();
-
-      closeOperationsRef.current.set(id, operation);
-      return operation;
-    },
-    [applyWorkspaceSnapshot, removeTabFromState]
-  );
-
-  const handleCloseTab = useCallback(
-    async (id: string) => {
-      const wasActive = activeTabIdRef.current === id;
-      const selectionEpoch = selectionEpochRef.current;
-      const { rightId, leftId } = getRemovalFocusNeighbors(appTabsRef.current, id);
-
-      const focusAfterClose = () => {
-        if (!wasActive || selectionEpochRef.current !== selectionEpoch) return;
-
-        const focusTargetId = resolveRemovalFocusTarget(
-          appTabsRef.current,
-          closingTabIdsRef.current,
-          id,
-          rightId,
-          leftId,
-          activeTabIdRef.current
-        );
-        selectTabProgrammatically(focusTargetId);
-      };
-
-      if (id === "settings" || id === "logs") {
-        const nextUtilityTabs = utilityTabsRef.current.filter((kind) => kind !== id);
-        utilityTabsRef.current = nextUtilityTabs;
-        setUtilityTabs(nextUtilityTabs);
-        const nextTabOrder = tabOrderRef.current.filter((tabId) => tabId !== id);
-        tabOrderRef.current = nextTabOrder;
-        setTabOrder(nextTabOrder);
-        appTabsRef.current = orderAppTabs(
-          [...tabsRef.current, ...nextUtilityTabs.map((kind) => ({ kind, id: kind }))],
-          nextTabOrder
-        );
-        focusAfterClose();
-        return;
-      }
-
-      const closed = await disconnectTab(id);
-      if (!closed) return;
-      focusAfterClose();
-    },
-    [disconnectTab, selectTabProgrammatically]
-  );
-
-  const handleReorderTabs = useCallback(
-    (draggedId: string, targetId: string, dropSide: "before" | "after") => {
-      if (draggedId === targetId) return;
-
-      const currentAppTabs = appTabsRef.current;
-      const draggedTab = currentAppTabs.find((tab) => tab.id === draggedId);
-      const targetTab = currentAppTabs.find((tab) => tab.id === targetId);
-      if (!draggedTab || !targetTab) return;
-
-      const visibleOrder = currentAppTabs.map((tab) => tab.id);
-      const nextVisibleOrder = reorderTabIds(visibleOrder, draggedId, targetId, dropSide);
-      if (tabOrdersEqual(visibleOrder, nextVisibleOrder)) return;
-
-      const terminalTabIds = new Set(
-        currentAppTabs.filter((tab) => tab.kind === "terminal").map((tab) => tab.id)
-      );
-      const currentTerminalOrder = visibleOrder.filter((id) => terminalTabIds.has(id));
-      const nextTerminalOrder = nextVisibleOrder.filter((id) => terminalTabIds.has(id));
-
-      if (!tabOrdersEqual(currentTerminalOrder, nextTerminalOrder)) {
-        if (draggedTab.kind !== "terminal" || targetTab.kind !== "terminal") return;
-
-        tabOrderRef.current = nextVisibleOrder;
-        setTabOrder(nextVisibleOrder);
-        appTabsRef.current = orderAppTabs(currentAppTabs, nextVisibleOrder);
-
-        invoke<WorkspaceSnapshot>("workspace_tab_reorder", {
-          windowId: windowIdRef.current,
-          draggedTabId: draggedId,
-          targetTabId: targetId,
-          dropSide,
-        })
-          .then(applyWorkspaceSnapshot)
-          .catch((error) => {
-            console.error("Failed to reorder workspace tab:", error);
-            if (!tabOrdersEqual(tabOrderRef.current, nextVisibleOrder)) return;
-
-            tabOrderRef.current = visibleOrder;
-            setTabOrder(visibleOrder);
-            appTabsRef.current = orderAppTabs(currentAppTabs, visibleOrder);
-          });
-        return;
-      }
-
-      tabOrderRef.current = nextVisibleOrder;
-      setTabOrder(nextVisibleOrder);
-      appTabsRef.current = orderAppTabs(currentAppTabs, nextVisibleOrder);
-    },
-    [applyWorkspaceSnapshot]
-  );
-
-  const handleCrossWindowDragStart = useCallback(
-    (tabId: string, pointerScreenPosition: WorkspacePointerPosition) => {
-      invoke<WorkspaceDragPreview>("workspace_tab_drag_start", {
-        windowId: windowIdRef.current,
-        tabId,
-        pointerScreenPosition,
-      })
-        .then((preview) => {
-          setWorkspaceDragPreview(preview.active ? preview : null);
-        })
-        .catch((error) => {
-          console.error("Failed to start workspace tab drag:", error);
-        });
-    },
-    []
-  );
-
-  const handleCrossWindowDragUpdate = useCallback(
-    (pointerScreenPosition: WorkspacePointerPosition) => {
-      invoke<WorkspaceDragPreview>("workspace_tab_drag_update", {
-        pointerScreenPosition,
-      }).catch((error) => {
-        console.error("Failed to update workspace tab drag:", error);
-      });
-    },
-    []
-  );
-
-  const handleCrossWindowDragHover = useCallback(
-    (targetIndex: number | null, placement: ForeignTabPlacement | null) => {
-      foreignTabPlacementRef.current = placement;
-      invoke<WorkspaceDragPreview>("workspace_tab_drag_hover", {
-        windowId: windowIdRef.current,
-        targetIndex,
-      }).catch((error) => {
-        console.error("Failed to update workspace tab drag hover:", error);
-      });
-    },
-    []
-  );
-
-  const handleCrossWindowDragCancel = useCallback(() => {
-    invoke<WorkspaceDragPreview>("workspace_tab_drag_cancel")
-      .then(() => {
-        setWorkspaceDragPreview(null);
-      })
-      .catch((error) => {
-        console.error("Failed to cancel workspace tab drag:", error);
-      });
-  }, []);
-
-  const handleCrossWindowDragDrop = useCallback(
-    async (tabId: string, pointerScreenPosition: WorkspacePointerPosition) => {
-      const wasActive = activeTabIdRef.current === tabId;
-      const selectionEpoch = selectionEpochRef.current;
-      const { rightId, leftId } = getRemovalFocusNeighbors(appTabsRef.current, tabId);
-
-      if (tabId) {
-        try {
-          await terminalViewRefs.current.get(tabId)?.flushLogBuffersForMove();
-        } catch (error) {
-          console.warn("Failed to flush terminal log buffers before tab move:", error);
-        }
-      }
-
-      try {
-        const result = await invoke<WorkspaceDragDropResult>("workspace_tab_drag_drop", {
-          pointerScreenPosition,
-        });
-        result.snapshots.forEach(applyWorkspaceSnapshot);
-        setWorkspaceDragPreview(null);
-        const sourceSnapshot = result.snapshots.find(
-          (snapshot) => snapshot.window_id === windowIdRef.current
-        );
-        const movedFromCurrentWindow =
-          result.source_window_id === windowIdRef.current &&
-          result.target_window_id !== windowIdRef.current;
-        if (movedFromCurrentWindow && wasActive && selectionEpochRef.current === selectionEpoch) {
-          selectTabProgrammatically(
-            resolveRemovalFocusTarget(
-              appTabsRef.current,
-              closingTabIdsRef.current,
-              tabId,
-              rightId,
-              leftId,
-              activeTabIdRef.current
-            )
-          );
-        }
-        if (
-          movedFromCurrentWindow &&
-          sourceSnapshot?.window.tab_order.length === 0 &&
-          utilityTabsRef.current.length === 0
-        ) {
-          await getCurrentWindow().close();
-        }
-      } catch (error) {
-        console.error("Failed to drop workspace tab drag:", error);
-        handleCrossWindowDragCancel();
+  const handleTerminalData = useCallback(
+    (tabId: string, data: string) => {
+      // Keep last 2000 chars per tab for AI context.
+      const nextBuffer = ((terminalBuffers.current.get(tabId) || "") + data).slice(-2000);
+      terminalBuffers.current.set(tabId, nextBuffer);
+      if (getCurrentWindowTabsState().activeTabId === tabId) {
+        activeTerminalBuffer.current = nextBuffer;
       }
     },
-    [applyWorkspaceSnapshot, handleCrossWindowDragCancel, selectTabProgrammatically]
+    [getCurrentWindowTabsState]
   );
-
-  const handleMoveTabToNewWindow = useCallback(
-    async (tabId: string) => {
-      const wasActive = activeTabIdRef.current === tabId;
-      const selectionEpoch = selectionEpochRef.current;
-      const { rightId, leftId } = getRemovalFocusNeighbors(appTabsRef.current, tabId);
-
-      try {
-        await terminalViewRefs.current.get(tabId)?.flushLogBuffersForMove();
-      } catch (error) {
-        console.warn("Failed to flush terminal log buffers before tab move:", error);
-      }
-
-      try {
-        const result = await invoke<WorkspaceDragDropResult>("workspace_tab_detach_to_new_window", {
-          tabId,
-          fromWindowId: windowIdRef.current,
-        });
-        result.snapshots.forEach(applyWorkspaceSnapshot);
-        const sourceSnapshot = result.snapshots.find(
-          (snapshot) => snapshot.window_id === windowIdRef.current
-        );
-        const movedFromCurrentWindow =
-          result.source_window_id === windowIdRef.current &&
-          result.target_window_id !== windowIdRef.current;
-        if (movedFromCurrentWindow && wasActive && selectionEpochRef.current === selectionEpoch) {
-          selectTabProgrammatically(
-            resolveRemovalFocusTarget(
-              appTabsRef.current,
-              closingTabIdsRef.current,
-              tabId,
-              rightId,
-              leftId,
-              activeTabIdRef.current
-            )
-          );
-        }
-        if (
-          movedFromCurrentWindow &&
-          sourceSnapshot?.window.tab_order.length === 0 &&
-          utilityTabsRef.current.length === 0
-        ) {
-          await getCurrentWindow().close();
-        }
-      } catch (error) {
-        console.error("Failed to move workspace tab to a new window:", error);
-      }
-    },
-    [applyWorkspaceSnapshot, selectTabProgrammatically]
-  );
-
-  const handleTerminalData = useCallback((tabId: string, data: string) => {
-    // Keep last 2000 chars per tab for AI context.
-    const nextBuffer = ((terminalBuffers.current.get(tabId) || "") + data).slice(-2000);
-    terminalBuffers.current.set(tabId, nextBuffer);
-    if (activeTabIdRef.current === tabId) {
-      activeTerminalBuffer.current = nextBuffer;
-    }
-  }, []);
 
   const updateActiveMcpCredentialPrompt = useCallback(
     (patch: Partial<McpCredentialPromptState>) => {
@@ -1022,11 +484,7 @@ export default function App() {
     setShowConnection(true);
   }, []);
 
-  const openWindow = useCallback(() => {
-    invoke<WorkspaceWindowCreateResult>("workspace_window_create").catch((error) => {
-      console.error("Failed to create workspace window:", error);
-    });
-  }, []);
+  const openWindow = windowTabs.createWorkspaceWindow;
 
   const toggleAiPanel = useCallback(() => {
     setShowAiPanel((current) => {
@@ -1143,19 +601,21 @@ export default function App() {
                 tabs={appTabs}
                 activeTabId={activeTabId}
                 closingTabIds={closingTabIds}
-                onSelectTab={handleSelectTab}
-                onCloseTab={handleCloseTab}
-                onMoveTabToNewWindow={handleMoveTabToNewWindow}
+                onSelectTab={windowTabs.selectTab}
+                onCloseTab={terminalTabLifecycle.closeTab}
+                onMoveTabToNewWindow={workspaceTabMovement.moveTabToNewWindow}
                 onOpenSameDestination={openSameDestination}
                 onAddTab={openConnection}
-                onReorderTabs={handleReorderTabs}
-                windowId={windowIdRef.current}
+                onReorderTabs={workspaceTabMovement.reorderTabs}
+                windowId={windowTabs.windowId}
                 dragPreview={workspaceDragPreview}
-                onCrossWindowDragStart={handleCrossWindowDragStart}
-                onCrossWindowDragUpdate={handleCrossWindowDragUpdate}
-                onCrossWindowDragDrop={handleCrossWindowDragDrop}
-                onCrossWindowDragCancel={handleCrossWindowDragCancel}
-                onCrossWindowDragHover={handleCrossWindowDragHover}
+                onCrossWindowDragStart={workspaceTabMovement.startCrossWindowDrag}
+                onCrossWindowDragUpdate={workspaceTabMovement.updateCrossWindowDrag}
+                onCrossWindowDragDrop={(tabId, pointerScreenPosition) => {
+                  void workspaceTabMovement.dropCrossWindowDrag(tabId, pointerScreenPosition);
+                }}
+                onCrossWindowDragCancel={workspaceTabMovement.cancelCrossWindowDrag}
+                onCrossWindowDragHover={workspaceTabMovement.hoverCrossWindowDrag}
               />
               <div
                 className={`app__terminal-area ${activeView !== "terminal" ? "app__hidden" : ""}`}
