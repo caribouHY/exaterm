@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Fixed MCP tool discovery in strict clients by declaring the `read_terminal_output` input schema as an object.
+
 ## v0.8.0
 
 ### Changed
