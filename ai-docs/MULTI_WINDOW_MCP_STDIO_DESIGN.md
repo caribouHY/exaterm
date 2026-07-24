@@ -44,7 +44,8 @@ Accepted product direction:
 
 ## Current Constraints
 
-- `src/App.tsx` currently owns tab placement, tab order, active tab, and utility tabs.
+- The backend workspace owns terminal-tab placement, order, and active terminal tabs per window.
+- `src/features/workspace-tabs/` renders each window projection and combines it with window-local utility tabs.
 - Backend protocol sessions already live outside React and can survive a React remount.
 - `TerminalControlState` keeps decoded output snapshots and deltas, so a moved tab can
   restore recent output after its `TerminalView` remounts.
@@ -59,11 +60,15 @@ Accepted product direction:
 
 ### Workspace State
 
-Introduce a backend workspace state that owns cross-window placement.
+The backend workspace state owns cross-window placement.
 
-Use this initial module:
+The current module layout is:
 
-- `src-tauri/src/workspace.rs`
+- `src-tauri/src/workspace.rs`: subsystem facade and stable internal imports
+- `src-tauri/src/workspace/model.rs`: workspace data, snapshots, helpers, and invariants
+- `src-tauri/src/workspace/state.rs`: async shared-state facade
+- `src-tauri/src/workspace/commands.rs`: Tauri commands, window creation, and events
+- `src-tauri/src/workspace/tests.rs`: workspace behavior and invariant tests
 
 Use this initial core model:
 
@@ -228,7 +233,7 @@ v1 drag commands/events:
 
 ### Frontend Refactor
 
-Refactor `App.tsx` from owner of all tab placement into renderer of one window projection.
+The frontend refactor keeps `App.tsx` as the shell composition root and places workspace projection and tab workflows under `src/features/workspace-tabs/`.
 
 Frontend responsibilities after refactor:
 
@@ -238,6 +243,13 @@ Frontend responsibilities after refactor:
 - keep xterm.js instances and UI-only refs for visible tabs
 - request backend workspace operations for move, close, and activation
 - keep AI panel and Settings/Logs presentation local to each window
+
+Current implementation boundary:
+
+- `useWindowTabs` owns projection state, workspace subscriptions, revision filtering, and utility-tab reconciliation.
+- `useTerminalTabLifecycle` owns terminal registration and close/disconnect workflows.
+- `useWorkspaceTabMovement` owns reorder, cross-window move, detach, and pre-move log flushing.
+- `workspaceClient` preserves the typed Tauri command and event boundary.
 
 Backend responsibilities after refactor:
 

@@ -67,21 +67,22 @@ fn read_log_index(index_path: &PathBuf) -> Result<Vec<LogSession>, String> {
     }
 
     let data =
-        fs::read_to_string(index_path).map_err(|e| format!("ログ履歴読み込みエラー: {}", e))?;
+        fs::read_to_string(index_path).map_err(|e| format!("Failed to read log history: {}", e))?;
     let mut sessions: Vec<LogSession> =
-        serde_json::from_str(&data).map_err(|e| format!("ログ履歴解析エラー: {}", e))?;
+        serde_json::from_str(&data).map_err(|e| format!("Failed to parse log history: {}", e))?;
     sort_sessions_desc(&mut sessions);
     Ok(sessions)
 }
 
 fn write_log_index(index_path: &PathBuf, sessions: &[LogSession]) -> Result<(), String> {
     if let Some(parent) = index_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("ログ履歴ディレクトリ作成エラー: {}", e))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create the log history directory: {}", e))?;
     }
 
     let data = serde_json::to_string_pretty(sessions)
-        .map_err(|e| format!("ログ履歴シリアライズエラー: {}", e))?;
-    fs::write(index_path, data).map_err(|e| format!("ログ履歴保存エラー: {}", e))
+        .map_err(|e| format!("Failed to serialize log history: {}", e))?;
+    fs::write(index_path, data).map_err(|e| format!("Failed to save log history: {}", e))
 }
 
 fn upsert_log_session(index_path: &PathBuf, session: LogSession) -> Result<(), String> {
@@ -166,17 +167,18 @@ fn delete_auto_log_file(
     log_dir: &PathBuf,
     file_path: &str,
 ) -> Result<AutoLogFileDeleteResult, String> {
-    let log_dir =
-        fs::canonicalize(log_dir).map_err(|e| format!("ログディレクトリ確認エラー: {}", e))?;
+    let log_dir = fs::canonicalize(log_dir)
+        .map_err(|e| format!("Failed to verify the log directory: {}", e))?;
     let file_path = PathBuf::from(file_path);
 
     if file_path.exists() {
-        let canonical_file =
-            fs::canonicalize(&file_path).map_err(|e| format!("ログファイル確認エラー: {}", e))?;
+        let canonical_file = fs::canonicalize(&file_path)
+            .map_err(|e| format!("Failed to verify the log file: {}", e))?;
         if !canonical_file.starts_with(&log_dir) {
             return Ok(AutoLogFileDeleteResult::UnsafePath);
         }
-        fs::remove_file(&canonical_file).map_err(|e| format!("ログファイル削除エラー: {}", e))?;
+        fs::remove_file(&canonical_file)
+            .map_err(|e| format!("Failed to delete the log file: {}", e))?;
         return Ok(AutoLogFileDeleteResult::Removed);
     }
 
@@ -247,7 +249,7 @@ impl LogWriteMode {
         match value.unwrap_or("overwrite") {
             "overwrite" => Ok(Self::Overwrite),
             "append" => Ok(Self::Append),
-            other => Err(format!("不明なログ書き込みモード: {}", other)),
+            other => Err(format!("Unknown log write mode: {}", other)),
         }
     }
 }
@@ -268,9 +270,11 @@ fn write_log_start_header(
                     "# ExaTerm Log\n# Type: {}\n# Target: {}\n# Mode: {}\n# Started: {}\n\n",
                     connection_type, target, log_mode, started_at
                 );
-                fs::write(file_path, &header).map_err(|e| format!("ログ作成エラー: {}", e))?;
+                fs::write(file_path, &header)
+                    .map_err(|e| format!("Failed to create the log file: {}", e))?;
             } else {
-                fs::write(file_path, "").map_err(|e| format!("ログ作成エラー: {}", e))?;
+                fs::write(file_path, "")
+                    .map_err(|e| format!("Failed to create the log file: {}", e))?;
             }
         }
         LogWriteMode::Append => {
@@ -279,27 +283,29 @@ fn write_log_start_header(
                 .read(true)
                 .append(true)
                 .open(file_path)
-                .map_err(|e| format!("ログ作成エラー: {}", e))?;
+                .map_err(|e| format!("Failed to create the log file: {}", e))?;
 
             if include_header {
                 if file
                     .metadata()
-                    .map_err(|e| format!("ログ作成エラー: {}", e))?
+                    .map_err(|e| format!("Failed to create the log file: {}", e))?
                     .len()
                     > 0
                 {
                     file.seek(SeekFrom::End(-1))
-                        .map_err(|e| format!("ログ作成エラー: {}", e))?;
+                        .map_err(|e| format!("Failed to create the log file: {}", e))?;
                     let mut last_byte = [0_u8; 1];
                     file.read_exact(&mut last_byte)
-                        .map_err(|e| format!("ログ作成エラー: {}", e))?;
+                        .map_err(|e| format!("Failed to create the log file: {}", e))?;
                     if last_byte[0] != b'\n' {
-                        writeln!(file).map_err(|e| format!("ログ作成エラー: {}", e))?;
+                        writeln!(file)
+                            .map_err(|e| format!("Failed to create the log file: {}", e))?;
                     }
                 }
 
                 let header = format!("# ExaTerm Log Append\n# Started: {}\n\n", started_at);
-                write!(file, "{}", header).map_err(|e| format!("ログ作成エラー: {}", e))?;
+                write!(file, "{}", header)
+                    .map_err(|e| format!("Failed to create the log file: {}", e))?;
             }
         }
     }
@@ -325,7 +331,8 @@ fn create_log_session(
         .map(PathBuf::from)
         .unwrap_or_else(|| log_dir.join(&filename));
     if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("ログディレクトリ作成エラー: {}", e))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create the log directory: {}", e))?;
     }
     write_log_start_header(
         &file_path,
@@ -352,9 +359,9 @@ fn append_to_log_sessions(sessions: &[LogSession], data: &str) -> Result<(), Str
         let mut file = fs::OpenOptions::new()
             .append(true)
             .open(&session.file_path)
-            .map_err(|e| format!("ログ書き込みエラー: {}", e))?;
+            .map_err(|e| format!("Failed to write to the log file: {}", e))?;
         use std::io::Write;
-        write!(file, "{}", data).map_err(|e| format!("ログ書き込みエラー: {}", e))?;
+        write!(file, "{}", data).map_err(|e| format!("Failed to write to the log file: {}", e))?;
     }
     Ok(())
 }
@@ -374,18 +381,29 @@ fn log_sessions_for_mode(
             .cloned()
             .into_iter()
             .collect()),
-        _ => Err(format!("不明なログモード: {}", log_mode)),
+        _ => Err(format!("Unknown log mode: {}", log_mode)),
     }
+}
+
+fn localize<T>(
+    language: &tauri::State<'_, crate::i18n::BackendLanguageState>,
+    result: Result<T, String>,
+) -> Result<T, String> {
+    result.map_err(|error| crate::i18n::translate_gui_error(language.inner(), &error))
 }
 
 #[tauri::command]
 pub async fn logger_start_auto(
     state: tauri::State<'_, LoggerState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     connection_type: String,
     target: String,
 ) -> Result<String, String> {
-    start_auto_log(&state, session_id, connection_type, target).await
+    localize(
+        &language,
+        start_auto_log(&state, session_id, connection_type, target).await,
+    )
 }
 
 pub async fn start_auto_log(
@@ -416,21 +434,25 @@ pub async fn start_auto_log(
 #[tauri::command]
 pub async fn logger_start_manual(
     state: tauri::State<'_, LoggerState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     connection_type: String,
     target: String,
     file_path: Option<String>,
     write_mode: Option<String>,
 ) -> Result<String, String> {
-    start_manual_log(
-        &state,
-        session_id,
-        connection_type,
-        target,
-        file_path,
-        write_mode,
+    localize(
+        &language,
+        start_manual_log(
+            &state,
+            session_id,
+            connection_type,
+            target,
+            file_path,
+            write_mode,
+        )
+        .await,
     )
-    .await
 }
 
 pub async fn start_manual_log(
@@ -464,19 +486,21 @@ pub async fn start_manual_log(
 #[tauri::command]
 pub async fn logger_start(
     state: tauri::State<'_, LoggerState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     connection_type: String,
     target: String,
 ) -> Result<String, String> {
-    logger_start_auto(state, session_id, connection_type, target).await
+    logger_start_auto(state, language, session_id, connection_type, target).await
 }
 
 #[tauri::command]
 pub async fn logger_stop_manual(
     state: tauri::State<'_, LoggerState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
 ) -> Result<(), String> {
-    stop_manual_log(&state, &session_id).await
+    localize(&language, stop_manual_log(&state, &session_id).await)
 }
 
 pub async fn stop_manual_log(state: &LoggerState, session_id: &str) -> Result<(), String> {
@@ -513,6 +537,7 @@ pub async fn logger_is_manual_active(
 #[tauri::command]
 pub async fn logger_append(
     state: tauri::State<'_, LoggerState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     data: String,
 ) -> Result<(), String> {
@@ -530,47 +555,54 @@ pub async fn logger_append(
             })
             .unwrap_or_default()
     };
-    append_to_log_sessions(&active_sessions, &data)?;
-    Ok(())
+    localize(&language, append_to_log_sessions(&active_sessions, &data))
 }
 
 #[tauri::command]
 pub async fn logger_append_to_mode(
     state: tauri::State<'_, LoggerState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     log_mode: String,
     data: String,
 ) -> Result<(), String> {
     let active_sessions = {
         let sessions = state.sessions.lock().await;
-        log_sessions_for_mode(sessions.get(&session_id), &log_mode)?
+        localize(
+            &language,
+            log_sessions_for_mode(sessions.get(&session_id), &log_mode),
+        )?
     };
-    append_to_log_sessions(&active_sessions, &data)?;
-    Ok(())
+    localize(&language, append_to_log_sessions(&active_sessions, &data))
 }
 
 #[tauri::command]
 pub async fn logger_get_sessions(
     state: tauri::State<'_, LoggerState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
 ) -> Result<Vec<LogSession>, String> {
     let _sessions = state.sessions.lock().await;
-    read_log_index(&state.index_path)
+    localize(&language, read_log_index(&state.index_path))
 }
 
 #[tauri::command]
 pub async fn logger_bulk_delete_sessions(
     state: tauri::State<'_, LoggerState>,
+    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     delete_auto_files: bool,
 ) -> Result<LogBulkDeleteResult, String> {
     let active_keys = {
         let sessions = state.sessions.lock().await;
         active_log_keys(&sessions)
     };
-    bulk_delete_log_sessions(
-        &state.index_path,
-        &state.log_dir,
-        &active_keys,
-        delete_auto_files,
+    localize(
+        &language,
+        bulk_delete_log_sessions(
+            &state.index_path,
+            &state.log_dir,
+            &active_keys,
+            delete_auto_files,
+        ),
     )
 }
 
@@ -761,7 +793,7 @@ mod tests {
     fn log_sessions_for_mode_rejects_unknown_mode() {
         let error = log_sessions_for_mode(None, "unknown").expect_err("unknown mode should fail");
 
-        assert!(error.contains("不明なログモード"));
+        assert!(error.contains("Unknown log mode"));
     }
 
     #[test]

@@ -1,7 +1,6 @@
 # ExaTerm AI Agent Guide
 
-This file is the main entry point for AI coding agents working in this repository.
-Keep AI-facing guidance in English. Keep user-facing documentation in `docs/`.
+Keep user-facing documentation in `docs/`.
 
 ## Project Snapshot
 
@@ -23,7 +22,6 @@ Read `docs/DEVELOPMENT_GUIDE.en.md` before code changes or Git operations, espec
 - Treat terminal buffers, session logs, connection targets, usernames, prompts, command output, and API keys as sensitive.
 - Do not change log capture, log storage, API key storage, or secret handling without explicitly preserving privacy expectations.
 - Do not place AI-only implementation guidance in `docs/`; that folder is for user-facing documentation.
-- Do not rely on a root-level `CONFIG_JSON_GUIDE.md`. The current user-facing config guides are `docs/CONFIG_JSON_GUIDE.en.md` and `docs/CONFIG_JSON_GUIDE.ja.md`.
 
 ## Codebase Conventions
 
@@ -36,10 +34,4 @@ Read `docs/DEVELOPMENT_GUIDE.en.md` before code changes or Git operations, espec
 
 ## Validation Commands
 
-Use the smallest validation set that fits the change:
-
-- Frontend and TypeScript checks: `pnpm run build`
-- Rust unit tests: `cargo test`
-- Tauri debug bundle smoke check, when installer/runtime integration matters: `pnpm run tauri build --debug`
-
-Documentation-only changes do not require a full application build, but links and referenced paths should still be checked.
+When choosing validation or test commands, use `.agents/skills/exaterm-validate-change/SKILL.md`.

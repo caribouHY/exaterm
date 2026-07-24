@@ -50,7 +50,9 @@ export default function StatusBar({
     if (openMenu) {
       document.addEventListener("mousedown", handleClickOutside);
     }
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, [openMenu]);
 
   const encodings: { label: string; value: Encoding }[] = [
@@ -111,7 +113,9 @@ export default function StatusBar({
               className={`statusbar__item statusbar__item--clickable statusbar__log ${
                 activeTab.isManualLogging ? "statusbar__log--manual" : ""
               } ${activeTab.isLoggingPaused ? "statusbar__log--paused" : ""}`}
-              onClick={() => setOpenMenu(openMenu === "log" ? null : "log")}
+              onClick={() => {
+                setOpenMenu(openMenu === "log" ? null : "log");
+              }}
               disabled={!activeTab.isConnected || manualLogBusy}
               title={logTitle}
             >
@@ -189,7 +193,9 @@ export default function StatusBar({
           <div className="statusbar__menu-container" ref={terminalModeMenuRef}>
             <button
               className="statusbar__item statusbar__item--clickable"
-              onClick={() => setOpenMenu(openMenu === "terminalMode" ? null : "terminalMode")}
+              onClick={() => {
+                setOpenMenu(openMenu === "terminalMode" ? null : "terminalMode");
+              }}
               title={t("connection.terminal_mode")}
             >
               {terminalModes.find((mode) => mode.value === activeTab.terminalMode)?.label ||
@@ -219,7 +225,9 @@ export default function StatusBar({
           <div className="statusbar__menu-container" ref={encodingMenuRef}>
             <button
               className="statusbar__item statusbar__item--clickable"
-              onClick={() => setOpenMenu(openMenu === "encoding" ? null : "encoding")}
+              onClick={() => {
+                setOpenMenu(openMenu === "encoding" ? null : "encoding");
+              }}
             >
               {encodings.find((e) => e.value === activeTab.encoding)?.label ||
                 activeTab.encoding.toUpperCase()}

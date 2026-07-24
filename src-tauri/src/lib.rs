@@ -2,6 +2,7 @@ mod ai;
 mod cli;
 mod config;
 mod external_control;
+mod i18n;
 mod logger;
 mod mcp;
 mod serial;
@@ -17,6 +18,7 @@ use external_control::{
     spawn_gui_control_plane, ExternalControlCredentialState, ExternalControlLogControlState,
     ExternalControlRuntime,
 };
+use i18n::BackendLanguageState;
 use logger::LoggerState;
 use serial::SerialState;
 use ssh::SshState;
@@ -68,10 +70,12 @@ pub fn run() {
     let logger_state = LoggerState::new();
     let external_control_credential_state = ExternalControlCredentialState::new();
     let external_control_log_control_state = ExternalControlLogControlState::new();
+    let backend_language_state = BackendLanguageState::default();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(StartupCliState::new(startup_cli_request))
         .manage(ssh_state.clone())
         .manage(serial_state.clone())
@@ -81,6 +85,7 @@ pub fn run() {
         .manage(logger_state.clone())
         .manage(external_control_credential_state.clone())
         .manage(external_control_log_control_state.clone())
+        .manage(backend_language_state)
         .on_window_event({
             let workspace_state = workspace_state.clone();
             move |window, event| match event {
@@ -119,6 +124,10 @@ pub fn run() {
                             config: external_control::service::ExternalControlPermissions::new(
                                 cfg.external_control.connect_enabled,
                             ),
+                            #[cfg(test)]
+                            app_config: None,
+                            #[cfg(test)]
+                            available_serial_ports: None,
                             #[cfg(not(test))]
                             app: Some(app.handle().clone()),
                             terminals: terminal_control_state.clone(),
@@ -145,6 +154,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // SSH
             startup_cli_request_get,
+            ssh::ssh_algorithm_catalog,
             ssh::ssh_probe_host_key,
             ssh::ssh_trust_host_key,
             ssh::ssh_private_key_requires_passphrase,
@@ -185,25 +195,27 @@ pub fn run() {
             terminal_control::terminal_encoding_set,
             terminal_control::terminal_output_delta_get,
             terminal_control::terminal_output_snapshot_get,
-            workspace::workspace_snapshot_get,
-            workspace::workspace_tab_activate,
-            workspace::workspace_tab_drag_cancel,
-            workspace::workspace_tab_drag_drop,
-            workspace::workspace_tab_drag_hover,
-            workspace::workspace_tab_drag_start,
-            workspace::workspace_tab_drag_update,
-            workspace::workspace_tab_move,
-            workspace::workspace_tab_register,
-            workspace::workspace_tab_remove,
-            workspace::workspace_tab_reorder,
-            workspace::workspace_tab_update_metadata,
-            workspace::workspace_window_create,
-            workspace::workspace_window_focus,
-            workspace::workspace_window_register,
-            workspace::workspace_window_unregister,
+            workspace::commands::workspace_snapshot_get,
+            workspace::commands::workspace_tab_activate,
+            workspace::commands::workspace_tab_detach_to_new_window,
+            workspace::commands::workspace_tab_drag_cancel,
+            workspace::commands::workspace_tab_drag_drop,
+            workspace::commands::workspace_tab_drag_hover,
+            workspace::commands::workspace_tab_drag_start,
+            workspace::commands::workspace_tab_drag_update,
+            workspace::commands::workspace_tab_move,
+            workspace::commands::workspace_tab_register,
+            workspace::commands::workspace_tab_remove,
+            workspace::commands::workspace_tab_reorder,
+            workspace::commands::workspace_tab_update_metadata,
+            workspace::commands::workspace_window_create,
+            workspace::commands::workspace_window_focus,
+            workspace::commands::workspace_window_register,
+            workspace::commands::workspace_window_unregister,
             // Config
             config::config_load,
             config::config_save,
+            i18n::backend_language_set,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ExaTerm");

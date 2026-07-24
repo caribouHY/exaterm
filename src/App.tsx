@@ -1,14 +1,12 @@
-import { lazy, Suspense, useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { lazy, Suspense, useState, useRef, useCallback, useEffect } from "react";
 import TitleBar from "./components/TitleBar/TitleBar";
 import TerminalTabs from "./components/Terminal/TerminalTabs";
 import TerminalView from "./components/Terminal/TerminalView";
 import type { TerminalViewHandle } from "./components/Terminal/TerminalView";
 import StatusBar from "./components/StatusBar/StatusBar";
 import type {
-  AppTabInfo,
   TabInfo,
   ViewMode,
-  UtilityTabKind,
   ConnectionType,
   Encoding,
   AppConfig,
@@ -16,19 +14,28 @@ import type {
   TerminalMode,
   StartupCliRequest,
   ManualLogWriteMode,
-  WorkspaceDragDropResult,
-  WorkspaceDragPreview,
-  WorkspacePointerPosition,
-  WorkspaceSnapshot,
-  WorkspaceTabInfo,
-  WorkspaceWindowCreateResult,
+  WorkspaceConnectionInfo,
 } from "./types";
+import type { ConnectionDialogInitialValues } from "./components/Connection/connectionDialogTypes";
 import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
+import {
+  FeedbackMessage,
+  ModalBody,
+  ModalBusy,
+  ModalDescription,
+  ModalFooter,
+  ModalFrame,
+  ModalHeader,
+  ModalTarget,
+  ModalTitle,
+} from "./components/Common";
+import { useWindowTabs } from "./features/workspace-tabs/useWindowTabs";
+import { useTerminalTabLifecycle } from "./features/workspace-tabs/useTerminalTabLifecycle";
+import { useWorkspaceTabMovement } from "./features/workspace-tabs/useWorkspaceTabMovement";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -74,43 +81,24 @@ interface McpLogControlRequestPayload {
   target: string;
 }
 
-function orderAppTabs(appTabs: AppTabInfo[], tabOrder: string[]) {
-  const tabsById = new Map(appTabs.map((tab) => [tab.id, tab]));
-  const orderedTabs = tabOrder
-    .map((id) => tabsById.get(id))
-    .filter((tab): tab is AppTabInfo => Boolean(tab));
-  const orderedIds = new Set(orderedTabs.map((tab) => tab.id));
-  const newTabs = appTabs.filter((tab) => !orderedIds.has(tab.id));
-
-  return [...orderedTabs, ...newTabs];
-}
-
-function workspaceTabToTabInfo(tab: WorkspaceTabInfo): TabInfo {
-  return {
-    id: tab.tab_id,
-    kind: "terminal",
-    title: tab.title,
-    connectionType: tab.connection_type,
-    sessionId: tab.session_id,
-    isConnected: tab.is_connected,
-    encoding: tab.encoding,
-    terminalMode: tab.terminal_mode,
-    isAutoLogging: tab.is_auto_logging,
-    isManualLogging: tab.is_manual_logging,
-    isLoggingPaused: tab.is_logging_paused,
-    manualLogFilePath: tab.manual_log_file_path ?? undefined,
-  };
-}
-
 export default function App() {
   const { t } = useTranslation();
-  const windowIdRef = useRef(getCurrentWindow().label || "main");
-  const [tabs, setTabs] = useState<TabInfo[]>([]);
-  const [utilityTabs, setUtilityTabs] = useState<UtilityTabKind[]>([]);
-  const [tabOrder, setTabOrder] = useState<string[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [closingTabIds, setClosingTabIds] = useState<string[]>([]);
+  const windowTabs = useWindowTabs();
+  const {
+    tabs,
+    appTabs,
+    activeTabId,
+    activeTab,
+    activeView,
+    closingTabIds,
+    dragPreview: workspaceDragPreview,
+  } = windowTabs;
+  const getCurrentWindowTabsState = windowTabs.getCurrentState;
+  const openUtilityTab = windowTabs.openUtilityTab;
+  const updateWorkspaceTabMetadata = windowTabs.updateTabMetadata;
   const [showConnection, setShowConnection] = useState(false);
+  const [connectionInitialValues, setConnectionInitialValues] =
+    useState<ConnectionDialogInitialValues | null>(null);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [aiPanelWidth, setAiPanelWidth] = useState(AI_PANEL_DEFAULT_WIDTH);
   const [isDragging, setIsDragging] = useState(false);
@@ -122,65 +110,33 @@ export default function App() {
   const [aiSelectedModel, setAiSelectedModel] = useState("");
   const [startupCliRequest, setStartupCliRequest] = useState<StartupCliRequest | null>(null);
   const [mcpCredentialPrompts, setMcpCredentialPrompts] = useState<McpCredentialPromptState[]>([]);
-  const [workspaceDragPreview, setWorkspaceDragPreview] = useState<WorkspaceDragPreview | null>(
-    null
-  );
   const activeTerminalBuffer = useRef("");
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
-  const tabsRef = useRef<TabInfo[]>([]);
-  const activeTabIdRef = useRef<string | null>(null);
-  const closeOperationsRef = useRef<Map<string, Promise<boolean>>>(new Map());
-
-  const appTabs: AppTabInfo[] = useMemo(
-    () =>
-      orderAppTabs(
-        [
-          ...tabs,
-          ...utilityTabs.map((kind) => ({
-            kind,
-            id: kind,
-          })),
-        ],
-        tabOrder
-      ),
-    [tabs, utilityTabs, tabOrder]
-  );
-  const activeAppTab = appTabs.find((tab) => tab.id === activeTabId) || null;
-  const activeTab =
-    activeAppTab?.kind === "terminal" ? tabs.find((t) => t.id === activeAppTab.id) || null : null;
-  const activeView: ViewMode =
-    activeAppTab?.kind === "settings" || activeAppTab?.kind === "logs"
-      ? activeAppTab.kind
-      : "terminal";
   const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
 
-  const applyWorkspaceSnapshot = useCallback(
-    (snapshot: WorkspaceSnapshot) => {
-      if (snapshot.window_id !== windowIdRef.current) return;
-      const terminalTabs = snapshot.tabs.map(workspaceTabToTabInfo);
-      setTabs(terminalTabs);
-      setTabOrder([...snapshot.window.tab_order, ...utilityTabs]);
-      setActiveTabId((current) => {
-        if ((current === "settings" || current === "logs") && utilityTabs.includes(current)) {
-          return current;
-        }
-        return snapshot.window.active_tab_id ?? null;
-      });
+  const removeTerminalFromState = useCallback(
+    (tabId: string) => {
+      terminalBuffers.current.delete(tabId);
+      if (getCurrentWindowTabsState().activeTabId === tabId) {
+        activeTerminalBuffer.current = "";
+      }
     },
-    [utilityTabs]
+    [getCurrentWindowTabsState]
   );
 
-  const updateWorkspaceTabMetadata = useCallback(
-    async (tabId: string, patch: Record<string, unknown>) => {
-      const snapshot = await invoke<WorkspaceSnapshot>("workspace_tab_update_metadata", {
-        tabId,
-        patch,
-      });
-      applyWorkspaceSnapshot(snapshot);
-    },
-    [applyWorkspaceSnapshot]
-  );
+  const flushLogBuffersForMove = useCallback(async (tabId: string) => {
+    await terminalViewRefs.current.get(tabId)?.flushLogBuffersForMove();
+  }, []);
+
+  const terminalTabLifecycle = useTerminalTabLifecycle({
+    tabs: windowTabs,
+    onTerminalRemoved: removeTerminalFromState,
+  });
+  const workspaceTabMovement = useWorkspaceTabMovement({
+    tabs: windowTabs,
+    flushLogBuffersForMove,
+  });
 
   const handleConnect = useCallback(
     async (
@@ -189,113 +145,41 @@ export default function App() {
       title: string,
       isAutoLogging: boolean,
       encoding: Encoding = "utf-8",
-      terminalMode: TerminalMode = DEFAULT_TERMINAL_MODE
+      terminalMode: TerminalMode = DEFAULT_TERMINAL_MODE,
+      connectionInfo?: WorkspaceConnectionInfo
     ) => {
-      const snapshot = await invoke<WorkspaceSnapshot>("workspace_tab_register", {
-        windowId: windowIdRef.current,
-        sessionId,
+      await terminalTabLifecycle.registerTerminalTab({
         connectionType: type,
+        sessionId,
         title,
+        isAutoLogging,
         encoding,
         terminalMode,
-        isAutoLogging,
+        connectionInfo,
       });
-      applyWorkspaceSnapshot(snapshot);
+      setConnectionInitialValues(null);
       setShowConnection(false);
     },
-    [applyWorkspaceSnapshot]
+    [terminalTabLifecycle]
   );
-
-  const openUtilityTab = useCallback((kind: UtilityTabKind) => {
-    setUtilityTabs((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
-    setTabOrder((prev) => (prev.includes(kind) ? prev : [...prev, kind]));
-    setActiveTabId(kind);
-  }, []);
 
   const handleViewChange = useCallback(
     (view: ViewMode) => {
       if (view === "settings" || view === "logs") {
         void (view === "settings" ? loadSettingsPanel() : loadLogViewer());
-        openUtilityTab(view);
+        windowTabs.openUtilityTab(view);
         return;
       }
-
-      setActiveTabId((current) => {
-        const currentIsTerminal = tabsRef.current.some((tab) => tab.id === current);
-        if (currentIsTerminal) return current;
-        return tabsRef.current.length > 0 ? tabsRef.current[tabsRef.current.length - 1].id : null;
-      });
+      windowTabs.showTerminalView();
     },
-    [openUtilityTab]
-  );
-
-  const handleSelectTab = useCallback(
-    (id: string) => {
-      const tab = appTabs.find((item) => item.id === id);
-      setActiveTabId(id);
-      if (tab?.kind === "terminal") {
-        invoke<WorkspaceSnapshot>("workspace_tab_activate", {
-          windowId: windowIdRef.current,
-          tabId: id,
-        })
-          .then(applyWorkspaceSnapshot)
-          .catch((error) => console.error("Failed to activate workspace tab:", error));
-      }
-    },
-    [appTabs, applyWorkspaceSnapshot]
+    [windowTabs]
   );
 
   useEffect(() => {
-    tabsRef.current = tabs;
-  }, [tabs]);
-
-  useEffect(() => {
-    activeTabIdRef.current = activeTabId;
     activeTerminalBuffer.current = activeTabId
       ? terminalBuffers.current.get(activeTabId) || ""
       : "";
   }, [activeTabId]);
-
-  useEffect(() => {
-    const registerWindow = async () => {
-      try {
-        const snapshot = await invoke<WorkspaceSnapshot>("workspace_window_register", {
-          windowId: windowIdRef.current,
-          label: windowIdRef.current,
-          focused: true,
-        });
-        applyWorkspaceSnapshot(snapshot);
-      } catch (error) {
-        console.error("Failed to register workspace window:", error);
-      }
-    };
-
-    void registerWindow();
-
-    const unlistenWorkspace = listen<WorkspaceSnapshot>("workspace://updated", (event) => {
-      applyWorkspaceSnapshot(event.payload);
-    });
-    const unlistenWorkspaceDrag = listen<WorkspaceDragPreview>(
-      "workspace://drag-preview",
-      (event) => {
-        setWorkspaceDragPreview(event.payload.active ? event.payload : null);
-      }
-    );
-    const handleFocus = () => {
-      invoke<WorkspaceSnapshot>("workspace_window_focus", {
-        windowId: windowIdRef.current,
-      })
-        .then(applyWorkspaceSnapshot)
-        .catch((error) => console.error("Failed to focus workspace window:", error));
-    };
-
-    window.addEventListener("focus", handleFocus);
-    return () => {
-      unlistenWorkspace.then((fn) => fn());
-      unlistenWorkspaceDrag.then((fn) => fn());
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, [applyWorkspaceSnapshot]);
 
   useEffect(() => {
     const unlistenCredential = listen<McpCredentialRequestPayload>(
@@ -322,7 +206,9 @@ export default function App() {
     const waitForUiUpdate = () =>
       new Promise<void>((resolve) => {
         window.requestAnimationFrame(() => {
-          window.setTimeout(() => resolve(), 0);
+          window.setTimeout(() => {
+            resolve();
+          }, 0);
         });
       });
 
@@ -346,7 +232,9 @@ export default function App() {
       "external-control://log-start-request",
       async (event) => {
         const payload = event.payload;
-        const tab = tabsRef.current.find((item) => item.sessionId === payload.session_id);
+        const tab = getCurrentWindowTabsState().tabs.find(
+          (item) => item.sessionId === payload.session_id
+        );
         if (!tab) {
           await submitLogControl(payload.request_id, null, "セッションが見つかりません");
           return;
@@ -390,7 +278,9 @@ export default function App() {
       "external-control://log-stop-request",
       async (event) => {
         const payload = event.payload;
-        const tab = tabsRef.current.find((item) => item.sessionId === payload.session_id);
+        const tab = getCurrentWindowTabsState().tabs.find(
+          (item) => item.sessionId === payload.session_id
+        );
         if (!tab) {
           await submitLogControl(payload.request_id, null, "セッションが見つかりません");
           return;
@@ -424,200 +314,19 @@ export default function App() {
       unlistenStart.then((fn) => fn());
       unlistenStop.then((fn) => fn());
     };
-  }, []);
+  }, [getCurrentWindowTabsState, updateWorkspaceTabMetadata]);
 
-  useEffect(() => {
-    if (activeTabId && !appTabs.some((tab) => tab.id === activeTabId)) {
-      setActiveTabId(appTabs.length > 0 ? appTabs[appTabs.length - 1].id : null);
-    }
-  }, [activeTabId, appTabs]);
-
-  const removeTabFromState = useCallback((id: string) => {
-    terminalBuffers.current.delete(id);
-    if (activeTabIdRef.current === id) {
-      activeTerminalBuffer.current = "";
-    }
-  }, []);
-
-  const disconnectTab = useCallback(
-    (id: string) => {
-      const existingOperation = closeOperationsRef.current.get(id);
-      if (existingOperation) {
-        return existingOperation;
-      }
-
-      const operation = (async () => {
-        const tab = tabsRef.current.find((item) => item.id === id);
-        if (!tab) {
-          return true;
-        }
-
-        setClosingTabIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-
-        if (!tab.sessionId) {
-          removeTabFromState(id);
-          return true;
-        }
-
-        const disconnectCommands: Record<ConnectionType, string> = {
-          ssh: "ssh_disconnect",
-          serial: "serial_disconnect",
-          telnet: "telnet_disconnect",
-        };
-        const disconnectCommand = disconnectCommands[tab.connectionType];
-
-        try {
-          await invoke(disconnectCommand, { sessionId: tab.sessionId });
-          const snapshot = await invoke<WorkspaceSnapshot>("workspace_tab_remove", {
-            windowId: windowIdRef.current,
-            tabId: id,
-          });
-          removeTabFromState(id);
-          applyWorkspaceSnapshot(snapshot);
-          return true;
-        } catch (error) {
-          console.error(
-            `Failed to disconnect ${tab.connectionType} session ${tab.sessionId}:`,
-            error
-          );
-          return false;
-        } finally {
-          closeOperationsRef.current.delete(id);
-          setClosingTabIds((prev) => prev.filter((tabId) => tabId !== id));
-        }
-      })();
-
-      closeOperationsRef.current.set(id, operation);
-      return operation;
-    },
-    [applyWorkspaceSnapshot, removeTabFromState]
-  );
-
-  const handleCloseTab = useCallback(
-    async (id: string) => {
-      if (id === "settings" || id === "logs") {
-        setUtilityTabs((prev) => prev.filter((kind) => kind !== id));
-        setTabOrder((prev) => prev.filter((tabId) => tabId !== id));
-        return;
-      }
-
-      await disconnectTab(id);
-    },
-    [disconnectTab]
-  );
-
-  const handleReorderTabs = useCallback(
-    (draggedId: string, targetId: string, dropSide: "before" | "after") => {
-      if (draggedId === targetId) return;
-
-      const draggedTab = appTabs.find((tab) => tab.id === draggedId);
-      const targetTab = appTabs.find((tab) => tab.id === targetId);
-      if (draggedTab?.kind === "terminal" && targetTab?.kind === "terminal") {
-        invoke<WorkspaceSnapshot>("workspace_tab_reorder", {
-          windowId: windowIdRef.current,
-          draggedTabId: draggedId,
-          targetTabId: targetId,
-          dropSide,
-        })
-          .then(applyWorkspaceSnapshot)
-          .catch((error) => console.error("Failed to reorder workspace tab:", error));
-        return;
-      }
-
-      const visibleOrder = appTabs.map((tab) => tab.id);
-      const draggedIndex = visibleOrder.indexOf(draggedId);
-      const targetIndex = visibleOrder.indexOf(targetId);
-      if (draggedIndex < 0 || targetIndex < 0) return;
-
-      const nextOrder = [...visibleOrder];
-      const [draggedTabId] = nextOrder.splice(draggedIndex, 1);
-      const targetIndexAfterRemoval = nextOrder.indexOf(targetId);
-      const insertIndex =
-        dropSide === "after" ? targetIndexAfterRemoval + 1 : targetIndexAfterRemoval;
-      nextOrder.splice(insertIndex, 0, draggedTabId);
-      setTabOrder(nextOrder);
-    },
-    [appTabs, applyWorkspaceSnapshot]
-  );
-
-  const handleCrossWindowDragStart = useCallback(
-    (tabId: string, pointerScreenPosition: WorkspacePointerPosition) => {
-      invoke<WorkspaceDragPreview>("workspace_tab_drag_start", {
-        windowId: windowIdRef.current,
-        tabId,
-        pointerScreenPosition,
-      })
-        .then((preview) => setWorkspaceDragPreview(preview.active ? preview : null))
-        .catch((error) => console.error("Failed to start workspace tab drag:", error));
-    },
-    []
-  );
-
-  const handleCrossWindowDragUpdate = useCallback(
-    (pointerScreenPosition: WorkspacePointerPosition) => {
-      invoke<WorkspaceDragPreview>("workspace_tab_drag_update", {
-        pointerScreenPosition,
-      }).catch((error) => console.error("Failed to update workspace tab drag:", error));
-    },
-    []
-  );
-
-  const handleCrossWindowDragHover = useCallback((targetIndex: number | null) => {
-    invoke<WorkspaceDragPreview>("workspace_tab_drag_hover", {
-      windowId: windowIdRef.current,
-      targetIndex,
-    }).catch((error) => console.error("Failed to update workspace tab drag hover:", error));
-  }, []);
-
-  const handleCrossWindowDragCancel = useCallback(() => {
-    invoke<WorkspaceDragPreview>("workspace_tab_drag_cancel")
-      .then(() => setWorkspaceDragPreview(null))
-      .catch((error) => console.error("Failed to cancel workspace tab drag:", error));
-  }, []);
-
-  const handleCrossWindowDragDrop = useCallback(
-    async (tabId: string, pointerScreenPosition: WorkspacePointerPosition) => {
-      if (tabId) {
-        try {
-          await terminalViewRefs.current.get(tabId)?.flushLogBuffersForMove();
-        } catch (error) {
-          console.warn("Failed to flush terminal log buffers before tab move:", error);
-        }
-      }
-
-      try {
-        const result = await invoke<WorkspaceDragDropResult>("workspace_tab_drag_drop", {
-          pointerScreenPosition,
-        });
-        result.snapshots.forEach(applyWorkspaceSnapshot);
-        setWorkspaceDragPreview(null);
-        const sourceSnapshot = result.snapshots.find(
-          (snapshot) => snapshot.window_id === windowIdRef.current
-        );
-        if (
-          result.source_window_id === windowIdRef.current &&
-          result.target_window_id !== windowIdRef.current &&
-          sourceSnapshot?.window.tab_order.length === 0 &&
-          utilityTabs.length === 0
-        ) {
-          await getCurrentWindow().close();
-        }
-      } catch (error) {
-        console.error("Failed to drop workspace tab drag:", error);
-        handleCrossWindowDragCancel();
+  const handleTerminalData = useCallback(
+    (tabId: string, data: string) => {
+      // Keep last 2000 chars per tab for AI context.
+      const nextBuffer = ((terminalBuffers.current.get(tabId) || "") + data).slice(-2000);
+      terminalBuffers.current.set(tabId, nextBuffer);
+      if (getCurrentWindowTabsState().activeTabId === tabId) {
+        activeTerminalBuffer.current = nextBuffer;
       }
     },
-    [applyWorkspaceSnapshot, handleCrossWindowDragCancel, utilityTabs.length]
+    [getCurrentWindowTabsState]
   );
-
-  const handleTerminalData = useCallback((tabId: string, data: string) => {
-    // Keep last 2000 chars per tab for AI context.
-    const nextBuffer = ((terminalBuffers.current.get(tabId) || "") + data).slice(-2000);
-    terminalBuffers.current.set(tabId, nextBuffer);
-    if (activeTabIdRef.current === tabId) {
-      activeTerminalBuffer.current = nextBuffer;
-    }
-  }, []);
 
   const updateActiveMcpCredentialPrompt = useCallback(
     (patch: Partial<McpCredentialPromptState>) => {
@@ -690,7 +399,9 @@ export default function App() {
 
   const showTemporaryLogStatus = useCallback((message: string) => {
     setLogStatusMessage(message);
-    window.setTimeout(() => setLogStatusMessage(""), 3000);
+    window.setTimeout(() => {
+      setLogStatusMessage("");
+    }, 3000);
   }, []);
 
   const handleStartManualLog = useCallback(
@@ -758,14 +469,22 @@ export default function App() {
 
   const openConnection = useCallback(() => {
     void loadConnectionDialog();
+    setConnectionInitialValues(null);
     setShowConnection(true);
   }, []);
 
-  const openWindow = useCallback(() => {
-    invoke<WorkspaceWindowCreateResult>("workspace_window_create").catch((error) => {
-      console.error("Failed to create workspace window:", error);
+  const openSameDestination = useCallback((tab: TabInfo) => {
+    if (!tab.connectionInfo || tab.connectionType === "serial") return;
+    void loadConnectionDialog();
+    setConnectionInitialValues({
+      connectionInfo: tab.connectionInfo,
+      encoding: tab.encoding,
+      terminalMode: tab.terminalMode,
     });
+    setShowConnection(true);
   }, []);
+
+  const openWindow = windowTabs.createWorkspaceWindow;
 
   const toggleAiPanel = useCallback(() => {
     setShowAiPanel((current) => {
@@ -795,7 +514,9 @@ export default function App() {
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [openConnection, openUtilityTab, openWindow]);
 
   const refreshConfig = useCallback(async () => {
@@ -808,7 +529,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    refreshConfig();
+    void refreshConfig();
   }, [refreshConfig]);
 
   useEffect(() => {
@@ -836,7 +557,9 @@ export default function App() {
 
     handleResize();
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
   }, []);
 
   useEffect(() => {
@@ -878,17 +601,21 @@ export default function App() {
                 tabs={appTabs}
                 activeTabId={activeTabId}
                 closingTabIds={closingTabIds}
-                onSelectTab={handleSelectTab}
-                onCloseTab={handleCloseTab}
+                onSelectTab={windowTabs.selectTab}
+                onCloseTab={terminalTabLifecycle.closeTab}
+                onMoveTabToNewWindow={workspaceTabMovement.moveTabToNewWindow}
+                onOpenSameDestination={openSameDestination}
                 onAddTab={openConnection}
-                onReorderTabs={handleReorderTabs}
-                windowId={windowIdRef.current}
+                onReorderTabs={workspaceTabMovement.reorderTabs}
+                windowId={windowTabs.windowId}
                 dragPreview={workspaceDragPreview}
-                onCrossWindowDragStart={handleCrossWindowDragStart}
-                onCrossWindowDragUpdate={handleCrossWindowDragUpdate}
-                onCrossWindowDragDrop={handleCrossWindowDragDrop}
-                onCrossWindowDragCancel={handleCrossWindowDragCancel}
-                onCrossWindowDragHover={handleCrossWindowDragHover}
+                onCrossWindowDragStart={workspaceTabMovement.startCrossWindowDrag}
+                onCrossWindowDragUpdate={workspaceTabMovement.updateCrossWindowDrag}
+                onCrossWindowDragDrop={(tabId, pointerScreenPosition) => {
+                  void workspaceTabMovement.dropCrossWindowDrag(tabId, pointerScreenPosition);
+                }}
+                onCrossWindowDragCancel={workspaceTabMovement.cancelCrossWindowDrag}
+                onCrossWindowDragHover={workspaceTabMovement.hoverCrossWindowDrag}
               />
               <div
                 className={`app__terminal-area ${activeView !== "terminal" ? "app__hidden" : ""}`}
@@ -927,7 +654,9 @@ export default function App() {
                       isManualLogging={Boolean(tab.isManualLogging)}
                       isLoggingPaused={Boolean(tab.isLoggingPaused)}
                       onOpenConnection={openConnection}
-                      onTerminalData={(data) => handleTerminalData(tab.id, data)}
+                      onTerminalData={(data) => {
+                        handleTerminalData(tab.id, data);
+                      }}
                       encoding={tab.encoding}
                       terminalMode={tab.terminalMode}
                       terminalConfig={config?.terminal}
@@ -958,7 +687,9 @@ export default function App() {
                 >
                   <Suspense fallback={<div aria-hidden="true" />}>
                     <AIChatPanel
-                      onClose={() => setShowAiPanel(false)}
+                      onClose={() => {
+                        setShowAiPanel(false);
+                      }}
                       config={config}
                       terminalBuffer={activeTerminalBuffer}
                       messages={aiMessages}
@@ -996,39 +727,50 @@ export default function App() {
       {showConnection && (
         <Suspense fallback={<div aria-hidden="true" />}>
           <ConnectionDialog
+            initialValues={connectionInitialValues}
             startupRequest={startupCliRequest}
-            onStartupRequestHandled={() => setStartupCliRequest(null)}
-            onClose={() => setShowConnection(false)}
+            onStartupRequestHandled={() => {
+              setStartupCliRequest(null);
+            }}
+            onClose={() => {
+              setConnectionInitialValues(null);
+              setShowConnection(false);
+            }}
             onConnect={handleConnect}
           />
         </Suspense>
       )}
       {activeMcpCredentialPrompt && (
         <div className="app-credential-overlay">
-          <div
+          <ModalFrame
             className="app-credential-modal"
             role="dialog"
-            aria-modal="true"
-            aria-labelledby="mcp-credential-title"
-            aria-describedby="mcp-credential-description"
+            ariaModal
+            ariaLabelledBy="mcp-credential-title"
+            ariaDescribedBy="mcp-credential-description"
           >
-            <div className="app-credential-modal__header">
+            <ModalHeader className="app-credential-modal__header">
               <div>
                 <div className="app-credential-modal__eyebrow">
                   {t("mcp.credential_request_title")}
                 </div>
-                <div className="app-credential-modal__title" id="mcp-credential-title">
+                <ModalTitle className="app-credential-modal__title" id="mcp-credential-title">
                   {activeMcpCredentialPrompt.auth_method === "public_key"
                     ? t("connection.key_passphrase_prompt_title")
                     : t("connection.password_prompt_title")}
-                </div>
+                </ModalTitle>
               </div>
-            </div>
-            <div className="app-credential-modal__body">
-              <div className="app-credential-modal__target">{activeMcpCredentialPrompt.target}</div>
-              <p className="app-credential-modal__description" id="mcp-credential-description">
+            </ModalHeader>
+            <ModalBody className="app-credential-modal__body">
+              <ModalTarget className="app-credential-modal__target">
+                {activeMcpCredentialPrompt.target}
+              </ModalTarget>
+              <ModalDescription
+                className="app-credential-modal__description"
+                id="mcp-credential-description"
+              >
                 {t("mcp.credential_request_desc")}
-              </p>
+              </ModalDescription>
               <label className="label" htmlFor="mcp-credential-input">
                 {activeMcpCredentialPrompt.auth_method === "public_key"
                   ? t("connection.key_passphrase")
@@ -1041,7 +783,9 @@ export default function App() {
                 autoFocus
                 value={activeMcpCredentialPrompt.value}
                 disabled={activeMcpCredentialPrompt.submitting}
-                onChange={(event) => updateActiveMcpCredentialPrompt({ value: event.target.value })}
+                onChange={(event) => {
+                  updateActiveMcpCredentialPrompt({ value: event.target.value });
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     void resolveMcpCredentialPrompt(activeMcpCredentialPrompt.value);
@@ -1051,15 +795,16 @@ export default function App() {
                 }}
               />
               {activeMcpCredentialPrompt.error && (
-                <div className="app-credential-modal__error">{activeMcpCredentialPrompt.error}</div>
+                <FeedbackMessage tone="error" className="app-credential-modal__error">
+                  {activeMcpCredentialPrompt.error}
+                </FeedbackMessage>
               )}
-            </div>
-            <div className="app-credential-modal__footer">
+            </ModalBody>
+            <ModalFooter className="app-credential-modal__footer">
               {activeMcpCredentialPrompt.submitting ? (
-                <div className="app-credential-modal__submitting">
-                  <div className="app-credential-modal__spinner" />
+                <ModalBusy className="app-credential-modal__submitting">
                   {t("connection.connecting")}
-                </div>
+                </ModalBusy>
               ) : (
                 <>
                   <button
@@ -1076,8 +821,8 @@ export default function App() {
                   </button>
                 </>
               )}
-            </div>
-          </div>
+            </ModalFooter>
+          </ModalFrame>
         </div>
       )}
     </div>

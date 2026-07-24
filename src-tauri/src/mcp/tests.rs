@@ -22,7 +22,7 @@ use crate::serial::{self, SerialState};
 use crate::ssh::SshState;
 use crate::telnet::TelnetState;
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
-use crate::workspace::WorkspaceState;
+use crate::workspace::{WorkspaceConnectionInfo, WorkspaceState};
 
 type McpTerminalService = ExternalControlService;
 type McpLogControlState = ExternalControlLogControlState;
@@ -35,6 +35,8 @@ fn test_runtime() -> ExternalControlRuntime {
     let index_path = log_dir.join("index.json");
     ExternalControlRuntime {
         config: ExternalControlPermissions::default(),
+        app_config: None,
+        available_serial_ports: None,
         terminals: TerminalControlState::new(),
         workspace: WorkspaceState::new(),
         ssh: SshState::new(),
@@ -43,6 +45,19 @@ fn test_runtime() -> ExternalControlRuntime {
         logger: Some(LoggerState::with_paths(log_dir, index_path)),
         log_control: Some(McpLogControlState::new()),
     }
+}
+
+fn test_runtime_with_app_config(app_config: AppConfig) -> ExternalControlRuntime {
+    let mut runtime = test_runtime();
+    runtime.config = ExternalControlPermissions::new(true);
+    runtime.app_config = Some(app_config);
+    runtime
+}
+
+fn test_runtime_with_serial_ports(ports: Vec<serial::PortInfo>) -> ExternalControlRuntime {
+    let mut runtime = test_runtime_with_app_config(AppConfig::default());
+    runtime.available_serial_ports = Some(ports);
+    runtime
 }
 
 #[tokio::test]
@@ -85,6 +100,27 @@ async fn connection_tools_require_connect_enabled() {
         .await
         .unwrap_err();
     assert!(error.message().contains("connect_enabled"));
+}
+
+#[tokio::test]
+async fn service_lists_serial_ports_from_runtime_injected_ports() {
+    let runtime = test_runtime_with_serial_ports(vec![
+        serial::PortInfo {
+            name: "COM3".into(),
+            port_type: "USB".into(),
+        },
+        serial::PortInfo {
+            name: "COM9".into(),
+            port_type: "Bluetooth".into(),
+        },
+    ]);
+    let service = McpTerminalService::new(runtime);
+
+    let result = service.list_serial_ports().await.unwrap();
+
+    assert_eq!(result["ports"].as_array().unwrap().len(), 2);
+    assert_eq!(result["ports"][0]["name"], "COM3");
+    assert_eq!(result["ports"][1]["name"], "COM9");
 }
 
 #[tokio::test]
@@ -437,6 +473,38 @@ fn list_connection_profiles_skips_mcp_disabled_profiles() {
     assert_eq!(profiles[0].id, "ssh-enabled");
 }
 
+#[tokio::test]
+async fn service_lists_connection_profiles_from_runtime_app_config() {
+    let mut app_config = AppConfig::default();
+    app_config.saved_connections = vec![
+        SavedConnection {
+            id: "ssh-enabled".into(),
+            connection_type: "ssh".into(),
+            host: Some("192.0.2.10".into()),
+            username: Some("admin".into()),
+            auth_method: Some("password".into()),
+            ..SavedConnection::default()
+        },
+        SavedConnection {
+            id: "telnet-disabled".into(),
+            connection_type: "telnet".into(),
+            host: Some("192.0.2.20".into()),
+            external_control_enabled: false,
+            ..SavedConnection::default()
+        },
+    ];
+    let service = McpTerminalService::new(test_runtime_with_app_config(app_config));
+
+    let result = service
+        .list_connection_profiles(ListConnectionProfilesArgs::default())
+        .await
+        .unwrap();
+
+    assert_eq!(result["profiles"].as_array().unwrap().len(), 1);
+    assert_eq!(result["profiles"][0]["id"], "ssh-enabled");
+    assert_eq!(result["profiles"][0]["connection_type"], "ssh");
+}
+
 #[test]
 fn prepare_saved_profile_rejects_missing_and_unsupported_profiles() {
     let mut config = AppConfig::default();
@@ -457,7 +525,7 @@ fn prepare_saved_profile_rejects_missing_and_unsupported_profiles() {
         },
     )
     .unwrap_err();
-    assert!(missing.contains("見つかりません"));
+    assert!(missing.contains("not found"));
 
     let unsupported = prepare_saved_profile_connection(
         &config,
@@ -469,7 +537,7 @@ fn prepare_saved_profile_rejects_missing_and_unsupported_profiles() {
         },
     )
     .unwrap_err();
-    assert!(unsupported.contains("見つかりません"));
+    assert!(unsupported.contains("not found"));
 }
 
 #[test]
@@ -496,7 +564,7 @@ fn prepare_saved_profile_rejects_mcp_disabled_profiles() {
     )
     .unwrap_err();
 
-    assert!(error.contains("外部制御"));
+    assert!(error.contains("external control"));
 }
 
 #[test]
@@ -531,7 +599,7 @@ fn prepare_saved_profile_rejects_incomplete_ssh_profiles() {
         },
     )
     .unwrap_err();
-    assert!(user_error.contains("ユーザー名"));
+    assert!(user_error.contains("username"));
 
     let key_error = prepare_saved_profile_connection(
         &config,
@@ -543,7 +611,7 @@ fn prepare_saved_profile_rejects_incomplete_ssh_profiles() {
         },
     )
     .unwrap_err();
-    assert!(key_error.contains("秘密鍵"));
+    assert!(key_error.contains("private key"));
 }
 
 #[test]
@@ -669,6 +737,123 @@ async fn backend_requires_saved_profile_connection_type() {
         .unwrap_err();
 
     assert!(error.message.contains("connection_type"));
+}
+
+#[tokio::test]
+async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
+    let mut app_config = AppConfig::default();
+    app_config.saved_connections = vec![
+        SavedConnection {
+            id: "bastion".into(),
+            connection_type: "ssh".into(),
+            host: Some("198.51.100.10".into()),
+            port: Some(2222),
+            username: Some("jump".into()),
+            auth_method: Some("password".into()),
+            external_control_enabled: false,
+            ..SavedConnection::default()
+        },
+        SavedConnection {
+            id: "inside".into(),
+            connection_type: "ssh".into(),
+            host: Some("192.0.2.10".into()),
+            port: Some(2200),
+            username: Some("admin".into()),
+            auth_method: Some("password".into()),
+            encoding: Some("shift-jis".into()),
+            terminal_mode: Some("cisco_ios".into()),
+            jump_profile_id: Some("bastion".into()),
+            ..SavedConnection::default()
+        },
+    ];
+    let runtime = test_runtime_with_app_config(app_config);
+    let service = McpTerminalService::new(runtime.clone());
+
+    let result = service
+        .connect_saved_profile(ConnectSavedProfileArgs {
+            profile_id: "inside".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
+            cols: Some(100),
+            rows: Some(40),
+        })
+        .await
+        .unwrap();
+
+    let session_id = result["session_id"].as_str().unwrap();
+    assert_eq!(result["connection_type"], "ssh");
+    assert_eq!(result["target"], "admin@192.0.2.10:2200");
+    assert_eq!(result["title"], "admin@192.0.2.10");
+    assert_eq!(result["encoding"], "shift-jis");
+    assert_eq!(result["terminal_mode"], "cisco_ios");
+    assert_eq!(result["auto_logging"], false);
+
+    let session = runtime.terminals.session_info(session_id).await.unwrap();
+    assert_eq!(session.protocol, TerminalProtocol::Ssh);
+    assert_eq!(session.target, "admin@192.0.2.10:2200");
+    assert_eq!(session.encoding, "shift-jis");
+
+    let snapshot = runtime.workspace.snapshot_for_window("main".into()).await;
+    assert_eq!(snapshot.tabs.len(), 1);
+    assert_eq!(snapshot.tabs[0].session_id, session_id);
+    assert_eq!(snapshot.tabs[0].title, "admin@192.0.2.10");
+    assert_eq!(snapshot.tabs[0].encoding, "shift-jis");
+    assert_eq!(snapshot.tabs[0].terminal_mode, "cisco_ios");
+    assert_eq!(
+        snapshot.tabs[0].connection_info,
+        Some(WorkspaceConnectionInfo::Ssh {
+            host: "192.0.2.10".into(),
+            port: 2200,
+            username: "admin".into(),
+            auth_method: "password".into(),
+            private_key_path: None,
+            jump_profile_id: Some("bastion".into()),
+        })
+    );
+}
+
+#[tokio::test]
+async fn service_connects_saved_telnet_profile_with_default_port() {
+    let mut app_config = AppConfig::default();
+    app_config.saved_connections = vec![SavedConnection {
+        id: "legacy".into(),
+        connection_type: "telnet".into(),
+        host: Some("192.0.2.20".into()),
+        encoding: Some("euc-jp".into()),
+        terminal_mode: Some("general".into()),
+        ..SavedConnection::default()
+    }];
+    let runtime = test_runtime_with_app_config(app_config);
+    let service = McpTerminalService::new(runtime.clone());
+
+    let result = service
+        .connect_saved_profile(ConnectSavedProfileArgs {
+            profile_id: "legacy".into(),
+            connection_type: SavedProfileConnectionType::Telnet,
+            cols: None,
+            rows: None,
+        })
+        .await
+        .unwrap();
+
+    let session_id = result["session_id"].as_str().unwrap();
+    assert_eq!(result["connection_type"], "telnet");
+    assert_eq!(result["target"], "192.0.2.20:23");
+    assert_eq!(result["title"], "192.0.2.20:23");
+    assert_eq!(result["encoding"], "euc-jp");
+    assert_eq!(result["terminal_mode"], "general");
+
+    let session = runtime.terminals.session_info(session_id).await.unwrap();
+    assert_eq!(session.protocol, TerminalProtocol::Telnet);
+    assert_eq!(session.target, "192.0.2.20:23");
+    assert_eq!(session.encoding, "euc-jp");
+    let snapshot = runtime.workspace.snapshot_for_window("main".into()).await;
+    assert_eq!(
+        snapshot.tabs[0].connection_info,
+        Some(WorkspaceConnectionInfo::Telnet {
+            host: "192.0.2.20".into(),
+            port: 23,
+        })
+    );
 }
 
 #[test]
@@ -805,7 +990,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         },
     )
     .unwrap_err();
-    assert!(self_ref.contains("自分自身"));
+    assert!(self_ref.contains("reference itself"));
 
     config.saved_connections[0].jump_profile_id = Some("missing".into());
     let missing = prepare_saved_profile_connection(
@@ -818,7 +1003,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         },
     )
     .unwrap_err();
-    assert!(missing.contains("見つかりません"));
+    assert!(missing.contains("not found"));
 
     config.saved_connections[0].jump_profile_id = Some("telnet-hop".into());
     let telnet = prepare_saved_profile_connection(
@@ -831,7 +1016,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         },
     )
     .unwrap_err();
-    assert!(telnet.contains("SSHプロファイル"));
+    assert!(telnet.contains("SSH profiles"));
 
     config.saved_connections[0].jump_profile_id = Some("nested-hop".into());
     let nested = prepare_saved_profile_connection(
@@ -844,7 +1029,7 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
         },
     )
     .unwrap_err();
-    assert!(nested.contains("多段"));
+    assert!(nested.contains("Nested"));
 }
 
 #[test]
@@ -852,7 +1037,7 @@ fn ssh_credential_required_keeps_password_prompt_and_rejects_missing_key() {
     assert!(ssh_credential_required("password", None).unwrap());
 
     let error = ssh_credential_required("public_key", None).unwrap_err();
-    assert!(error.contains("秘密鍵"));
+    assert!(error.contains("private key"));
 }
 
 #[test]
@@ -969,6 +1154,48 @@ fn prepare_serial_console_rejects_missing_port_and_invalid_settings() {
 }
 
 #[tokio::test]
+async fn service_connects_serial_console_and_registers_workspace_metadata() {
+    let runtime = test_runtime_with_serial_ports(vec![serial::PortInfo {
+        name: "COM3".into(),
+        port_type: "USB".into(),
+    }]);
+    let service = McpTerminalService::new(runtime.clone());
+
+    let result = service
+        .connect_serial_console(ConnectSerialConsoleArgs {
+            port: "COM3".into(),
+            baud_rate: Some(115_200),
+            data_bits: Some(7),
+            parity: Some(McpSerialParity::Even),
+            stop_bits: Some(2),
+            flow_control: Some(McpSerialFlowControl::Hardware),
+            terminal_mode: Some(McpTerminalMode::CiscoIos),
+            cols: Some(90),
+            rows: Some(30),
+        })
+        .await
+        .unwrap();
+
+    let session_id = result["session_id"].as_str().unwrap();
+    assert_eq!(result["connection_type"], "serial");
+    assert_eq!(result["target"], "COM3");
+    assert_eq!(result["title"], "COM3");
+    assert_eq!(result["encoding"], "utf-8");
+    assert_eq!(result["terminal_mode"], "cisco_ios");
+
+    let session = runtime.terminals.session_info(session_id).await.unwrap();
+    assert_eq!(session.protocol, TerminalProtocol::Serial);
+    assert_eq!(session.target, "COM3");
+
+    let snapshot = runtime.workspace.snapshot_for_window("main".into()).await;
+    assert_eq!(snapshot.tabs.len(), 1);
+    assert_eq!(snapshot.tabs[0].session_id, session_id);
+    assert_eq!(snapshot.tabs[0].title, "COM3");
+    assert_eq!(snapshot.tabs[0].terminal_mode, "cisco_ios");
+    assert_eq!(snapshot.tabs[0].connection_info, None);
+}
+
+#[tokio::test]
 async fn service_lists_terminal_sessions() {
     let runtime = test_runtime();
     runtime
@@ -993,7 +1220,7 @@ async fn service_reads_terminal_output_with_multibyte_tail() {
         .await;
     runtime
         .terminals
-        .append_output("s1", "こんにちは世界".as_bytes())
+        .append_output("s1", "example".as_bytes())
         .await;
     let service = McpTerminalService::new(runtime);
 
@@ -1006,7 +1233,7 @@ async fn service_reads_terminal_output_with_multibyte_tail() {
         .unwrap();
     assert_eq!(result["session_id"], "s1");
     assert_eq!(result["mode"], "recent");
-    assert_eq!(result["output"], "世界");
+    assert_eq!(result["output"], "le");
     assert_eq!(result["truncated"], true);
     assert_eq!(result["start_cursor"], 5);
     assert_eq!(result["cursor"], 7);
@@ -1021,7 +1248,7 @@ async fn service_reads_terminal_output_in_delta_mode() {
         .await;
     runtime
         .terminals
-        .append_output("s1", "abcこんにちは".as_bytes())
+        .append_output("s1", "abcalpha".as_bytes())
         .await;
     let service = McpTerminalService::new(runtime);
 
@@ -1035,7 +1262,7 @@ async fn service_reads_terminal_output_in_delta_mode() {
         .unwrap();
 
     assert_eq!(result["mode"], "delta");
-    assert_eq!(result["output"], "こんにちは");
+    assert_eq!(result["output"], "alpha");
     assert_eq!(result["start_cursor"], 3);
     assert_eq!(result["cursor"], 8);
 }
@@ -1054,10 +1281,7 @@ async fn service_reads_non_utf8_terminal_output() {
         .await;
     runtime
         .terminals
-        .append_output(
-            "s1",
-            &[0x82, 0xb1, 0x82, 0xf1, 0x82, 0xc9, 0x82, 0xbf, 0x82, 0xcd],
-        )
+        .append_output("s1", &encoding_rs::SHIFT_JIS.encode("αβγδε").0.into_owned())
         .await;
     let service = McpTerminalService::new(runtime);
 
@@ -1068,7 +1292,7 @@ async fn service_reads_non_utf8_terminal_output() {
         })
         .await
         .unwrap();
-    assert_eq!(result["output"], "こんにちは");
+    assert_eq!(result["output"], "αβγδε");
     assert_eq!(result["cursor"], 5);
 }
 
@@ -1208,7 +1432,7 @@ async fn service_rejects_send_to_disconnected_session() {
         .await
         .unwrap_err();
     assert!(matches!(&error, ExternalControlError::Unavailable(_)));
-    assert!(error.message().contains("切断済み"));
+    assert!(error.message().contains("disconnected"));
 }
 
 #[tokio::test]
@@ -1251,7 +1475,7 @@ async fn service_start_terminal_log_rejects_missing_and_disconnected_sessions() 
         .await
         .unwrap_err();
     assert!(matches!(&missing, ExternalControlError::NotFound(_)));
-    assert!(missing.message().contains("見つかりません"));
+    assert!(missing.message().contains("not found"));
 
     let disconnected = service
         .start_terminal_log(StartTerminalLogArgs {
@@ -1263,7 +1487,7 @@ async fn service_start_terminal_log_rejects_missing_and_disconnected_sessions() 
         &disconnected,
         ExternalControlError::Unavailable(_)
     ));
-    assert!(disconnected.message().contains("切断済み"));
+    assert!(disconnected.message().contains("disconnected"));
 }
 
 #[tokio::test]
@@ -1380,5 +1604,5 @@ async fn service_rejects_empty_run_terminal_command() {
         .unwrap_err();
 
     assert!(matches!(&error, ExternalControlError::InvalidArguments(_)));
-    assert!(error.message().contains("空"));
+    assert!(error.message().contains("must not be empty"));
 }

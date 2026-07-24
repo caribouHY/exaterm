@@ -1,531 +1,312 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Check } from "lucide-react";
-import type { AppConfig, AiSecretStatus } from "../../types";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
+import type { AiSecretStatus, AppConfig, SshAlgorithmCatalog } from "../../types";
 import { resolveAppLanguage } from "../../i18n";
+import { AiSettings } from "./AiSettings";
+import { ExternalControlSettings } from "./ExternalControlSettings";
+import { GeneralSettings } from "./GeneralSettings";
+import { LogSettings } from "./LogSettings";
+import { SettingsError, SettingsFooter } from "./SettingsFooter";
+import { SettingsSidebar } from "./SettingsSidebar";
+import {
+  SECRET_FIELDS,
+  areConfigsEqual,
+  areSecretEditModesEqual,
+  areSecretEditsEqual,
+  createSecretEditMode,
+  createSecretEdits,
+  createSecretStatus,
+  getSecretEdit,
+  normalizeExternalControlConfig,
+  type AiProviderId,
+  type SecretEditMode,
+  type SecretEdits,
+  type SecretKey,
+  type SecretProvider,
+  type SettingsCategoryId,
+} from "./settingsModel";
 import "./SettingsPanel.css";
 
 interface SettingsPanelProps {
   onSave?: () => void;
 }
 
-type SecretKey = "openai" | "azure_openai" | "anthropic" | "gemini" | "openrouter";
-type SecretProvider = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini" | "OpenRouter";
-
-type SecretEdits = Record<SecretKey, string>;
-type LanguageOption = {
-  value: AppConfig["language"];
-  label?: string;
-  labelKey?: "settings.language_system";
-};
-
-const MASKED_VALUE = "••••••••";
-const DEFAULT_EXTERNAL_CONTROL_CONFIG = {
-  enabled: false,
-  connect_enabled: false,
-  mcp_enabled: false,
-  cli_enabled: false,
-};
-
-const EMPTY_SECRET_STATUS: AiSecretStatus = {
-  openai: false,
-  azure_openai: false,
-  anthropic: false,
-  gemini: false,
-  openrouter: false,
-};
-
-const EMPTY_SECRET_EDITS: SecretEdits = {
-  openai: "",
-  azure_openai: "",
-  anthropic: "",
-  gemini: "",
-  openrouter: "",
-};
-
-const LANGUAGE_OPTIONS: LanguageOption[] = [
-  { value: "system", labelKey: "settings.language_system" },
-  { value: "en", label: "English" },
-  { value: "ja", label: "日本語" },
-];
-
-function normalizeExternalControlConfig(config: AppConfig): AppConfig {
-  return {
-    ...config,
-    external_control: {
-      ...DEFAULT_EXTERNAL_CONTROL_CONFIG,
-      ...(config.external_control ?? {}),
-    },
-  };
-}
-
 export default function SettingsPanel({ onSave }: SettingsPanelProps) {
   const { t, i18n } = useTranslation();
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [initialConfigSnapshot, setInitialConfigSnapshot] = useState<AppConfig | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-  const [secretStatus, setSecretStatus] = useState<AiSecretStatus>(EMPTY_SECRET_STATUS);
-  const [secretEdits, setSecretEdits] = useState<SecretEdits>(EMPTY_SECRET_EDITS);
-  const [secretEditMode, setSecretEditMode] = useState({
-    openai: false,
-    azure_openai: false,
-    anthropic: false,
-    gemini: false,
-    openrouter: false,
-  });
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [sshAlgorithmCatalog, setSshAlgorithmCatalog] = useState<SshAlgorithmCatalog | null>(null);
+  const [sshAlgorithmCatalogLoadFailed, setSshAlgorithmCatalogLoadFailed] = useState(false);
+  const [secretStatus, setSecretStatus] = useState<AiSecretStatus>(createSecretStatus);
+  const [secretEdits, setSecretEdits] = useState<SecretEdits>(createSecretEdits);
+  const [initialSecretEditsSnapshot, setInitialSecretEditsSnapshot] =
+    useState<SecretEdits>(createSecretEdits);
+  const [secretEditMode, setSecretEditMode] = useState<SecretEditMode>(createSecretEditMode);
+  const [initialSecretEditModeSnapshot, setInitialSecretEditModeSnapshot] =
+    useState<SecretEditMode>(createSecretEditMode);
+  const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>("general");
+  const [expandedOtherProvider, setExpandedOtherProvider] = useState<AiProviderId | null>(null);
+  const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refreshSecretStatus = async () => {
     try {
-      const status = await invoke<AiSecretStatus>("ai_secret_status");
-      setSecretStatus(status);
-    } catch (e) {
-      console.error("Failed to load AI secret status:", e);
-      setSecretStatus(EMPTY_SECRET_STATUS);
+      setSecretStatus(await invoke<AiSecretStatus>("ai_secret_status"));
+    } catch (refreshError) {
+      console.error("Failed to load AI secret status:", refreshError);
+      setSecretStatus(createSecretStatus());
+    }
+  };
+
+  const loadSshAlgorithmCatalog = async () => {
+    setSshAlgorithmCatalogLoadFailed(false);
+    try {
+      setSshAlgorithmCatalog(await invoke<SshAlgorithmCatalog>("ssh_algorithm_catalog"));
+    } catch (catalogError) {
+      console.error("Failed to load SSH algorithm catalog:", catalogError);
+      setSshAlgorithmCatalog(null);
+      setSshAlgorithmCatalogLoadFailed(true);
+    }
+  };
+
+  const clearSavedTimer = () => {
+    if (!savedTimeoutRef.current) return;
+    clearTimeout(savedTimeoutRef.current);
+    savedTimeoutRef.current = null;
+  };
+
+  const loadConfig = async () => {
+    setIsLoadingConfig(true);
+    setLoadFailed(false);
+    setError("");
+    try {
+      const normalizedConfig = normalizeExternalControlConfig(
+        await invoke<AppConfig>("config_load")
+      );
+      const emptySecretEdits = createSecretEdits();
+      const emptySecretEditMode = createSecretEditMode();
+      setConfig(normalizedConfig);
+      setInitialConfigSnapshot(normalizedConfig);
+      setSecretEdits(emptySecretEdits);
+      setInitialSecretEditsSnapshot(emptySecretEdits);
+      setSecretEditMode(emptySecretEditMode);
+      setInitialSecretEditModeSnapshot(emptySecretEditMode);
+      setSaved(false);
+    } catch (loadError) {
+      console.error("Failed to load settings:", loadError);
+      setConfig(null);
+      setInitialConfigSnapshot(null);
+      setLoadFailed(true);
+    } finally {
+      setIsLoadingConfig(false);
     }
   };
 
   useEffect(() => {
-    invoke<AppConfig>("config_load")
-      .then((cfg) => setConfig(normalizeExternalControlConfig(cfg)))
-      .catch(() => {});
-    refreshSecretStatus();
+    void loadConfig();
+    void refreshSecretStatus();
+    void loadSshAlgorithmCatalog();
+    return clearSavedTimer;
   }, []);
 
+  const hasUnsavedChanges =
+    !areConfigsEqual(config, initialConfigSnapshot) ||
+    !areSecretEditsEqual(secretEdits, initialSecretEditsSnapshot) ||
+    !areSecretEditModesEqual(secretEditMode, initialSecretEditModeSnapshot);
+
   const handleSave = async () => {
-    if (!config) return;
+    if (!config || isSaving || !hasUnsavedChanges) return;
     try {
+      setIsSaving(true);
       setError("");
+      clearSavedTimer();
       const normalizedConfig = normalizeExternalControlConfig(config);
       setConfig(normalizedConfig);
       await invoke("config_save", { config: normalizedConfig });
 
-      if (secretEdits.openai.trim()) {
-        await invoke("ai_secret_set", { provider: "OpenAi", value: secretEdits.openai.trim() });
-      }
-      if (secretEdits.azure_openai.trim()) {
-        await invoke("ai_secret_set", {
-          provider: "AzureOpenAi",
-          value: secretEdits.azure_openai.trim(),
-        });
-      }
-      if (secretEdits.anthropic.trim()) {
-        await invoke("ai_secret_set", {
-          provider: "Anthropic",
-          value: secretEdits.anthropic.trim(),
-        });
-      }
-      if (secretEdits.gemini.trim()) {
-        await invoke("ai_secret_set", { provider: "Gemini", value: secretEdits.gemini.trim() });
-      }
-      if (secretEdits.openrouter.trim()) {
-        await invoke("ai_secret_set", {
-          provider: "OpenRouter",
-          value: secretEdits.openrouter.trim(),
-        });
+      for (const { key, provider } of SECRET_FIELDS) {
+        const value = getSecretEdit(secretEdits, key).trim();
+        if (value) await invoke("ai_secret_set", { provider, value });
       }
 
-      setSecretEdits(EMPTY_SECRET_EDITS);
-      setSecretEditMode({
-        openai: false,
-        azure_openai: false,
-        anthropic: false,
-        gemini: false,
-        openrouter: false,
-      });
+      const emptySecretEdits = createSecretEdits();
+      const emptySecretEditMode = createSecretEditMode();
+      setSecretEdits(emptySecretEdits);
+      setInitialSecretEditsSnapshot(emptySecretEdits);
+      setSecretEditMode(emptySecretEditMode);
+      setInitialSecretEditModeSnapshot(emptySecretEditMode);
+      setInitialConfigSnapshot(normalizedConfig);
       await refreshSecretStatus();
 
       const resolvedLanguage = resolveAppLanguage(normalizedConfig.language);
-      if (resolvedLanguage !== i18n.language) {
-        i18n.changeLanguage(resolvedLanguage);
-      }
+      await invoke("backend_language_set", { language: resolvedLanguage });
+      if (resolvedLanguage !== i18n.language) void i18n.changeLanguage(resolvedLanguage);
       setSaved(true);
-      if (onSave) onSave();
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      console.error(e);
-      setError(typeof e === "string" ? e : "Failed to save settings.");
+      onSave?.();
+      savedTimeoutRef.current = setTimeout(() => {
+        setSaved(false);
+        savedTimeoutRef.current = null;
+      }, 2000);
+    } catch (saveError) {
+      console.error(saveError);
+      setError(typeof saveError === "string" ? saveError : "Failed to save settings.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  if (!config)
-    return (
-      <div className="settings-panel">
-        <p>{t("settings.loading")}</p>
-      </div>
-    );
+  const handleRevert = () => {
+    if (!initialConfigSnapshot || isSaving) return;
+    clearSavedTimer();
+    setConfig(initialConfigSnapshot);
+    setSecretEdits(initialSecretEditsSnapshot);
+    setSecretEditMode(initialSecretEditModeSnapshot);
+    setSaved(false);
+    setError("");
+  };
 
-  const update = (path: string, value: any) => {
-    const newConfig = JSON.parse(JSON.stringify(config));
-    const keys = path.split(".");
-    let obj = newConfig;
-    for (let i = 0; i < keys.length - 1; i++) obj = obj[keys[i]];
-    obj[keys[keys.length - 1]] = value;
-    setConfig(newConfig);
+  const updateLanguage = (language: AppConfig["language"]) => {
+    setConfig((previous) => (previous ? { ...previous, language } : previous));
+  };
+
+  const updateAiConfig = (patch: Partial<AppConfig["ai"]>) => {
+    setConfig((previous) =>
+      previous ? { ...previous, ai: { ...previous.ai, ...patch } } : previous
+    );
+  };
+
+  const updateExternalControlConfig = (patch: Partial<AppConfig["external_control"]>) => {
+    setConfig((previous) =>
+      previous
+        ? { ...previous, external_control: { ...previous.external_control, ...patch } }
+        : previous
+    );
+  };
+
+  const updateTerminalConfig = (patch: Partial<AppConfig["terminal"]>) => {
+    setConfig((previous) =>
+      previous ? { ...previous, terminal: { ...previous.terminal, ...patch } } : previous
+    );
+  };
+
+  const updateSshConfig = (patch: Partial<AppConfig["ssh"]>) => {
+    setConfig((previous) =>
+      previous ? { ...previous, ssh: { ...previous.ssh, ...patch } } : previous
+    );
   };
 
   const clearSecret = async (provider: SecretProvider, key: SecretKey) => {
+    const confirmed = await confirm(t("settings.secret_clear_confirm_message"), {
+      title: t("settings.secret_clear_confirm_title"),
+      kind: "warning",
+      okLabel: t("settings.clear"),
+      cancelLabel: t("settings.cancel"),
+    });
+    if (!confirmed) return;
+
     try {
+      setError("");
       await invoke("ai_secret_clear", { provider });
-      setSecretEdits((prev) => ({ ...prev, [key]: "" }));
-      setSecretEditMode((prev) => ({ ...prev, [key]: false }));
-      setSecretStatus((prev) => ({ ...prev, [key]: false }));
-    } catch (e) {
-      console.error(e);
+      setSecretEdits((previous) => ({ ...previous, [key]: "" }));
+      setSecretEditMode((previous) => ({ ...previous, [key]: false }));
+      setSecretStatus((previous) => ({ ...previous, [key]: false }));
+    } catch {
+      console.error("Failed to clear AI secret.");
+      setError(t("settings.secret_clear_failed"));
     }
   };
 
-  const beginEditSecret = (key: SecretKey) => {
-    setSecretEditMode((prev) => ({ ...prev, [key]: true }));
-    setSecretEdits((prev) => ({ ...prev, [key]: "" }));
-  };
-
-  const cancelEditSecret = (key: SecretKey) => {
-    setSecretEditMode((prev) => ({ ...prev, [key]: false }));
-    setSecretEdits((prev) => ({ ...prev, [key]: "" }));
-  };
-
-  const renderSecretField = (
-    key: SecretKey,
-    provider: SecretProvider,
-    label: string,
-    placeholder: string
-  ) => {
-    const hasSecret = secretStatus[key];
-    const isEditing = secretEditMode[key];
-    const canType = !hasSecret || isEditing;
-    const value = canType ? secretEdits[key] : MASKED_VALUE;
-
+  if (!config) {
     return (
-      <div style={{ marginBottom: 14 }}>
-        <label className="label">{label}</label>
-        <div className="settings-secret-row">
-          <input
-            className="input"
-            type="password"
-            value={value}
-            readOnly={!canType}
-            onChange={(e) => setSecretEdits((prev) => ({ ...prev, [key]: e.target.value }))}
-            placeholder={hasSecret ? "" : placeholder}
-          />
-          {hasSecret && !isEditing && (
-            <>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => beginEditSecret(key)}
-              >
-                {t("settings.change")}
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                onClick={() => clearSecret(provider, key)}
-              >
-                {t("settings.clear")}
-              </button>
-            </>
-          )}
-          {isEditing && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => cancelEditSecret(key)}
-            >
-              {t("settings.cancel")}
+      <div className="settings-panel">
+        {isLoadingConfig && <p>{t("settings.loading")}</p>}
+        {loadFailed && (
+          <>
+            <SettingsError message={t("settings.load_failed")} />
+            <button className="btn btn-primary" onClick={() => void loadConfig()}>
+              {t("settings.reload")}
             </button>
-          )}
-        </div>
+          </>
+        )}
       </div>
     );
+  }
+
+  const renderActiveCategory = () => {
+    switch (activeCategory) {
+      case "general":
+        return (
+          <GeneralSettings
+            language={config.language}
+            terminalConfig={config.terminal}
+            sshConfig={config.ssh}
+            sshAlgorithmCatalog={sshAlgorithmCatalog}
+            sshAlgorithmCatalogLoadFailed={sshAlgorithmCatalogLoadFailed}
+            onLanguageChange={updateLanguage}
+            onTerminalChange={updateTerminalConfig}
+            onSshChange={updateSshConfig}
+            onReloadSshAlgorithmCatalog={() => void loadSshAlgorithmCatalog()}
+          />
+        );
+      case "ai":
+        return (
+          <AiSettings
+            config={config.ai}
+            secretStatus={secretStatus}
+            secretEdits={secretEdits}
+            secretEditMode={secretEditMode}
+            expandedOtherProvider={expandedOtherProvider}
+            onConfigChange={updateAiConfig}
+            onExpandedOtherProviderChange={(provider) => {
+              setExpandedOtherProvider(provider);
+            }}
+            onSecretValueChange={(key, value) => {
+              setSecretEdits((previous) => ({ ...previous, [key]: value }));
+            }}
+            onBeginSecretEdit={(key) => {
+              setSecretEditMode((previous) => ({ ...previous, [key]: true }));
+              setSecretEdits((previous) => ({ ...previous, [key]: "" }));
+            }}
+            onCancelSecretEdit={(key) => {
+              setSecretEditMode((previous) => ({ ...previous, [key]: false }));
+              setSecretEdits((previous) => ({ ...previous, [key]: "" }));
+            }}
+            onClearSecret={(provider, key) => void clearSecret(provider, key)}
+          />
+        );
+      case "logs":
+        return <LogSettings config={config.terminal} onChange={updateTerminalConfig} />;
+      case "external_control":
+        return (
+          <ExternalControlSettings
+            config={config.external_control}
+            onChange={updateExternalControlConfig}
+          />
+        );
+    }
   };
 
   return (
     <div className="settings-panel">
       <h2>{t("settings.title")}</h2>
-
-      <div className="settings-section">
-        <div className="settings-section__title">{t("settings.language")}</div>
-        <div className="settings-row">
-          <div>
-            <select
-              className="select"
-              value={config.language}
-              onChange={(e) => update("language", e.target.value)}
-            >
-              {LANGUAGE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.labelKey ? t(option.labelKey) : option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+      <div className="settings-layout">
+        <SettingsSidebar activeCategory={activeCategory} onCategoryChange={setActiveCategory} />
+        <div className="settings-content">{renderActiveCategory()}</div>
       </div>
-
-      <div className="settings-section">
-        <div className="settings-section__title">{t("settings.ai_provider")}</div>
-        <div className="settings-row">
-          <div>
-            <label className="label">{t("settings.default_provider")}</label>
-            <select
-              className="select"
-              value={config.ai.default_provider}
-              onChange={(e) => update("ai.default_provider", e.target.value)}
-            >
-              <option value="OpenAi">OpenAI</option>
-              <option value="AzureOpenAi">Azure OpenAI</option>
-              <option value="Anthropic">Anthropic</option>
-              <option value="Gemini">Google Gemini</option>
-              <option value="OpenRouter">OpenRouter</option>
-              <option value="Ollama">Ollama</option>
-            </select>
-          </div>
-        </div>
-
-        {renderSecretField("openai", "OpenAi", t("settings.openai_key"), "sk-...")}
-        {renderSecretField("azure_openai", "AzureOpenAi", t("settings.azure_openai_key"), "...")}
-        {renderSecretField("anthropic", "Anthropic", t("settings.anthropic_key"), "sk-ant-...")}
-        {renderSecretField("gemini", "Gemini", t("settings.gemini_key"), "AIza...")}
-        {renderSecretField("openrouter", "OpenRouter", t("settings.openrouter_key"), "sk-or-...")}
-
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.azure_openai_enabled")}</span>
-            <small>{t("settings.azure_openai_enabled_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.ai.azure_openai_enabled)}
-              onChange={(e) => update("ai.azure_openai_enabled", e.target.checked)}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
-          <label className="label">{t("settings.azure_openai_endpoint")}</label>
-          <input
-            className="input"
-            type="text"
-            value={config.ai.azure_openai_endpoint}
-            onChange={(e) => update("ai.azure_openai_endpoint", e.target.value)}
-            placeholder="https://your-resource.openai.azure.com/openai/v1/chat/completions"
-          />
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
-          <label className="label">{t("settings.azure_openai_deployment")}</label>
-          <input
-            className="input"
-            type="text"
-            value={config.ai.azure_openai_deployment}
-            onChange={(e) => update("ai.azure_openai_deployment", e.target.value)}
-            placeholder="my-gpt4o-deployment"
-          />
-        </div>
-
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.ollama_enabled")}</span>
-            <small>{t("settings.ollama_enabled_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.ai.ollama_enabled)}
-              onChange={(e) => update("ai.ollama_enabled", e.target.checked)}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
-          <label className="label">{t("settings.ollama_url")}</label>
-          <input
-            className="input"
-            type="text"
-            value={config.ai.ollama_base_url || "http://localhost:11434"}
-            onChange={(e) => update("ai.ollama_base_url", e.target.value)}
-            placeholder="http://localhost:11434"
-          />
-        </div>
-      </div>
-
-      <div className="settings-section">
-        <div className="settings-section__title">{t("settings.mcp_settings")}</div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.mcp_enabled")}</span>
-            <small>{t("settings.mcp_enabled_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.external_control?.enabled)}
-              onChange={(e) => update("external_control.enabled", e.target.checked)}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.mcp_cli_enabled")}</span>
-            <small>{t("settings.mcp_cli_enabled_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.external_control?.cli_enabled)}
-              onChange={(e) => update("external_control.cli_enabled", e.target.checked)}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.mcp_connect_enabled")}</span>
-            <small>{t("settings.mcp_connect_enabled_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.external_control?.connect_enabled)}
-              onChange={(e) => update("external_control.connect_enabled", e.target.checked)}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-        <div className="settings-section__title" style={{ marginTop: 20 }}>
-          {t("settings.mcp_adapter_title")}
-        </div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.mcp_stdio_enabled")}</span>
-            <small>{t("settings.mcp_stdio_enabled_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.external_control?.mcp_enabled)}
-              onChange={(e) => update("external_control.mcp_enabled", e.target.checked)}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-        <p className="settings-help">{t("settings.mcp_restart_notice")}</p>
-        {t("settings.mcp_loopback_warning") && (
-          <p className="settings-help">{t("settings.mcp_loopback_warning")}</p>
-        )}
-      </div>
-
-      <div className="settings-section">
-        <div className="settings-section__title">{t("settings.ssh_settings")}</div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.allow_legacy_ssh_algorithms")}</span>
-            <small>{t("settings.allow_legacy_ssh_algorithms_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={Boolean(config.ssh.allow_legacy_algorithms)}
-              onChange={(e) => update("ssh.allow_legacy_algorithms", e.target.checked)}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-      </div>
-
-      <div className="settings-section">
-        <div className="settings-section__title">{t("settings.terminal_settings")}</div>
-        <div className="settings-row">
-          <div>
-            <label className="label">{t("settings.font_size")}</label>
-            <input
-              className="input"
-              type="number"
-              value={config.terminal.font_size}
-              onChange={(e) => update("terminal.font_size", parseInt(e.target.value))}
-              min={8}
-              max={32}
-            />
-          </div>
-          <div>
-            <label className="label">{t("settings.scrollback")}</label>
-            <input
-              className="input"
-              type="number"
-              value={config.terminal.scrollback}
-              onChange={(e) => update("terminal.scrollback", parseInt(e.target.value))}
-            />
-          </div>
-        </div>
-        <div>
-          <label className="label">{t("settings.font_family")}</label>
-          <input
-            className="input"
-            value={config.terminal.font_family}
-            onChange={(e) => update("terminal.font_family", e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div className="settings-section">
-        <div className="settings-section__title">{t("settings.log_settings")}</div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.auto_session_log")}</span>
-            <small>{t("settings.auto_session_log_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={config.terminal.auto_session_log}
-              onChange={(e) => update("terminal.auto_session_log", e.target.checked)}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-        <div style={{ marginBottom: 14 }}>
-          <label className="label">{t("settings.log_format")}</label>
-          <select
-            className="select"
-            value={config.terminal.log_format || "display"}
-            onChange={(e) => update("terminal.log_format", e.target.value)}
-          >
-            <option value="display">{t("settings.log_format_display")}</option>
-            <option value="strip_controls">{t("settings.log_format_strip_controls")}</option>
-          </select>
-        </div>
-        <div className="settings-toggle-row">
-          <div className="settings-toggle-label">
-            <span>{t("settings.include_log_header")}</span>
-            <small>{t("settings.include_log_header_desc")}</small>
-          </div>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={config.terminal.include_log_header ?? false}
-              onChange={(e) => update("terminal.include_log_header", e.target.checked)}
-            />
-            <span className="toggle-track" />
-          </label>
-        </div>
-      </div>
-
-      <div className="settings-actions">
-        <button className="btn btn-primary" onClick={handleSave}>
-          {t("settings.save")}
-        </button>
-        {saved && (
-          <span className="settings-saved">
-            <Check size={14} /> {t("settings.saved")}
-          </span>
-        )}
-        {error && <span className="settings-error">{error}</span>}
-      </div>
+      <SettingsFooter
+        hasUnsavedChanges={hasUnsavedChanges}
+        saved={saved}
+        error={error}
+        isSaving={isSaving}
+        onSave={() => void handleSave()}
+        onRevert={handleRevert}
+      />
     </div>
   );
 }

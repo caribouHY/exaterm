@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## v0.8.0
+
+### Changed
+
+- Improved the desktop Settings experience with clearer categories, accessibility, save and revert feedback, and safer dependent-control behavior.
+- Made AI provider setup and saved API-key management easier to understand and safer to use.
+- Refined the dark desktop interface for more consistent visuals.
+
+### Added
+
+- Added global SSH algorithm selection for key exchange, host keys, ciphers, MACs, and compression.
+- Added a terminal tab action for opening a prefilled new SSH or Telnet connection to the same destination without retaining credentials.
+- Added a terminal tab context menu for closing tabs or moving terminal sessions to a new window.
+- Added PowerShell-style right-click copy and paste, with confirmation before multi-line terminal pastes.
+
+### Fixed
+
+- Improved terminal-tab ordering, focus, and visibility when opening, closing, moving, and reordering tabs, including across Settings and Logs.
+- Fixed terminal input encoding so the selected UTF-8, Shift_JIS, or EUC-JP setting is applied to outgoing SSH, Serial, Telnet, and external-control input.
+- Improved SSH private-key validation, including DSA and EC PEM headers.
+- Improved Settings reliability with an anchored save bar, clearer load and save errors, and validated terminal input ranges.
+- Made SSH output loss during overload visible in the terminal.
+- Fixed SSH sessions so remote disconnects are reflected more reliably in the UI.
+- Improved SSH connections so stalled connection setup no longer leaves the connection dialog waiting indefinitely.
+- Improved SSH sessions so stalled input sends and terminal resizes time out instead of waiting indefinitely.
+- Made desktop error messages respect the selected app language.
+
 ## v0.7.1
 
 ### Fixed

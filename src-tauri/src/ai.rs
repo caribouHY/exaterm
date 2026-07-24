@@ -236,7 +236,7 @@ mod tests {
         assert!(prompt.contains("local device from peer, remote, or external systems"));
         assert!(prompt.contains("avoid definitive statements and ask for the missing data"));
         assert!(prompt.contains("Do not claim settings are matching"));
-        assert!(!prompt.contains("あなたはExaTerm"));
+        assert!(!prompt.contains("You are ExaTerm"));
     }
 
     #[test]
@@ -252,7 +252,7 @@ mod tests {
         let prompt = build_system_prompt(&Some("router# show ip ospf neighbor".into()), "ja-JP");
 
         assert!(prompt.contains("[Terminal Output]\n```\nrouter# show ip ospf neighbor\n```"));
-        assert!(!prompt.contains("【ターミナル出力】"));
+        assert!(!prompt.contains("[Terminal Output in Japanese]"));
     }
 
     #[test]

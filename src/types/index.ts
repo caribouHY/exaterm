@@ -127,8 +127,28 @@ export interface TerminalConfig {
 export type LogFormat = "display" | "strip_controls";
 
 export interface SshConfig {
-  allow_legacy_algorithms: boolean;
+  algorithm_mode: SshAlgorithmMode;
+  algorithms: SshAlgorithmSelection;
 }
+
+export type SshAlgorithmMode = "default" | "custom";
+export type SshAlgorithmGroup = "kex" | "host_key" | "cipher" | "mac" | "compression";
+
+export interface SshAlgorithmSelection {
+  kex: string[];
+  host_key: string[];
+  cipher: string[];
+  mac: string[];
+  compression: string[];
+}
+
+export interface SshAlgorithmCatalogItem {
+  name: string;
+  recommended: boolean;
+  compatibility: boolean;
+}
+
+export type SshAlgorithmCatalog = Record<SshAlgorithmGroup, SshAlgorithmCatalogItem[]>;
 
 export type TerminalMode = "general" | "cisco_ios";
 
@@ -151,6 +171,22 @@ export type ConnectionType = "ssh" | "serial" | "telnet";
 export type ViewMode = "terminal" | "settings" | "logs";
 export type UtilityTabKind = "settings" | "logs";
 export type Encoding = "utf-8" | "shift-jis" | "euc-jp";
+
+export type WorkspaceConnectionInfo =
+  | {
+      kind: "ssh";
+      host: string;
+      port: number;
+      username: string;
+      auth_method: SshAuthMethod;
+      private_key_path?: string | null;
+      jump_profile_id?: string | null;
+    }
+  | {
+      kind: "telnet";
+      host: string;
+      port: number;
+    };
 
 export type StartupSshTargetKind = "direct" | "profile";
 
@@ -180,6 +216,7 @@ export interface TabInfo {
   isConnected: boolean;
   encoding: Encoding;
   terminalMode: TerminalMode;
+  connectionInfo?: WorkspaceConnectionInfo;
   isAutoLogging?: boolean;
   isManualLogging?: boolean;
   isLoggingPaused?: boolean;
@@ -194,6 +231,7 @@ export interface WorkspaceTabInfo {
   owner_window_id: string;
   encoding: Encoding;
   terminal_mode: TerminalMode;
+  connection_info?: WorkspaceConnectionInfo | null;
   is_connected: boolean;
   is_auto_logging: boolean;
   is_manual_logging: boolean;
@@ -209,10 +247,16 @@ export interface WindowWorkspaceSnapshot {
 }
 
 export interface WorkspaceSnapshot {
+  revision: number;
   window_id: string;
   window: WindowWorkspaceSnapshot;
   tabs: WorkspaceTabInfo[];
+  tab_update?: WorkspaceTabUpdate | null;
 }
+
+export type WorkspaceTabUpdate =
+  | { kind: "connected"; tab_id: string }
+  | { kind: "moved"; tab_id: string; target_index: number };
 
 export interface WorkspaceWindowCreateResult {
   window_id: string;
@@ -221,6 +265,13 @@ export interface WorkspaceWindowCreateResult {
 export interface WorkspacePointerPosition {
   x: number;
   y: number;
+}
+
+export interface ForeignTabPlacement {
+  tabId: string;
+  previousTabId: string | null;
+  nextTabId: string | null;
+  visibleSlotIndex: number;
 }
 
 export interface WorkspaceDragPreview {

@@ -43,13 +43,19 @@ ExaTerm is a Tauri v2 desktop application.
 
 ### Frontend Runtime
 
-`src/App.tsx` currently owns the main UI shell:
+`src/App.tsx` composes the main UI shell:
 
-- terminal tab list, tab order, active tab, and close state
-- utility tabs for Settings and Logs
 - AI panel visibility, width, messages, provider, and selected model
 - config refresh and startup CLI request handling
 - MCP credential and log-control prompts
+- terminal views, Settings, Logs, TitleBar, StatusBar, and connection-dialog presentation
+
+`src/features/workspace-tabs/` owns the frontend workspace projection:
+
+- backend terminal-tab snapshots combined with window-local Settings and Logs tabs
+- visible tab order, active app tab, close state, and workspace revision handling
+- workspace window registration, focus reporting, and workspace event subscriptions
+- terminal-tab registration, close/disconnect, reorder, cross-window move, and detach workflows
 
 Terminal rendering lives under `src/components/Terminal/`.
 `TerminalView` owns the xterm.js instance, backend output listeners, resize handling,
@@ -65,12 +71,18 @@ Backend state is managed through Tauri `State` values created in `src-tauri/src/
 - `SshState`, `SerialState`, and `TelnetState` own active protocol sessions.
 - `TerminalControlState` stores a readable decoded output buffer and status per session.
 - `LoggerState` owns automatic and manual plaintext session log state.
+- `WorkspaceState` owns terminal-tab placement, ordering, active terminal tabs, window focus history, and cross-window drag state.
 - `ExternalControlCredentialState` and `ExternalControlLogControlState` bridge external requests that need UI action.
 - `StartupCliState` carries one startup CLI request into the frontend.
 
 The protocol modules start sessions, write input, resize where supported, disconnect, and
 mark `TerminalControlState` as disconnected. Session IDs are UUID-like strings that join
 frontend tabs, protocol sessions, terminal output buffers, logger state, and MCP calls.
+
+The Rust workspace subsystem uses `src-tauri/src/workspace.rs` as its facade. Its domain
+data, snapshots, and invariant validation live in `workspace/model.rs`; the async
+`Arc<Mutex<WorkspaceModel>>` facade lives in `workspace/state.rs`; and Tauri commands,
+window creation, localization, and event emission live in `workspace/commands.rs`.
 
 ### MCP Runtime
 
@@ -153,13 +165,13 @@ credential prompts remain owned by the GUI.
 
 Current ownership:
 
-- Backend owns network/device sessions, decoded output buffers, and log state.
-- Frontend owns visible tab placement and active tab state.
+- Backend owns network/device sessions, decoded output buffers, log state, terminal-tab placement, and active terminal tab per window.
+- Frontend owns each window's backend workspace projection, local utility-tab placement, and active app view.
 - MCP exposes backend runtime state but depends on the GUI process being alive.
 
 Future ownership direction:
 
-- Cross-window tab placement should move from `App.tsx` to a backend workspace state.
+- Keep cross-window terminal placement backend-owned while allowing the frontend projection protocol to evolve from full snapshots to versioned deltas if needed.
 - External control should connect through a local control plane instead of assuming a
   manually launched GUI.
 - Terminal sessions should remain single-owner runtime resources even when their visible
@@ -193,7 +205,7 @@ Use this structure as the repository grows:
 - `ai-docs/SYSTEM_DESIGN.md`: durable system-wide design and direction.
 - `ai-docs/*_DESIGN.md`: detailed feature or subsystem designs.
 - `ai-docs/CHANGE_CHECKLIST.md`: before/after checklist for code changes.
-- `ai-docs/RELEASE_CHECKLIST.md`: release-specific checklist.
+- `.agents/skills/exaterm-release-prep/SKILL.md`: release-preparation workflow.
 - `docs/`: user-facing documentation only.
 
 When adding a feature design, include:
@@ -215,8 +227,5 @@ Documentation-only changes do not require a full app build. At minimum:
 - confirm implementation guidance stayed in `ai-docs/`
 - confirm user-facing documentation stayed in `docs/`
 
-For implementation work that follows this design:
-
-- use `pnpm run build` for frontend and TypeScript changes
-- use `cargo test` for Rust backend changes
-- use `pnpm run tauri build --debug` when installer, binary, or runtime integration matters
+For AI agent validation command selection, use
+`.agents/skills/exaterm-validate-change/SKILL.md`.

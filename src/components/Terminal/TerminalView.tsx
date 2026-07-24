@@ -6,6 +6,8 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useTranslation } from "react-i18next";
 import type { ConnectionType, Encoding, TerminalConfig, TerminalMode } from "../../types";
 import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
@@ -75,6 +77,14 @@ interface TerminalOutputSnapshot {
   cursor: number;
 }
 
+function normalizeCursorStyle(cursorStyle: string | undefined): "block" | "bar" | "underline" {
+  if (cursorStyle === "bar" || cursorStyle === "underline") {
+    return cursorStyle;
+  }
+
+  return "block";
+}
+
 const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function TerminalView(
   {
     sessionId,
@@ -104,6 +114,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const terminalModeRef = useRef(terminalMode);
   const decorationFrameRef = useRef<number | null>(null);
   const decorationRebuildRef = useRef(false);
+  const contextMenuActionInProgressRef = useRef(false);
   const promptDecorationsRef = useRef<Map<number, PromptDecorationSet>>(new Map());
   const errorDecorationsRef = useRef<Map<number, LineDecorationSet>>(new Map());
   const autoLogSanitizerRef = useRef(
@@ -137,8 +148,20 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     /% Invalid/i,
     /%You must disable VTPv1 and VTPv2 or switch to VTPv3 before configuring a VLAN name longer than 32 characters/i,
   ];
-  const terminalModeDecorators: Partial<Record<TerminalMode, (term: Terminal) => void>> = {
-    cisco_ios: (term) => decorateCiscoIosTerminal(term),
+  const canDecorateTerminalMode = (mode: TerminalMode) => {
+    return mode === "cisco_ios";
+  };
+
+  const decorateTerminalMode = (term: Terminal, mode: TerminalMode) => {
+    switch (mode) {
+      case "cisco_ios":
+        decorateCiscoIosTerminal(term);
+        return true;
+      case DEFAULT_TERMINAL_MODE:
+        return false;
+      default:
+        return false;
+    }
   };
 
   const cancelScheduledDecoration = () => {
@@ -149,7 +172,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   };
 
   const scheduleTerminalModeDecoration = (term: Terminal, rebuild = false) => {
-    if (terminalModeRef.current === DEFAULT_TERMINAL_MODE) return;
+    if (!canDecorateTerminalMode(terminalModeRef.current)) return;
     decorationRebuildRef.current = decorationRebuildRef.current || rebuild;
     if (decorationFrameRef.current !== null) return;
 
@@ -159,7 +182,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         clearModeDecorations();
         decorationRebuildRef.current = false;
       }
-      terminalModeDecorators[terminalModeRef.current]?.(term);
+      decorateTerminalMode(term, terminalModeRef.current);
     });
   };
 
@@ -624,19 +647,19 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       clearModeDecorations();
       return;
     }
-    const decorator = terminalModeDecorators[terminalMode];
-    if (!decorator) {
+    if (!canDecorateTerminalMode(terminalMode)) {
       clearModeDecorations();
       return;
     }
     if (termRef.current) {
-      decorator(termRef.current);
+      decorateTerminalMode(termRef.current, terminalMode);
     }
   }, [terminalMode]);
 
   // Create the terminal once per session and keep it mounted after disconnect.
   useEffect(() => {
-    if (!containerRef.current || !sessionId || termRef.current) return;
+    const terminalElement = containerRef.current;
+    if (!terminalElement || !sessionId || termRef.current) return;
 
     const term = new Terminal({
       fontFamily:
@@ -665,7 +688,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         brightWhite: "#ffffff",
       },
       cursorBlink: true,
-      cursorStyle: (terminalConfig?.cursor_style as any) || "block",
+      cursorStyle: normalizeCursorStyle(terminalConfig?.cursor_style),
       scrollback: terminalConfig?.scrollback || 10000,
       allowProposedApi: true,
     });
@@ -688,7 +711,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     term.loadAddon(webLinksAddon);
     term.loadAddon(searchAddon);
 
-    term.open(containerRef.current);
+    term.open(terminalElement);
     fitAddon.fit();
 
     termRef.current = term;
@@ -700,7 +723,68 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       if (!isConnectedRef.current) return;
       invoke(protocol.write, { sessionId, data }).catch(console.error);
     });
-    const scrollDecorationDisposable = term.onScroll(() => scheduleTerminalModeDecoration(term));
+    const scrollDecorationDisposable = term.onScroll(() => {
+      scheduleTerminalModeDecoration(term);
+    });
+    let disposed = false;
+
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      if (contextMenuActionInProgressRef.current) return;
+      contextMenuActionInProgressRef.current = true;
+
+      void (async () => {
+        try {
+          const selection = term.getSelection();
+          if (selection.length > 0) {
+            await writeText(selection);
+            if (!disposed) {
+              term.clearSelection();
+            }
+            return;
+          }
+
+          if (!isConnectedRef.current) {
+            return;
+          }
+
+          const clipboardText = await readText();
+          if (disposed || clipboardText.length === 0) {
+            return;
+          }
+
+          const hasMultipleLines = clipboardText.includes("\n") || clipboardText.includes("\r");
+          if (hasMultipleLines) {
+            const shouldPaste = await confirm(
+              t("terminal.multiline_paste_message", { content: clipboardText }),
+              {
+                title: t("terminal.multiline_paste_title"),
+                kind: "warning",
+                okLabel: t("terminal.multiline_paste_confirm"),
+                cancelLabel: t("terminal.multiline_paste_cancel"),
+              }
+            );
+
+            if (!shouldPaste || disposed) {
+              return;
+            }
+          }
+
+          if (!disposed) {
+            term.paste(clipboardText);
+          }
+        } catch {
+          // Clipboard failures should not send anything to the terminal.
+        } finally {
+          contextMenuActionInProgressRef.current = false;
+          if (!disposed) {
+            term.focus();
+          }
+        }
+      })();
+    };
+
+    terminalElement.addEventListener("contextmenu", handleContextMenu);
 
     // Backend data -> terminal
     const eventPrefix = protocol.dataEvent;
@@ -708,7 +792,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
     const writeTerminalText = (text: string) => {
       if (!text) return;
-      term.write(text, () => scheduleTerminalModeDecoration(term));
+      term.write(text, () => {
+        scheduleTerminalModeDecoration(term);
+      });
       if (onTerminalData) onTerminalData(text);
       if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
         const logText = autoLogSanitizerRef.current.push(text);
@@ -744,7 +830,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       writeTerminalText(text);
     };
 
-    let disposed = false;
     let unlistenData: Promise<() => void> | null = null;
     let unlistenError: Promise<() => void> | null = null;
 
@@ -781,7 +866,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           }
         } catch {
           if (!disposed) {
-            bufferedInitialOutput.forEach((text) => writeTerminalText(text));
+            bufferedInitialOutput.forEach((text) => {
+              writeTerminalText(text);
+            });
           }
         } finally {
           bufferedInitialOutput = [];
@@ -807,12 +894,17 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     };
 
     const resizeObserver = new ResizeObserver(handleResize);
-    resizeObserver.observe(containerRef.current);
+    resizeObserver.observe(terminalElement);
 
     return () => {
       disposed = true;
-      unlistenData?.then((fn) => fn());
-      unlistenError?.then((fn) => fn());
+      terminalElement.removeEventListener("contextmenu", handleContextMenu);
+      void unlistenData?.then((fn) => {
+        fn();
+      });
+      void unlistenError?.then((fn) => {
+        fn();
+      });
       if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
         const logText = autoLogSanitizerRef.current.flush();
         if (logText) {
@@ -850,7 +942,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         }
         termRef.current?.focus();
       }, 50);
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+      };
     }
   }, [isActive]);
 
@@ -859,7 +953,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     if (termRef.current && terminalConfig) {
       termRef.current.options.fontSize = terminalConfig.font_size;
       termRef.current.options.fontFamily = terminalConfig.font_family;
-      termRef.current.options.cursorStyle = terminalConfig.cursor_style as any;
+      termRef.current.options.cursorStyle = normalizeCursorStyle(terminalConfig.cursor_style);
       termRef.current.options.scrollback = terminalConfig.scrollback;
 
       // Re-fit to adjust for potential size changes

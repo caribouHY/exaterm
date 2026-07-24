@@ -11,6 +11,7 @@ import type {
   TerminalMode,
 } from "../../types";
 import { useTranslation } from "react-i18next";
+import { EmptyState } from "../Common";
 import AIAssistantLogo from "./AIAssistantLogo";
 import "./AIChatPanel.css";
 
@@ -242,7 +243,7 @@ export default function AIChatPanel({
       setSelectedModel(nextModel);
     };
 
-    loadAiSettings();
+    void loadAiSettings();
 
     return () => {
       cancelled = true;
@@ -314,8 +315,8 @@ export default function AIChatPanel({
           model_id: selectedModel,
         },
       ]);
-    } catch (e: any) {
-      const detail = typeof e === "string" ? e : e.message || "Unknown error";
+    } catch (e: unknown) {
+      const detail = typeof e === "string" ? e : e instanceof Error ? e.message : "Unknown error";
       setMessages((prev) => [
         ...prev,
         {
@@ -343,12 +344,15 @@ export default function AIChatPanel({
 
       <div className="ai-panel__messages">
         {messages.length === 0 ? (
-          <div className="ai-panel__welcome">
-            <div className="ai-panel__welcome-icon">
-              <AIAssistantLogo size="lg" />
-            </div>
-            <div className="ai-panel__welcome-text">{t("ai.title")}</div>
-          </div>
+          <EmptyState
+            className="ai-panel__welcome"
+            icon={
+              <div className="ai-panel__welcome-icon">
+                <AIAssistantLogo size="lg" />
+              </div>
+            }
+            title={<span className="ai-panel__welcome-text">{t("ai.title")}</span>}
+          />
         ) : (
           messages.map((msg, i) => {
             const segments =
@@ -384,7 +388,9 @@ export default function AIChatPanel({
                           <button
                             className="ai-command__insert"
                             type="button"
-                            onClick={() => onInsertCommand(segment.suggestion.command)}
+                            onClick={() => {
+                              onInsertCommand(segment.suggestion.command);
+                            }}
                             disabled={!canInsertCommand}
                             title={
                               canInsertCommand
@@ -423,11 +429,13 @@ export default function AIChatPanel({
             ref={inputRef}
             className="ai-panel__input"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                handleSend();
+                void handleSend();
               }
             }}
             placeholder={t("ai.placeholder")}
@@ -445,7 +453,9 @@ export default function AIChatPanel({
         <div className="ai-panel__bottom-row">
           <button
             className={`ai-panel__context-btn ${useContext ? "ai-panel__context-btn--active" : ""}`}
-            onClick={() => setUseContext(!useContext)}
+            onClick={() => {
+              setUseContext(!useContext);
+            }}
             aria-label={t("ai.context")}
             aria-pressed={useContext}
             data-tooltip={useContext ? t("ai.context_tooltip_on") : t("ai.context_tooltip_off")}
@@ -470,7 +480,9 @@ export default function AIChatPanel({
             </select>
             <select
               value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
+              onChange={(e) => {
+                setSelectedModel(e.target.value);
+              }}
               disabled={providerModels.length === 0}
             >
               {providerModels.map((m) => (

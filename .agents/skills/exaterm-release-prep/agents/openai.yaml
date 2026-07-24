@@ -1,0 +1,4 @@
+interface:
+  display_name: "ExaTerm Release Prep"
+  short_description: "Prepare ExaTerm release version bumps"
+  default_prompt: "Use $exaterm-release-prep to prepare an ExaTerm release version bump."

@@ -26,7 +26,10 @@
   font-family: var(--font-ui);
   font-size: 12px;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
   white-space: nowrap;
   min-width: 120px;
   max-width: 200px;
@@ -58,8 +61,8 @@
   width: 2px;
   margin-left: -1px;
   background: var(--text-primary);
-  border-radius: 999px;
-  box-shadow: 0 0 6px rgba(204, 204, 204, 0.45);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-glow);
   pointer-events: none;
   z-index: 5;
 }
@@ -84,13 +87,13 @@
 .terminal-tab__status {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
 }
 
 .terminal-tab__status--connected {
   background: var(--status-connected);
-  box-shadow: 0 0 6px var(--status-connected);
+  box-shadow: var(--shadow-status-connected);
 }
 
 .terminal-tab__status--disconnected {
@@ -105,7 +108,9 @@
   height: 18px;
   border-radius: var(--radius-sm);
   opacity: 0;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    opacity var(--transition-fast);
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -127,20 +132,30 @@
 }
 
 .terminal-tabs__add {
+  position: sticky;
+  right: 0;
+  z-index: 6;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 36px;
   height: 100%;
-  background: transparent;
+  background: var(--bg-surface);
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
   flex-shrink: 0;
 }
 
 .terminal-tabs__add:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.terminal-tabs__context-menu {
+  position: fixed;
+  z-index: 1200;
 }
