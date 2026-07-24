@@ -8,11 +8,7 @@
 
 - Improved the desktop Settings experience with clearer categories, accessibility, save and revert feedback, and safer dependent-control behavior.
 - Made AI provider setup and saved API-key management easier to understand and safer to use.
-- Aligned the desktop UI styling rules and shared dark-theme tokens for more consistent future interface changes.
-- Added frontend regression coverage for terminal and utility tab ordering, focus, and workspace snapshot reconciliation.
-- Separated frontend workspace tab state, lifecycle, and movement orchestration from the main app shell.
-- Separated terminal tab drag geometry and pointer interaction from tab strip rendering.
-- Separated the Rust workspace domain, shared state, Tauri adapters, and invariant tests into focused modules.
+- Refined the dark desktop interface for more consistent visuals.
 
 ### Added
 
@@ -23,16 +19,15 @@
 
 ### Fixed
 
-- Fixed tab focus after closing an active terminal or utility tab, or moving an active terminal to another window, so it consistently moves to the right neighbor, or the left neighbor when removing the last tab.
-- Fixed newly connected terminal tabs so they open at the right end of the tab bar, receive focus when Settings or Logs is active, stay visible with the new-tab control when the tab bar overflows, and are not rolled back by stale workspace updates.
-- Fixed tab reordering so terminal tabs can move across Settings and Logs boundaries within and between windows without losing their visible position.
+- Improved terminal-tab ordering, focus, and visibility when opening, closing, moving, and reordering tabs, including across Settings and Logs.
 - Fixed terminal input encoding so the selected UTF-8, Shift_JIS, or EUC-JP setting is applied to outgoing SSH, Serial, Telnet, and external-control input.
+- Improved SSH private-key validation, including DSA and EC PEM headers.
 - Improved Settings reliability with an anchored save bar, clearer load and save errors, and validated terminal input ranges.
-- Improved SSH sessions so overloaded output no longer disappears without warning.
+- Made SSH output loss during overload visible in the terminal.
 - Fixed SSH sessions so remote disconnects are reflected more reliably in the UI.
 - Improved SSH connections so stalled connection setup no longer leaves the connection dialog waiting indefinitely.
 - Improved SSH sessions so stalled input sends and terminal resizes time out instead of waiting indefinitely.
-- Fixed backend error messages so the desktop UI now follows the selected app language while Terminal CLI and external control keep stable English responses.
+- Made desktop error messages respect the selected app language.
 
 ## v0.7.1
 
