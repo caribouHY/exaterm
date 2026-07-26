@@ -26,17 +26,36 @@ export const SHORTCUT_ACTIONS: Array<{
   { id: "open_settings", labelKey: "settings.shortcuts.action.open_settings" },
 ];
 
+const DEFAULT_NEW_CONNECTION_SHORTCUT: ShortcutBinding = {
+  key: "n",
+  ctrl: true,
+  alt: false,
+  shift: false,
+};
+const DEFAULT_NEW_WINDOW_SHORTCUT: ShortcutBinding = {
+  key: "n",
+  ctrl: true,
+  alt: false,
+  shift: true,
+};
+const DEFAULT_OPEN_SETTINGS_SHORTCUT: ShortcutBinding = {
+  key: ",",
+  ctrl: true,
+  alt: false,
+  shift: false,
+};
+
 export const DEFAULT_SHORTCUT_CONFIG: ShortcutConfig = {
-  new_connection: { key: "n", ctrl: true, alt: false, shift: false },
-  new_window: { key: "n", ctrl: true, alt: false, shift: true },
-  open_settings: { key: ",", ctrl: true, alt: false, shift: false },
+  new_connection: DEFAULT_NEW_CONNECTION_SHORTCUT,
+  new_window: DEFAULT_NEW_WINDOW_SHORTCUT,
+  open_settings: DEFAULT_OPEN_SETTINGS_SHORTCUT,
 };
 
 export function createDefaultShortcutConfig(): ShortcutConfig {
   return {
-    new_connection: { ...DEFAULT_SHORTCUT_CONFIG.new_connection! },
-    new_window: { ...DEFAULT_SHORTCUT_CONFIG.new_window! },
-    open_settings: { ...DEFAULT_SHORTCUT_CONFIG.open_settings! },
+    new_connection: { ...DEFAULT_NEW_CONNECTION_SHORTCUT },
+    new_window: { ...DEFAULT_NEW_WINDOW_SHORTCUT },
+    open_settings: { ...DEFAULT_OPEN_SETTINGS_SHORTCUT },
   };
 }
 
