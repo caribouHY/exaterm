@@ -29,7 +29,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 ```json
 {
-  "config_version": 2,
+  "config_version": 4,
   "language": "system",
   "ai": {
     "azure_openai_enabled": false,
@@ -46,6 +46,12 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "connect_enabled": false,
     "mcp_enabled": false,
     "cli_enabled": false
+  },
+  "shortcuts": {
+    "new_connection": { "key": "n", "ctrl": true, "alt": false, "shift": false },
+    "new_tab": { "key": "t", "ctrl": true, "alt": false, "shift": false },
+    "new_window": { "key": "n", "ctrl": true, "alt": false, "shift": true },
+    "open_settings": { "key": ",", "ctrl": true, "alt": false, "shift": false }
   },
   "terminal": {
     "font_size": 14,
@@ -74,10 +80,11 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 | Parameter           | Type   | Default    | Description                                                                                                                                                |
 | ------------------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`    | number | `2`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
+| `config_version`    | number | `4`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
 | `language`          | string | `"system"` | Display language. Use `"system"` to follow the OS language, `"en"` for English, or `"ja"` for Japanese. Unsupported system languages fall back to English. |
 | `ai`                | object | See below  | AI assistant settings.                                                                                                                                     |
 | `external_control`  | object | See below  | Local external-control settings for the Terminal CLI and MCP compatibility adapter.                                                                        |
+| `shortcuts`         | object | See below  | Customizable application keyboard shortcuts.                                                                                                               |
 | `terminal`          | object | See below  | Terminal display and logging settings.                                                                                                                     |
 | `ssh`               | object | See below  | SSH connection compatibility settings.                                                                                                                     |
 | `saved_connections` | array  | `[]`       | Saved SSH and Telnet connection profiles. Profiles can be created, selected, and deleted from the connection dialog.                                       |
@@ -179,6 +186,19 @@ The `wait` mode and `run_terminal_command` wait for up to 60 seconds. `run_termi
 The previous `read_terminal_output_delta` and `wait_terminal_output` tools were removed. Replace them with `read_terminal_output` using `mode: "delta"` and `mode: "wait"`, respectively.
 
 The MCP compatibility adapter and CLI do not read saved credentials, expose API keys, or read log files directly. External clients can explicitly start and stop session logs, but they receive only the log state and file path, not the log contents. New SSH/Telnet connections are limited to saved profiles, Serial connections require an explicit available port name, and all new external connections require `external_control.connect_enabled=true`. Saved profiles can opt out with `saved_connections[*].external_control_enabled=false`. SSH connections still enforce known-host checks and request required credentials in the ExaTerm UI. Terminal output and log files can contain sensitive information, so enable external control only for trusted local clients.
+
+## shortcuts
+
+Each shortcut is either an object with `key`, `ctrl`, `alt`, and `shift` fields or `null` for an unassigned action. Printable keys and `Space` require `ctrl` or `alt`; `F1` through `F12` can be assigned without a modifier. Assignments must be unique, and `Alt+F4` is reserved by Windows.
+
+| Parameter                  | Default        | Action                                              |
+| -------------------------- | -------------- | --------------------------------------------------- |
+| `shortcuts.new_connection` | `Ctrl+N`       | Opens the new connection dialog.                    |
+| `shortcuts.new_tab`        | `Ctrl+T`       | Opens the new connection dialog for a new tab.      |
+| `shortcuts.new_window`     | `Ctrl+Shift+N` | Opens a new ExaTerm window.                         |
+| `shortcuts.open_settings`  | `Ctrl+,`       | Opens the Shortcuts and other application settings. |
+
+Letter keys are stored in lowercase, `Space` uses the literal string `"Space"`, and function keys use uppercase names such as `"F2"`. Modifier matching is exact. For example, `Ctrl+Shift+N` does not also match `Ctrl+N`.
 
 ## terminal
 

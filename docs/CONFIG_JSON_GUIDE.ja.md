@@ -29,7 +29,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 ```json
 {
-  "config_version": 2,
+  "config_version": 4,
   "language": "system",
   "ai": {
     "azure_openai_enabled": false,
@@ -46,6 +46,12 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "connect_enabled": false,
     "mcp_enabled": false,
     "cli_enabled": false
+  },
+  "shortcuts": {
+    "new_connection": { "key": "n", "ctrl": true, "alt": false, "shift": false },
+    "new_tab": { "key": "t", "ctrl": true, "alt": false, "shift": false },
+    "new_window": { "key": "n", "ctrl": true, "alt": false, "shift": true },
+    "open_settings": { "key": ",", "ctrl": true, "alt": false, "shift": false }
   },
   "terminal": {
     "font_size": 14,
@@ -74,10 +80,11 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 | パラメータ          | 型     | 既定値     | 説明                                                                                                                                            |
 | ------------------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`    | number | `2`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
+| `config_version`    | number | `4`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
 | `language`          | string | `"system"` | 画面表示言語です。`"system"` は OS の言語設定に従います。`"en"` は英語、`"ja"` は日本語です。未対応のシステム言語は英語にフォールバックします。 |
 | `ai`                | object | 下記参照   | AI アシスタント関連の設定です。                                                                                                                 |
 | `external_control`  | object | 下記参照   | ターミナル CLI と MCP 互換アダプターのためのローカル外部制御設定です。                                                                          |
+| `shortcuts`         | object | 下記参照   | アプリケーションのキーボードショートカット設定です。                                                                                            |
 | `terminal`          | object | 下記参照   | ターミナル表示とログ関連の設定です。                                                                                                            |
 | `ssh`               | object | 下記参照   | SSH 接続の互換性設定です。                                                                                                                      |
 | `saved_connections` | array  | `[]`       | 保存済み SSH/Telnet 接続プロファイルです。プロファイルは接続ダイアログから作成、選択、削除できます。                                            |
@@ -179,6 +186,19 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
 従来の `read_terminal_output_delta` と `wait_terminal_output` は削除されました。それぞれ `mode: "delta"` と `mode: "wait"` を指定した `read_terminal_output` に置き換えてください。
 
 MCP 互換アダプターと CLI は保存済み認証情報の読み取り、API キーの公開、ログファイル本文の直接読み取りを行いません。外部クライアントがログを開始・停止した場合も、受け取るのはログ状態とファイルパスだけです。SSH/Telnet 新規接続は保存済みプロファイルに限定され、シリアル接続は利用可能なポート名だけを対象にし、すべての外部新規接続には `external_control.connect_enabled=true` が必要です。プロファイルは `saved_connections[*].external_control_enabled=false` で除外できます。SSH の known_hosts 検証と ExaTerm UI での認証入力は維持されます。機密情報を含む可能性があるため、外部制御は信頼済みローカルクライアントに対してのみ有効化してください。
+
+## shortcuts
+
+各ショートカットは `key`、`ctrl`、`alt`、`shift` を持つオブジェクトです。未割り当てにする場合は `null` を指定します。通常キーと `Space` には `ctrl` または `alt` が必要です。`F1`～`F12` は修飾キーなしでも割り当てられます。割り当ての重複は許可されず、Windows が使用する `Alt+F4` は予約されています。
+
+| パラメータ                 | 既定値         | 操作                                       |
+| -------------------------- | -------------- | ------------------------------------------ |
+| `shortcuts.new_connection` | `Ctrl+N`       | 新規接続ダイアログを開きます。             |
+| `shortcuts.new_tab`        | `Ctrl+T`       | 新規タブ用の接続ダイアログを開きます。     |
+| `shortcuts.new_window`     | `Ctrl+Shift+N` | 新しい ExaTerm ウィンドウを開きます。      |
+| `shortcuts.open_settings`  | `Ctrl+,`       | ショートカットなどのアプリ設定を開きます。 |
+
+英字キーは小文字、空白キーは `"Space"`、ファンクションキーは `"F2"` のような大文字表記で保存されます。修飾キーは完全一致で判定するため、たとえば `Ctrl+Shift+N` は `Ctrl+N` としては実行されません。
 
 ## terminal
 

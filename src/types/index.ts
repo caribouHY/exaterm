@@ -91,9 +91,24 @@ export interface AppConfig {
   language: "system" | "en" | "ja" | (string & {});
   ai: AiConfig;
   external_control: ExternalControlConfig;
+  shortcuts: ShortcutConfig;
   terminal: TerminalConfig;
   ssh: SshConfig;
   saved_connections: SavedConnection[];
+}
+
+export interface ShortcutBinding {
+  key: string;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+}
+
+export interface ShortcutConfig {
+  new_connection: ShortcutBinding | null;
+  new_tab: ShortcutBinding | null;
+  new_window: ShortcutBinding | null;
+  open_settings: ShortcutBinding | null;
 }
 
 export interface ExternalControlConfig {
