@@ -341,6 +341,11 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
         .iter()
         .find(|tool| tool["name"] == "read_terminal_output")
         .unwrap();
+    assert_eq!(read_tool["inputSchema"]["type"], "object");
+    assert_eq!(
+        read_tool["inputSchema"]["oneOf"].as_array().unwrap().len(),
+        3
+    );
     let read_schema = read_tool["inputSchema"].to_string();
     assert!(read_schema.contains("\"mode\""));
     assert!(read_schema.contains("\"recent\""));
