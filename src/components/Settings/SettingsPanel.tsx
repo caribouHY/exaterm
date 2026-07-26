@@ -10,6 +10,7 @@ import { GeneralSettings } from "./GeneralSettings";
 import { LogSettings } from "./LogSettings";
 import { SettingsError, SettingsFooter } from "./SettingsFooter";
 import { SettingsSidebar } from "./SettingsSidebar";
+import { ShortcutsSettings } from "./ShortcutsSettings";
 import {
   SECRET_FIELDS,
   areConfigsEqual,
@@ -201,6 +202,10 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     );
   };
 
+  const updateShortcutConfig = (shortcuts: AppConfig["shortcuts"]) => {
+    setConfig((previous) => (previous ? { ...previous, shortcuts } : previous));
+  };
+
   const clearSecret = async (provider: SecretProvider, key: SecretKey) => {
     const confirmed = await confirm(t("settings.secret_clear_confirm_message"), {
       title: t("settings.secret_clear_confirm_title"),
@@ -280,6 +285,8 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             onClearSecret={(provider, key) => void clearSecret(provider, key)}
           />
         );
+      case "shortcuts":
+        return <ShortcutsSettings config={config.shortcuts} onChange={updateShortcutConfig} />;
       case "logs":
         return <LogSettings config={config.terminal} onChange={updateTerminalConfig} />;
       case "external_control":

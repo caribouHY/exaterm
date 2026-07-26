@@ -1,4 +1,5 @@
 import type { AiSecretStatus, AppConfig } from "../../types";
+import { normalizeShortcutConfig } from "../../features/shortcuts/shortcutModel";
 
 export type SecretKey = keyof AiSecretStatus;
 export type SecretProvider = "OpenAi" | "AzureOpenAi" | "Anthropic" | "Gemini" | "OpenRouter";
@@ -13,10 +14,11 @@ export type SecretFieldDefinition = {
   placeholder: string;
 };
 
-export type SettingsCategoryId = "general" | "ai" | "logs" | "external_control";
+export type SettingsCategoryId = "general" | "shortcuts" | "ai" | "logs" | "external_control";
 
 export const SETTINGS_CATEGORIES: Array<{ id: SettingsCategoryId; labelKey: string }> = [
   { id: "general", labelKey: "settings.category.general" },
+  { id: "shortcuts", labelKey: "settings.category.shortcuts" },
   { id: "ai", labelKey: "settings.category.ai" },
   { id: "logs", labelKey: "settings.category.logs" },
   { id: "external_control", labelKey: "settings.category.external_control" },
@@ -97,6 +99,7 @@ export function normalizeExternalControlConfig(config: AppConfig): AppConfig {
 
   return {
     ...config,
+    shortcuts: normalizeShortcutConfig(config.shortcuts),
     external_control: {
       enabled: false,
       connect_enabled: false,

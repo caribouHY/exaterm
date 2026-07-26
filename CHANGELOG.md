@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added editable keyboard shortcuts for new connections, windows, and Settings, with immediate updates across open windows.
+
 ### Fixed
 
 - Fixed MCP tool discovery in strict clients by declaring the `read_terminal_output` input schema as an object.

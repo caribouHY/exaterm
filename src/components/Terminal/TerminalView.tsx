@@ -9,7 +9,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useTranslation } from "react-i18next";
-import type { ConnectionType, Encoding, TerminalConfig, TerminalMode } from "../../types";
+import type {
+  ConnectionType,
+  Encoding,
+  ShortcutBinding,
+  ShortcutConfig,
+  TerminalConfig,
+  TerminalMode,
+} from "../../types";
+import { findShortcutAction, formatShortcut } from "../../features/shortcuts/shortcutModel";
 import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
 import { DEFAULT_TERMINAL_MODE } from "../../utils/terminalModes";
 import appIcon from "../../../src-tauri/icons/icon.png";
@@ -26,6 +34,7 @@ interface TerminalViewProps {
   isManualLogging: boolean;
   isLoggingPaused: boolean;
   terminalConfig?: TerminalConfig;
+  shortcuts: ShortcutConfig;
   terminalMode: TerminalMode;
   onOpenConnection: () => void;
   onTerminalData?: (data: string) => void;
@@ -96,6 +105,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     isManualLogging,
     isLoggingPaused,
     terminalConfig,
+    shortcuts,
     terminalMode,
     onOpenConnection,
     onTerminalData,
@@ -112,6 +122,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const isManualLoggingRef = useRef(isManualLogging);
   const isLoggingPausedRef = useRef(isLoggingPaused);
   const terminalModeRef = useRef(terminalMode);
+  const shortcutsRef = useRef(shortcuts);
   const decorationFrameRef = useRef<number | null>(null);
   const decorationRebuildRef = useRef(false);
   const contextMenuActionInProgressRef = useRef(false);
@@ -120,6 +131,10 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const autoLogSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
+
+  useEffect(() => {
+    shortcutsRef.current = shortcuts;
+  }, [shortcuts]);
   const manualLogSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
@@ -694,13 +709,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     });
 
     term.attachCustomKeyEventHandler((e) => {
-      if (e.ctrlKey || e.metaKey) {
-        const key = e.key.toLowerCase();
-        if (key === "n" || key === "t" || key === ",") {
-          return false;
-        }
-      }
-      return true;
+      return findShortcutAction(shortcutsRef.current, e) === null;
     });
 
     const fitAddon = new FitAddon();
@@ -977,18 +986,21 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
             {t("connection.new")}
           </button>
           <div className="terminal-view__empty-shortcuts">
-            <div className="terminal-view__shortcut">
-              <span className="terminal-view__key">Ctrl+N</span>
-              <span>{t("connection.new")}</span>
-            </div>
-            <div className="terminal-view__shortcut">
-              <span className="terminal-view__key">Ctrl+T</span>
-              <span>{t("terminal.new_tab")}</span>
-            </div>
-            <div className="terminal-view__shortcut">
-              <span className="terminal-view__key">Ctrl+,</span>
-              <span>{t("titlebar.menu.settings")}</span>
-            </div>
+            {(
+              [
+                { binding: shortcuts.new_connection, label: t("connection.new") },
+                { binding: shortcuts.new_window, label: t("titlebar.menu.new_window") },
+                { binding: shortcuts.open_settings, label: t("titlebar.menu.settings") },
+              ] satisfies Array<{ binding: ShortcutBinding | null; label: string }>
+            ).map(({ binding, label }) => {
+              const shortcut = formatShortcut(binding);
+              return shortcut ? (
+                <div className="terminal-view__shortcut" key={String(label)}>
+                  <span className="terminal-view__key">{shortcut}</span>
+                  <span>{label}</span>
+                </div>
+              ) : null;
+            })}
           </div>
         </div>
       </div>

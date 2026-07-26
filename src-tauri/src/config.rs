@@ -1,11 +1,13 @@
 use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
+use tauri::{AppHandle, Emitter};
 
 use crate::ai::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
 use crate::terminal_control::TerminalControlState;
 
-const CURRENT_CONFIG_VERSION: u32 = 3;
+const CURRENT_CONFIG_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppConfig {
@@ -13,6 +15,7 @@ pub struct AppConfig {
     pub language: String,
     pub ai: AiConfig,
     pub external_control: ExternalControlConfig,
+    pub shortcuts: ShortcutConfig,
     pub terminal: TerminalConfig,
     pub ssh: SshConfig,
     pub saved_connections: Vec<SavedConnection>,
@@ -20,6 +23,128 @@ pub struct AppConfig {
 
 fn default_language() -> String {
     "system".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct ShortcutBinding {
+    #[serde(default)]
+    pub key: String,
+    #[serde(default)]
+    pub ctrl: bool,
+    #[serde(default)]
+    pub alt: bool,
+    #[serde(default)]
+    pub shift: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ShortcutConfig {
+    #[serde(default = "default_new_connection_shortcut")]
+    pub new_connection: Option<ShortcutBinding>,
+    #[serde(default = "default_new_window_shortcut")]
+    pub new_window: Option<ShortcutBinding>,
+    #[serde(default = "default_open_settings_shortcut")]
+    pub open_settings: Option<ShortcutBinding>,
+}
+
+fn shortcut(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<ShortcutBinding> {
+    Some(ShortcutBinding {
+        key: key.into(),
+        ctrl,
+        alt,
+        shift,
+    })
+}
+
+fn default_new_connection_shortcut() -> Option<ShortcutBinding> {
+    shortcut("n", true, false, false)
+}
+
+fn default_new_window_shortcut() -> Option<ShortcutBinding> {
+    shortcut("n", true, false, true)
+}
+
+fn default_open_settings_shortcut() -> Option<ShortcutBinding> {
+    shortcut(",", true, false, false)
+}
+
+impl Default for ShortcutConfig {
+    fn default() -> Self {
+        Self {
+            new_connection: default_new_connection_shortcut(),
+            new_window: default_new_window_shortcut(),
+            open_settings: default_open_settings_shortcut(),
+        }
+    }
+}
+
+impl ShortcutBinding {
+    fn normalize(&mut self) {
+        if self.key == " " || self.key.eq_ignore_ascii_case("spacebar") {
+            self.key = "Space".into();
+        } else if is_function_key(&self.key) {
+            self.key.make_ascii_uppercase();
+        } else if self.key.len() == 1 && self.key.as_bytes()[0].is_ascii_uppercase() {
+            self.key.make_ascii_lowercase();
+        }
+    }
+}
+
+impl ShortcutConfig {
+    fn normalize(&mut self) {
+        for binding in [
+            &mut self.new_connection,
+            &mut self.new_window,
+            &mut self.open_settings,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            binding.normalize();
+        }
+    }
+}
+
+fn is_function_key(key: &str) -> bool {
+    key.get(0..1)
+        .filter(|prefix| prefix.eq_ignore_ascii_case("f"))
+        .and_then(|_| key.get(1..))
+        .and_then(|number| number.parse::<u8>().ok())
+        .is_some_and(|number| (1..=12).contains(&number))
+}
+
+fn validate_shortcut_config(shortcuts: &ShortcutConfig) -> Result<(), String> {
+    let mut bindings = HashSet::new();
+    for (action, binding) in [
+        ("new_connection", &shortcuts.new_connection),
+        ("new_window", &shortcuts.new_window),
+        ("open_settings", &shortcuts.open_settings),
+    ] {
+        let Some(binding) = binding else {
+            continue;
+        };
+
+        let is_printable_key = binding.key == "Space"
+            || (binding.key.chars().count() == 1
+                && binding
+                    .key
+                    .chars()
+                    .all(|character| !character.is_control() && !character.is_whitespace()));
+        let function_key = is_function_key(&binding.key);
+        if !is_printable_key && !function_key {
+            return Err(format!("Invalid shortcut key for {action}"));
+        }
+        if !function_key && !binding.ctrl && !binding.alt {
+            return Err(format!("Shortcut for {action} requires Ctrl or Alt"));
+        }
+        if binding.alt && binding.key == "F4" {
+            return Err(format!("Alt+F4 cannot be assigned to {action}"));
+        }
+        if !bindings.insert(binding.clone()) {
+            return Err("Shortcut assignments must be unique".into());
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -335,6 +460,7 @@ struct AppConfigInput {
     external_control: Option<ExternalControlConfigInput>,
     #[serde(rename = "mcp")]
     legacy_mcp: Option<LegacyMcpConfig>,
+    shortcuts: Option<ShortcutConfig>,
     terminal: Option<TerminalConfig>,
     ssh: Option<SshConfig>,
     saved_connections: Option<Vec<SavedConnection>>,
@@ -347,6 +473,7 @@ impl Default for AppConfig {
             language: default_language(),
             ai: AiConfig::default(),
             external_control: ExternalControlConfig::default(),
+            shortcuts: ShortcutConfig::default(),
             terminal: TerminalConfig::default(),
             ssh: SshConfig::default(),
             saved_connections: Vec::new(),
@@ -380,6 +507,7 @@ impl<'de> Deserialize<'de> for AppConfig {
                     .cli_enabled
                     .unwrap_or(legacy_mcp.cli_enabled),
             },
+            shortcuts: input.shortcuts.unwrap_or(defaults.shortcuts),
             terminal: input.terminal.unwrap_or(defaults.terminal),
             ssh: input.ssh.unwrap_or(defaults.ssh),
             saved_connections: input.saved_connections.unwrap_or_default(),
@@ -392,6 +520,7 @@ impl AppConfig {
         if self.config_version < CURRENT_CONFIG_VERSION {
             self.config_version = CURRENT_CONFIG_VERSION;
         }
+        self.shortcuts.normalize();
         self
     }
 }
@@ -417,6 +546,7 @@ pub(crate) fn config_read() -> Result<AppConfig, String> {
         let cfg: AppConfig = serde_json::from_str(&data).map_err(|e| e.to_string())?;
         let cfg = cfg.migrate();
         crate::ssh::validate_algorithm_config(&cfg.ssh)?;
+        validate_shortcut_config(&cfg.shortcuts)?;
         Ok(cfg)
     } else {
         Ok(AppConfig::default())
@@ -425,13 +555,18 @@ pub(crate) fn config_read() -> Result<AppConfig, String> {
 
 #[tauri::command]
 pub fn config_save(
+    app: AppHandle,
     terminals: tauri::State<'_, TerminalControlState>,
     config: AppConfig,
 ) -> Result<(), String> {
     let config = config.migrate();
     crate::ssh::validate_algorithm_config(&config.ssh)?;
+    validate_shortcut_config(&config.shortcuts)?;
     config_write(&config)?;
     terminals.set_output_limit_from_scrollback(config.terminal.scrollback);
+    if let Err(error) = app.emit("config://updated", ()) {
+        eprintln!("Failed to emit config update: {error}");
+    }
     Ok(())
 }
 
@@ -463,6 +598,7 @@ mod tests {
         assert!(!cfg.external_control.connect_enabled);
         assert!(!cfg.external_control.mcp_enabled);
         assert!(!cfg.external_control.cli_enabled);
+        assert_eq!(cfg.shortcuts, ShortcutConfig::default());
         assert_eq!(cfg.ai.azure_openai_endpoint, "");
         assert_eq!(cfg.ai.azure_openai_deployment, "");
         assert_eq!(cfg.terminal.font_size, 14);
@@ -777,5 +913,106 @@ mod tests {
 
         assert_eq!(cfg.language, "system");
         assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
+    }
+
+    #[test]
+    fn shortcut_config_preserves_explicit_null_and_defaults_missing_actions() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "shortcuts": {
+                    "new_connection": null,
+                    "new_window": {"key": "F2"},
+                    "new_tab": {"key": "t", "ctrl": true}
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(cfg.shortcuts.new_connection, None);
+        assert_eq!(
+            cfg.shortcuts.new_window,
+            Some(ShortcutBinding {
+                key: "F2".into(),
+                ctrl: false,
+                alt: false,
+                shift: false,
+            })
+        );
+        assert_eq!(
+            cfg.shortcuts.open_settings,
+            default_open_settings_shortcut()
+        );
+        let serialized = serde_json::to_value(cfg).unwrap();
+        assert!(serialized["shortcuts"].get("new_tab").is_none());
+    }
+
+    #[test]
+    fn shortcut_config_normalizes_keys_during_migration() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "shortcuts": {
+                    "new_connection": {"key": "N", "ctrl": true},
+                    "new_window": {"key": "f2"},
+                    "open_settings": null
+                }
+            }"#,
+        )
+        .unwrap();
+        let cfg = cfg.migrate();
+
+        assert_eq!(cfg.shortcuts.new_connection.as_ref().unwrap().key, "n");
+        assert_eq!(cfg.shortcuts.new_window.as_ref().unwrap().key, "F2");
+        assert!(validate_shortcut_config(&cfg.shortcuts).is_ok());
+    }
+
+    #[test]
+    fn shortcut_config_rejects_duplicate_assignments() {
+        let duplicate = Some(ShortcutBinding {
+            key: "n".into(),
+            ctrl: true,
+            alt: false,
+            shift: false,
+        });
+        let shortcuts = ShortcutConfig {
+            new_connection: duplicate.clone(),
+            new_window: None,
+            open_settings: duplicate,
+        };
+
+        assert_eq!(
+            validate_shortcut_config(&shortcuts),
+            Err("Shortcut assignments must be unique".into())
+        );
+    }
+
+    #[test]
+    fn shortcut_config_validates_modifier_and_function_key_rules() {
+        let mut shortcuts = ShortcutConfig {
+            new_connection: Some(ShortcutBinding {
+                key: "x".into(),
+                ctrl: false,
+                alt: false,
+                shift: false,
+            }),
+            new_window: None,
+            open_settings: None,
+        };
+        assert!(validate_shortcut_config(&shortcuts).is_err());
+
+        shortcuts.new_connection = Some(ShortcutBinding {
+            key: "F12".into(),
+            ctrl: false,
+            alt: false,
+            shift: false,
+        });
+        assert!(validate_shortcut_config(&shortcuts).is_ok());
+
+        shortcuts.new_connection = Some(ShortcutBinding {
+            key: "F4".into(),
+            ctrl: false,
+            alt: true,
+            shift: false,
+        });
+        assert!(validate_shortcut_config(&shortcuts).is_err());
     }
 }
