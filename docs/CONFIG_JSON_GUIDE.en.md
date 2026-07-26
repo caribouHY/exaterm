@@ -49,7 +49,6 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
   },
   "shortcuts": {
     "new_connection": { "key": "n", "ctrl": true, "alt": false, "shift": false },
-    "new_tab": { "key": "t", "ctrl": true, "alt": false, "shift": false },
     "new_window": { "key": "n", "ctrl": true, "alt": false, "shift": true },
     "open_settings": { "key": ",", "ctrl": true, "alt": false, "shift": false }
   },
@@ -194,7 +193,6 @@ Each shortcut is either an object with `key`, `ctrl`, `alt`, and `shift` fields 
 | Parameter                  | Default        | Action                                              |
 | -------------------------- | -------------- | --------------------------------------------------- |
 | `shortcuts.new_connection` | `Ctrl+N`       | Opens the new connection dialog.                    |
-| `shortcuts.new_tab`        | `Ctrl+T`       | Opens the new connection dialog for a new tab.      |
 | `shortcuts.new_window`     | `Ctrl+Shift+N` | Opens a new ExaTerm window.                         |
 | `shortcuts.open_settings`  | `Ctrl+,`       | Opens the Shortcuts and other application settings. |
 

@@ -512,7 +512,6 @@ export default function App() {
           openWindow();
           break;
         case "new_connection":
-        case "new_tab":
           openConnection();
           break;
         case "open_settings":

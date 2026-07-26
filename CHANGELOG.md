@@ -4,7 +4,7 @@
 
 ### Added
 
-- Added editable keyboard shortcuts for new connections, tabs, windows, and Settings, with immediate updates across open windows.
+- Added editable keyboard shortcuts for new connections, windows, and Settings, with immediate updates across open windows.
 
 ### Fixed
 

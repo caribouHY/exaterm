@@ -46,7 +46,7 @@ describe("shortcutModel", () => {
     expect(matchesShortcut(binding, keyEvent("N", { ctrlKey: true, shiftKey: true }))).toBe(false);
   });
 
-  it("keeps Ctrl+N and Ctrl+Shift+N as distinct actions", () => {
+  it("keeps new connection and new window shortcuts distinct", () => {
     expect(findShortcutAction(DEFAULT_SHORTCUT_CONFIG, keyEvent("n", { ctrlKey: true }))).toBe(
       "new_connection"
     );
@@ -78,7 +78,7 @@ describe("shortcutModel", () => {
 
   it("detects conflicts while ignoring the edited action", () => {
     expect(
-      findShortcutConflict(DEFAULT_SHORTCUT_CONFIG, "new_tab", {
+      findShortcutConflict(DEFAULT_SHORTCUT_CONFIG, "open_settings", {
         key: "N",
         ctrl: true,
         alt: false,
@@ -98,10 +98,10 @@ describe("shortcutModel", () => {
   it("fills missing actions without replacing explicit null assignments", () => {
     const normalized = normalizeShortcutConfig({
       new_connection: null,
-      new_tab: { key: "F2", ctrl: false, alt: false, shift: false },
+      new_window: { key: "F2", ctrl: false, alt: false, shift: false },
     });
     expect(normalized.new_connection).toBeNull();
-    expect(normalized.new_tab?.key).toBe("F2");
+    expect(normalized.new_window?.key).toBe("F2");
     expect(normalized.open_settings).toEqual(DEFAULT_SHORTCUT_CONFIG.open_settings);
   });
 });

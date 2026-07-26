@@ -49,7 +49,6 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
   },
   "shortcuts": {
     "new_connection": { "key": "n", "ctrl": true, "alt": false, "shift": false },
-    "new_tab": { "key": "t", "ctrl": true, "alt": false, "shift": false },
     "new_window": { "key": "n", "ctrl": true, "alt": false, "shift": true },
     "open_settings": { "key": ",", "ctrl": true, "alt": false, "shift": false }
   },
@@ -194,7 +193,6 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 | パラメータ                 | 既定値         | 操作                                       |
 | -------------------------- | -------------- | ------------------------------------------ |
 | `shortcuts.new_connection` | `Ctrl+N`       | 新規接続ダイアログを開きます。             |
-| `shortcuts.new_tab`        | `Ctrl+T`       | 新規タブ用の接続ダイアログを開きます。     |
 | `shortcuts.new_window`     | `Ctrl+Shift+N` | 新しい ExaTerm ウィンドウを開きます。      |
 | `shortcuts.open_settings`  | `Ctrl+,`       | ショートカットなどのアプリ設定を開きます。 |
 

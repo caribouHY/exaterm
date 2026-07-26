@@ -14,7 +14,6 @@
   "settings.shortcuts.title": "Keyboard Shortcuts",
   "settings.shortcuts.help": "Select an assignment and press a shortcut. Printable keys require Ctrl or Alt; F1–F12 can be assigned by themselves.",
   "settings.shortcuts.action.new_connection": "New connection",
-  "settings.shortcuts.action.new_tab": "New tab",
   "settings.shortcuts.action.new_window": "New window",
   "settings.shortcuts.action.open_settings": "Open settings",
   "settings.shortcuts.press_keys": "Press shortcut...",

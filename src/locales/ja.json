@@ -14,7 +14,6 @@
   "settings.shortcuts.title": "キーボードショートカット",
   "settings.shortcuts.help": "割り当て欄を選択してショートカットを押します。通常キーには Ctrl または Alt が必要です。F1～F12 は単独でも割り当てられます。",
   "settings.shortcuts.action.new_connection": "新規接続",
-  "settings.shortcuts.action.new_tab": "新規タブ",
   "settings.shortcuts.action.new_window": "新規ウィンドウ",
   "settings.shortcuts.action.open_settings": "設定を開く",
   "settings.shortcuts.press_keys": "ショートカットを入力...",

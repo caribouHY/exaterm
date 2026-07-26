@@ -106,7 +106,6 @@ export interface ShortcutBinding {
 
 export interface ShortcutConfig {
   new_connection: ShortcutBinding | null;
-  new_tab: ShortcutBinding | null;
   new_window: ShortcutBinding | null;
   open_settings: ShortcutBinding | null;
 }

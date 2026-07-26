@@ -41,8 +41,6 @@ pub struct ShortcutBinding {
 pub struct ShortcutConfig {
     #[serde(default = "default_new_connection_shortcut")]
     pub new_connection: Option<ShortcutBinding>,
-    #[serde(default = "default_new_tab_shortcut")]
-    pub new_tab: Option<ShortcutBinding>,
     #[serde(default = "default_new_window_shortcut")]
     pub new_window: Option<ShortcutBinding>,
     #[serde(default = "default_open_settings_shortcut")]
@@ -62,10 +60,6 @@ fn default_new_connection_shortcut() -> Option<ShortcutBinding> {
     shortcut("n", true, false, false)
 }
 
-fn default_new_tab_shortcut() -> Option<ShortcutBinding> {
-    shortcut("t", true, false, false)
-}
-
 fn default_new_window_shortcut() -> Option<ShortcutBinding> {
     shortcut("n", true, false, true)
 }
@@ -78,7 +72,6 @@ impl Default for ShortcutConfig {
     fn default() -> Self {
         Self {
             new_connection: default_new_connection_shortcut(),
-            new_tab: default_new_tab_shortcut(),
             new_window: default_new_window_shortcut(),
             open_settings: default_open_settings_shortcut(),
         }
@@ -101,7 +94,6 @@ impl ShortcutConfig {
     fn normalize(&mut self) {
         for binding in [
             &mut self.new_connection,
-            &mut self.new_tab,
             &mut self.new_window,
             &mut self.open_settings,
         ]
@@ -125,7 +117,6 @@ fn validate_shortcut_config(shortcuts: &ShortcutConfig) -> Result<(), String> {
     let mut bindings = HashSet::new();
     for (action, binding) in [
         ("new_connection", &shortcuts.new_connection),
-        ("new_tab", &shortcuts.new_tab),
         ("new_window", &shortcuts.new_window),
         ("open_settings", &shortcuts.open_settings),
     ] {
@@ -930,7 +921,8 @@ mod tests {
             r#"{
                 "shortcuts": {
                     "new_connection": null,
-                    "new_tab": {"key": "F2"}
+                    "new_window": {"key": "F2"},
+                    "new_tab": {"key": "t", "ctrl": true}
                 }
             }"#,
         )
@@ -938,7 +930,7 @@ mod tests {
 
         assert_eq!(cfg.shortcuts.new_connection, None);
         assert_eq!(
-            cfg.shortcuts.new_tab,
+            cfg.shortcuts.new_window,
             Some(ShortcutBinding {
                 key: "F2".into(),
                 ctrl: false,
@@ -950,6 +942,8 @@ mod tests {
             cfg.shortcuts.open_settings,
             default_open_settings_shortcut()
         );
+        let serialized = serde_json::to_value(cfg).unwrap();
+        assert!(serialized["shortcuts"].get("new_tab").is_none());
     }
 
     #[test]
@@ -958,8 +952,7 @@ mod tests {
             r#"{
                 "shortcuts": {
                     "new_connection": {"key": "N", "ctrl": true},
-                    "new_tab": {"key": "f2"},
-                    "new_window": null,
+                    "new_window": {"key": "f2"},
                     "open_settings": null
                 }
             }"#,
@@ -968,7 +961,7 @@ mod tests {
         let cfg = cfg.migrate();
 
         assert_eq!(cfg.shortcuts.new_connection.as_ref().unwrap().key, "n");
-        assert_eq!(cfg.shortcuts.new_tab.as_ref().unwrap().key, "F2");
+        assert_eq!(cfg.shortcuts.new_window.as_ref().unwrap().key, "F2");
         assert!(validate_shortcut_config(&cfg.shortcuts).is_ok());
     }
 
@@ -982,9 +975,8 @@ mod tests {
         });
         let shortcuts = ShortcutConfig {
             new_connection: duplicate.clone(),
-            new_tab: duplicate,
             new_window: None,
-            open_settings: None,
+            open_settings: duplicate,
         };
 
         assert_eq!(
@@ -1002,7 +994,6 @@ mod tests {
                 alt: false,
                 shift: false,
             }),
-            new_tab: None,
             new_window: None,
             open_settings: None,
         };

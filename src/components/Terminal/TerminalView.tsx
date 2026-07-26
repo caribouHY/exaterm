@@ -989,7 +989,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
             {(
               [
                 { binding: shortcuts.new_connection, label: t("connection.new") },
-                { binding: shortcuts.new_tab, label: t("terminal.new_tab") },
                 { binding: shortcuts.new_window, label: t("titlebar.menu.new_window") },
                 { binding: shortcuts.open_settings, label: t("titlebar.menu.settings") },
               ] satisfies Array<{ binding: ShortcutBinding | null; label: string }>

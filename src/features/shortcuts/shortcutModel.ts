@@ -22,14 +22,12 @@ export const SHORTCUT_ACTIONS: Array<{
   labelKey: string;
 }> = [
   { id: "new_connection", labelKey: "settings.shortcuts.action.new_connection" },
-  { id: "new_tab", labelKey: "settings.shortcuts.action.new_tab" },
   { id: "new_window", labelKey: "settings.shortcuts.action.new_window" },
   { id: "open_settings", labelKey: "settings.shortcuts.action.open_settings" },
 ];
 
 export const DEFAULT_SHORTCUT_CONFIG: ShortcutConfig = {
   new_connection: { key: "n", ctrl: true, alt: false, shift: false },
-  new_tab: { key: "t", ctrl: true, alt: false, shift: false },
   new_window: { key: "n", ctrl: true, alt: false, shift: true },
   open_settings: { key: ",", ctrl: true, alt: false, shift: false },
 };
@@ -37,7 +35,6 @@ export const DEFAULT_SHORTCUT_CONFIG: ShortcutConfig = {
 export function createDefaultShortcutConfig(): ShortcutConfig {
   return {
     new_connection: { ...DEFAULT_SHORTCUT_CONFIG.new_connection! },
-    new_tab: { ...DEFAULT_SHORTCUT_CONFIG.new_tab! },
     new_window: { ...DEFAULT_SHORTCUT_CONFIG.new_window! },
     open_settings: { ...DEFAULT_SHORTCUT_CONFIG.open_settings! },
   };
@@ -160,7 +157,6 @@ export function normalizeShortcutConfig(shortcuts?: Partial<ShortcutConfig>): Sh
   return {
     new_connection:
       shortcuts.new_connection === undefined ? defaults.new_connection : shortcuts.new_connection,
-    new_tab: shortcuts.new_tab === undefined ? defaults.new_tab : shortcuts.new_tab,
     new_window: shortcuts.new_window === undefined ? defaults.new_window : shortcuts.new_window,
     open_settings:
       shortcuts.open_settings === undefined ? defaults.open_settings : shortcuts.open_settings,
