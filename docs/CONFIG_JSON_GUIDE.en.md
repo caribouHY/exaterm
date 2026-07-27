@@ -50,7 +50,10 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
   "shortcuts": {
     "new_connection": { "key": "n", "ctrl": true, "alt": false, "shift": false },
     "new_window": { "key": "n", "ctrl": true, "alt": false, "shift": true },
-    "open_settings": { "key": ",", "ctrl": true, "alt": false, "shift": false }
+    "open_settings": { "key": ",", "ctrl": true, "alt": false, "shift": false },
+    "terminal_select_all": { "key": "a", "ctrl": true, "alt": false, "shift": true },
+    "terminal_copy": { "key": "c", "ctrl": true, "alt": false, "shift": true },
+    "terminal_paste": { "key": "v", "ctrl": true, "alt": false, "shift": true }
   },
   "terminal": {
     "font_size": 14,
@@ -190,13 +193,18 @@ The MCP compatibility adapter and CLI do not read saved credentials, expose API 
 
 Each shortcut is either an object with `key`, `ctrl`, `alt`, and `shift` fields or `null` for an unassigned action. Printable keys and `Space` require `ctrl` or `alt`; `F1` through `F12` can be assigned without a modifier. Assignments must be unique, and `Alt+F4` is reserved by Windows.
 
-| Parameter                  | Default        | Action                                              |
-| -------------------------- | -------------- | --------------------------------------------------- |
-| `shortcuts.new_connection` | `Ctrl+N`       | Opens the new connection dialog.                    |
-| `shortcuts.new_window`     | `Ctrl+Shift+N` | Opens a new ExaTerm window.                         |
-| `shortcuts.open_settings`  | `Ctrl+,`       | Opens the Shortcuts and other application settings. |
+| Parameter                       | Default        | Action                                              |
+| ------------------------------- | -------------- | --------------------------------------------------- |
+| `shortcuts.new_connection`      | `Ctrl+N`       | Opens the new connection dialog.                    |
+| `shortcuts.new_window`          | `Ctrl+Shift+N` | Opens a new ExaTerm window.                         |
+| `shortcuts.open_settings`       | `Ctrl+,`       | Opens the Shortcuts and other application settings. |
+| `shortcuts.terminal_select_all` | `Ctrl+Shift+A` | Selects the terminal screen and scrollback buffer.  |
+| `shortcuts.terminal_copy`       | `Ctrl+Shift+C` | Copies the selected terminal text.                  |
+| `shortcuts.terminal_paste`      | `Ctrl+Shift+V` | Pastes clipboard text into a connected terminal.    |
 
 Letter keys are stored in lowercase, `Space` uses the literal string `"Space"`, and function keys use uppercase names such as `"F2"`. Modifier matching is exact. For example, `Ctrl+Shift+N` does not also match `Ctrl+N`.
+
+Terminal shortcuts run only while the terminal has keyboard focus. Assigning `Ctrl+A`, `Ctrl+C`, or `Ctrl+V` to an application or terminal action overrides common remote shortcuts such as beginning-of-line, interrupt, and quoted insert while ExaTerm has focus.
 
 ## terminal
 

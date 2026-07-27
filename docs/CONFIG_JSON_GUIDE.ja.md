@@ -50,7 +50,10 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
   "shortcuts": {
     "new_connection": { "key": "n", "ctrl": true, "alt": false, "shift": false },
     "new_window": { "key": "n", "ctrl": true, "alt": false, "shift": true },
-    "open_settings": { "key": ",", "ctrl": true, "alt": false, "shift": false }
+    "open_settings": { "key": ",", "ctrl": true, "alt": false, "shift": false },
+    "terminal_select_all": { "key": "a", "ctrl": true, "alt": false, "shift": true },
+    "terminal_copy": { "key": "c", "ctrl": true, "alt": false, "shift": true },
+    "terminal_paste": { "key": "v", "ctrl": true, "alt": false, "shift": true }
   },
   "terminal": {
     "font_size": 14,
@@ -190,13 +193,18 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 
 各ショートカットは `key`、`ctrl`、`alt`、`shift` を持つオブジェクトです。未割り当てにする場合は `null` を指定します。通常キーと `Space` には `ctrl` または `alt` が必要です。`F1`～`F12` は修飾キーなしでも割り当てられます。割り当ての重複は許可されず、Windows が使用する `Alt+F4` は予約されています。
 
-| パラメータ                 | 既定値         | 操作                                       |
-| -------------------------- | -------------- | ------------------------------------------ |
-| `shortcuts.new_connection` | `Ctrl+N`       | 新規接続ダイアログを開きます。             |
-| `shortcuts.new_window`     | `Ctrl+Shift+N` | 新しい ExaTerm ウィンドウを開きます。      |
-| `shortcuts.open_settings`  | `Ctrl+,`       | ショートカットなどのアプリ設定を開きます。 |
+| パラメータ                      | 既定値         | 操作                                                       |
+| ------------------------------- | -------------- | ---------------------------------------------------------- |
+| `shortcuts.new_connection`      | `Ctrl+N`       | 新規接続ダイアログを開きます。                             |
+| `shortcuts.new_window`          | `Ctrl+Shift+N` | 新しい ExaTerm ウィンドウを開きます。                      |
+| `shortcuts.open_settings`       | `Ctrl+,`       | ショートカットなどのアプリ設定を開きます。                 |
+| `shortcuts.terminal_select_all` | `Ctrl+Shift+A` | ターミナルの画面とスクロールバック全体を選択します。       |
+| `shortcuts.terminal_copy`       | `Ctrl+Shift+C` | ターミナルで選択した文字をコピーします。                   |
+| `shortcuts.terminal_paste`      | `Ctrl+Shift+V` | 接続中のターミナルへクリップボードの文字をペーストします。 |
 
 英字キーは小文字、空白キーは `"Space"`、ファンクションキーは `"F2"` のような大文字表記で保存されます。修飾キーは完全一致で判定するため、たとえば `Ctrl+Shift+N` は `Ctrl+N` としては実行されません。
+
+ターミナル用ショートカットは、ターミナルにキーボードフォーカスがある場合だけ動作します。`Ctrl+A`、`Ctrl+C`、`Ctrl+V`をアプリまたはターミナル操作へ割り当てると、ExaTermにフォーカスがある間は、行頭移動、中断、quoted insertなどリモート側で一般的な操作より割り当てた操作が優先されます。
 
 ## terminal
 
