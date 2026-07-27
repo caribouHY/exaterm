@@ -45,6 +45,12 @@ pub struct ShortcutConfig {
     pub new_window: Option<ShortcutBinding>,
     #[serde(default = "default_open_settings_shortcut")]
     pub open_settings: Option<ShortcutBinding>,
+    #[serde(default = "default_terminal_select_all_shortcut")]
+    pub terminal_select_all: Option<ShortcutBinding>,
+    #[serde(default = "default_terminal_copy_shortcut")]
+    pub terminal_copy: Option<ShortcutBinding>,
+    #[serde(default = "default_terminal_paste_shortcut")]
+    pub terminal_paste: Option<ShortcutBinding>,
 }
 
 fn shortcut(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<ShortcutBinding> {
@@ -68,12 +74,27 @@ fn default_open_settings_shortcut() -> Option<ShortcutBinding> {
     shortcut(",", true, false, false)
 }
 
+fn default_terminal_select_all_shortcut() -> Option<ShortcutBinding> {
+    shortcut("a", true, false, true)
+}
+
+fn default_terminal_copy_shortcut() -> Option<ShortcutBinding> {
+    shortcut("c", true, false, true)
+}
+
+fn default_terminal_paste_shortcut() -> Option<ShortcutBinding> {
+    shortcut("v", true, false, true)
+}
+
 impl Default for ShortcutConfig {
     fn default() -> Self {
         Self {
             new_connection: default_new_connection_shortcut(),
             new_window: default_new_window_shortcut(),
             open_settings: default_open_settings_shortcut(),
+            terminal_select_all: default_terminal_select_all_shortcut(),
+            terminal_copy: default_terminal_copy_shortcut(),
+            terminal_paste: default_terminal_paste_shortcut(),
         }
     }
 }
@@ -96,6 +117,9 @@ impl ShortcutConfig {
             &mut self.new_connection,
             &mut self.new_window,
             &mut self.open_settings,
+            &mut self.terminal_select_all,
+            &mut self.terminal_copy,
+            &mut self.terminal_paste,
         ]
         .into_iter()
         .flatten()
@@ -119,6 +143,9 @@ fn validate_shortcut_config(shortcuts: &ShortcutConfig) -> Result<(), String> {
         ("new_connection", &shortcuts.new_connection),
         ("new_window", &shortcuts.new_window),
         ("open_settings", &shortcuts.open_settings),
+        ("terminal_select_all", &shortcuts.terminal_select_all),
+        ("terminal_copy", &shortcuts.terminal_copy),
+        ("terminal_paste", &shortcuts.terminal_paste),
     ] {
         let Some(binding) = binding else {
             continue;
@@ -922,6 +949,7 @@ mod tests {
                 "shortcuts": {
                     "new_connection": null,
                     "new_window": {"key": "F2"},
+                    "terminal_copy": null,
                     "new_tab": {"key": "t", "ctrl": true}
                 }
             }"#,
@@ -942,6 +970,15 @@ mod tests {
             cfg.shortcuts.open_settings,
             default_open_settings_shortcut()
         );
+        assert_eq!(
+            cfg.shortcuts.terminal_select_all,
+            default_terminal_select_all_shortcut()
+        );
+        assert_eq!(cfg.shortcuts.terminal_copy, None);
+        assert_eq!(
+            cfg.shortcuts.terminal_paste,
+            default_terminal_paste_shortcut()
+        );
         let serialized = serde_json::to_value(cfg).unwrap();
         assert!(serialized["shortcuts"].get("new_tab").is_none());
     }
@@ -953,7 +990,8 @@ mod tests {
                 "shortcuts": {
                     "new_connection": {"key": "N", "ctrl": true},
                     "new_window": {"key": "f2"},
-                    "open_settings": null
+                    "open_settings": null,
+                    "terminal_select_all": {"key": "A", "ctrl": true, "shift": true}
                 }
             }"#,
         )
@@ -962,6 +1000,7 @@ mod tests {
 
         assert_eq!(cfg.shortcuts.new_connection.as_ref().unwrap().key, "n");
         assert_eq!(cfg.shortcuts.new_window.as_ref().unwrap().key, "F2");
+        assert_eq!(cfg.shortcuts.terminal_select_all.as_ref().unwrap().key, "a");
         assert!(validate_shortcut_config(&cfg.shortcuts).is_ok());
     }
 
@@ -976,7 +1015,10 @@ mod tests {
         let shortcuts = ShortcutConfig {
             new_connection: duplicate.clone(),
             new_window: None,
-            open_settings: duplicate,
+            open_settings: None,
+            terminal_select_all: None,
+            terminal_copy: duplicate,
+            terminal_paste: None,
         };
 
         assert_eq!(
@@ -996,6 +1038,9 @@ mod tests {
             }),
             new_window: None,
             open_settings: None,
+            terminal_select_all: None,
+            terminal_copy: None,
+            terminal_paste: None,
         };
         assert!(validate_shortcut_config(&shortcuts).is_err());
 

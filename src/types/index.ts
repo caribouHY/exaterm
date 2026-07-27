@@ -108,6 +108,9 @@ export interface ShortcutConfig {
   new_connection: ShortcutBinding | null;
   new_window: ShortcutBinding | null;
   open_settings: ShortcutBinding | null;
+  terminal_select_all: ShortcutBinding | null;
+  terminal_copy: ShortcutBinding | null;
+  terminal_paste: ShortcutBinding | null;
 }
 
 export interface ExternalControlConfig {

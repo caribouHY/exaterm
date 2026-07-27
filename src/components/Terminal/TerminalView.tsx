@@ -125,7 +125,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const shortcutsRef = useRef(shortcuts);
   const decorationFrameRef = useRef<number | null>(null);
   const decorationRebuildRef = useRef(false);
-  const contextMenuActionInProgressRef = useRef(false);
+  const clipboardActionInProgressRef = useRef(false);
   const promptDecorationsRef = useRef<Map<number, PromptDecorationSet>>(new Map());
   const errorDecorationsRef = useRef<Map<number, LineDecorationSet>>(new Map());
   const autoLogSanitizerRef = useRef(
@@ -708,10 +708,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       allowProposedApi: true,
     });
 
-    term.attachCustomKeyEventHandler((e) => {
-      return findShortcutAction(shortcutsRef.current, e) === null;
-    });
-
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon();
     const searchAddon = new SearchAddon();
@@ -737,60 +733,103 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     });
     let disposed = false;
 
-    const handleContextMenu = (event: MouseEvent) => {
-      event.preventDefault();
-      if (contextMenuActionInProgressRef.current) return;
-      contextMenuActionInProgressRef.current = true;
+    const copyTerminalSelection = async (clearSelectionAfterCopy: boolean) => {
+      const selection = term.getSelection();
+      if (selection.length === 0) {
+        return;
+      }
 
-      void (async () => {
-        try {
-          const selection = term.getSelection();
-          if (selection.length > 0) {
-            await writeText(selection);
-            if (!disposed) {
-              term.clearSelection();
-            }
-            return;
+      await writeText(selection);
+      if (clearSelectionAfterCopy && !disposed) {
+        term.clearSelection();
+      }
+    };
+
+    const pasteClipboardIntoTerminal = async () => {
+      if (!isConnectedRef.current) {
+        return;
+      }
+
+      const clipboardText = await readText();
+      if (disposed || clipboardText.length === 0) {
+        return;
+      }
+
+      const hasMultipleLines = clipboardText.includes("\n") || clipboardText.includes("\r");
+      if (hasMultipleLines) {
+        const shouldPaste = await confirm(
+          t("terminal.multiline_paste_message", { content: clipboardText }),
+          {
+            title: t("terminal.multiline_paste_title"),
+            kind: "warning",
+            okLabel: t("terminal.multiline_paste_confirm"),
+            cancelLabel: t("terminal.multiline_paste_cancel"),
           }
+        );
 
-          if (!isConnectedRef.current) {
-            return;
-          }
+        if (!shouldPaste || disposed) {
+          return;
+        }
+      }
 
-          const clipboardText = await readText();
-          if (disposed || clipboardText.length === 0) {
-            return;
-          }
+      term.paste(clipboardText);
+    };
 
-          const hasMultipleLines = clipboardText.includes("\n") || clipboardText.includes("\r");
-          if (hasMultipleLines) {
-            const shouldPaste = await confirm(
-              t("terminal.multiline_paste_message", { content: clipboardText }),
-              {
-                title: t("terminal.multiline_paste_title"),
-                kind: "warning",
-                okLabel: t("terminal.multiline_paste_confirm"),
-                cancelLabel: t("terminal.multiline_paste_cancel"),
-              }
-            );
+    const runClipboardAction = (action: () => Promise<void>) => {
+      if (clipboardActionInProgressRef.current) {
+        return;
+      }
+      clipboardActionInProgressRef.current = true;
 
-            if (!shouldPaste || disposed) {
-              return;
-            }
-          }
-
-          if (!disposed) {
-            term.paste(clipboardText);
-          }
-        } catch {
+      void action()
+        .catch(() => {
           // Clipboard failures should not send anything to the terminal.
-        } finally {
-          contextMenuActionInProgressRef.current = false;
+        })
+        .finally(() => {
+          clipboardActionInProgressRef.current = false;
           if (!disposed) {
             term.focus();
           }
-        }
-      })();
+        });
+    };
+
+    term.attachCustomKeyEventHandler((event) => {
+      if (findShortcutAction(shortcutsRef.current, event, "application")) {
+        return false;
+      }
+
+      const action = findShortcutAction(shortcutsRef.current, event, "terminal");
+      if (!action) {
+        return true;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.type !== "keydown" || event.repeat) {
+        return false;
+      }
+
+      switch (action) {
+        case "terminal_select_all":
+          term.selectAll();
+          break;
+        case "terminal_copy":
+          runClipboardAction(() => copyTerminalSelection(false));
+          break;
+        case "terminal_paste":
+          runClipboardAction(pasteClipboardIntoTerminal);
+          break;
+      }
+      return false;
+    });
+
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      runClipboardAction(
+        term.getSelection().length > 0
+          ? () => copyTerminalSelection(true)
+          : pasteClipboardIntoTerminal
+      );
     };
 
     terminalElement.addEventListener("contextmenu", handleContextMenu);

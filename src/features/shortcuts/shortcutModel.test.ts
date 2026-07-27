@@ -47,12 +47,28 @@ describe("shortcutModel", () => {
   });
 
   it("keeps new connection and new window shortcuts distinct", () => {
-    expect(findShortcutAction(DEFAULT_SHORTCUT_CONFIG, keyEvent("n", { ctrlKey: true }))).toBe(
-      "new_connection"
-    );
     expect(
-      findShortcutAction(DEFAULT_SHORTCUT_CONFIG, keyEvent("N", { ctrlKey: true, shiftKey: true }))
+      findShortcutAction(DEFAULT_SHORTCUT_CONFIG, keyEvent("n", { ctrlKey: true }), "application")
+    ).toBe("new_connection");
+    expect(
+      findShortcutAction(
+        DEFAULT_SHORTCUT_CONFIG,
+        keyEvent("N", { ctrlKey: true, shiftKey: true }),
+        "application"
+      )
     ).toBe("new_window");
+  });
+
+  it("keeps terminal shortcuts scoped to the terminal", () => {
+    const copyEvent = keyEvent("C", { ctrlKey: true, shiftKey: true });
+
+    expect(findShortcutAction(DEFAULT_SHORTCUT_CONFIG, copyEvent, "terminal")).toBe(
+      "terminal_copy"
+    );
+    expect(findShortcutAction(DEFAULT_SHORTCUT_CONFIG, copyEvent, "application")).toBeNull();
+    expect(
+      findShortcutAction(DEFAULT_SHORTCUT_CONFIG, keyEvent("c", { ctrlKey: true }), "terminal")
+    ).toBeNull();
   });
 
   it("captures standalone function keys and rejects standalone characters", () => {
@@ -93,15 +109,27 @@ describe("shortcutModel", () => {
         shift: false,
       })
     ).toBeNull();
+    expect(
+      findShortcutConflict(DEFAULT_SHORTCUT_CONFIG, "new_connection", {
+        key: "C",
+        ctrl: true,
+        alt: false,
+        shift: true,
+      })
+    ).toBe("terminal_copy");
   });
 
   it("fills missing actions without replacing explicit null assignments", () => {
     const normalized = normalizeShortcutConfig({
       new_connection: null,
       new_window: { key: "F2", ctrl: false, alt: false, shift: false },
+      terminal_copy: null,
     });
     expect(normalized.new_connection).toBeNull();
     expect(normalized.new_window?.key).toBe("F2");
     expect(normalized.open_settings).toEqual(DEFAULT_SHORTCUT_CONFIG.open_settings);
+    expect(normalized.terminal_select_all).toEqual(DEFAULT_SHORTCUT_CONFIG.terminal_select_all);
+    expect(normalized.terminal_copy).toBeNull();
+    expect(normalized.terminal_paste).toEqual(DEFAULT_SHORTCUT_CONFIG.terminal_paste);
   });
 });

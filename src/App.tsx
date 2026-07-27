@@ -503,7 +503,7 @@ export default function App() {
         return;
       }
 
-      const action = findShortcutAction(shortcuts, e);
+      const action = findShortcutAction(shortcuts, e, "application");
       if (!action) return;
 
       e.preventDefault();
