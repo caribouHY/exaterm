@@ -76,3 +76,21 @@ chore: update build dependencies
 Pull Request は `dev` ブランチ宛てに作成します。
 
 Pull Request では、GitHub Actions の CI workflow が `windows-latest` で実行されます。依存関係のインストール、フォーマットチェック、フロントエンドビルド、Rust テストを確認します。
+
+## Updater の署名
+
+Updater では専用の Tauri 署名鍵を使用します。この署名は更新がプロジェクトによって生成されたことを検証するもので、Windows Authenticode 署名とは別です。
+
+- 秘密鍵はリポジトリ外に保管し、コミットしないでください。
+- 鍵のパスワードは保護された資格情報ストアに保存してください。
+- Updater 対応版の公開後は、鍵を置き換えたり紛失したりしないでください。既存のインストール環境は、別の鍵で署名された更新を拒否します。
+- `src-tauri/tauri.conf.json`には公開鍵だけをコミットします。
+
+リリースworkflowでは、次のGitHub Actions secretsを使用します。
+
+- `TAURI_SIGNING_PRIVATE_KEY`: 秘密鍵ファイルの内容全体
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: 秘密鍵のパスワード
+
+リリースビルドでは`src-tauri/tauri.release.conf.json`をマージし、通常のdebug buildで署名secretを要求せずに、署名済みUpdater成果物を有効にします。draft Releaseを公開する前に、MSI/NSISインストーラー、各`.sig`ファイル、`latest.json`が含まれていることを確認してください。
+
+最初のUpdater対応版は手動でインストールする必要があります。次の正式版を使って、アプリ内更新フロー全体を確認してください。

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added signed in-app updates for published stable releases, with startup and manual checks, release notes, download progress, and confirmation before connected terminal sessions are closed.
 - Added editable keyboard shortcuts for new connections, windows, and Settings, with immediate updates across open windows.
 - Added configurable terminal shortcuts for selecting the full buffer, copying selected text, and pasting clipboard text without overriding common remote control keys by default.
 

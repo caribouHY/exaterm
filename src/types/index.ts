@@ -89,12 +89,17 @@ export type ManualLogWriteMode = "overwrite" | "append";
 export interface AppConfig {
   config_version: number;
   language: "system" | "en" | "ja" | (string & {});
+  updates: UpdateConfig;
   ai: AiConfig;
   external_control: ExternalControlConfig;
   shortcuts: ShortcutConfig;
   terminal: TerminalConfig;
   ssh: SshConfig;
   saved_connections: SavedConnection[];
+}
+
+export interface UpdateConfig {
+  check_on_startup: boolean;
 }
 
 export interface ShortcutBinding {
