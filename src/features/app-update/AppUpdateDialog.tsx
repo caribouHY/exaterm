@@ -125,7 +125,9 @@ export function AppUpdateDialog({ controller }: AppUpdateDialogProps) {
                 </button>
                 <button
                   className="btn btn-primary"
-                  onClick={() => controller.install(state.update)}
+                  onClick={() => {
+                    controller.install(state.update);
+                  }}
                 >
                   {t("updates.download_and_install")}
                 </button>
@@ -141,7 +143,9 @@ export function AppUpdateDialog({ controller }: AppUpdateDialogProps) {
                 </button>
                 <button
                   className="btn btn-danger"
-                  onClick={() => controller.confirmInstallWithActiveSessions(state.update)}
+                  onClick={() => {
+                    controller.confirmInstallWithActiveSessions(state.update);
+                  }}
                 >
                   {t("updates.update_anyway")}
                 </button>

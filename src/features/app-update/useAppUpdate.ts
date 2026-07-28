@@ -79,7 +79,11 @@ export function useAppUpdate({ windowId, checkOnStartup }: UseAppUpdateOptions) 
     checkManually: () => void check("manual"),
     install: (update: AppUpdateMetadata) => void install(update, false),
     confirmInstallWithActiveSessions: (update: AppUpdateMetadata) => void install(update, true),
-    cancelActiveSessionConfirmation: () => dispatch({ type: "cancel_active_session_confirmation" }),
-    close: () => dispatch({ type: "close" }),
+    cancelActiveSessionConfirmation: () => {
+      dispatch({ type: "cancel_active_session_confirmation" });
+    },
+    close: () => {
+      dispatch({ type: "close" });
+    },
   };
 }
