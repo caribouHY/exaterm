@@ -7,12 +7,13 @@ use tauri::{AppHandle, Emitter};
 use crate::ai::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
 use crate::terminal_control::TerminalControlState;
 
-const CURRENT_CONFIG_VERSION: u32 = 4;
+const CURRENT_CONFIG_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppConfig {
     pub config_version: u32,
     pub language: String,
+    pub updates: UpdateConfig,
     pub ai: AiConfig,
     pub external_control: ExternalControlConfig,
     pub shortcuts: ShortcutConfig,
@@ -23,6 +24,24 @@ pub struct AppConfig {
 
 fn default_language() -> String {
     "system".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UpdateConfig {
+    #[serde(default = "default_check_on_startup")]
+    pub check_on_startup: bool,
+}
+
+fn default_check_on_startup() -> bool {
+    true
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        Self {
+            check_on_startup: default_check_on_startup(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -483,6 +502,7 @@ impl<'de> Deserialize<'de> for SavedConnection {
 struct AppConfigInput {
     config_version: Option<u32>,
     language: Option<String>,
+    updates: Option<UpdateConfig>,
     ai: Option<AiConfig>,
     external_control: Option<ExternalControlConfigInput>,
     #[serde(rename = "mcp")]
@@ -498,6 +518,7 @@ impl Default for AppConfig {
         Self {
             config_version: CURRENT_CONFIG_VERSION,
             language: default_language(),
+            updates: UpdateConfig::default(),
             ai: AiConfig::default(),
             external_control: ExternalControlConfig::default(),
             shortcuts: ShortcutConfig::default(),
@@ -521,6 +542,7 @@ impl<'de> Deserialize<'de> for AppConfig {
         Ok(Self {
             config_version: input.config_version.unwrap_or(0),
             language: input.language.unwrap_or_else(default_language),
+            updates: input.updates.unwrap_or(defaults.updates),
             ai: input.ai.unwrap_or(defaults.ai),
             external_control: ExternalControlConfig {
                 enabled: external_control.enabled.unwrap_or(legacy_mcp.enabled),
@@ -612,11 +634,13 @@ mod tests {
 
     #[test]
     fn partial_config_uses_defaults_and_migrates_version() {
-        let cfg: AppConfig = serde_json::from_str(r#"{"language":"ja"}"#).unwrap();
+        let cfg: AppConfig =
+            serde_json::from_str(r#"{"config_version":4,"language":"ja"}"#).unwrap();
         let cfg = cfg.migrate();
 
         assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
         assert_eq!(cfg.language, "ja");
+        assert!(cfg.updates.check_on_startup);
         assert_eq!(cfg.ai.default_provider, DEFAULT_AI_PROVIDER);
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
         assert!(!cfg.ai.debug_log_enabled);
@@ -636,6 +660,23 @@ mod tests {
         assert_eq!(cfg.ssh.algorithm_mode, "default");
         assert_eq!(cfg.ssh.algorithms, SshAlgorithmSelection::default());
         assert!(cfg.saved_connections.is_empty());
+    }
+
+    #[test]
+    fn update_preference_round_trips_when_disabled() {
+        let cfg = serde_json::from_str::<AppConfig>(
+            r#"{
+                "config_version": 5,
+                "updates": {"check_on_startup": false}
+            }"#,
+        )
+        .unwrap()
+        .migrate();
+
+        assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
+        assert!(!cfg.updates.check_on_startup);
+        let value = serde_json::to_value(cfg).unwrap();
+        assert_eq!(value["updates"]["check_on_startup"], false);
     }
 
     #[test]

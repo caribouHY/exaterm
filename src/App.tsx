@@ -37,6 +37,8 @@ import { useWindowTabs } from "./features/workspace-tabs/useWindowTabs";
 import { useTerminalTabLifecycle } from "./features/workspace-tabs/useTerminalTabLifecycle";
 import { useWorkspaceTabMovement } from "./features/workspace-tabs/useWorkspaceTabMovement";
 import { DEFAULT_SHORTCUT_CONFIG, findShortcutAction } from "./features/shortcuts/shortcutModel";
+import { AppUpdateDialog } from "./features/app-update/AppUpdateDialog";
+import { useAppUpdate } from "./features/app-update/useAppUpdate";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -116,6 +118,10 @@ export default function App() {
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
   const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
   const shortcuts = config?.shortcuts ?? DEFAULT_SHORTCUT_CONFIG;
+  const appUpdate = useAppUpdate({
+    windowId: windowTabs.windowId,
+    checkOnStartup: config ? config.updates.check_on_startup : null,
+  });
 
   const removeTerminalFromState = useCallback(
     (tabId: string) => {
@@ -612,7 +618,9 @@ export default function App() {
         onOpenConnection={openConnection}
         onOpenWindow={openWindow}
         onToggleAiPanel={toggleAiPanel}
+        onCheckForUpdates={appUpdate.checkManually}
       />
+      <AppUpdateDialog controller={appUpdate} />
       <div className="app__body">
         <div className="app__main">
           <div className="app__content">

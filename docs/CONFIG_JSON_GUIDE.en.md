@@ -29,8 +29,11 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 ```json
 {
-  "config_version": 4,
+  "config_version": 5,
   "language": "system",
+  "updates": {
+    "check_on_startup": true
+  },
   "ai": {
     "azure_openai_enabled": false,
     "azure_openai_endpoint": "",
@@ -82,14 +85,23 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 | Parameter           | Type   | Default    | Description                                                                                                                                                |
 | ------------------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`    | number | `4`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
+| `config_version`    | number | `5`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
 | `language`          | string | `"system"` | Display language. Use `"system"` to follow the OS language, `"en"` for English, or `"ja"` for Japanese. Unsupported system languages fall back to English. |
+| `updates`           | object | See below  | Controls automatic checks for published stable ExaTerm updates.                                                                                            |
 | `ai`                | object | See below  | AI assistant settings.                                                                                                                                     |
 | `external_control`  | object | See below  | Local external-control settings for the Terminal CLI and MCP compatibility adapter.                                                                        |
 | `shortcuts`         | object | See below  | Customizable application keyboard shortcuts.                                                                                                               |
 | `terminal`          | object | See below  | Terminal display and logging settings.                                                                                                                     |
 | `ssh`               | object | See below  | SSH connection compatibility settings.                                                                                                                     |
 | `saved_connections` | array  | `[]`       | Saved SSH and Telnet connection profiles. Profiles can be created, selected, and deleted from the connection dialog.                                       |
+
+## updates
+
+| Key                | Type    | Default | Description                                                                                                                                     |
+| ------------------ | ------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check_on_startup` | boolean | `true`  | Checks once for the latest published stable release when the main ExaTerm window starts. Downloads and installation still require confirmation. |
+
+Manual update checks remain available from the app menu when this value is `false`.
 
 ## ai
 

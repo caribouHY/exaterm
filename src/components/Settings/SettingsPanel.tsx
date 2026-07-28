@@ -182,6 +182,12 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     );
   };
 
+  const updateUpdateConfig = (patch: Partial<AppConfig["updates"]>) => {
+    setConfig((previous) =>
+      previous ? { ...previous, updates: { ...previous.updates, ...patch } } : previous
+    );
+  };
+
   const updateExternalControlConfig = (patch: Partial<AppConfig["external_control"]>) => {
     setConfig((previous) =>
       previous
@@ -249,11 +255,13 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         return (
           <GeneralSettings
             language={config.language}
+            updateConfig={config.updates}
             terminalConfig={config.terminal}
             sshConfig={config.ssh}
             sshAlgorithmCatalog={sshAlgorithmCatalog}
             sshAlgorithmCatalogLoadFailed={sshAlgorithmCatalogLoadFailed}
             onLanguageChange={updateLanguage}
+            onUpdateChange={updateUpdateConfig}
             onTerminalChange={updateTerminalConfig}
             onSshChange={updateSshConfig}
             onReloadSshAlgorithmCatalog={() => void loadSshAlgorithmCatalog()}

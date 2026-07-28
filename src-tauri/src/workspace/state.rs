@@ -114,6 +114,11 @@ impl WorkspaceState {
         snapshot_for_locked(&model, &window_id)
     }
 
+    pub async fn connected_session_count(&self) -> usize {
+        let model = self.model.lock().await;
+        model.tabs.values().filter(|tab| tab.is_connected).count()
+    }
+
     pub async fn register_tab(&self, input: WorkspaceTabRegisterInput) -> WorkspaceSnapshot {
         let mut model = self.model.lock().await;
         let previous = model.clone();
