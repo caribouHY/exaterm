@@ -70,6 +70,16 @@ pub struct ShortcutConfig {
     pub terminal_copy: Option<ShortcutBinding>,
     #[serde(default = "default_terminal_paste_shortcut")]
     pub terminal_paste: Option<ShortcutBinding>,
+    #[serde(default = "default_terminal_log_start_overwrite_shortcut")]
+    pub terminal_log_start_overwrite: Option<ShortcutBinding>,
+    #[serde(default)]
+    pub terminal_log_start_append: Option<ShortcutBinding>,
+    #[serde(default = "default_terminal_log_stop_shortcut")]
+    pub terminal_log_stop: Option<ShortcutBinding>,
+    #[serde(default)]
+    pub terminal_log_pause: Option<ShortcutBinding>,
+    #[serde(default)]
+    pub terminal_log_resume: Option<ShortcutBinding>,
 }
 
 fn shortcut(key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<ShortcutBinding> {
@@ -105,6 +115,14 @@ fn default_terminal_paste_shortcut() -> Option<ShortcutBinding> {
     shortcut("v", true, false, true)
 }
 
+fn default_terminal_log_start_overwrite_shortcut() -> Option<ShortcutBinding> {
+    shortcut("F9", true, false, true)
+}
+
+fn default_terminal_log_stop_shortcut() -> Option<ShortcutBinding> {
+    shortcut("F10", true, false, true)
+}
+
 impl Default for ShortcutConfig {
     fn default() -> Self {
         Self {
@@ -114,6 +132,11 @@ impl Default for ShortcutConfig {
             terminal_select_all: default_terminal_select_all_shortcut(),
             terminal_copy: default_terminal_copy_shortcut(),
             terminal_paste: default_terminal_paste_shortcut(),
+            terminal_log_start_overwrite: default_terminal_log_start_overwrite_shortcut(),
+            terminal_log_start_append: None,
+            terminal_log_stop: default_terminal_log_stop_shortcut(),
+            terminal_log_pause: None,
+            terminal_log_resume: None,
         }
     }
 }
@@ -139,6 +162,11 @@ impl ShortcutConfig {
             &mut self.terminal_select_all,
             &mut self.terminal_copy,
             &mut self.terminal_paste,
+            &mut self.terminal_log_start_overwrite,
+            &mut self.terminal_log_start_append,
+            &mut self.terminal_log_stop,
+            &mut self.terminal_log_pause,
+            &mut self.terminal_log_resume,
         ]
         .into_iter()
         .flatten()
@@ -165,6 +193,17 @@ fn validate_shortcut_config(shortcuts: &ShortcutConfig) -> Result<(), String> {
         ("terminal_select_all", &shortcuts.terminal_select_all),
         ("terminal_copy", &shortcuts.terminal_copy),
         ("terminal_paste", &shortcuts.terminal_paste),
+        (
+            "terminal_log_start_overwrite",
+            &shortcuts.terminal_log_start_overwrite,
+        ),
+        (
+            "terminal_log_start_append",
+            &shortcuts.terminal_log_start_append,
+        ),
+        ("terminal_log_stop", &shortcuts.terminal_log_stop),
+        ("terminal_log_pause", &shortcuts.terminal_log_pause),
+        ("terminal_log_resume", &shortcuts.terminal_log_resume),
     ] {
         let Some(binding) = binding else {
             continue;
@@ -991,6 +1030,7 @@ mod tests {
                     "new_connection": null,
                     "new_window": {"key": "F2"},
                     "terminal_copy": null,
+                    "terminal_log_start_append": null,
                     "new_tab": {"key": "t", "ctrl": true}
                 }
             }"#,
@@ -1020,6 +1060,17 @@ mod tests {
             cfg.shortcuts.terminal_paste,
             default_terminal_paste_shortcut()
         );
+        assert_eq!(
+            cfg.shortcuts.terminal_log_start_overwrite,
+            default_terminal_log_start_overwrite_shortcut()
+        );
+        assert_eq!(cfg.shortcuts.terminal_log_start_append, None);
+        assert_eq!(
+            cfg.shortcuts.terminal_log_stop,
+            default_terminal_log_stop_shortcut()
+        );
+        assert_eq!(cfg.shortcuts.terminal_log_pause, None);
+        assert_eq!(cfg.shortcuts.terminal_log_resume, None);
         let serialized = serde_json::to_value(cfg).unwrap();
         assert!(serialized["shortcuts"].get("new_tab").is_none());
     }
@@ -1032,7 +1083,8 @@ mod tests {
                     "new_connection": {"key": "N", "ctrl": true},
                     "new_window": {"key": "f2"},
                     "open_settings": null,
-                    "terminal_select_all": {"key": "A", "ctrl": true, "shift": true}
+                    "terminal_select_all": {"key": "A", "ctrl": true, "shift": true},
+                    "terminal_log_stop": {"key": "f10", "ctrl": true, "shift": true}
                 }
             }"#,
         )
@@ -1042,6 +1094,7 @@ mod tests {
         assert_eq!(cfg.shortcuts.new_connection.as_ref().unwrap().key, "n");
         assert_eq!(cfg.shortcuts.new_window.as_ref().unwrap().key, "F2");
         assert_eq!(cfg.shortcuts.terminal_select_all.as_ref().unwrap().key, "a");
+        assert_eq!(cfg.shortcuts.terminal_log_stop.as_ref().unwrap().key, "F10");
         assert!(validate_shortcut_config(&cfg.shortcuts).is_ok());
     }
 
@@ -1060,6 +1113,11 @@ mod tests {
             terminal_select_all: None,
             terminal_copy: duplicate,
             terminal_paste: None,
+            terminal_log_start_overwrite: None,
+            terminal_log_start_append: None,
+            terminal_log_stop: None,
+            terminal_log_pause: None,
+            terminal_log_resume: None,
         };
 
         assert_eq!(
@@ -1082,6 +1140,11 @@ mod tests {
             terminal_select_all: None,
             terminal_copy: None,
             terminal_paste: None,
+            terminal_log_start_overwrite: None,
+            terminal_log_start_append: None,
+            terminal_log_stop: None,
+            terminal_log_pause: None,
+            terminal_log_resume: None,
         };
         assert!(validate_shortcut_config(&shortcuts).is_err());
 

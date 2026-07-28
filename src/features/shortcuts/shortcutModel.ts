@@ -2,6 +2,12 @@ import type { ShortcutBinding, ShortcutConfig } from "../../types";
 
 export type ShortcutAction = keyof ShortcutConfig;
 export type ShortcutScope = "application" | "terminal";
+export type TerminalLogShortcutAction =
+  | "terminal_log_start_overwrite"
+  | "terminal_log_start_append"
+  | "terminal_log_stop"
+  | "terminal_log_pause"
+  | "terminal_log_resume";
 
 export interface ShortcutKeyboardEvent {
   key: string;
@@ -53,6 +59,31 @@ export const SHORTCUT_ACTIONS: Array<{
     labelKey: "settings.shortcuts.action.terminal_paste",
     scope: "terminal",
   },
+  {
+    id: "terminal_log_start_overwrite",
+    labelKey: "settings.shortcuts.action.terminal_log_start_overwrite",
+    scope: "terminal",
+  },
+  {
+    id: "terminal_log_start_append",
+    labelKey: "settings.shortcuts.action.terminal_log_start_append",
+    scope: "terminal",
+  },
+  {
+    id: "terminal_log_stop",
+    labelKey: "settings.shortcuts.action.terminal_log_stop",
+    scope: "terminal",
+  },
+  {
+    id: "terminal_log_pause",
+    labelKey: "settings.shortcuts.action.terminal_log_pause",
+    scope: "terminal",
+  },
+  {
+    id: "terminal_log_resume",
+    labelKey: "settings.shortcuts.action.terminal_log_resume",
+    scope: "terminal",
+  },
 ];
 
 const DEFAULT_NEW_CONNECTION_SHORTCUT: ShortcutBinding = {
@@ -91,6 +122,18 @@ const DEFAULT_TERMINAL_PASTE_SHORTCUT: ShortcutBinding = {
   alt: false,
   shift: true,
 };
+const DEFAULT_TERMINAL_LOG_START_OVERWRITE_SHORTCUT: ShortcutBinding = {
+  key: "F9",
+  ctrl: true,
+  alt: false,
+  shift: true,
+};
+const DEFAULT_TERMINAL_LOG_STOP_SHORTCUT: ShortcutBinding = {
+  key: "F10",
+  ctrl: true,
+  alt: false,
+  shift: true,
+};
 
 export const DEFAULT_SHORTCUT_CONFIG: ShortcutConfig = {
   new_connection: DEFAULT_NEW_CONNECTION_SHORTCUT,
@@ -99,6 +142,11 @@ export const DEFAULT_SHORTCUT_CONFIG: ShortcutConfig = {
   terminal_select_all: DEFAULT_TERMINAL_SELECT_ALL_SHORTCUT,
   terminal_copy: DEFAULT_TERMINAL_COPY_SHORTCUT,
   terminal_paste: DEFAULT_TERMINAL_PASTE_SHORTCUT,
+  terminal_log_start_overwrite: DEFAULT_TERMINAL_LOG_START_OVERWRITE_SHORTCUT,
+  terminal_log_start_append: null,
+  terminal_log_stop: DEFAULT_TERMINAL_LOG_STOP_SHORTCUT,
+  terminal_log_pause: null,
+  terminal_log_resume: null,
 };
 
 export function createDefaultShortcutConfig(): ShortcutConfig {
@@ -109,6 +157,11 @@ export function createDefaultShortcutConfig(): ShortcutConfig {
     terminal_select_all: { ...DEFAULT_TERMINAL_SELECT_ALL_SHORTCUT },
     terminal_copy: { ...DEFAULT_TERMINAL_COPY_SHORTCUT },
     terminal_paste: { ...DEFAULT_TERMINAL_PASTE_SHORTCUT },
+    terminal_log_start_overwrite: { ...DEFAULT_TERMINAL_LOG_START_OVERWRITE_SHORTCUT },
+    terminal_log_start_append: null,
+    terminal_log_stop: { ...DEFAULT_TERMINAL_LOG_STOP_SHORTCUT },
+    terminal_log_pause: null,
+    terminal_log_resume: null,
   };
 }
 
@@ -245,5 +298,25 @@ export function normalizeShortcutConfig(shortcuts?: Partial<ShortcutConfig>): Sh
       shortcuts.terminal_copy === undefined ? defaults.terminal_copy : shortcuts.terminal_copy,
     terminal_paste:
       shortcuts.terminal_paste === undefined ? defaults.terminal_paste : shortcuts.terminal_paste,
+    terminal_log_start_overwrite:
+      shortcuts.terminal_log_start_overwrite === undefined
+        ? defaults.terminal_log_start_overwrite
+        : shortcuts.terminal_log_start_overwrite,
+    terminal_log_start_append:
+      shortcuts.terminal_log_start_append === undefined
+        ? defaults.terminal_log_start_append
+        : shortcuts.terminal_log_start_append,
+    terminal_log_stop:
+      shortcuts.terminal_log_stop === undefined
+        ? defaults.terminal_log_stop
+        : shortcuts.terminal_log_stop,
+    terminal_log_pause:
+      shortcuts.terminal_log_pause === undefined
+        ? defaults.terminal_log_pause
+        : shortcuts.terminal_log_pause,
+    terminal_log_resume:
+      shortcuts.terminal_log_resume === undefined
+        ? defaults.terminal_log_resume
+        : shortcuts.terminal_log_resume,
   };
 }

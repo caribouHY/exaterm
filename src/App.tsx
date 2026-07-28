@@ -37,6 +37,7 @@ import { useWindowTabs } from "./features/workspace-tabs/useWindowTabs";
 import { useTerminalTabLifecycle } from "./features/workspace-tabs/useTerminalTabLifecycle";
 import { useWorkspaceTabMovement } from "./features/workspace-tabs/useWorkspaceTabMovement";
 import { DEFAULT_SHORTCUT_CONFIG, findShortcutAction } from "./features/shortcuts/shortcutModel";
+import type { TerminalLogShortcutAction } from "./features/shortcuts/shortcutModel";
 import { AppUpdateDialog } from "./features/app-update/AppUpdateDialog";
 import { useAppUpdate } from "./features/app-update/useAppUpdate";
 import "./App.css";
@@ -475,6 +476,55 @@ export default function App() {
     [activeTab, updateWorkspaceTabMetadata]
   );
 
+  const handleTerminalLogShortcut = useCallback(
+    (tabId: string, action: TerminalLogShortcutAction) => {
+      if (
+        !activeTab ||
+        activeTab.id !== tabId ||
+        !activeTab.isConnected ||
+        manualLogBusyTabId === tabId
+      ) {
+        return;
+      }
+
+      const isLoggingActive = Boolean(activeTab.isAutoLogging || activeTab.isManualLogging);
+      switch (action) {
+        case "terminal_log_start_overwrite":
+          if (!activeTab.isManualLogging) {
+            void handleStartManualLog("overwrite");
+          }
+          break;
+        case "terminal_log_start_append":
+          if (!activeTab.isManualLogging) {
+            void handleStartManualLog("append");
+          }
+          break;
+        case "terminal_log_stop":
+          if (activeTab.isManualLogging) {
+            void handleStopManualLog();
+          }
+          break;
+        case "terminal_log_pause":
+          if (isLoggingActive && !activeTab.isLoggingPaused) {
+            handleSetLoggingPaused(true);
+          }
+          break;
+        case "terminal_log_resume":
+          if (isLoggingActive && activeTab.isLoggingPaused) {
+            handleSetLoggingPaused(false);
+          }
+          break;
+      }
+    },
+    [
+      activeTab,
+      handleSetLoggingPaused,
+      handleStartManualLog,
+      handleStopManualLog,
+      manualLogBusyTabId,
+    ]
+  );
+
   const openConnection = useCallback(() => {
     void loadConnectionDialog();
     setConnectionInitialValues(null);
@@ -685,6 +735,9 @@ export default function App() {
                       onOpenConnection={openConnection}
                       onTerminalData={(data) => {
                         handleTerminalData(tab.id, data);
+                      }}
+                      onTerminalLogShortcut={(action) => {
+                        handleTerminalLogShortcut(tab.id, action);
                       }}
                       encoding={tab.encoding}
                       terminalMode={tab.terminalMode}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SHORTCUT_CONFIG,
+  SHORTCUT_ACTIONS,
   captureShortcut,
   findShortcutAction,
   findShortcutConflict,
@@ -61,14 +62,49 @@ describe("shortcutModel", () => {
 
   it("keeps terminal shortcuts scoped to the terminal", () => {
     const copyEvent = keyEvent("C", { ctrlKey: true, shiftKey: true });
+    const logStartEvent = keyEvent("F9", { ctrlKey: true, shiftKey: true });
 
     expect(findShortcutAction(DEFAULT_SHORTCUT_CONFIG, copyEvent, "terminal")).toBe(
       "terminal_copy"
     );
     expect(findShortcutAction(DEFAULT_SHORTCUT_CONFIG, copyEvent, "application")).toBeNull();
+    expect(findShortcutAction(DEFAULT_SHORTCUT_CONFIG, logStartEvent, "terminal")).toBe(
+      "terminal_log_start_overwrite"
+    );
+    expect(findShortcutAction(DEFAULT_SHORTCUT_CONFIG, logStartEvent, "application")).toBeNull();
     expect(
       findShortcutAction(DEFAULT_SHORTCUT_CONFIG, keyEvent("c", { ctrlKey: true }), "terminal")
     ).toBeNull();
+  });
+
+  it("defines all log actions in terminal scope with only start and stop assigned by default", () => {
+    expect(
+      SHORTCUT_ACTIONS.filter(({ id }) => id.startsWith("terminal_log_")).map(({ id, scope }) => ({
+        id,
+        scope,
+      }))
+    ).toEqual([
+      { id: "terminal_log_start_overwrite", scope: "terminal" },
+      { id: "terminal_log_start_append", scope: "terminal" },
+      { id: "terminal_log_stop", scope: "terminal" },
+      { id: "terminal_log_pause", scope: "terminal" },
+      { id: "terminal_log_resume", scope: "terminal" },
+    ]);
+    expect(DEFAULT_SHORTCUT_CONFIG.terminal_log_start_overwrite).toEqual({
+      key: "F9",
+      ctrl: true,
+      alt: false,
+      shift: true,
+    });
+    expect(DEFAULT_SHORTCUT_CONFIG.terminal_log_start_append).toBeNull();
+    expect(DEFAULT_SHORTCUT_CONFIG.terminal_log_stop).toEqual({
+      key: "F10",
+      ctrl: true,
+      alt: false,
+      shift: true,
+    });
+    expect(DEFAULT_SHORTCUT_CONFIG.terminal_log_pause).toBeNull();
+    expect(DEFAULT_SHORTCUT_CONFIG.terminal_log_resume).toBeNull();
   });
 
   it("captures standalone function keys and rejects standalone characters", () => {
@@ -131,5 +167,30 @@ describe("shortcutModel", () => {
     expect(normalized.terminal_select_all).toEqual(DEFAULT_SHORTCUT_CONFIG.terminal_select_all);
     expect(normalized.terminal_copy).toBeNull();
     expect(normalized.terminal_paste).toEqual(DEFAULT_SHORTCUT_CONFIG.terminal_paste);
+    expect(normalized.terminal_log_start_overwrite).toEqual(
+      DEFAULT_SHORTCUT_CONFIG.terminal_log_start_overwrite
+    );
+    expect(normalized.terminal_log_start_append).toBeNull();
+    expect(normalized.terminal_log_stop).toEqual(DEFAULT_SHORTCUT_CONFIG.terminal_log_stop);
+    expect(normalized.terminal_log_pause).toBeNull();
+    expect(normalized.terminal_log_resume).toBeNull();
+  });
+
+  it("preserves explicit null log shortcuts and detects conflicts with their defaults", () => {
+    const normalized = normalizeShortcutConfig({
+      terminal_log_start_overwrite: null,
+      terminal_log_stop: null,
+    });
+    expect(normalized.terminal_log_start_overwrite).toBeNull();
+    expect(normalized.terminal_log_stop).toBeNull();
+
+    expect(
+      findShortcutConflict(DEFAULT_SHORTCUT_CONFIG, "terminal_log_start_append", {
+        key: "f9",
+        ctrl: true,
+        alt: false,
+        shift: true,
+      })
+    ).toBe("terminal_log_start_overwrite");
   });
 });
