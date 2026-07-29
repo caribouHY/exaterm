@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.8.1
+
 ### Added
 
 - Added signed in-app updates for published stable releases, with startup and manual checks, release notes, download progress, and confirmation before connected terminal sessions are closed.
