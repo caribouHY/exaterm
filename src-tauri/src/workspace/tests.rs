@@ -110,6 +110,23 @@ async fn window_registration_returns_empty_snapshot() {
 }
 
 #[tokio::test]
+async fn connected_session_count_spans_windows_and_ignores_disconnected_tabs() {
+    let state = WorkspaceState::new();
+    state
+        .register_window("main".into(), "main".into(), true)
+        .await;
+    state.register_tab(input("s1", Some("main"))).await;
+    state
+        .register_window("other".into(), "other".into(), true)
+        .await;
+    state.register_tab(input("s2", Some("other"))).await;
+
+    assert_eq!(state.connected_session_count().await, 2);
+    state.mark_disconnected("s1").await;
+    assert_eq!(state.connected_session_count().await, 1);
+}
+
+#[tokio::test]
 async fn workspace_revision_increases_only_when_model_changes() {
     let state = WorkspaceState::new();
     let initial = state.snapshot_for_window("main".into()).await;

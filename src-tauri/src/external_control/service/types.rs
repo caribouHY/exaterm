@@ -225,6 +225,7 @@ pub(crate) struct PreparedSerialConnection {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+#[schemars(extend("type" = "object"))]
 pub(crate) enum ReadTerminalOutputArgs {
     /// Read the most recent output retained for the session.
     Recent {

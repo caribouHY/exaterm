@@ -29,8 +29,11 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 ```json
 {
-  "config_version": 2,
+  "config_version": 5,
   "language": "system",
+  "updates": {
+    "check_on_startup": true
+  },
   "ai": {
     "azure_openai_enabled": false,
     "azure_openai_endpoint": "",
@@ -46,6 +49,19 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "connect_enabled": false,
     "mcp_enabled": false,
     "cli_enabled": false
+  },
+  "shortcuts": {
+    "new_connection": { "key": "n", "ctrl": true, "alt": false, "shift": false },
+    "new_window": { "key": "n", "ctrl": true, "alt": false, "shift": true },
+    "open_settings": { "key": ",", "ctrl": true, "alt": false, "shift": false },
+    "terminal_select_all": { "key": "a", "ctrl": true, "alt": false, "shift": true },
+    "terminal_copy": { "key": "c", "ctrl": true, "alt": false, "shift": true },
+    "terminal_paste": { "key": "v", "ctrl": true, "alt": false, "shift": true },
+    "terminal_log_start_overwrite": { "key": "F9", "ctrl": true, "alt": false, "shift": true },
+    "terminal_log_start_append": null,
+    "terminal_log_stop": { "key": "F10", "ctrl": true, "alt": false, "shift": true },
+    "terminal_log_pause": null,
+    "terminal_log_resume": null
   },
   "terminal": {
     "font_size": 14,
@@ -74,13 +90,23 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 | Parameter           | Type   | Default    | Description                                                                                                                                                |
 | ------------------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`    | number | `2`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
+| `config_version`    | number | `5`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
 | `language`          | string | `"system"` | Display language. Use `"system"` to follow the OS language, `"en"` for English, or `"ja"` for Japanese. Unsupported system languages fall back to English. |
+| `updates`           | object | See below  | Controls automatic checks for published stable ExaTerm updates.                                                                                            |
 | `ai`                | object | See below  | AI assistant settings.                                                                                                                                     |
 | `external_control`  | object | See below  | Local external-control settings for the Terminal CLI and MCP compatibility adapter.                                                                        |
+| `shortcuts`         | object | See below  | Customizable application keyboard shortcuts.                                                                                                               |
 | `terminal`          | object | See below  | Terminal display and logging settings.                                                                                                                     |
 | `ssh`               | object | See below  | SSH connection compatibility settings.                                                                                                                     |
 | `saved_connections` | array  | `[]`       | Saved SSH and Telnet connection profiles. Profiles can be created, selected, and deleted from the connection dialog.                                       |
+
+## updates
+
+| Key                | Type    | Default | Description                                                                                                                                     |
+| ------------------ | ------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check_on_startup` | boolean | `true`  | Checks once for the latest published stable release when the main ExaTerm window starts. Downloads and installation still require confirmation. |
+
+Manual update checks remain available from the app menu when this value is `false`.
 
 ## ai
 
@@ -179,6 +205,28 @@ The `wait` mode and `run_terminal_command` wait for up to 60 seconds. `run_termi
 The previous `read_terminal_output_delta` and `wait_terminal_output` tools were removed. Replace them with `read_terminal_output` using `mode: "delta"` and `mode: "wait"`, respectively.
 
 The MCP compatibility adapter and CLI do not read saved credentials, expose API keys, or read log files directly. External clients can explicitly start and stop session logs, but they receive only the log state and file path, not the log contents. New SSH/Telnet connections are limited to saved profiles, Serial connections require an explicit available port name, and all new external connections require `external_control.connect_enabled=true`. Saved profiles can opt out with `saved_connections[*].external_control_enabled=false`. SSH connections still enforce known-host checks and request required credentials in the ExaTerm UI. Terminal output and log files can contain sensitive information, so enable external control only for trusted local clients.
+
+## shortcuts
+
+Each shortcut is either an object with `key`, `ctrl`, `alt`, and `shift` fields or `null` for an unassigned action. Printable keys and `Space` require `ctrl` or `alt`; `F1` through `F12` can be assigned without a modifier. Assignments must be unique, and `Alt+F4` is reserved by Windows.
+
+| Parameter                                | Default          | Action                                                                             |
+| ---------------------------------------- | ---------------- | ---------------------------------------------------------------------------------- |
+| `shortcuts.new_connection`               | `Ctrl+N`         | Opens the new connection dialog.                                                   |
+| `shortcuts.new_window`                   | `Ctrl+Shift+N`   | Opens a new ExaTerm window.                                                        |
+| `shortcuts.open_settings`                | `Ctrl+,`         | Opens the Shortcuts and other application settings.                                |
+| `shortcuts.terminal_select_all`          | `Ctrl+Shift+A`   | Selects the terminal screen and scrollback buffer.                                 |
+| `shortcuts.terminal_copy`                | `Ctrl+Shift+C`   | Copies the selected terminal text.                                                 |
+| `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | Pastes clipboard text into a connected terminal.                                   |
+| `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | Opens the save dialog and starts a new manual log or overwrites the selected file. |
+| `shortcuts.terminal_log_start_append`    | Unassigned       | Opens the save dialog and appends to the selected manual log file.                 |
+| `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | Flushes pending displayed output and stops the active manual log.                  |
+| `shortcuts.terminal_log_pause`           | Unassigned       | Pauses active automatic and manual logging for the terminal session.               |
+| `shortcuts.terminal_log_resume`          | Unassigned       | Resumes paused automatic and manual logging for the terminal session.              |
+
+Letter keys are stored in lowercase, `Space` uses the literal string `"Space"`, and function keys use uppercase names such as `"F2"`. Modifier matching is exact. For example, `Ctrl+Shift+N` does not also match `Ctrl+N`.
+
+Terminal shortcuts run only while the terminal has keyboard focus. Assigning `Ctrl+A`, `Ctrl+C`, or `Ctrl+V` to an application or terminal action overrides common remote shortcuts such as beginning-of-line, interrupt, and quoted insert while ExaTerm has focus.
 
 ## terminal
 

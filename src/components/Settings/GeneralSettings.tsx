@@ -3,14 +3,17 @@ import type { AppConfig } from "../../types";
 import type { SshAlgorithmCatalog } from "../../types";
 import { SshSettings } from "./SshSettings";
 import { TerminalSettings } from "./TerminalSettings";
+import { SettingsToggle } from "./SettingsToggle";
 
 interface GeneralSettingsProps {
   language: AppConfig["language"];
+  updateConfig: AppConfig["updates"];
   terminalConfig: AppConfig["terminal"];
   sshConfig: AppConfig["ssh"];
   sshAlgorithmCatalog: SshAlgorithmCatalog | null;
   sshAlgorithmCatalogLoadFailed: boolean;
   onLanguageChange: (language: AppConfig["language"]) => void;
+  onUpdateChange: (patch: Partial<AppConfig["updates"]>) => void;
   onTerminalChange: (patch: Partial<AppConfig["terminal"]>) => void;
   onSshChange: (patch: Partial<AppConfig["ssh"]>) => void;
   onReloadSshAlgorithmCatalog: () => void;
@@ -28,11 +31,13 @@ const LANGUAGE_OPTIONS: Array<{
 
 export function GeneralSettings({
   language,
+  updateConfig,
   terminalConfig,
   sshConfig,
   sshAlgorithmCatalog,
   sshAlgorithmCatalogLoadFailed,
   onLanguageChange,
+  onUpdateChange,
   onTerminalChange,
   onSshChange,
   onReloadSshAlgorithmCatalog,
@@ -63,6 +68,17 @@ export function GeneralSettings({
           </select>
         </div>
       </div>
+
+      <div className="settings-section__title">{t("settings.updates")}</div>
+      <SettingsToggle
+        id="settings-check-updates-on-startup"
+        label={t("settings.check_updates_on_startup")}
+        description={t("settings.check_updates_on_startup_desc")}
+        checked={updateConfig.check_on_startup}
+        onChange={(checkOnStartup) => {
+          onUpdateChange({ check_on_startup: checkOnStartup });
+        }}
+      />
 
       <TerminalSettings config={terminalConfig} onChange={onTerminalChange} />
 

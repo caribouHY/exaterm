@@ -10,6 +10,7 @@ import { GeneralSettings } from "./GeneralSettings";
 import { LogSettings } from "./LogSettings";
 import { SettingsError, SettingsFooter } from "./SettingsFooter";
 import { SettingsSidebar } from "./SettingsSidebar";
+import { ShortcutsSettings } from "./ShortcutsSettings";
 import {
   SECRET_FIELDS,
   areConfigsEqual,
@@ -181,6 +182,12 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     );
   };
 
+  const updateUpdateConfig = (patch: Partial<AppConfig["updates"]>) => {
+    setConfig((previous) =>
+      previous ? { ...previous, updates: { ...previous.updates, ...patch } } : previous
+    );
+  };
+
   const updateExternalControlConfig = (patch: Partial<AppConfig["external_control"]>) => {
     setConfig((previous) =>
       previous
@@ -199,6 +206,10 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     setConfig((previous) =>
       previous ? { ...previous, ssh: { ...previous.ssh, ...patch } } : previous
     );
+  };
+
+  const updateShortcutConfig = (shortcuts: AppConfig["shortcuts"]) => {
+    setConfig((previous) => (previous ? { ...previous, shortcuts } : previous));
   };
 
   const clearSecret = async (provider: SecretProvider, key: SecretKey) => {
@@ -244,11 +255,13 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
         return (
           <GeneralSettings
             language={config.language}
+            updateConfig={config.updates}
             terminalConfig={config.terminal}
             sshConfig={config.ssh}
             sshAlgorithmCatalog={sshAlgorithmCatalog}
             sshAlgorithmCatalogLoadFailed={sshAlgorithmCatalogLoadFailed}
             onLanguageChange={updateLanguage}
+            onUpdateChange={updateUpdateConfig}
             onTerminalChange={updateTerminalConfig}
             onSshChange={updateSshConfig}
             onReloadSshAlgorithmCatalog={() => void loadSshAlgorithmCatalog()}
@@ -280,6 +293,8 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
             onClearSecret={(provider, key) => void clearSecret(provider, key)}
           />
         );
+      case "shortcuts":
+        return <ShortcutsSettings config={config.shortcuts} onChange={updateShortcutConfig} />;
       case "logs":
         return <LogSettings config={config.terminal} onChange={updateTerminalConfig} />;
       case "external_control":

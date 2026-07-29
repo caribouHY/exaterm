@@ -1,4 +1,5 @@
 mod ai;
+mod app_update;
 mod cli;
 mod config;
 mod external_control;
@@ -76,6 +77,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(app_update::AppUpdateState::new())
         .manage(StartupCliState::new(startup_cli_request))
         .manage(ssh_state.clone())
         .manage(serial_state.clone())
@@ -216,6 +219,9 @@ pub fn run() {
             config::config_load,
             config::config_save,
             i18n::backend_language_set,
+            // App updates
+            app_update::app_update_check,
+            app_update::app_update_install,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ExaTerm");

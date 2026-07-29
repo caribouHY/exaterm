@@ -36,6 +36,10 @@ import {
 import { useWindowTabs } from "./features/workspace-tabs/useWindowTabs";
 import { useTerminalTabLifecycle } from "./features/workspace-tabs/useTerminalTabLifecycle";
 import { useWorkspaceTabMovement } from "./features/workspace-tabs/useWorkspaceTabMovement";
+import { DEFAULT_SHORTCUT_CONFIG, findShortcutAction } from "./features/shortcuts/shortcutModel";
+import type { TerminalLogShortcutAction } from "./features/shortcuts/shortcutModel";
+import { AppUpdateDialog } from "./features/app-update/AppUpdateDialog";
+import { useAppUpdate } from "./features/app-update/useAppUpdate";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -114,6 +118,11 @@ export default function App() {
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
   const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
+  const shortcuts = config?.shortcuts ?? DEFAULT_SHORTCUT_CONFIG;
+  const appUpdate = useAppUpdate({
+    windowId: windowTabs.windowId,
+    checkOnStartup: config ? config.updates.check_on_startup : null,
+  });
 
   const removeTerminalFromState = useCallback(
     (tabId: string) => {
@@ -467,6 +476,55 @@ export default function App() {
     [activeTab, updateWorkspaceTabMetadata]
   );
 
+  const handleTerminalLogShortcut = useCallback(
+    (tabId: string, action: TerminalLogShortcutAction) => {
+      if (
+        !activeTab ||
+        activeTab.id !== tabId ||
+        !activeTab.isConnected ||
+        manualLogBusyTabId === tabId
+      ) {
+        return;
+      }
+
+      const isLoggingActive = Boolean(activeTab.isAutoLogging || activeTab.isManualLogging);
+      switch (action) {
+        case "terminal_log_start_overwrite":
+          if (!activeTab.isManualLogging) {
+            void handleStartManualLog("overwrite");
+          }
+          break;
+        case "terminal_log_start_append":
+          if (!activeTab.isManualLogging) {
+            void handleStartManualLog("append");
+          }
+          break;
+        case "terminal_log_stop":
+          if (activeTab.isManualLogging) {
+            void handleStopManualLog();
+          }
+          break;
+        case "terminal_log_pause":
+          if (isLoggingActive && !activeTab.isLoggingPaused) {
+            handleSetLoggingPaused(true);
+          }
+          break;
+        case "terminal_log_resume":
+          if (isLoggingActive && activeTab.isLoggingPaused) {
+            handleSetLoggingPaused(false);
+          }
+          break;
+      }
+    },
+    [
+      activeTab,
+      handleSetLoggingPaused,
+      handleStartManualLog,
+      handleStopManualLog,
+      manualLogBusyTabId,
+    ]
+  );
+
   const openConnection = useCallback(() => {
     void loadConnectionDialog();
     setConnectionInitialValues(null);
@@ -497,19 +555,25 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        const key = e.key.toLowerCase();
-        if (key === "n" && e.shiftKey) {
-          e.preventDefault();
+      if (e.target instanceof Element && e.target.closest("[data-shortcut-recorder='true']")) {
+        return;
+      }
+
+      const action = findShortcutAction(shortcuts, e, "application");
+      if (!action) return;
+
+      e.preventDefault();
+      switch (action) {
+        case "new_window":
           openWindow();
-        } else if (key === "n" || key === "t") {
-          e.preventDefault();
+          break;
+        case "new_connection":
           openConnection();
-        } else if (key === ",") {
-          e.preventDefault();
+          break;
+        case "open_settings":
           void loadSettingsPanel();
           openUtilityTab("settings");
-        }
+          break;
       }
     };
 
@@ -517,7 +581,7 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [openConnection, openUtilityTab, openWindow]);
+  }, [openConnection, openUtilityTab, openWindow, shortcuts]);
 
   const refreshConfig = useCallback(async () => {
     try {
@@ -530,6 +594,17 @@ export default function App() {
 
   useEffect(() => {
     void refreshConfig();
+  }, [refreshConfig]);
+
+  useEffect(() => {
+    const unlisten = listen("config://updated", () => {
+      void refreshConfig();
+    });
+    return () => {
+      void unlisten.then((stopListening) => {
+        stopListening();
+      });
+    };
   }, [refreshConfig]);
 
   useEffect(() => {
@@ -588,11 +663,14 @@ export default function App() {
       <TitleBar
         activeView={activeView}
         showAiPanel={showAiPanel}
+        shortcuts={shortcuts}
         onViewChange={handleViewChange}
         onOpenConnection={openConnection}
         onOpenWindow={openWindow}
         onToggleAiPanel={toggleAiPanel}
+        onCheckForUpdates={appUpdate.checkManually}
       />
+      <AppUpdateDialog controller={appUpdate} />
       <div className="app__body">
         <div className="app__main">
           <div className="app__content">
@@ -633,6 +711,7 @@ export default function App() {
                     onTerminalData={() => {}}
                     encoding="utf-8"
                     terminalConfig={config?.terminal}
+                    shortcuts={shortcuts}
                     terminalMode={DEFAULT_TERMINAL_MODE}
                   />
                 ) : (
@@ -657,9 +736,13 @@ export default function App() {
                       onTerminalData={(data) => {
                         handleTerminalData(tab.id, data);
                       }}
+                      onTerminalLogShortcut={(action) => {
+                        handleTerminalLogShortcut(tab.id, action);
+                      }}
                       encoding={tab.encoding}
                       terminalMode={tab.terminalMode}
                       terminalConfig={config?.terminal}
+                      shortcuts={shortcuts}
                     />
                   ))
                 )}

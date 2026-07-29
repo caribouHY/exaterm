@@ -29,8 +29,11 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 ```json
 {
-  "config_version": 2,
+  "config_version": 5,
   "language": "system",
+  "updates": {
+    "check_on_startup": true
+  },
   "ai": {
     "azure_openai_enabled": false,
     "azure_openai_endpoint": "",
@@ -46,6 +49,19 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "connect_enabled": false,
     "mcp_enabled": false,
     "cli_enabled": false
+  },
+  "shortcuts": {
+    "new_connection": { "key": "n", "ctrl": true, "alt": false, "shift": false },
+    "new_window": { "key": "n", "ctrl": true, "alt": false, "shift": true },
+    "open_settings": { "key": ",", "ctrl": true, "alt": false, "shift": false },
+    "terminal_select_all": { "key": "a", "ctrl": true, "alt": false, "shift": true },
+    "terminal_copy": { "key": "c", "ctrl": true, "alt": false, "shift": true },
+    "terminal_paste": { "key": "v", "ctrl": true, "alt": false, "shift": true },
+    "terminal_log_start_overwrite": { "key": "F9", "ctrl": true, "alt": false, "shift": true },
+    "terminal_log_start_append": null,
+    "terminal_log_stop": { "key": "F10", "ctrl": true, "alt": false, "shift": true },
+    "terminal_log_pause": null,
+    "terminal_log_resume": null
   },
   "terminal": {
     "font_size": 14,
@@ -74,13 +90,23 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 | パラメータ          | 型     | 既定値     | 説明                                                                                                                                            |
 | ------------------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`    | number | `2`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
+| `config_version`    | number | `5`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
 | `language`          | string | `"system"` | 画面表示言語です。`"system"` は OS の言語設定に従います。`"en"` は英語、`"ja"` は日本語です。未対応のシステム言語は英語にフォールバックします。 |
+| `updates`           | object | 下記参照   | 公開済みのExaTerm正式版を自動確認する動作を設定します。                                                                                         |
 | `ai`                | object | 下記参照   | AI アシスタント関連の設定です。                                                                                                                 |
 | `external_control`  | object | 下記参照   | ターミナル CLI と MCP 互換アダプターのためのローカル外部制御設定です。                                                                          |
+| `shortcuts`         | object | 下記参照   | アプリケーションのキーボードショートカット設定です。                                                                                            |
 | `terminal`          | object | 下記参照   | ターミナル表示とログ関連の設定です。                                                                                                            |
 | `ssh`               | object | 下記参照   | SSH 接続の互換性設定です。                                                                                                                      |
 | `saved_connections` | array  | `[]`       | 保存済み SSH/Telnet 接続プロファイルです。プロファイルは接続ダイアログから作成、選択、削除できます。                                            |
+
+## updates
+
+| キー               | 型      | 既定値 | 説明                                                                                                                         |
+| ------------------ | ------- | ------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `check_on_startup` | boolean | `true` | ExaTermのmainウィンドウ起動時に、最新の公開済み正式版を1回確認します。ダウンロードとインストールには引き続き確認が必要です。 |
+
+この値が`false`でも、アプリメニューからの手動確認は利用できます。
 
 ## ai
 
@@ -179,6 +205,28 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
 従来の `read_terminal_output_delta` と `wait_terminal_output` は削除されました。それぞれ `mode: "delta"` と `mode: "wait"` を指定した `read_terminal_output` に置き換えてください。
 
 MCP 互換アダプターと CLI は保存済み認証情報の読み取り、API キーの公開、ログファイル本文の直接読み取りを行いません。外部クライアントがログを開始・停止した場合も、受け取るのはログ状態とファイルパスだけです。SSH/Telnet 新規接続は保存済みプロファイルに限定され、シリアル接続は利用可能なポート名だけを対象にし、すべての外部新規接続には `external_control.connect_enabled=true` が必要です。プロファイルは `saved_connections[*].external_control_enabled=false` で除外できます。SSH の known_hosts 検証と ExaTerm UI での認証入力は維持されます。機密情報を含む可能性があるため、外部制御は信頼済みローカルクライアントに対してのみ有効化してください。
+
+## shortcuts
+
+各ショートカットは `key`、`ctrl`、`alt`、`shift` を持つオブジェクトです。未割り当てにする場合は `null` を指定します。通常キーと `Space` には `ctrl` または `alt` が必要です。`F1`～`F12` は修飾キーなしでも割り当てられます。割り当ての重複は許可されず、Windows が使用する `Alt+F4` は予約されています。
+
+| パラメータ                               | 既定値           | 操作                                                                             |
+| ---------------------------------------- | ---------------- | -------------------------------------------------------------------------------- |
+| `shortcuts.new_connection`               | `Ctrl+N`         | 新規接続ダイアログを開きます。                                                   |
+| `shortcuts.new_window`                   | `Ctrl+Shift+N`   | 新しい ExaTerm ウィンドウを開きます。                                            |
+| `shortcuts.open_settings`                | `Ctrl+,`         | ショートカットなどのアプリ設定を開きます。                                       |
+| `shortcuts.terminal_select_all`          | `Ctrl+Shift+A`   | ターミナルの画面とスクロールバック全体を選択します。                             |
+| `shortcuts.terminal_copy`                | `Ctrl+Shift+C`   | ターミナルで選択した文字をコピーします。                                         |
+| `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | 接続中のターミナルへクリップボードの文字をペーストします。                       |
+| `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | 保存ダイアログを開き、新しい手動ログを開始するか選択したファイルを上書きします。 |
+| `shortcuts.terminal_log_start_append`    | 未割り当て       | 保存ダイアログを開き、選択した手動ログファイルへ追記します。                     |
+| `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | 保留中の画面表示をflushして、実行中の手動ログを停止します。                      |
+| `shortcuts.terminal_log_pause`           | 未割り当て       | ターミナルセッションで実行中の自動ログと手動ログを一時停止します。               |
+| `shortcuts.terminal_log_resume`          | 未割り当て       | 一時停止中の自動ログと手動ログを再開します。                                     |
+
+英字キーは小文字、空白キーは `"Space"`、ファンクションキーは `"F2"` のような大文字表記で保存されます。修飾キーは完全一致で判定するため、たとえば `Ctrl+Shift+N` は `Ctrl+N` としては実行されません。
+
+ターミナル用ショートカットは、ターミナルにキーボードフォーカスがある場合だけ動作します。`Ctrl+A`、`Ctrl+C`、`Ctrl+V`をアプリまたはターミナル操作へ割り当てると、ExaTermにフォーカスがある間は、行頭移動、中断、quoted insertなどリモート側で一般的な操作より割り当てた操作が優先されます。
 
 ## terminal
 

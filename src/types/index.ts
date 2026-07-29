@@ -89,11 +89,38 @@ export type ManualLogWriteMode = "overwrite" | "append";
 export interface AppConfig {
   config_version: number;
   language: "system" | "en" | "ja" | (string & {});
+  updates: UpdateConfig;
   ai: AiConfig;
   external_control: ExternalControlConfig;
+  shortcuts: ShortcutConfig;
   terminal: TerminalConfig;
   ssh: SshConfig;
   saved_connections: SavedConnection[];
+}
+
+export interface UpdateConfig {
+  check_on_startup: boolean;
+}
+
+export interface ShortcutBinding {
+  key: string;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+}
+
+export interface ShortcutConfig {
+  new_connection: ShortcutBinding | null;
+  new_window: ShortcutBinding | null;
+  open_settings: ShortcutBinding | null;
+  terminal_select_all: ShortcutBinding | null;
+  terminal_copy: ShortcutBinding | null;
+  terminal_paste: ShortcutBinding | null;
+  terminal_log_start_overwrite: ShortcutBinding | null;
+  terminal_log_start_append: ShortcutBinding | null;
+  terminal_log_stop: ShortcutBinding | null;
+  terminal_log_pause: ShortcutBinding | null;
+  terminal_log_resume: ShortcutBinding | null;
 }
 
 export interface ExternalControlConfig {

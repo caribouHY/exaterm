@@ -27,7 +27,9 @@ macOS and Linux are not supported release targets at this time.
 3. Run the exe installer.
 4. Launch ExaTerm from the Start menu or the installed application shortcut.
 
-ExaTerm does not include automatic updates. To update, download and run a newer exe installer from the Releases page.
+ExaTerm checks for new stable releases when it starts and asks before downloading or installing an update. You can also choose **Check for Updates...** from the app menu. Installing an update closes ExaTerm and ends active terminal connections.
+
+The first release that adds automatic updates must still be installed manually from the Releases page. Later stable releases can be installed from within ExaTerm.
 
 ## First Launch
 

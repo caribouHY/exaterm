@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## v0.8.1
+
+### Added
+
+- Added signed in-app updates for published stable releases, with startup and manual checks, release notes, download progress, and confirmation before connected terminal sessions are closed.
+- Added editable keyboard shortcuts for new connections, windows, and Settings, with immediate updates across open windows.
+- Added configurable terminal shortcuts for selecting the full buffer, copying selected text, and pasting clipboard text without overriding common remote control keys by default.
+- Added configurable terminal shortcuts for starting, appending, stopping, pausing, and resuming session logs.
+
+### Fixed
+
+- Fixed MCP tool discovery in strict clients by declaring the `read_terminal_output` input schema as an object.
+
 ## v0.8.0
 
 ### Changed

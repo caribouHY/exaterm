@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ChevronDown, Menu, Minus, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { ViewMode } from "../../types";
+import type { ShortcutConfig, ViewMode } from "../../types";
+import { formatShortcut } from "../../features/shortcuts/shortcutModel";
 import AIAssistantLogo from "../AI/AIAssistantLogo";
 import { PopoverMenu, type PopoverMenuItem } from "../Common";
 import "./TitleBar.css";
@@ -10,19 +11,23 @@ import "./TitleBar.css";
 interface TitleBarProps {
   activeView: ViewMode;
   showAiPanel: boolean;
+  shortcuts: ShortcutConfig;
   onViewChange: (view: ViewMode) => void;
   onOpenConnection: () => void;
   onOpenWindow: () => void;
   onToggleAiPanel: () => void;
+  onCheckForUpdates: () => void;
 }
 
 export default function TitleBar({
   activeView,
   showAiPanel,
+  shortcuts,
   onViewChange,
   onOpenConnection,
   onOpenWindow,
   onToggleAiPanel,
+  onCheckForUpdates,
 }: TitleBarProps) {
   const { t } = useTranslation();
   const appWindow = getCurrentWindow();
@@ -61,14 +66,14 @@ export default function TitleBar({
     {
       key: "new_connection",
       label: t("titlebar.menu.new_connection"),
-      shortcut: "Ctrl+N",
+      shortcut: formatShortcut(shortcuts.new_connection) || undefined,
       active: false,
       action: onOpenConnection,
     },
     {
       key: "new_window",
       label: t("titlebar.menu.new_window"),
-      shortcut: "Ctrl+Shift+N",
+      shortcut: formatShortcut(shortcuts.new_window) || undefined,
       active: false,
       action: onOpenWindow,
     },
@@ -91,11 +96,17 @@ export default function TitleBar({
     {
       key: "settings",
       label: t("titlebar.menu.settings"),
-      shortcut: "Ctrl+,",
+      shortcut: formatShortcut(shortcuts.open_settings) || undefined,
       active: activeView === "settings",
       action: () => {
         onViewChange("settings");
       },
+    },
+    {
+      key: "check_updates",
+      label: t("titlebar.menu.check_updates"),
+      active: false,
+      action: onCheckForUpdates,
     },
   ];
 

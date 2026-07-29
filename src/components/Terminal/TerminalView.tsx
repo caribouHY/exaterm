@@ -9,7 +9,19 @@ import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { useTranslation } from "react-i18next";
-import type { ConnectionType, Encoding, TerminalConfig, TerminalMode } from "../../types";
+import type {
+  ConnectionType,
+  Encoding,
+  ShortcutBinding,
+  ShortcutConfig,
+  TerminalConfig,
+  TerminalMode,
+} from "../../types";
+import {
+  findShortcutAction,
+  formatShortcut,
+  type TerminalLogShortcutAction,
+} from "../../features/shortcuts/shortcutModel";
 import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
 import { DEFAULT_TERMINAL_MODE } from "../../utils/terminalModes";
 import appIcon from "../../../src-tauri/icons/icon.png";
@@ -26,9 +38,11 @@ interface TerminalViewProps {
   isManualLogging: boolean;
   isLoggingPaused: boolean;
   terminalConfig?: TerminalConfig;
+  shortcuts: ShortcutConfig;
   terminalMode: TerminalMode;
   onOpenConnection: () => void;
   onTerminalData?: (data: string) => void;
+  onTerminalLogShortcut?: (action: TerminalLogShortcutAction) => void;
 }
 
 export interface TerminalViewHandle {
@@ -96,9 +110,11 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     isManualLogging,
     isLoggingPaused,
     terminalConfig,
+    shortcuts,
     terminalMode,
     onOpenConnection,
     onTerminalData,
+    onTerminalLogShortcut,
   },
   ref
 ) {
@@ -108,18 +124,33 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const fitRef = useRef<FitAddon | null>(null);
   const decoderRef = useRef(new TextDecoder(encoding));
   const isConnectedRef = useRef(isConnected);
+  const isActiveRef = useRef(isActive);
   const isAutoLoggingRef = useRef(isAutoLogging);
   const isManualLoggingRef = useRef(isManualLogging);
   const isLoggingPausedRef = useRef(isLoggingPaused);
   const terminalModeRef = useRef(terminalMode);
+  const shortcutsRef = useRef(shortcuts);
+  const onTerminalLogShortcutRef = useRef(onTerminalLogShortcut);
   const decorationFrameRef = useRef<number | null>(null);
   const decorationRebuildRef = useRef(false);
-  const contextMenuActionInProgressRef = useRef(false);
+  const clipboardActionInProgressRef = useRef(false);
   const promptDecorationsRef = useRef<Map<number, PromptDecorationSet>>(new Map());
   const errorDecorationsRef = useRef<Map<number, LineDecorationSet>>(new Map());
   const autoLogSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
+
+  useEffect(() => {
+    shortcutsRef.current = shortcuts;
+  }, [shortcuts]);
+
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
+
+  useEffect(() => {
+    onTerminalLogShortcutRef.current = onTerminalLogShortcut;
+  }, [onTerminalLogShortcut]);
   const manualLogSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
@@ -693,16 +724,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       allowProposedApi: true,
     });
 
-    term.attachCustomKeyEventHandler((e) => {
-      if (e.ctrlKey || e.metaKey) {
-        const key = e.key.toLowerCase();
-        if (key === "n" || key === "t" || key === ",") {
-          return false;
-        }
-      }
-      return true;
-    });
-
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon();
     const searchAddon = new SearchAddon();
@@ -728,60 +749,112 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     });
     let disposed = false;
 
-    const handleContextMenu = (event: MouseEvent) => {
-      event.preventDefault();
-      if (contextMenuActionInProgressRef.current) return;
-      contextMenuActionInProgressRef.current = true;
+    const copyTerminalSelection = async (clearSelectionAfterCopy: boolean) => {
+      const selection = term.getSelection();
+      if (selection.length === 0) {
+        return;
+      }
 
-      void (async () => {
-        try {
-          const selection = term.getSelection();
-          if (selection.length > 0) {
-            await writeText(selection);
-            if (!disposed) {
-              term.clearSelection();
-            }
-            return;
+      await writeText(selection);
+      if (clearSelectionAfterCopy && !disposed) {
+        term.clearSelection();
+      }
+    };
+
+    const pasteClipboardIntoTerminal = async () => {
+      if (!isConnectedRef.current) {
+        return;
+      }
+
+      const clipboardText = await readText();
+      if (disposed || clipboardText.length === 0) {
+        return;
+      }
+
+      const hasMultipleLines = clipboardText.includes("\n") || clipboardText.includes("\r");
+      if (hasMultipleLines) {
+        const shouldPaste = await confirm(
+          t("terminal.multiline_paste_message", { content: clipboardText }),
+          {
+            title: t("terminal.multiline_paste_title"),
+            kind: "warning",
+            okLabel: t("terminal.multiline_paste_confirm"),
+            cancelLabel: t("terminal.multiline_paste_cancel"),
           }
+        );
 
-          if (!isConnectedRef.current) {
-            return;
-          }
+        if (!shouldPaste || disposed) {
+          return;
+        }
+      }
 
-          const clipboardText = await readText();
-          if (disposed || clipboardText.length === 0) {
-            return;
-          }
+      term.paste(clipboardText);
+    };
 
-          const hasMultipleLines = clipboardText.includes("\n") || clipboardText.includes("\r");
-          if (hasMultipleLines) {
-            const shouldPaste = await confirm(
-              t("terminal.multiline_paste_message", { content: clipboardText }),
-              {
-                title: t("terminal.multiline_paste_title"),
-                kind: "warning",
-                okLabel: t("terminal.multiline_paste_confirm"),
-                cancelLabel: t("terminal.multiline_paste_cancel"),
-              }
-            );
+    const runClipboardAction = (action: () => Promise<void>) => {
+      if (clipboardActionInProgressRef.current) {
+        return;
+      }
+      clipboardActionInProgressRef.current = true;
 
-            if (!shouldPaste || disposed) {
-              return;
-            }
-          }
-
-          if (!disposed) {
-            term.paste(clipboardText);
-          }
-        } catch {
+      void action()
+        .catch(() => {
           // Clipboard failures should not send anything to the terminal.
-        } finally {
-          contextMenuActionInProgressRef.current = false;
+        })
+        .finally(() => {
+          clipboardActionInProgressRef.current = false;
           if (!disposed) {
             term.focus();
           }
-        }
-      })();
+        });
+    };
+
+    term.attachCustomKeyEventHandler((event) => {
+      if (findShortcutAction(shortcutsRef.current, event, "application")) {
+        return false;
+      }
+
+      const action = findShortcutAction(shortcutsRef.current, event, "terminal");
+      if (!action) {
+        return true;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.type !== "keydown" || event.repeat) {
+        return false;
+      }
+
+      switch (action) {
+        case "terminal_select_all":
+          term.selectAll();
+          break;
+        case "terminal_copy":
+          runClipboardAction(() => copyTerminalSelection(false));
+          break;
+        case "terminal_paste":
+          runClipboardAction(pasteClipboardIntoTerminal);
+          break;
+        case "terminal_log_start_overwrite":
+        case "terminal_log_start_append":
+        case "terminal_log_stop":
+        case "terminal_log_pause":
+        case "terminal_log_resume":
+          if (isActiveRef.current && isConnectedRef.current) {
+            onTerminalLogShortcutRef.current?.(action);
+          }
+          break;
+      }
+      return false;
+    });
+
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+      runClipboardAction(
+        term.getSelection().length > 0
+          ? () => copyTerminalSelection(true)
+          : pasteClipboardIntoTerminal
+      );
     };
 
     terminalElement.addEventListener("contextmenu", handleContextMenu);
@@ -977,18 +1050,21 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
             {t("connection.new")}
           </button>
           <div className="terminal-view__empty-shortcuts">
-            <div className="terminal-view__shortcut">
-              <span className="terminal-view__key">Ctrl+N</span>
-              <span>{t("connection.new")}</span>
-            </div>
-            <div className="terminal-view__shortcut">
-              <span className="terminal-view__key">Ctrl+T</span>
-              <span>{t("terminal.new_tab")}</span>
-            </div>
-            <div className="terminal-view__shortcut">
-              <span className="terminal-view__key">Ctrl+,</span>
-              <span>{t("titlebar.menu.settings")}</span>
-            </div>
+            {(
+              [
+                { binding: shortcuts.new_connection, label: t("connection.new") },
+                { binding: shortcuts.new_window, label: t("titlebar.menu.new_window") },
+                { binding: shortcuts.open_settings, label: t("titlebar.menu.settings") },
+              ] satisfies Array<{ binding: ShortcutBinding | null; label: string }>
+            ).map(({ binding, label }) => {
+              const shortcut = formatShortcut(binding);
+              return shortcut ? (
+                <div className="terminal-view__shortcut" key={String(label)}>
+                  <span className="terminal-view__key">{shortcut}</span>
+                  <span>{label}</span>
+                </div>
+              ) : null;
+            })}
           </div>
         </div>
       </div>
