@@ -116,6 +116,11 @@ export interface ShortcutConfig {
   terminal_select_all: ShortcutBinding | null;
   terminal_copy: ShortcutBinding | null;
   terminal_paste: ShortcutBinding | null;
+  terminal_log_start_overwrite: ShortcutBinding | null;
+  terminal_log_start_append: ShortcutBinding | null;
+  terminal_log_stop: ShortcutBinding | null;
+  terminal_log_pause: ShortcutBinding | null;
+  terminal_log_resume: ShortcutBinding | null;
 }
 
 export interface ExternalControlConfig {

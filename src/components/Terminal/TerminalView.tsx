@@ -17,7 +17,11 @@ import type {
   TerminalConfig,
   TerminalMode,
 } from "../../types";
-import { findShortcutAction, formatShortcut } from "../../features/shortcuts/shortcutModel";
+import {
+  findShortcutAction,
+  formatShortcut,
+  type TerminalLogShortcutAction,
+} from "../../features/shortcuts/shortcutModel";
 import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
 import { DEFAULT_TERMINAL_MODE } from "../../utils/terminalModes";
 import appIcon from "../../../src-tauri/icons/icon.png";
@@ -38,6 +42,7 @@ interface TerminalViewProps {
   terminalMode: TerminalMode;
   onOpenConnection: () => void;
   onTerminalData?: (data: string) => void;
+  onTerminalLogShortcut?: (action: TerminalLogShortcutAction) => void;
 }
 
 export interface TerminalViewHandle {
@@ -109,6 +114,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     terminalMode,
     onOpenConnection,
     onTerminalData,
+    onTerminalLogShortcut,
   },
   ref
 ) {
@@ -118,11 +124,13 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const fitRef = useRef<FitAddon | null>(null);
   const decoderRef = useRef(new TextDecoder(encoding));
   const isConnectedRef = useRef(isConnected);
+  const isActiveRef = useRef(isActive);
   const isAutoLoggingRef = useRef(isAutoLogging);
   const isManualLoggingRef = useRef(isManualLogging);
   const isLoggingPausedRef = useRef(isLoggingPaused);
   const terminalModeRef = useRef(terminalMode);
   const shortcutsRef = useRef(shortcuts);
+  const onTerminalLogShortcutRef = useRef(onTerminalLogShortcut);
   const decorationFrameRef = useRef<number | null>(null);
   const decorationRebuildRef = useRef(false);
   const clipboardActionInProgressRef = useRef(false);
@@ -135,6 +143,14 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   useEffect(() => {
     shortcutsRef.current = shortcuts;
   }, [shortcuts]);
+
+  useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
+
+  useEffect(() => {
+    onTerminalLogShortcutRef.current = onTerminalLogShortcut;
+  }, [onTerminalLogShortcut]);
   const manualLogSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
@@ -818,6 +834,15 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           break;
         case "terminal_paste":
           runClipboardAction(pasteClipboardIntoTerminal);
+          break;
+        case "terminal_log_start_overwrite":
+        case "terminal_log_start_append":
+        case "terminal_log_stop":
+        case "terminal_log_pause":
+        case "terminal_log_resume":
+          if (isActiveRef.current && isConnectedRef.current) {
+            onTerminalLogShortcutRef.current?.(action);
+          }
           break;
       }
       return false;
