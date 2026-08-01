@@ -577,6 +577,9 @@ export default function App() {
           void loadSettingsPanel();
           openUtilityTab("settings");
           break;
+        case "exit":
+          appExit.requestExit();
+          break;
       }
     };
 
@@ -584,7 +587,7 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [openConnection, openUtilityTab, openWindow, shortcuts]);
+  }, [appExit.requestExit, openConnection, openUtilityTab, openWindow, shortcuts]);
 
   const refreshConfig = useCallback(async () => {
     try {

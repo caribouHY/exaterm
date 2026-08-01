@@ -114,6 +114,7 @@ export default function TitleBar({
     {
       key: "exit",
       label: t("titlebar.menu.exit"),
+      shortcut: formatShortcut(shortcuts.exit) || undefined,
       active: false,
       action: onExit,
     },

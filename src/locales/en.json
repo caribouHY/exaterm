@@ -19,6 +19,7 @@
   "settings.shortcuts.action.new_connection": "New connection",
   "settings.shortcuts.action.new_window": "New window",
   "settings.shortcuts.action.open_settings": "Open settings",
+  "settings.shortcuts.action.exit": "Exit ExaTerm",
   "settings.shortcuts.action.terminal_select_all": "Select all terminal text",
   "settings.shortcuts.action.terminal_copy": "Copy terminal selection",
   "settings.shortcuts.action.terminal_paste": "Paste into terminal",

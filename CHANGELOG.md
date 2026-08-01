@@ -4,7 +4,7 @@
 
 ### Added
 
-- Added an Exit menu action that closes all ExaTerm windows, with confirmation when terminal sessions are still connected.
+- Added an Exit menu action and configurable shortcut that close all ExaTerm windows, with confirmation when terminal sessions are still connected.
 
 ## v0.8.1
 

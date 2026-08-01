@@ -54,6 +54,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "new_connection": { "key": "n", "ctrl": true, "alt": false, "shift": false },
     "new_window": { "key": "n", "ctrl": true, "alt": false, "shift": true },
     "open_settings": { "key": ",", "ctrl": true, "alt": false, "shift": false },
+    "exit": null,
     "terminal_select_all": { "key": "a", "ctrl": true, "alt": false, "shift": true },
     "terminal_copy": { "key": "c", "ctrl": true, "alt": false, "shift": true },
     "terminal_paste": { "key": "v", "ctrl": true, "alt": false, "shift": true },
@@ -215,6 +216,7 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 | `shortcuts.new_connection`               | `Ctrl+N`         | 新規接続ダイアログを開きます。                                                   |
 | `shortcuts.new_window`                   | `Ctrl+Shift+N`   | 新しい ExaTerm ウィンドウを開きます。                                            |
 | `shortcuts.open_settings`                | `Ctrl+,`         | ショートカットなどのアプリ設定を開きます。                                       |
+| `shortcuts.exit`                         | 未割り当て       | ExaTerm を終了します。接続中のターミナルセッションがある場合は確認します。       |
 | `shortcuts.terminal_select_all`          | `Ctrl+Shift+A`   | ターミナルの画面とスクロールバック全体を選択します。                             |
 | `shortcuts.terminal_copy`                | `Ctrl+Shift+C`   | ターミナルで選択した文字をコピーします。                                         |
 | `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | 接続中のターミナルへクリップボードの文字をペーストします。                       |

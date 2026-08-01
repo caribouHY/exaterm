@@ -32,10 +32,12 @@ export function useAppExit() {
     }
   }, []);
 
+  const requestExit = useCallback(() => void exit(false), [exit]);
+
   return {
     activeSessionCount,
     isExiting,
-    requestExit: () => void exit(false),
+    requestExit,
     confirmExit: () => void exit(true),
     cancelExit: () => {
       setActiveSessionCount(null);
