@@ -64,6 +64,8 @@ pub struct ShortcutConfig {
     pub new_window: Option<ShortcutBinding>,
     #[serde(default = "default_open_settings_shortcut")]
     pub open_settings: Option<ShortcutBinding>,
+    #[serde(default)]
+    pub exit: Option<ShortcutBinding>,
     #[serde(default = "default_terminal_select_all_shortcut")]
     pub terminal_select_all: Option<ShortcutBinding>,
     #[serde(default = "default_terminal_copy_shortcut")]
@@ -129,6 +131,7 @@ impl Default for ShortcutConfig {
             new_connection: default_new_connection_shortcut(),
             new_window: default_new_window_shortcut(),
             open_settings: default_open_settings_shortcut(),
+            exit: None,
             terminal_select_all: default_terminal_select_all_shortcut(),
             terminal_copy: default_terminal_copy_shortcut(),
             terminal_paste: default_terminal_paste_shortcut(),
@@ -159,6 +162,7 @@ impl ShortcutConfig {
             &mut self.new_connection,
             &mut self.new_window,
             &mut self.open_settings,
+            &mut self.exit,
             &mut self.terminal_select_all,
             &mut self.terminal_copy,
             &mut self.terminal_paste,
@@ -190,6 +194,7 @@ fn validate_shortcut_config(shortcuts: &ShortcutConfig) -> Result<(), String> {
         ("new_connection", &shortcuts.new_connection),
         ("new_window", &shortcuts.new_window),
         ("open_settings", &shortcuts.open_settings),
+        ("exit", &shortcuts.exit),
         ("terminal_select_all", &shortcuts.terminal_select_all),
         ("terminal_copy", &shortcuts.terminal_copy),
         ("terminal_paste", &shortcuts.terminal_paste),
@@ -1051,6 +1056,7 @@ mod tests {
             cfg.shortcuts.open_settings,
             default_open_settings_shortcut()
         );
+        assert_eq!(cfg.shortcuts.exit, None);
         assert_eq!(
             cfg.shortcuts.terminal_select_all,
             default_terminal_select_all_shortcut()
@@ -1083,6 +1089,7 @@ mod tests {
                     "new_connection": {"key": "N", "ctrl": true},
                     "new_window": {"key": "f2"},
                     "open_settings": null,
+                    "exit": {"key": "Q", "ctrl": true, "shift": true},
                     "terminal_select_all": {"key": "A", "ctrl": true, "shift": true},
                     "terminal_log_stop": {"key": "f10", "ctrl": true, "shift": true}
                 }
@@ -1093,9 +1100,18 @@ mod tests {
 
         assert_eq!(cfg.shortcuts.new_connection.as_ref().unwrap().key, "n");
         assert_eq!(cfg.shortcuts.new_window.as_ref().unwrap().key, "F2");
+        assert_eq!(cfg.shortcuts.exit.as_ref().unwrap().key, "q");
         assert_eq!(cfg.shortcuts.terminal_select_all.as_ref().unwrap().key, "a");
         assert_eq!(cfg.shortcuts.terminal_log_stop.as_ref().unwrap().key, "F10");
         assert!(validate_shortcut_config(&cfg.shortcuts).is_ok());
+    }
+
+    #[test]
+    fn shortcut_config_preserves_explicit_null_exit() {
+        let cfg: AppConfig = serde_json::from_str(r#"{"shortcuts":{"exit":null}}"#).unwrap();
+
+        assert_eq!(cfg.shortcuts.exit, None);
+        assert!(serde_json::to_value(cfg).unwrap()["shortcuts"]["exit"].is_null());
     }
 
     #[test]
@@ -1110,6 +1126,7 @@ mod tests {
             new_connection: duplicate.clone(),
             new_window: None,
             open_settings: None,
+            exit: None,
             terminal_select_all: None,
             terminal_copy: duplicate,
             terminal_paste: None,
@@ -1137,6 +1154,7 @@ mod tests {
             }),
             new_window: None,
             open_settings: None,
+            exit: None,
             terminal_select_all: None,
             terminal_copy: None,
             terminal_paste: None,

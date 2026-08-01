@@ -45,6 +45,11 @@ export const SHORTCUT_ACTIONS: Array<{
     scope: "application",
   },
   {
+    id: "exit",
+    labelKey: "settings.shortcuts.action.exit",
+    scope: "application",
+  },
+  {
     id: "terminal_select_all",
     labelKey: "settings.shortcuts.action.terminal_select_all",
     scope: "terminal",
@@ -139,6 +144,7 @@ export const DEFAULT_SHORTCUT_CONFIG: ShortcutConfig = {
   new_connection: DEFAULT_NEW_CONNECTION_SHORTCUT,
   new_window: DEFAULT_NEW_WINDOW_SHORTCUT,
   open_settings: DEFAULT_OPEN_SETTINGS_SHORTCUT,
+  exit: null,
   terminal_select_all: DEFAULT_TERMINAL_SELECT_ALL_SHORTCUT,
   terminal_copy: DEFAULT_TERMINAL_COPY_SHORTCUT,
   terminal_paste: DEFAULT_TERMINAL_PASTE_SHORTCUT,
@@ -154,6 +160,7 @@ export function createDefaultShortcutConfig(): ShortcutConfig {
     new_connection: { ...DEFAULT_NEW_CONNECTION_SHORTCUT },
     new_window: { ...DEFAULT_NEW_WINDOW_SHORTCUT },
     open_settings: { ...DEFAULT_OPEN_SETTINGS_SHORTCUT },
+    exit: null,
     terminal_select_all: { ...DEFAULT_TERMINAL_SELECT_ALL_SHORTCUT },
     terminal_copy: { ...DEFAULT_TERMINAL_COPY_SHORTCUT },
     terminal_paste: { ...DEFAULT_TERMINAL_PASTE_SHORTCUT },
@@ -290,6 +297,7 @@ export function normalizeShortcutConfig(shortcuts?: Partial<ShortcutConfig>): Sh
     new_window: shortcuts.new_window === undefined ? defaults.new_window : shortcuts.new_window,
     open_settings:
       shortcuts.open_settings === undefined ? defaults.open_settings : shortcuts.open_settings,
+    exit: shortcuts.exit === undefined ? defaults.exit : shortcuts.exit,
     terminal_select_all:
       shortcuts.terminal_select_all === undefined
         ? defaults.terminal_select_all

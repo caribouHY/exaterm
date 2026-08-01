@@ -1,4 +1,5 @@
 mod ai;
+mod app_exit;
 mod app_update;
 mod cli;
 mod config;
@@ -222,6 +223,8 @@ pub fn run() {
             // App updates
             app_update::app_update_check,
             app_update::app_update_install,
+            // App lifecycle
+            app_exit::app_exit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ExaTerm");
