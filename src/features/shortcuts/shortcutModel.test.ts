@@ -60,6 +60,27 @@ describe("shortcutModel", () => {
     ).toBe("new_window");
   });
 
+  it("defines exit as an unassigned application shortcut", () => {
+    expect(DEFAULT_SHORTCUT_CONFIG.exit).toBeNull();
+    expect(SHORTCUT_ACTIONS.find(({ id }) => id === "exit")?.scope).toBe("application");
+
+    const shortcuts = {
+      ...DEFAULT_SHORTCUT_CONFIG,
+      exit: { key: "q", ctrl: true, alt: false, shift: true },
+    };
+    const exitEvent = keyEvent("Q", { ctrlKey: true, shiftKey: true });
+    expect(findShortcutAction(shortcuts, exitEvent, "application")).toBe("exit");
+    expect(findShortcutAction(shortcuts, exitEvent, "terminal")).toBeNull();
+    expect(
+      findShortcutConflict(shortcuts, "new_connection", {
+        key: "Q",
+        ctrl: true,
+        alt: false,
+        shift: true,
+      })
+    ).toBe("exit");
+  });
+
   it("keeps terminal shortcuts scoped to the terminal", () => {
     const copyEvent = keyEvent("C", { ctrlKey: true, shiftKey: true });
     const logStartEvent = keyEvent("F9", { ctrlKey: true, shiftKey: true });
@@ -164,6 +185,7 @@ describe("shortcutModel", () => {
     expect(normalized.new_connection).toBeNull();
     expect(normalized.new_window?.key).toBe("F2");
     expect(normalized.open_settings).toEqual(DEFAULT_SHORTCUT_CONFIG.open_settings);
+    expect(normalized.exit).toBeNull();
     expect(normalized.terminal_select_all).toEqual(DEFAULT_SHORTCUT_CONFIG.terminal_select_all);
     expect(normalized.terminal_copy).toBeNull();
     expect(normalized.terminal_paste).toEqual(DEFAULT_SHORTCUT_CONFIG.terminal_paste);
@@ -192,5 +214,9 @@ describe("shortcutModel", () => {
         shift: true,
       })
     ).toBe("terminal_log_start_overwrite");
+  });
+
+  it("preserves an explicit null exit shortcut", () => {
+    expect(normalizeShortcutConfig({ exit: null }).exit).toBeNull();
   });
 });

@@ -54,6 +54,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "new_connection": { "key": "n", "ctrl": true, "alt": false, "shift": false },
     "new_window": { "key": "n", "ctrl": true, "alt": false, "shift": true },
     "open_settings": { "key": ",", "ctrl": true, "alt": false, "shift": false },
+    "exit": null,
     "terminal_select_all": { "key": "a", "ctrl": true, "alt": false, "shift": true },
     "terminal_copy": { "key": "c", "ctrl": true, "alt": false, "shift": true },
     "terminal_paste": { "key": "v", "ctrl": true, "alt": false, "shift": true },
@@ -215,6 +216,7 @@ Each shortcut is either an object with `key`, `ctrl`, `alt`, and `shift` fields 
 | `shortcuts.new_connection`               | `Ctrl+N`         | Opens the new connection dialog.                                                   |
 | `shortcuts.new_window`                   | `Ctrl+Shift+N`   | Opens a new ExaTerm window.                                                        |
 | `shortcuts.open_settings`                | `Ctrl+,`         | Opens the Shortcuts and other application settings.                                |
+| `shortcuts.exit`                         | Unassigned       | Exits ExaTerm, asking for confirmation if terminal sessions are connected.         |
 | `shortcuts.terminal_select_all`          | `Ctrl+Shift+A`   | Selects the terminal screen and scrollback buffer.                                 |
 | `shortcuts.terminal_copy`                | `Ctrl+Shift+C`   | Copies the selected terminal text.                                                 |
 | `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | Pastes clipboard text into a connected terminal.                                   |
