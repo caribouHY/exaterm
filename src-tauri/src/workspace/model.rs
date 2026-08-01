@@ -1,6 +1,8 @@
 use crate::terminal_control::TerminalProtocol;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+#[cfg(any(debug_assertions, test))]
+use std::collections::HashSet;
 
 const MAIN_WINDOW_ID: &str = "main";
 
@@ -143,6 +145,7 @@ pub(super) struct WorkspaceDragDropIntent {
 }
 
 impl WorkspaceModel {
+    #[cfg(any(debug_assertions, test))]
     pub(super) fn validate_invariants(&self) -> Result<(), String> {
         let mut ordered_tab_ids = HashSet::new();
 
@@ -231,12 +234,15 @@ impl WorkspaceModel {
     }
 }
 
+#[cfg(debug_assertions)]
 fn debug_assert_invariants(model: &WorkspaceModel) {
-    #[cfg(debug_assertions)]
     if let Err(error) = model.validate_invariants() {
         panic!("Workspace model invariant violation: {error}");
     }
 }
+
+#[cfg(not(debug_assertions))]
+fn debug_assert_invariants(_: &WorkspaceModel) {}
 
 #[derive(Debug, Clone)]
 pub struct WorkspaceTabRegisterInput {
