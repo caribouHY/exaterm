@@ -40,6 +40,8 @@ import { DEFAULT_SHORTCUT_CONFIG, findShortcutAction } from "./features/shortcut
 import type { TerminalLogShortcutAction } from "./features/shortcuts/shortcutModel";
 import { AppUpdateDialog } from "./features/app-update/AppUpdateDialog";
 import { useAppUpdate } from "./features/app-update/useAppUpdate";
+import { AppExitDialog } from "./features/app-exit/AppExitDialog";
+import { useAppExit } from "./features/app-exit/useAppExit";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -123,6 +125,7 @@ export default function App() {
     windowId: windowTabs.windowId,
     checkOnStartup: config ? config.updates.check_on_startup : null,
   });
+  const appExit = useAppExit();
 
   const removeTerminalFromState = useCallback(
     (tabId: string) => {
@@ -669,8 +672,10 @@ export default function App() {
         onOpenWindow={openWindow}
         onToggleAiPanel={toggleAiPanel}
         onCheckForUpdates={appUpdate.checkManually}
+        onExit={appExit.requestExit}
       />
       <AppUpdateDialog controller={appUpdate} />
+      <AppExitDialog controller={appExit} />
       <div className="app__body">
         <div className="app__main">
           <div className="app__content">

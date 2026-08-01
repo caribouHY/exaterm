@@ -17,6 +17,7 @@ interface TitleBarProps {
   onOpenWindow: () => void;
   onToggleAiPanel: () => void;
   onCheckForUpdates: () => void;
+  onExit: () => void;
 }
 
 export default function TitleBar({
@@ -28,6 +29,7 @@ export default function TitleBar({
   onOpenWindow,
   onToggleAiPanel,
   onCheckForUpdates,
+  onExit,
 }: TitleBarProps) {
   const { t } = useTranslation();
   const appWindow = getCurrentWindow();
@@ -107,6 +109,13 @@ export default function TitleBar({
       label: t("titlebar.menu.check_updates"),
       active: false,
       action: onCheckForUpdates,
+    },
+    { key: "separator-updates-exit", separator: true },
+    {
+      key: "exit",
+      label: t("titlebar.menu.exit"),
+      active: false,
+      action: onExit,
     },
   ];
 
