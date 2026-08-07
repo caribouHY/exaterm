@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import type { AiSecretStatus, AppConfig, SshAlgorithmCatalog } from "../../types";
-import { resolveAppLanguage } from "../../i18n";
 import { AiSettings } from "./AiSettings";
 import { ExternalControlSettings } from "./ExternalControlSettings";
 import { GeneralSettings } from "./GeneralSettings";
@@ -35,7 +34,7 @@ interface SettingsPanelProps {
 }
 
 export default function SettingsPanel({ onSave }: SettingsPanelProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [initialConfigSnapshot, setInitialConfigSnapshot] = useState<AppConfig | null>(null);
   const [saved, setSaved] = useState(false);
@@ -145,9 +144,6 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       setInitialConfigSnapshot(normalizedConfig);
       await refreshSecretStatus();
 
-      const resolvedLanguage = resolveAppLanguage(normalizedConfig.language);
-      await invoke("backend_language_set", { language: resolvedLanguage });
-      if (resolvedLanguage !== i18n.language) void i18n.changeLanguage(resolvedLanguage);
       setSaved(true);
       onSave?.();
       savedTimeoutRef.current = setTimeout(() => {

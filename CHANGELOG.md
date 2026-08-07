@@ -10,6 +10,10 @@
 
 - Removed release notes from the in-app update dialog.
 
+### Fixed
+
+- Kept the display and backend language synchronized at startup and across all open windows after settings changes.
+
 ## v0.8.2
 
 ### Added
