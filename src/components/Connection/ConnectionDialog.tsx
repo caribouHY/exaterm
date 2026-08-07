@@ -305,7 +305,7 @@ export default function ConnectionDialog({
   };
 
   const handleDeleteHistory = async (connectionType: "ssh" | "telnet") => {
-    const entryId = selectedHistoryIds[connectionType];
+    const entryId = connectionType === "ssh" ? selectedHistoryIds.ssh : selectedHistoryIds.telnet;
     if (!entryId || !(await connectionHistory.deleteEntry(entryId))) return;
     setSelectedHistoryIds((current) => ({ ...current, [connectionType]: "" }));
   };

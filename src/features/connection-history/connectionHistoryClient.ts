@@ -9,16 +9,16 @@ export const connectionHistoryClient = {
     return invoke<ConnectionHistoryEntry[]>("connection_history_list");
   },
 
-  record(input: ConnectionHistoryRecordInput) {
-    return invoke<void>("connection_history_record", { input });
+  async record(input: ConnectionHistoryRecordInput) {
+    await invoke("connection_history_record", { input });
   },
 
-  delete(entryId: string) {
-    return invoke<void>("connection_history_delete", { entryId });
+  async delete(entryId: string) {
+    await invoke("connection_history_delete", { entryId });
   },
 
-  clear() {
-    return invoke<void>("connection_history_clear");
+  async clear() {
+    await invoke("connection_history_clear");
   },
 
   listenUpdated(handler: () => void) {
