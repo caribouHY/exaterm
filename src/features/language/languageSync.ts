@@ -24,7 +24,7 @@ export function createLanguageSyncController({
   systemLanguage,
   reportError,
 }: LanguageSyncDependencies): LanguageSyncController {
-  let disposed = false;
+  const abortController = new AbortController();
   let hasAppliedLanguage = false;
   let pending = false;
   let running: Promise<void> | null = null;
@@ -39,7 +39,7 @@ export function createLanguageSyncController({
       configuredLanguage = "system";
     }
 
-    if (disposed) return;
+    if (abortController.signal.aborted) return;
     const effectiveLanguage = resolveAppLanguage(configuredLanguage, systemLanguage);
 
     if (getFrontendLanguage() !== effectiveLanguage) {
@@ -50,7 +50,7 @@ export function createLanguageSyncController({
       }
     }
 
-    if (disposed) return;
+    if (abortController.signal.aborted) return;
     try {
       await setBackendLanguage(effectiveLanguage);
     } catch (error) {
@@ -60,12 +60,12 @@ export function createLanguageSyncController({
   };
 
   const requestSync = () => {
-    if (disposed) return Promise.resolve();
+    if (abortController.signal.aborted) return Promise.resolve();
     pending = true;
     if (running) return running;
 
     running = (async () => {
-      while (pending && !disposed) {
+      while (pending) {
         pending = false;
         await syncOnce();
       }
@@ -78,7 +78,7 @@ export function createLanguageSyncController({
   return {
     requestSync,
     dispose() {
-      disposed = true;
+      abortController.abort();
       pending = false;
     },
   };

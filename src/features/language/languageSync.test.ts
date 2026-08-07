@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { createLanguageSyncController, type LanguageSyncStage } from "./languageSync";
 
+function createDeferred() {
+  let resolvePromise = () => {};
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = () => resolve();
+  });
+  return { promise, resolve: resolvePromise };
+}
+
 function createController(overrides?: {
   loadConfiguredLanguage?: () => Promise<string | undefined>;
   getFrontendLanguage?: () => string | undefined;
@@ -127,5 +135,24 @@ describe("createLanguageSyncController", () => {
     expect(loadConfiguredLanguage).toHaveBeenCalledTimes(2);
     expect(setBackendLanguage).toHaveBeenNthCalledWith(1, "ja");
     expect(setBackendLanguage).toHaveBeenNthCalledWith(2, "en");
+  });
+
+  it("stops synchronization when disposed during a frontend update", async () => {
+    const frontendStarted = createDeferred();
+    const frontendUpdate = createDeferred();
+    const { controller, setBackendLanguage } = createController({
+      changeFrontendLanguage: vi.fn(() => {
+        frontendStarted.resolve();
+        return frontendUpdate.promise;
+      }),
+    });
+
+    const sync = controller.requestSync();
+    await frontendStarted.promise;
+    controller.dispose();
+    frontendUpdate.resolve();
+    await sync;
+
+    expect(setBackendLanguage).not.toHaveBeenCalled();
   });
 });
