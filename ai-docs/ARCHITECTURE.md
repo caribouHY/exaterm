@@ -55,6 +55,7 @@ When adding a Tauri command, implement it in the responsible backend module and 
 Windows user data is stored under the ExaTerm application data directory:
 
 - `%AppData%/ExaTerm/config.json` stores user settings.
+- `%AppData%/ExaTerm/connection_history.json` stores up to 10 recent successful GUI SSH and Telnet connection settings per protocol without passwords or passphrases.
 - `%AppData%/ExaTerm/logs/` stores optional plaintext terminal session logs.
 - `%AppData%/ExaTerm/logs/index.json` stores the log session index.
 - `%AppData%/ExaTerm/known_hosts` stores SSH host trust entries.

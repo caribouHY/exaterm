@@ -90,6 +90,7 @@ export interface AppConfig {
   config_version: number;
   language: "system" | "en" | "ja" | (string & {});
   updates: UpdateConfig;
+  connection_history: ConnectionHistoryConfig;
   ai: AiConfig;
   external_control: ExternalControlConfig;
   shortcuts: ShortcutConfig;
@@ -100,6 +101,10 @@ export interface AppConfig {
 
 export interface UpdateConfig {
   check_on_startup: boolean;
+}
+
+export interface ConnectionHistoryConfig {
+  enabled: boolean;
 }
 
 export interface ShortcutBinding {
@@ -215,6 +220,20 @@ export type WorkspaceConnectionInfo =
       host: string;
       port: number;
     };
+
+export interface ConnectionHistoryEntry {
+  id: string;
+  connection_info: WorkspaceConnectionInfo;
+  encoding: Encoding;
+  terminal_mode: TerminalMode;
+  last_connected_at: string;
+}
+
+export interface ConnectionHistoryRecordInput {
+  connection_info: WorkspaceConnectionInfo;
+  encoding: Encoding;
+  terminal_mode: TerminalMode;
+}
 
 export type StartupSshTargetKind = "direct" | "profile";
 

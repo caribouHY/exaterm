@@ -1,48 +1,74 @@
 import { useTranslation } from "react-i18next";
-import type { Encoding, SavedConnection, TerminalMode } from "../../types";
+import type { ConnectionHistoryEntry, Encoding, SavedConnection, TerminalMode } from "../../types";
 import { normalizeTerminalMode, TERMINAL_MODE_OPTIONS } from "../../utils/terminalModes";
+import { encodeConnectionSource } from "./connectionHistoryModel";
 import { normalizeEncoding, SSH_ENCODINGS } from "./connectionProfileUtils";
 
 interface ProfileSelectorProps {
   selectedProfileId: string;
+  selectedHistoryId: string;
   profiles: SavedConnection[];
+  historyEntries: ConnectionHistoryEntry[];
   getDisplayName: (profile: SavedConnection) => string;
-  onSelectProfile: (id: string) => void;
+  getHistoryDisplayName: (entry: ConnectionHistoryEntry) => string;
+  onSelectSource: (value: string) => void;
   onDeleteProfile: () => void;
+  onDeleteHistory: () => void;
 }
 
 export function ProfileSelector({
   selectedProfileId,
+  selectedHistoryId,
   profiles,
+  historyEntries,
   getDisplayName,
-  onSelectProfile,
+  getHistoryDisplayName,
+  onSelectSource,
   onDeleteProfile,
+  onDeleteHistory,
 }: ProfileSelectorProps) {
   const { t } = useTranslation();
 
   return (
     <div className="connection-dialog__profile">
-      <label className="label">{t("connection.profile")}</label>
+      <label className="label">{t("connection.source")}</label>
       <div className="connection-dialog__profile-row">
         <select
           className="select"
-          value={selectedProfileId}
+          value={encodeConnectionSource(selectedProfileId, selectedHistoryId)}
           onChange={(event) => {
-            onSelectProfile(event.target.value);
+            onSelectSource(event.target.value);
           }}
         >
           <option value="">{t("connection.profile_manual")}</option>
-          {profiles.map((profile) => (
-            <option key={profile.id} value={profile.id}>
-              {getDisplayName(profile)}
-            </option>
-          ))}
+          {historyEntries.length > 0 && (
+            <optgroup label={t("connection.history_recent")}>
+              {historyEntries.map((entry) => (
+                <option key={entry.id} value={`history:${entry.id}`}>
+                  {getHistoryDisplayName(entry)}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {profiles.length > 0 && (
+            <optgroup label={t("connection.profile_saved")}>
+              {profiles.map((profile) => (
+                <option key={profile.id} value={`profile:${profile.id}`}>
+                  {getDisplayName(profile)}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
-        {selectedProfileId && (
+        {selectedHistoryId ? (
+          <button className="btn btn-danger btn-sm" onClick={onDeleteHistory}>
+            {t("connection.history_delete")}
+          </button>
+        ) : selectedProfileId ? (
           <button className="btn btn-danger btn-sm" onClick={onDeleteProfile}>
             {t("connection.profile_delete")}
           </button>
-        )}
+        ) : null}
       </div>
     </div>
   );

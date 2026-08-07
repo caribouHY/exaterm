@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
-import type { AppConfig, ConnectionType, PortInfo, SavedConnection } from "../../types";
+import type {
+  AppConfig,
+  ConnectionHistoryEntry,
+  ConnectionType,
+  PortInfo,
+  SavedConnection,
+} from "../../types";
 import { DEFAULT_TERMINAL_MODE, normalizeTerminalMode } from "../../utils/terminalModes";
 import { ConnectionDialogView } from "./ConnectionDialogView";
 import { CredentialPromptModal } from "./CredentialPromptModal";
@@ -25,6 +31,8 @@ import {
 } from "./connectionProfileUtils";
 import { useConnectionActions } from "./useConnectionActions";
 import { useConnectionDialogShortcuts } from "./useConnectionDialogShortcuts";
+import { formatHistoryEntryLabel, parseConnectionSource } from "./connectionHistoryModel";
+import { useConnectionHistory } from "./useConnectionHistory";
 import { useConnectionProfileSelection } from "./useConnectionProfileSelection";
 import { useSavedConnectionProfiles } from "./useSavedConnectionProfiles";
 import { useSshDiagnostics } from "./useSshDiagnostics";
@@ -38,7 +46,7 @@ export default function ConnectionDialog({
   onClose,
   onConnect,
 }: ConnectionDialogProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const overlayMouseDownStartedRef = useRef(false);
   const connectingRef = useRef(false);
   const startupRequestHandledRef = useRef(false);
@@ -50,6 +58,7 @@ export default function ConnectionDialog({
   const [credentialPrompt, setCredentialPrompt] = useState<SshCredentialPrompt | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [selectedProfileIds, setSelectedProfileIds] = useState({ ssh: "", telnet: "" });
+  const [selectedHistoryIds, setSelectedHistoryIds] = useState({ ssh: "", telnet: "" });
   const [sshProfileName, setSshProfileName] = useState("");
   const [telnetProfileName, setTelnetProfileName] = useState("");
   const [pendingStartupConnect, setPendingStartupConnect] = useState(false);
@@ -82,6 +91,19 @@ export default function ConnectionDialog({
   const [stopBits, setStopBits] = useState("1");
   const [serialTerminalMode, setSerialTerminalMode] = useState(DEFAULT_TERMINAL_MODE);
   const diagnostics = useSshDiagnostics();
+  const connectionHistory = useConnectionHistory();
+
+  useEffect(() => {
+    setSelectedHistoryIds((current) => {
+      const ssh = connectionHistory.sshEntries.some((entry) => entry.id === current.ssh)
+        ? current.ssh
+        : "";
+      const telnet = connectionHistory.telnetEntries.some((entry) => entry.id === current.telnet)
+        ? current.telnet
+        : "";
+      return ssh === current.ssh && telnet === current.telnet ? current : { ssh, telnet };
+    });
+  }, [connectionHistory.sshEntries, connectionHistory.telnetEntries]);
 
   useEffect(() => {
     connectingRef.current = connecting;
@@ -149,6 +171,7 @@ export default function ConnectionDialog({
           : "";
       setTab("ssh");
       setSelectedProfileIds((current) => ({ ...current, ssh: "" }));
+      setSelectedHistoryIds((current) => ({ ...current, ssh: "" }));
       setSshProfileName("");
       setHost(info.host);
       setPort(String(info.port));
@@ -169,6 +192,7 @@ export default function ConnectionDialog({
     const info = initialValues.connectionInfo;
     setTab("telnet");
     setSelectedProfileIds((current) => ({ ...current, telnet: "" }));
+    setSelectedHistoryIds((current) => ({ ...current, telnet: "" }));
     setTelnetProfileName("");
     setTelnetHost(info.host);
     setTelnetPort(String(info.port));
@@ -179,6 +203,9 @@ export default function ConnectionDialog({
   const getProfileDisplayName = (profile: SavedConnection) => {
     return profile.id || t("connection.unnamed_profile");
   };
+
+  const getHistoryDisplayName = (entry: ConnectionHistoryEntry) =>
+    formatHistoryEntryLabel(entry, i18n.resolvedLanguage ?? i18n.language);
 
   const profileSelection = useConnectionProfileSelection({
     sshProfiles,
@@ -210,6 +237,79 @@ export default function ConnectionDialog({
     },
   });
 
+  const applySshHistory = (entry: ConnectionHistoryEntry) => {
+    if (entry.connection_info.kind !== "ssh") return;
+    const info = entry.connection_info;
+    const missingJumpProfileId =
+      info.jump_profile_id && !sshProfiles.some((profile) => profile.id === info.jump_profile_id)
+        ? info.jump_profile_id
+        : "";
+    setError("");
+    setSelectedProfileIds((current) => ({ ...current, ssh: "" }));
+    setSelectedHistoryIds((current) => ({ ...current, ssh: entry.id }));
+    setSshProfileName("");
+    setHost(info.host);
+    setPort(String(info.port));
+    setUsername(info.username);
+    setAuthMethod(normalizeSshAuthMethod(info.auth_method));
+    setPrivateKeyPath(info.private_key_path ?? "");
+    setJumpProfileId(info.jump_profile_id ?? "");
+    setMissingInitialJumpProfileId(missingJumpProfileId);
+    setJumpCredential("");
+    setEncoding(entry.encoding);
+    setSshTerminalMode(entry.terminal_mode);
+    setSshMemo("");
+    setSshExternalControlEnabled(true);
+    if (missingJumpProfileId) {
+      setError(t("connection.jump_profile_not_found", { profile: missingJumpProfileId }));
+    }
+  };
+
+  const applyTelnetHistory = (entry: ConnectionHistoryEntry) => {
+    if (entry.connection_info.kind !== "telnet") return;
+    setError("");
+    setSelectedProfileIds((current) => ({ ...current, telnet: "" }));
+    setSelectedHistoryIds((current) => ({ ...current, telnet: entry.id }));
+    setTelnetProfileName("");
+    setTelnetHost(entry.connection_info.host);
+    setTelnetPort(String(entry.connection_info.port));
+    setTelnetEncoding(entry.encoding);
+    setTelnetTerminalMode(entry.terminal_mode);
+    setTelnetMemo("");
+    setTelnetExternalControlEnabled(true);
+  };
+
+  const handleSelectSshSource = (value: string) => {
+    const source = parseConnectionSource(value);
+    setMissingInitialJumpProfileId("");
+    setError("");
+    if (source.kind === "history") {
+      const entry = connectionHistory.sshEntries.find((candidate) => candidate.id === source.id);
+      if (entry) applySshHistory(entry);
+      return;
+    }
+    setSelectedHistoryIds((current) => ({ ...current, ssh: "" }));
+    profileSelection.handleSelectSshProfile(source.kind === "profile" ? source.id : "");
+  };
+
+  const handleSelectTelnetSource = (value: string) => {
+    const source = parseConnectionSource(value);
+    setError("");
+    if (source.kind === "history") {
+      const entry = connectionHistory.telnetEntries.find((candidate) => candidate.id === source.id);
+      if (entry) applyTelnetHistory(entry);
+      return;
+    }
+    setSelectedHistoryIds((current) => ({ ...current, telnet: "" }));
+    profileSelection.handleSelectTelnetProfile(source.kind === "profile" ? source.id : "");
+  };
+
+  const handleDeleteHistory = async (connectionType: "ssh" | "telnet") => {
+    const entryId = connectionType === "ssh" ? selectedHistoryIds.ssh : selectedHistoryIds.telnet;
+    if (!entryId || !(await connectionHistory.deleteEntry(entryId))) return;
+    setSelectedHistoryIds((current) => ({ ...current, [connectionType]: "" }));
+  };
+
   const savedProfiles = useSavedConnectionProfiles({ config, loadConfig, setConfig, setError, t });
 
   const handleSaveSshProfile = () => {
@@ -231,6 +331,7 @@ export default function ConnectionDialog({
         }),
       (profile) => {
         setSelectedProfileIds((current) => ({ ...current, ssh: profile.id }));
+        setSelectedHistoryIds((current) => ({ ...current, ssh: "" }));
         setSshProfileName(profile.id);
       }
     );
@@ -251,6 +352,7 @@ export default function ConnectionDialog({
         }),
       (profile) => {
         setSelectedProfileIds((current) => ({ ...current, telnet: profile.id }));
+        setSelectedHistoryIds((current) => ({ ...current, telnet: "" }));
         setTelnetProfileName(profile.id);
       }
     );
@@ -336,6 +438,7 @@ export default function ConnectionDialog({
   const resetDirectSsh = useCallback(
     (request: Extract<NonNullable<typeof startupRequest>, { kind: "ssh" }>) => {
       setSelectedProfileIds((current) => ({ ...current, ssh: "" }));
+      setSelectedHistoryIds((current) => ({ ...current, ssh: "" }));
       setSshProfileName("");
       setHost(request.host ?? "");
       setUsername(request.username ?? "");
@@ -352,6 +455,7 @@ export default function ConnectionDialog({
 
   const resetDirectTelnet = useCallback((target: string, requestPort?: number | null) => {
     setSelectedProfileIds((current) => ({ ...current, telnet: "" }));
+    setSelectedHistoryIds((current) => ({ ...current, telnet: "" }));
     setTelnetProfileName("");
     setTelnetHost(target);
     setTelnetPort(String(requestPort ?? 23));
@@ -369,8 +473,14 @@ export default function ConnectionDialog({
     setError,
     setTab,
     setSelectedProfileIds,
-    applySshProfile: profileSelection.applySshProfile,
-    applyTelnetProfile: profileSelection.applyTelnetProfile,
+    applySshProfile: (profile, overridePort) => {
+      setSelectedHistoryIds((current) => ({ ...current, ssh: "" }));
+      profileSelection.applySshProfile(profile, overridePort);
+    },
+    applyTelnetProfile: (profile, overridePort) => {
+      setSelectedHistoryIds((current) => ({ ...current, telnet: "" }));
+      profileSelection.applyTelnetProfile(profile, overridePort);
+    },
     resetDirectSsh,
     resetDirectTelnet,
     setSshProfileName,
@@ -450,6 +560,7 @@ export default function ConnectionDialog({
 
   const sshFormState: SshFormState = {
     selectedProfileId: selectedProfileIds.ssh,
+    selectedHistoryId: selectedHistoryIds.ssh,
     profileName: sshProfileName,
     host,
     port,
@@ -463,9 +574,12 @@ export default function ConnectionDialog({
     externalControlEnabled: sshExternalControlEnabled,
   };
   const sshFormActions: SshFormActions = {
-    onSelectProfile: profileSelection.handleSelectSshProfile,
+    onSelectSource: handleSelectSshSource,
     onDeleteProfile: () => {
       void handleDeleteProfile("ssh");
+    },
+    onDeleteHistory: () => {
+      void handleDeleteHistory("ssh");
     },
     onProfileNameChange: setSshProfileName,
     onHostChange: setHost,
@@ -491,6 +605,7 @@ export default function ConnectionDialog({
   };
   const telnetFormState: TelnetFormState = {
     selectedProfileId: selectedProfileIds.telnet,
+    selectedHistoryId: selectedHistoryIds.telnet,
     profileName: telnetProfileName,
     host: telnetHost,
     port: telnetPort,
@@ -500,9 +615,12 @@ export default function ConnectionDialog({
     externalControlEnabled: telnetExternalControlEnabled,
   };
   const telnetFormActions: TelnetFormActions = {
-    onSelectProfile: profileSelection.handleSelectTelnetProfile,
+    onSelectSource: handleSelectTelnetSource,
     onDeleteProfile: () => {
       void handleDeleteProfile("telnet");
+    },
+    onDeleteHistory: () => {
+      void handleDeleteHistory("telnet");
     },
     onProfileNameChange: setTelnetProfileName,
     onHostChange: setTelnetHost,
@@ -532,14 +650,26 @@ export default function ConnectionDialog({
       setTab={setTab}
       connecting={connecting}
       error={error}
+      historyError={
+        connectionHistory.error
+          ? t(
+              connectionHistory.error === "delete"
+                ? "connection.history_delete_failed"
+                : "connection.history_load_failed"
+            )
+          : ""
+      }
       hostKeyCheck={hostKeyCheck}
       setHostKeyCheck={setHostKeyCheck}
       shortcutText={shortcutText}
       hostKeyTitle={hostKeyTitle}
       sshProfiles={sshProfiles}
+      sshHistoryEntries={connectionHistory.sshEntries}
       jumpProfileOptions={jumpProfileOptions}
       telnetProfiles={telnetProfiles}
+      telnetHistoryEntries={connectionHistory.telnetEntries}
       getProfileDisplayName={getProfileDisplayName}
+      getHistoryDisplayName={getHistoryDisplayName}
       sshFormState={sshFormState}
       sshFormActions={sshFormActions}
       telnetFormState={telnetFormState}

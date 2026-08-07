@@ -29,10 +29,14 @@ export function TelnetConnectionForm({
     <>
       <ProfileSelector
         selectedProfileId={formState.selectedProfileId}
+        selectedHistoryId={formState.selectedHistoryId}
         profiles={profileOptions.profiles}
+        historyEntries={profileOptions.historyEntries}
         getDisplayName={profileOptions.getDisplayName}
-        onSelectProfile={formActions.onSelectProfile}
+        getHistoryDisplayName={profileOptions.getHistoryDisplayName}
+        onSelectSource={formActions.onSelectSource}
         onDeleteProfile={formActions.onDeleteProfile}
+        onDeleteHistory={formActions.onDeleteHistory}
       />
       <ProfileNameField value={formState.profileName} onChange={formActions.onProfileNameChange} />
       <div className="connection-dialog__row">
