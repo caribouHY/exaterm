@@ -7,13 +7,14 @@ use tauri::{AppHandle, Emitter};
 use crate::ai::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
 use crate::terminal_control::TerminalControlState;
 
-const CURRENT_CONFIG_VERSION: u32 = 5;
+const CURRENT_CONFIG_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppConfig {
     pub config_version: u32,
     pub language: String,
     pub updates: UpdateConfig,
+    pub connection_history: ConnectionHistoryConfig,
     pub ai: AiConfig,
     pub external_control: ExternalControlConfig,
     pub shortcuts: ShortcutConfig,
@@ -40,6 +41,24 @@ impl Default for UpdateConfig {
     fn default() -> Self {
         Self {
             check_on_startup: default_check_on_startup(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ConnectionHistoryConfig {
+    #[serde(default = "default_connection_history_enabled")]
+    pub enabled: bool,
+}
+
+fn default_connection_history_enabled() -> bool {
+    true
+}
+
+impl Default for ConnectionHistoryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_connection_history_enabled(),
         }
     }
 }
@@ -547,6 +566,7 @@ struct AppConfigInput {
     config_version: Option<u32>,
     language: Option<String>,
     updates: Option<UpdateConfig>,
+    connection_history: Option<ConnectionHistoryConfig>,
     ai: Option<AiConfig>,
     external_control: Option<ExternalControlConfigInput>,
     #[serde(rename = "mcp")]
@@ -563,6 +583,7 @@ impl Default for AppConfig {
             config_version: CURRENT_CONFIG_VERSION,
             language: default_language(),
             updates: UpdateConfig::default(),
+            connection_history: ConnectionHistoryConfig::default(),
             ai: AiConfig::default(),
             external_control: ExternalControlConfig::default(),
             shortcuts: ShortcutConfig::default(),
@@ -587,6 +608,9 @@ impl<'de> Deserialize<'de> for AppConfig {
             config_version: input.config_version.unwrap_or(0),
             language: input.language.unwrap_or_else(default_language),
             updates: input.updates.unwrap_or(defaults.updates),
+            connection_history: input
+                .connection_history
+                .unwrap_or(defaults.connection_history),
             ai: input.ai.unwrap_or(defaults.ai),
             external_control: ExternalControlConfig {
                 enabled: external_control.enabled.unwrap_or(legacy_mcp.enabled),
@@ -685,6 +709,7 @@ mod tests {
         assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
         assert_eq!(cfg.language, "ja");
         assert!(cfg.updates.check_on_startup);
+        assert!(cfg.connection_history.enabled);
         assert_eq!(cfg.ai.default_provider, DEFAULT_AI_PROVIDER);
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
         assert!(!cfg.ai.debug_log_enabled);
@@ -721,6 +746,21 @@ mod tests {
         assert!(!cfg.updates.check_on_startup);
         let value = serde_json::to_value(cfg).unwrap();
         assert_eq!(value["updates"]["check_on_startup"], false);
+    }
+
+    #[test]
+    fn connection_history_preference_round_trips_when_disabled() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "config_version": 6,
+                "connection_history": { "enabled": false }
+            }"#,
+        )
+        .unwrap();
+
+        assert!(!cfg.connection_history.enabled);
+        let value = serde_json::to_value(&cfg).unwrap();
+        assert_eq!(value["connection_history"]["enabled"], false);
     }
 
     #[test]

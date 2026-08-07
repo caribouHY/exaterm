@@ -2,6 +2,7 @@ import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction 
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppConfig,
+  ConnectionHistoryRecordInput,
   ConnectionType,
   Encoding,
   HostKeyCheckResult,
@@ -10,6 +11,7 @@ import type {
   TerminalMode,
   WorkspaceConnectionInfo,
 } from "../../types";
+import { connectionHistoryClient } from "../../features/connection-history/connectionHistoryClient";
 import type { SshCredentialPrompt, SshHostKeyCheck } from "./connectionDialogTypes";
 import { getConnectionErrorMessage, normalizeSshAuthMethod } from "./connectionProfileUtils";
 
@@ -81,6 +83,12 @@ const getAutoLogPreference = async () => {
   } catch {
     return false;
   }
+};
+
+const recordConnectionHistory = (input: ConnectionHistoryRecordInput) => {
+  void connectionHistoryClient.record(input).catch(() => {
+    console.warn("Failed to save connection history.");
+  });
 };
 
 export const useConnectionActions = ({
@@ -168,6 +176,15 @@ export const useConnectionActions = ({
           target: `${ssh.username}@${ssh.host}:${sshPort}`,
         });
       }
+      const connectionInfo: WorkspaceConnectionInfo = {
+        kind: "ssh",
+        host: ssh.host,
+        port: sshPort,
+        username: ssh.username,
+        auth_method: promptAuthMethod,
+        private_key_path: ssh.privateKeyPath || null,
+        jump_profile_id: ssh.jumpProfileId || null,
+      };
       await onConnect(
         "ssh",
         result.session_id,
@@ -175,16 +192,13 @@ export const useConnectionActions = ({
         autoLog,
         ssh.encoding,
         ssh.terminalMode,
-        {
-          kind: "ssh",
-          host: ssh.host,
-          port: sshPort,
-          username: ssh.username,
-          auth_method: promptAuthMethod,
-          private_key_path: ssh.privateKeyPath || null,
-          jump_profile_id: ssh.jumpProfileId || null,
-        }
+        connectionInfo
       );
+      recordConnectionHistory({
+        connection_info: connectionInfo,
+        encoding: ssh.encoding,
+        terminal_mode: ssh.terminalMode,
+      });
     },
     [diagnostics, onConnect, ssh, sshProfiles]
   );
@@ -452,6 +466,11 @@ export const useConnectionActions = ({
             target: `${telnet.host}:${parsedTelnetPort}`,
           });
         }
+        const connectionInfo: WorkspaceConnectionInfo = {
+          kind: "telnet",
+          host: telnet.host,
+          port: parsedTelnetPort,
+        };
         await onConnect(
           "telnet",
           sessionId,
@@ -459,12 +478,13 @@ export const useConnectionActions = ({
           autoLog,
           telnet.encoding,
           telnet.terminalMode,
-          {
-            kind: "telnet",
-            host: telnet.host,
-            port: parsedTelnetPort,
-          }
+          connectionInfo
         );
+        recordConnectionHistory({
+          connection_info: connectionInfo,
+          encoding: telnet.encoding,
+          terminal_mode: telnet.terminalMode,
+        });
         return;
       }
 

@@ -399,6 +399,28 @@
   line-height: 1.5;
 }
 
+.settings-connection-history {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.settings-connection-history__count {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.settings-connection-history .settings-help {
+  margin: 4px 0 0;
+}
+
+.settings-connection-history .btn {
+  flex-shrink: 0;
+}
+
 .settings-ssh__catalog-error,
 .settings-ssh__custom-header {
   display: flex;
@@ -599,6 +621,10 @@
 
   .settings-category-select {
     display: block;
+  }
+
+  .settings-connection-history {
+    flex-direction: column;
   }
 
   .settings-actions {

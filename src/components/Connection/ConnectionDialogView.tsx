@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { ConnectionType, SavedConnection } from "../../types";
+import type { ConnectionHistoryEntry, ConnectionType, SavedConnection } from "../../types";
 import {
   FeedbackMessage,
   ModalBody,
@@ -31,14 +31,18 @@ interface ConnectionDialogViewProps {
   setTab: (value: ConnectionType) => void;
   connecting: boolean;
   error: string;
+  historyError: string;
   hostKeyCheck: SshHostKeyCheck | null;
   setHostKeyCheck: (value: SshHostKeyCheck | null) => void;
   shortcutText: string;
   hostKeyTitle: string;
   sshProfiles: SavedConnection[];
+  sshHistoryEntries: ConnectionHistoryEntry[];
   jumpProfileOptions: SavedConnection[];
   telnetProfiles: SavedConnection[];
+  telnetHistoryEntries: ConnectionHistoryEntry[];
   getProfileDisplayName: (profile: SavedConnection) => string;
+  getHistoryDisplayName: (entry: ConnectionHistoryEntry) => string;
   sshFormState: SshFormState;
   sshFormActions: SshFormActions;
   telnetFormState: TelnetFormState;
@@ -70,14 +74,18 @@ export function ConnectionDialogView({
   setTab,
   connecting,
   error,
+  historyError,
   hostKeyCheck,
   setHostKeyCheck,
   shortcutText,
   hostKeyTitle,
   sshProfiles,
+  sshHistoryEntries,
   jumpProfileOptions,
   telnetProfiles,
+  telnetHistoryEntries,
   getProfileDisplayName,
+  getHistoryDisplayName,
   sshFormState,
   sshFormActions,
   telnetFormState,
@@ -147,8 +155,10 @@ export function ConnectionDialogView({
               formActions={sshFormActions}
               profileOptions={{
                 profiles: sshProfiles,
+                historyEntries: sshHistoryEntries,
                 jumpProfiles: jumpProfileOptions,
                 getDisplayName: getProfileDisplayName,
+                getHistoryDisplayName,
               }}
             />
           ) : tab === "telnet" ? (
@@ -157,7 +167,9 @@ export function ConnectionDialogView({
               formActions={telnetFormActions}
               profileOptions={{
                 profiles: telnetProfiles,
+                historyEntries: telnetHistoryEntries,
                 getDisplayName: getProfileDisplayName,
+                getHistoryDisplayName,
               }}
             />
           ) : (
@@ -166,6 +178,11 @@ export function ConnectionDialogView({
           {error && (
             <FeedbackMessage tone="error" className="connection-dialog__error">
               {error}
+            </FeedbackMessage>
+          )}
+          {tab !== "serial" && historyError && (
+            <FeedbackMessage tone="error" className="connection-dialog__error">
+              {historyError}
             </FeedbackMessage>
           )}
           {tab === "ssh" && <SshDiagnosticsPanel {...diagnosticsPanelProps} />}

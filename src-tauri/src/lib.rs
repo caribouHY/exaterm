@@ -3,6 +3,7 @@ mod app_exit;
 mod app_update;
 mod cli;
 mod config;
+mod connection_history;
 mod external_control;
 mod i18n;
 mod logger;
@@ -16,6 +17,7 @@ mod terminal_control;
 mod workspace;
 
 use cli::{CliAction, StartupCliRequest};
+use connection_history::ConnectionHistoryState;
 use external_control::{
     spawn_gui_control_plane, ExternalControlCredentialState, ExternalControlLogControlState,
     ExternalControlRuntime,
@@ -70,6 +72,7 @@ pub fn run() {
     let terminal_control_state = TerminalControlState::new();
     let workspace_state = WorkspaceState::new();
     let logger_state = LoggerState::new();
+    let connection_history_state = ConnectionHistoryState::new();
     let external_control_credential_state = ExternalControlCredentialState::new();
     let external_control_log_control_state = ExternalControlLogControlState::new();
     let backend_language_state = BackendLanguageState::default();
@@ -87,6 +90,7 @@ pub fn run() {
         .manage(terminal_control_state.clone())
         .manage(workspace_state.clone())
         .manage(logger_state.clone())
+        .manage(connection_history_state)
         .manage(external_control_credential_state.clone())
         .manage(external_control_log_control_state.clone())
         .manage(backend_language_state)
@@ -194,6 +198,11 @@ pub fn run() {
             logger::logger_get_sessions,
             logger::logger_bulk_delete_sessions,
             logger::logger_get_log_dir,
+            // Connection history
+            connection_history::connection_history_list,
+            connection_history::connection_history_record,
+            connection_history::connection_history_delete,
+            connection_history::connection_history_clear,
             external_control::protocol::external_control_credential_submit,
             external_control::protocol::external_control_log_control_submit,
             terminal_control::terminal_encoding_set,
