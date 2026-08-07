@@ -10,7 +10,6 @@ import {
 const update: AppUpdateMetadata = {
   version: "0.9.0",
   currentVersion: "0.8.0",
-  notes: "Update notes",
 };
 
 describe("app update state", () => {

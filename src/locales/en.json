@@ -299,8 +299,6 @@
   "updates.working": "Working...",
   "updates.current_version": "Current: v{{version}}",
   "updates.new_version": "New: v{{version}}",
-  "updates.release_notes": "Release notes",
-  "updates.no_release_notes": "No release notes were provided.",
   "updates.download_progress": "Update download progress",
   "updates.downloaded_percent": "{{percent}}% downloaded",
   "updates.downloaded_bytes": "{{downloaded}} downloaded",

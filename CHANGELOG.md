@@ -6,6 +6,10 @@
 
 - Added local recent-connection history for successful SSH and Telnet connections, with reusable form values, individual removal, and Settings controls to disable or clear history.
 
+### Removed
+
+- Removed release notes from the in-app update dialog.
+
 ## v0.8.2
 
 ### Added

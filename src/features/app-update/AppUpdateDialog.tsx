@@ -76,15 +76,6 @@ export function AppUpdateDialog({ controller }: AppUpdateDialogProps) {
             </div>
           )}
 
-          {state.phase === "available" && (
-            <div className="app-update-dialog__notes">
-              <div className="label">{t("updates.release_notes")}</div>
-              <div className="app-update-dialog__notes-content">
-                {state.update.notes?.trim() || t("updates.no_release_notes")}
-              </div>
-            </div>
-          )}
-
           {state.phase === "confirm_active_sessions" && (
             <FeedbackMessage tone="warning">{t("updates.active_sessions_detail")}</FeedbackMessage>
           )}
