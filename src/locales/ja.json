@@ -299,8 +299,6 @@
   "updates.working": "処理中...",
   "updates.current_version": "現在: v{{version}}",
   "updates.new_version": "更新後: v{{version}}",
-  "updates.release_notes": "リリースノート",
-  "updates.no_release_notes": "リリースノートはありません。",
   "updates.download_progress": "更新のダウンロード進捗",
   "updates.downloaded_percent": "{{percent}}% ダウンロード済み",
   "updates.downloaded_bytes": "{{downloaded}} ダウンロード済み",

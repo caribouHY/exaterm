@@ -30,7 +30,6 @@ impl AppUpdateState {
 pub struct AppUpdateMetadata {
     pub version: String,
     pub current_version: String,
-    pub notes: Option<String>,
     pub published_at: Option<String>,
 }
 
@@ -132,7 +131,6 @@ pub async fn app_update_check(
     let metadata = update.as_ref().map(|update| AppUpdateMetadata {
         version: update.version.clone(),
         current_version: update.current_version.clone(),
-        notes: update.body.clone(),
         published_at: update.date.map(|date| date.to_string()),
     });
 
