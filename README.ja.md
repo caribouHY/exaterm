@@ -1,14 +1,14 @@
 # ExaTerm
 
-ExaTermはAIアシスタントとMCP連携に対応した、SSH/Telnet/シリアル通信用のWindowsターミナルアプリです。
+ExaTermはAIエージェント連携とAIチャットに対応した、SSH/Telnet/シリアル通信用のターミナルアプリです。
 
 ![window image](docs/images/window.png)
 
 ## 機能
 
 - SSH、Telnet、シリアル通信
-- MCPサーバー機能（外部AIクライアント連携）
-- OpenAI、Gemini、Anthropic、OpenRouter、Ollama、Azure OpenAIに対応したAIアシスタント
+- AIエージェント向けCLIツールとSkill
+- ターミナル内蔵AIチャット
 - ログ機能（手動/自動選択可能）
 - ネットワーク機器向け色分け機能（Cisco IOS対応）
 
@@ -16,55 +16,59 @@ ExaTermはAIアシスタントとMCP連携に対応した、SSH/Telnet/シリア
 
 ExaTermは現在Windowsのみ対応しています。
 
-macOSとLinuxは、現時点ではリリース対象としてサポートしていません。
+現時点ではmacOSやLinuxはサポートしていません。
 
 ## インストール
 
-1. ExaTermのReleasesページを開きます。
-2. インストールしたいバージョンのexeインストーラーをダウンロードします。
-3. exeインストーラーを実行します。
-4. スタートメニュー、またはインストールされたアプリケーションのショートカットからExaTermを起動します。
+wingetコマンドでインストール可能です。
 
-ExaTermは起動時に新しい正式版を確認し、更新をダウンロードまたはインストールする前に確認します。アプリメニューの**更新を確認...**から手動で確認することもできます。更新をインストールするとExaTermが終了し、接続中のターミナルセッションも切断されます。
-
-自動更新に初めて対応するリリースだけは、Releasesページから手動でインストールする必要があります。それ以降の正式版はExaTerm内から更新できます。
-
-## 初回起動
-
-初回起動時、ExaTermは次の場所に設定ディレクトリを作成します。
-
-```text
-%AppData%\ExaTerm
+```powershell
+winget install caribouhy.ExaTerm
 ```
 
-既定の設定では、ターミナルセッションログは作成されません。セッションログは、設定で自動セッションログを有効にした後にのみ開始されます。
+もしくは本リポジトリの[Releasesページ](https://github.com/caribouHY/exaterm/releases)からインストーラーをダウンロードしてください。
 
-## プライバシーとローカル保存
+## コマンドラインからの起動
 
-ExaTermはユーザーデータをWindows上にローカル保存します。
+`exaterm.exe`に引数を渡すと、ExaTermを起動してSSHまたはTelnet接続を開始できます。接続先にはホスト名、IPアドレス、または保存済みプロファイル名を指定できます。
 
-| データ               | 保存場所                        |
-| -------------------- | ------------------------------- |
-| 設定                 | `%AppData%\ExaTerm\config.json` |
-| 任意のセッションログ | `%AppData%\ExaTerm\logs`        |
-| SSH known hosts      | `%AppData%\ExaTerm\known_hosts` |
-| クラウドAIのAPIキー  | OSの資格情報ストア              |
-
-クラウドAIプロバイダーのAPIキーは`config.json`には保存されません。OSの資格情報ストアに保存されます。
-
-## セッションログ
-
-セッションログは既定では無効です。新規インストール直後は、設定で自動セッションログを明示的に有効にしない限り、ターミナルセッションログは作成されません。
-
-自動セッションログを有効にすると、ExaTermはSSH、Telnet、シリアルターミナルの入力と出力を平文のログファイルとして記録します。これらのログには、コマンド、コマンド出力、プロンプト、ホスト名、ユーザー名、デバイス出力、その他の機密性の高いターミナル内容が含まれる可能性があります。
-
-ログは次の場所に保存されます。
-
-```text
-%AppData%\ExaTerm\logs
+```powershell
+exaterm.exe ssh <user@hostname-or-ip-address|profile-name>
+exaterm.exe telnet <hostname-or-ip-address|profile-name>
+exaterm.exe help
 ```
 
-同じ場所はログ画面にも表示されます。保存済みログを削除する場合は、ExaTermを終了してから、そのフォルダ内のファイルを削除してください。
+## AIエージェント連携
+
+ExaTermに同梱されているCLIツール`exaterm-cli`と専用のAgent Skillを組み合わせることで、ClaudeやCodexなどのAIエージェントからExaTermを操作できます。
+`exaterm-cli`を利用するには、設定画面で「外部制御を有効化」と「ターミナル CLI を有効化」を有効にする必要があります。ツールの利用方法は[ターミナル CLI ガイド](docs/CLI_GUIDE.ja.md)を参照してください。
+外部制御から新しいSSH/Telnet接続を開始する場合は、「外部からの新規接続を許可」を有効にし、外部制御を許可した接続先プロファイルを事前に作成してください。
+
+### Agent Skill
+
+対応するAIエージェントから利用するには、このリポジトリの `exaterm-cli` Skillをインストールします。
+
+```powershell
+npx skills add caribouHY/exaterm --skill exaterm-cli
+```
+
+対象のエージェントを限定する場合は、`-a`オプションを指定して実行します。
+
+```powershell
+npx skills add caribouHY/exaterm --skill exaterm-cli -a codex
+npx skills add caribouHY/exaterm --skill exaterm-cli -a claude-code
+npx skills add caribouHY/exaterm --skill exaterm-cli -a github-copilot
+```
+
+SkillにExaTerm本体は含まれません。ExaTermを別途インストールし、設定画面で「外部制御を有効化」と「ターミナル CLI を有効化」を有効にしてください。
+
+### MCP連携
+
+`exaterm-mcp.exe`によるstdio MCP互換アダプターに対応しています。利用するには、設定画面で「外部制御を有効化」と「MCP 互換アダプターを有効化」を有効にしてください。
+
+外部制御から新しいSSH/Telnet接続を開始する場合は、「外部からの新規接続を許可」を有効にし、外部制御を許可した接続先プロファイルを事前に作成する必要があります。
+
+外部制御ではターミナル出力の読み取りや、入力およびコマンドの送信が可能です。ターミナル内容には機密情報が含まれる可能性があるため、信頼できるローカルクライアントに対してのみ有効にしてください。
 
 ## AIアシスタント
 
@@ -74,59 +78,16 @@ OpenAI、Azure OpenAI、Anthropic、Gemini、OpenRouterを使用するには、�
 
 Ollamaは通常APIキーを必要としませんが、ExaTermから到達できるOllamaサーバーが起動している必要があります。
 
-## MCP連携
+## 設定ファイル等の保存先
 
-ExaTermは、外部AIクライアント向けのローカルMCPサーバーを任意で起動できます。MCPアクセスは、設定で有効にしない限り無効です。
+設定ファイルやログ等は下記の場所に保存されます。
 
-有効化すると、MCPクライアントは表示中のExaTermターミナルセッションに対して、最近の出力の読み取り、入力送信、出力待機、実行結果を取得するコマンド実行を行えます。また、保存済みSSH/Telnetプロファイルやシリアルコンソールを、表示されるExaTermタブとして開くこともできます。SSHの認証情報はExaTermのUIでのみ入力します。
-
-MCPアクセスは、信頼できるクライアントに対してのみ有効にしてください。ターミナル出力、コマンド、プロンプト、ホスト名、ユーザー名、デバイス出力には機密情報が含まれる可能性があります。
-
-## ターミナル CLI
-
-`exaterm-cli.exe` を使用すると、MCP クライアントを用意せずにローカルスクリプトや
-AI エージェントから JSON ベースでターミナルを操作できます。詳細は
-[ターミナル CLI ガイド](docs/CLI_GUIDE.ja.md)を参照してください。
-
-### Agent Skill
-
-対応するコーディングエージェントから利用するには、このリポジトリの `exaterm-cli`
-Agent Skillをインストールします。
-
-```powershell
-npx skills add caribouHY/exaterm --skill exaterm-cli
-```
-
-対象を限定する場合は、`-a codex`、`-a claude-code`、または
-`-a github-copilot`を指定します。
-
-```powershell
-npx skills add caribouHY/exaterm --skill exaterm-cli -a codex
-npx skills add caribouHY/exaterm --skill exaterm-cli -a claude-code
-npx skills add caribouHY/exaterm --skill exaterm-cli -a github-copilot
-```
-
-SkillにExaTerm本体は含まれません。ExaTermを別途インストールし、
-`exaterm-cli.exe`を利用可能にしたうえで、`mcp.enabled`と`mcp.cli_enabled`を
-有効にしてください。
-
-## よくある復旧手順
-
-ExaTermが起動しない場合は、最新のexeインストーラーで再インストールしてから、もう一度起動してください。
-
-設定が壊れているように見える場合は、ExaTermを終了して次のファイルを確認してください。
-
-```text
-%AppData%\ExaTerm\config.json
-```
-
-`config.json`の名前を変更するか削除すると、次回起動時にExaTermが既定の設定を再作成します。
-
-AIリクエストが失敗する場合は、選択中のプロバイダーが利用可能か、APIキーが設定に保存されているか、ネットワークからプロバイダーへ到達できるかを確認してください。Ollamaの場合は、Ollamaサーバーが起動しており、設定されたベースURLが正しいことを確認してください。
-
-セッションログが見つからない場合は、新しいSSH、Telnet、またはシリアルセッションを開始する前に自動セッションログが有効になっていることを確認してください。ログが無効な状態で開始されたセッションについて、ExaTermが後からログを作成することはありません。
-
-手動設定の詳細は次を参照してください。
+| データ               | 保存場所                        |
+| -------------------- | ------------------------------- |
+| 設定                 | `%AppData%\ExaTerm\config.json` |
+| 任意のセッションログ | `%AppData%\ExaTerm\logs`        |
+| SSH known hosts      | `%AppData%\ExaTerm\known_hosts` |
+| AIサービスのAPIキー  | OSの資格情報ストア              |
 
 - [設定ガイド](docs/CONFIG_JSON_GUIDE.ja.md)
 - [ターミナル CLI ガイド](docs/CLI_GUIDE.ja.md)
