@@ -170,7 +170,7 @@ fn prepare_connect(
         options.private_key_path.clone(),
         options.key_passphrase.clone(),
     )?;
-    let app_config = config_load()?;
+    let app_config = config_load().map_err(|error| error.message)?;
     let jump_profile = resolve_jump_profile(&app_config, options.jump_profile_id.as_deref(), None)?;
     let config = Arc::new(build_client_config(&app_config.ssh)?);
     let host_verifier = HostKeyVerifier::enforce(options.host.clone(), options.port);

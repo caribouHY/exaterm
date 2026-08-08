@@ -253,7 +253,7 @@ fn remove_history_entry(history: &mut ConnectionHistoryFile, entry_id: &str) -> 
 #[tauri::command]
 pub fn connection_history_list(
     state: tauri::State<'_, ConnectionHistoryState>,
-) -> Result<Vec<ConnectionHistoryEntry>, String> {
+) -> Result<Vec<ConnectionHistoryEntry>, crate::command_error::BackendCommandError> {
     let _guard = state
         .file_lock
         .lock()
@@ -266,7 +266,7 @@ pub fn connection_history_record(
     app: AppHandle,
     state: tauri::State<'_, ConnectionHistoryState>,
     input: ConnectionHistoryRecordInput,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     if !crate::config::config_read()?.connection_history.enabled {
         return Ok(());
     }
@@ -288,7 +288,7 @@ pub fn connection_history_delete(
     app: AppHandle,
     state: tauri::State<'_, ConnectionHistoryState>,
     entry_id: String,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     let guard = state
         .file_lock
         .lock()
@@ -307,7 +307,7 @@ pub fn connection_history_delete(
 pub fn connection_history_clear(
     app: AppHandle,
     state: tauri::State<'_, ConnectionHistoryState>,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     let guard = state
         .file_lock
         .lock()

@@ -345,7 +345,7 @@ export const useConnectionActions = ({
       setCredentialPrompt({
         ...credentialPrompt,
         value: "",
-        error: getConnectionErrorMessage(error, t("connection.error")),
+        error: getConnectionErrorMessage(error, t, t("connection.error")),
       });
       setBusy(false);
     }
@@ -381,7 +381,7 @@ export const useConnectionActions = ({
           await continueSshConnect(checkedPort);
         }
       } catch (error: unknown) {
-        setError(getConnectionErrorMessage(error, t("connection.error")));
+        setError(getConnectionErrorMessage(error, t, t("connection.error")));
         setBusy(false);
       }
     },
@@ -515,7 +515,7 @@ export const useConnectionActions = ({
         serial.terminalMode
       );
     } catch (error: unknown) {
-      setError(getConnectionErrorMessage(error, t("connection.error")));
+      setError(getConnectionErrorMessage(error, t, t("connection.error")));
       setBusy(false);
     }
   }, [

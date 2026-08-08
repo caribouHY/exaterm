@@ -650,9 +650,9 @@ fn config_path() -> PathBuf {
 }
 
 #[tauri::command]
-pub fn config_load() -> Result<AppConfig, String> {
-    let cfg = config_read()?;
-    config_write(&cfg)?;
+pub fn config_load() -> Result<AppConfig, crate::command_error::BackendCommandError> {
+    let cfg = config_read().map_err(crate::command_error::BackendCommandError::from)?;
+    config_write(&cfg).map_err(crate::command_error::BackendCommandError::from)?;
     Ok(cfg)
 }
 
@@ -675,11 +675,13 @@ pub fn config_save(
     app: AppHandle,
     terminals: tauri::State<'_, TerminalControlState>,
     config: AppConfig,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     let config = config.migrate();
-    crate::ssh::validate_algorithm_config(&config.ssh)?;
-    validate_shortcut_config(&config.shortcuts)?;
-    config_write(&config)?;
+    crate::ssh::validate_algorithm_config(&config.ssh)
+        .map_err(crate::command_error::BackendCommandError::from)?;
+    validate_shortcut_config(&config.shortcuts)
+        .map_err(crate::command_error::BackendCommandError::from)?;
+    config_write(&config).map_err(crate::command_error::BackendCommandError::from)?;
     terminals.set_output_limit_from_scrollback(config.terminal.scrollback);
     if let Err(error) = app.emit("config://updated", ()) {
         eprintln!("Failed to emit config update: {error}");

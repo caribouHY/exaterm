@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { translateBackendCommandError } from "../../features/backend-errors/backendCommandError";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import type { AiSecretStatus, AppConfig, SshAlgorithmCatalog } from "../../types";
@@ -152,7 +153,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       }, 2000);
     } catch (saveError) {
       console.error(saveError);
-      setError(typeof saveError === "string" ? saveError : "Failed to save settings.");
+      setError(translateBackendCommandError(saveError, t, t("settings.save_failed")));
     } finally {
       setIsSaving(false);
     }

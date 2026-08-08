@@ -13,6 +13,7 @@
 ### Fixed
 
 - Kept the display and backend language synchronized at startup and across all open windows after settings changes.
+- Moved GUI backend-error translation to React while preserving stable English errors for CLI, MCP, and external control clients.
 
 ## v0.8.2
 

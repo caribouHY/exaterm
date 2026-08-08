@@ -8,11 +8,10 @@ use crate::terminal_control::TerminalProtocol;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use uuid::Uuid;
 
-fn localize<T>(
-    language: &tauri::State<'_, crate::i18n::BackendLanguageState>,
+fn command_result<T>(
     result: Result<T, String>,
-) -> Result<T, String> {
-    result.map_err(|error| crate::i18n::translate_gui_error(language.inner(), &error))
+) -> Result<T, crate::command_error::BackendCommandError> {
+    result.map_err(Into::into)
 }
 
 pub fn emit_workspace_updated(app: &AppHandle, snapshot: &WorkspaceSnapshot) {
@@ -62,10 +61,9 @@ fn create_workspace_window(app: &AppHandle, window_id: &str) -> Result<(), Strin
 #[tauri::command]
 pub async fn workspace_window_create(
     app: AppHandle,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
-) -> Result<WorkspaceWindowCreateResult, String> {
+) -> Result<WorkspaceWindowCreateResult, crate::command_error::BackendCommandError> {
     let window_id = format!("workspace-{}", Uuid::new_v4().simple());
-    localize(&language, create_workspace_window(&app, &window_id))?;
+    command_result(create_workspace_window(&app, &window_id))?;
 
     Ok(WorkspaceWindowCreateResult { window_id })
 }
@@ -110,21 +108,18 @@ pub async fn workspace_window_focus(
 pub async fn workspace_tab_move(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     tab_id: String,
     from_window_id: String,
     to_window_id: String,
     target_index: usize,
-) -> Result<WorkspaceSnapshot, String> {
-    let snapshots = localize(
-        &language,
+) -> Result<WorkspaceSnapshot, crate::command_error::BackendCommandError> {
+    let snapshots = command_result(
         state
             .move_tab(tab_id, from_window_id, to_window_id.clone(), target_index)
             .await,
     )?;
     emit_workspace_updates(&app, &snapshots);
-    localize(
-        &language,
+    command_result(
         snapshots
             .into_iter()
             .find(|snapshot| snapshot.window_id == to_window_id)
@@ -136,13 +131,11 @@ pub async fn workspace_tab_move(
 pub async fn workspace_tab_drag_start(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     window_id: String,
     tab_id: String,
     pointer_screen_position: WorkspacePointerPosition,
-) -> Result<WorkspaceDragPreview, String> {
-    let preview = localize(
-        &language,
+) -> Result<WorkspaceDragPreview, crate::command_error::BackendCommandError> {
+    let preview = command_result(
         state
             .drag_start(window_id, tab_id, pointer_screen_position)
             .await,
@@ -178,15 +171,14 @@ pub async fn workspace_tab_drag_hover(
 pub async fn workspace_tab_drag_drop(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     pointer_screen_position: WorkspacePointerPosition,
-) -> Result<WorkspaceDragDropResult, String> {
+) -> Result<WorkspaceDragDropResult, crate::command_error::BackendCommandError> {
     let intent = match state.drag_drop_prepare(pointer_screen_position).await {
         Ok(intent) => intent,
         Err(error) => {
             let preview = state.drag_cancel().await;
             emit_workspace_drag_preview(&app, &preview);
-            return Err(crate::i18n::translate_gui_error(language.inner(), &error));
+            return Err(error.into());
         }
     };
 
@@ -198,7 +190,7 @@ pub async fn workspace_tab_drag_drop(
             if let Err(error) = create_workspace_window(&app, &window_id) {
                 let preview = state.drag_cancel().await;
                 emit_workspace_drag_preview(&app, &preview);
-                return Err(crate::i18n::translate_gui_error(language.inner(), &error));
+                return Err(error.into());
             }
             let snapshot = state
                 .register_window(window_id.clone(), window_id.clone(), true)
@@ -220,7 +212,7 @@ pub async fn workspace_tab_drag_drop(
     let preview = state.drag_cancel().await;
     emit_workspace_drag_preview(&app, &preview);
 
-    let snapshots = localize(&language, move_result)?;
+    let snapshots = command_result(move_result)?;
     emit_workspace_updates(&app, &snapshots);
 
     Ok(WorkspaceDragDropResult {
@@ -241,26 +233,23 @@ pub async fn workspace_tab_drag_drop(
 pub async fn workspace_tab_detach_to_new_window(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     tab_id: String,
     from_window_id: String,
-) -> Result<WorkspaceDragDropResult, String> {
-    localize(
-        &language,
+) -> Result<WorkspaceDragDropResult, crate::command_error::BackendCommandError> {
+    command_result(
         state
             .validate_tab_move_source(&tab_id, &from_window_id)
             .await,
     )?;
 
     let window_id = format!("workspace-{}", Uuid::new_v4().simple());
-    localize(&language, create_workspace_window(&app, &window_id))?;
+    command_result(create_workspace_window(&app, &window_id))?;
     let snapshot = state
         .register_window(window_id.clone(), window_id.clone(), true)
         .await;
     emit_workspace_updated(&app, &snapshot);
 
-    let snapshots = localize(
-        &language,
+    let snapshots = command_result(
         state
             .move_tab(tab_id.clone(), from_window_id.clone(), window_id.clone(), 0)
             .await,
@@ -329,11 +318,10 @@ pub async fn workspace_tab_register(
 pub async fn workspace_tab_activate(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     window_id: String,
     tab_id: String,
-) -> Result<WorkspaceSnapshot, String> {
-    let snapshot = localize(&language, state.activate_tab(window_id, tab_id).await)?;
+) -> Result<WorkspaceSnapshot, crate::command_error::BackendCommandError> {
+    let snapshot = command_result(state.activate_tab(window_id, tab_id).await)?;
     emit_workspace_updated(&app, &snapshot);
     Ok(snapshot)
 }
@@ -342,14 +330,12 @@ pub async fn workspace_tab_activate(
 pub async fn workspace_tab_reorder(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     window_id: String,
     dragged_tab_id: String,
     target_tab_id: String,
     drop_side: String,
-) -> Result<WorkspaceSnapshot, String> {
-    let snapshot = localize(
-        &language,
+) -> Result<WorkspaceSnapshot, crate::command_error::BackendCommandError> {
+    let snapshot = command_result(
         state
             .reorder_tab(window_id, dragged_tab_id, target_tab_id, drop_side)
             .await,
@@ -362,11 +348,10 @@ pub async fn workspace_tab_reorder(
 pub async fn workspace_tab_remove(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     window_id: String,
     tab_id: String,
-) -> Result<WorkspaceSnapshot, String> {
-    let snapshot = localize(&language, state.remove_tab(window_id, tab_id).await)?;
+) -> Result<WorkspaceSnapshot, crate::command_error::BackendCommandError> {
+    let snapshot = command_result(state.remove_tab(window_id, tab_id).await)?;
     emit_workspace_updated(&app, &snapshot);
     Ok(snapshot)
 }
@@ -375,11 +360,10 @@ pub async fn workspace_tab_remove(
 pub async fn workspace_tab_update_metadata(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     tab_id: String,
     patch: WorkspaceTabMetadataPatch,
-) -> Result<WorkspaceSnapshot, String> {
-    let snapshot = localize(&language, state.update_tab_metadata(tab_id, patch).await)?;
+) -> Result<WorkspaceSnapshot, crate::command_error::BackendCommandError> {
+    let snapshot = command_result(state.update_tab_metadata(tab_id, patch).await)?;
     emit_workspace_updated(&app, &snapshot);
     Ok(snapshot)
 }

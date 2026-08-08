@@ -397,21 +397,21 @@ impl ExternalControlError {
 }
 
 pub(crate) fn invalid_params(message: impl Into<String>) -> ExternalControlError {
-    ExternalControlError::InvalidArguments(crate::i18n::translate_api_error(&message.into()))
+    ExternalControlError::InvalidArguments(message.into())
 }
 
 pub(crate) fn permission_denied(message: impl Into<String>) -> ExternalControlError {
-    ExternalControlError::PermissionDenied(crate::i18n::translate_api_error(&message.into()))
+    ExternalControlError::PermissionDenied(message.into())
 }
 
 pub(crate) fn not_found(message: impl Into<String>) -> ExternalControlError {
-    ExternalControlError::NotFound(crate::i18n::translate_api_error(&message.into()))
+    ExternalControlError::NotFound(message.into())
 }
 
 pub(crate) fn unavailable(message: impl Into<String>) -> ExternalControlError {
-    ExternalControlError::Unavailable(crate::i18n::translate_api_error(&message.into()))
+    ExternalControlError::Unavailable(message.into())
 }
 
 pub(crate) fn internal_error(message: impl Into<String>) -> ExternalControlError {
-    ExternalControlError::Internal(crate::i18n::translate_api_error(&message.into()))
+    ExternalControlError::Internal(message.into())
 }

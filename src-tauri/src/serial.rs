@@ -12,10 +12,6 @@ use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 use crate::workspace::{emit_workspace_updated, WorkspaceState};
 use crate::{logger, logger::LoggerState};
 
-fn localize_gui_error(state: &crate::i18n::BackendLanguageState, error: String) -> String {
-    crate::i18n::translate_gui_error(state, &error)
-}
-
 pub fn list_ports() -> Result<Vec<PortInfo>, String> {
     let ports =
         serialport::available_ports().map_err(|e| format!("Failed to list serial ports: {}", e))?;
@@ -172,10 +168,8 @@ async fn mark_disconnected(
 }
 
 #[tauri::command]
-pub fn serial_list_ports(
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
-) -> Result<Vec<PortInfo>, String> {
-    list_ports().map_err(|error| localize_gui_error(language.inner(), error))
+pub fn serial_list_ports() -> Result<Vec<PortInfo>, crate::command_error::BackendCommandError> {
+    list_ports().map_err(Into::into)
 }
 
 #[tauri::command]
@@ -185,11 +179,10 @@ pub async fn serial_connect(
     terminals: tauri::State<'_, TerminalControlState>,
     workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     port: String,
     config: SerialConfig,
     encoding: Option<String>,
-) -> Result<String, String> {
+) -> Result<String, crate::command_error::BackendCommandError> {
     connect(
         &app,
         &state,
@@ -201,7 +194,7 @@ pub async fn serial_connect(
         encoding,
     )
     .await
-    .map_err(|error| localize_gui_error(language.inner(), error))
+    .map_err(Into::into)
 }
 
 pub async fn connect(
@@ -349,13 +342,12 @@ pub async fn connect(
 pub async fn serial_write(
     state: tauri::State<'_, SerialState>,
     terminals: tauri::State<'_, TerminalControlState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     data: String,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     write_data(&state, terminals.inner(), &session_id, data)
         .await
-        .map_err(|error| localize_gui_error(language.inner(), error))
+        .map_err(Into::into)
 }
 
 pub async fn write_data(
@@ -385,9 +377,8 @@ pub async fn serial_disconnect(
     terminals: tauri::State<'_, TerminalControlState>,
     workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
-    _language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     let _ = remove_session(
         &app,
         &terminals,

@@ -67,9 +67,13 @@ pub async fn ai_get_models() -> Result<Vec<AiModelInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn ai_get_ollama_models(base_url: String) -> Result<Vec<AiModelInfo>, String> {
+pub async fn ai_get_ollama_models(
+    base_url: String,
+) -> Result<Vec<AiModelInfo>, crate::command_error::BackendCommandError> {
     let client = reqwest::Client::new();
-    fetch_provider_models(&client, &AiProvider::Ollama, None, Some(&base_url), "en").await
+    fetch_provider_models(&client, &AiProvider::Ollama, None, Some(&base_url), "en")
+        .await
+        .map_err(Into::into)
 }
 
 fn build_system_prompt(terminal_context: &Option<String>, language: &str) -> String {
@@ -114,34 +118,50 @@ Command suggestions:
 }
 
 #[tauri::command]
-pub fn ai_secret_status() -> Result<AiSecretStatus, String> {
+pub fn ai_secret_status() -> Result<AiSecretStatus, crate::command_error::BackendCommandError> {
     Ok(AiSecretStatus {
-        openai: is_secret_present(KEY_OPENAI)?,
-        azure_openai: is_secret_present(KEY_AZURE_OPENAI)?,
-        anthropic: is_secret_present(KEY_ANTHROPIC)?,
-        gemini: is_secret_present(KEY_GEMINI)?,
-        openrouter: is_secret_present(KEY_OPENROUTER)?,
+        openai: is_secret_present(KEY_OPENAI)
+            .map_err(crate::command_error::BackendCommandError::from)?,
+        azure_openai: is_secret_present(KEY_AZURE_OPENAI)
+            .map_err(crate::command_error::BackendCommandError::from)?,
+        anthropic: is_secret_present(KEY_ANTHROPIC)
+            .map_err(crate::command_error::BackendCommandError::from)?,
+        gemini: is_secret_present(KEY_GEMINI)
+            .map_err(crate::command_error::BackendCommandError::from)?,
+        openrouter: is_secret_present(KEY_OPENROUTER)
+            .map_err(crate::command_error::BackendCommandError::from)?,
     })
 }
 
 #[tauri::command]
-pub fn ai_secret_set(provider: String, value: String) -> Result<(), String> {
-    let key_name = provider_secret_key(provider.trim())
-        .ok_or_else(|| "Unsupported provider for secure secret storage".to_string())?;
+pub fn ai_secret_set(
+    provider: String,
+    value: String,
+) -> Result<(), crate::command_error::BackendCommandError> {
+    let key_name = provider_secret_key(provider.trim()).ok_or_else(|| {
+        crate::command_error::BackendCommandError::from(
+            "Unsupported provider for secure secret storage",
+        )
+    })?;
 
     if value.trim().is_empty() {
-        return Err("Secret value cannot be empty".into());
+        return Err(crate::command_error::BackendCommandError::from(
+            "Secret value cannot be empty",
+        ));
     }
 
-    secrets::set_secret(key_name, value.trim())
+    secrets::set_secret(key_name, value.trim()).map_err(Into::into)
 }
 
 #[tauri::command]
-pub fn ai_secret_clear(provider: String) -> Result<(), String> {
-    let key_name = provider_secret_key(provider.trim())
-        .ok_or_else(|| "Unsupported provider for secure secret storage".to_string())?;
+pub fn ai_secret_clear(provider: String) -> Result<(), crate::command_error::BackendCommandError> {
+    let key_name = provider_secret_key(provider.trim()).ok_or_else(|| {
+        crate::command_error::BackendCommandError::from(
+            "Unsupported provider for secure secret storage",
+        )
+    })?;
 
-    secrets::clear_secret(key_name)
+    secrets::clear_secret(key_name).map_err(Into::into)
 }
 
 #[tauri::command]
@@ -153,7 +173,7 @@ pub async fn ai_chat(
     language: String,
     ollama_base_url: Option<String>,
     azure_openai_endpoint: Option<String>,
-) -> Result<String, String> {
+) -> Result<String, crate::command_error::BackendCommandError> {
     let client = reqwest::Client::new();
     let system_prompt = build_system_prompt(&terminal_context, &language);
     let config = crate::config::config_read()
@@ -209,7 +229,7 @@ pub async fn ai_chat(
         }
     }
 
-    result
+    result.map_err(Into::into)
 }
 
 fn effective_azure_openai_endpoint(

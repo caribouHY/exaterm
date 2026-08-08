@@ -530,17 +530,15 @@ fn azure_openai_chat_url(
     let deployment = deployment.trim();
 
     if endpoint.is_empty() || deployment.is_empty() {
-        return Err(crate::i18n::translate_for_app_language(
-            language,
-            "Configure the Azure OpenAI endpoint and model deployment name in Settings.",
-        ));
+        return Err(
+            "Configure the Azure OpenAI endpoint and model deployment name in Settings."
+                .to_string(),
+        );
     }
 
     reqwest::Url::parse(endpoint).map_err(|_| -> String {
-        crate::i18n::translate_for_app_language(
-            language,
-            "The Azure OpenAI endpoint URL is invalid. Check the value in Settings.",
-        )
+        let _ = language;
+        "The Azure OpenAI endpoint URL is invalid. Check the value in Settings.".to_string()
     })?;
 
     Ok(endpoint.to_string())
@@ -548,10 +546,8 @@ fn azure_openai_chat_url(
 
 fn ensure_model_selected(model: &str, language: &str) -> Result<(), String> {
     if model.trim().is_empty() {
-        return Err(crate::i18n::translate_for_app_language(
-            language,
-            "No AI model is selected. Choose a model, then try again.",
-        ));
+        let _ = language;
+        return Err("No AI model is selected. Choose a model, then try again.".to_string());
     }
 
     Ok(())
@@ -781,9 +777,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_empty_model_in_japanese() {
-        let err = ensure_model_selected("", "ja").unwrap_err();
+    fn provider_error_language_is_independent_from_requested_response_language() {
+        let english = ensure_model_selected("", "en").unwrap_err();
+        let japanese_response = ensure_model_selected("", "ja").unwrap_err();
 
-        assert!(err.contains("AI"));
+        assert_eq!(japanese_response, english);
     }
 }

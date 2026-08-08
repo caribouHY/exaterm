@@ -50,7 +50,7 @@ export const useSavedConnectionProfiles = ({
       setConfig(nextConfig);
       onSaved(nextProfile);
     } catch (caught: unknown) {
-      setError(getConnectionErrorMessage(caught, t("connection.error")));
+      setError(getConnectionErrorMessage(caught, t, t("connection.error")));
     }
   };
 

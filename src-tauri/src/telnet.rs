@@ -12,10 +12,6 @@ use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 use crate::workspace::{emit_workspace_updated, WorkspaceState};
 use crate::{logger, logger::LoggerState};
 
-fn localize_gui_error(state: &crate::i18n::BackendLanguageState, error: String) -> String {
-    crate::i18n::translate_gui_error(state, &error)
-}
-
 const IAC: u8 = 255;
 const DONT: u8 = 254;
 const DO: u8 = 253;
@@ -261,13 +257,12 @@ pub async fn telnet_connect(
     terminals: tauri::State<'_, TerminalControlState>,
     workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     host: String,
     port: u16,
     cols: u32,
     rows: u32,
     encoding: Option<String>,
-) -> Result<String, String> {
+) -> Result<String, crate::command_error::BackendCommandError> {
     connect(
         &app,
         &state,
@@ -281,7 +276,7 @@ pub async fn telnet_connect(
         encoding,
     )
     .await
-    .map_err(|error| localize_gui_error(language.inner(), error))
+    .map_err(Into::into)
 }
 
 pub async fn connect(
@@ -412,13 +407,12 @@ pub async fn connect(
 pub async fn telnet_write(
     state: tauri::State<'_, TelnetState>,
     terminals: tauri::State<'_, TerminalControlState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     data: String,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     write_data(&state, terminals.inner(), &session_id, data)
         .await
-        .map_err(|error| localize_gui_error(language.inner(), error))
+        .map_err(Into::into)
 }
 
 pub async fn write_data(
@@ -447,11 +441,10 @@ pub async fn write_data(
 #[tauri::command]
 pub async fn telnet_resize(
     state: tauri::State<'_, TelnetState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     cols: u32,
     rows: u32,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     let writer = {
         let sessions = state.sessions.lock().await;
         sessions
@@ -465,10 +458,10 @@ pub async fn telnet_resize(
         .send(build_naws(clamp_dimension(cols), clamp_dimension(rows)))
         .await
         .map_err(|e| {
-            localize_gui_error(
-                language.inner(),
-                format!("Failed to send the resize request: {}", e),
-            )
+            crate::command_error::BackendCommandError::from_message(format!(
+                "Failed to send the resize request: {}",
+                e
+            ))
         })
 }
 
@@ -479,9 +472,8 @@ pub async fn telnet_disconnect(
     terminals: tauri::State<'_, TerminalControlState>,
     workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
-    _language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     if let Some(session) = remove_session(
         &app,
         &terminals,

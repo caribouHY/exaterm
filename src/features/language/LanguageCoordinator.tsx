@@ -29,9 +29,6 @@ export function LanguageCoordinator({ children }: LanguageCoordinatorProps) {
       changeFrontendLanguage: async (language) => {
         await i18n.changeLanguage(language);
       },
-      setBackendLanguage: async (language) => {
-        await invoke("backend_language_set", { language });
-      },
       systemLanguage: globalThis.navigator.language,
       reportError: reportLanguageSyncError,
     });
