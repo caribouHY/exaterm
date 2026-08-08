@@ -340,6 +340,6 @@ pub(super) fn build_client_config(ssh_config: &SshConfig) -> Result<russh::clien
 }
 
 pub(super) fn load_client_config() -> Result<russh::client::Config, String> {
-    let app_config = config_load()?;
+    let app_config = config_load().map_err(|error| error.message)?;
     build_client_config(&app_config.ssh)
 }

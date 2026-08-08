@@ -19,6 +19,10 @@ import type {
 import type { ConnectionDialogInitialValues } from "./components/Connection/connectionDialogTypes";
 import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  backendCommandErrorMessage,
+  translateBackendCommandError,
+} from "./features/backend-errors/backendCommandError";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
@@ -280,7 +284,7 @@ export default function App() {
           await submitLogControl(
             payload.request_id,
             null,
-            typeof error === "string" ? error : "MCPログ開始に失敗しました"
+            backendCommandErrorMessage(error, "Failed to start the external control log.")
           );
         }
       }
@@ -316,7 +320,7 @@ export default function App() {
           await submitLogControl(
             payload.request_id,
             null,
-            typeof error === "string" ? error : "MCPログ停止に失敗しました"
+            backendCommandErrorMessage(error, "Failed to stop the external control log.")
           );
         }
       }
@@ -363,7 +367,7 @@ export default function App() {
         setMcpCredentialPrompts((prev) => prev.slice(1));
       } catch (error) {
         updateActiveMcpCredentialPrompt({
-          error: typeof error === "string" ? error : t("mcp.credential_submit_failed"),
+          error: translateBackendCommandError(error, t, t("mcp.credential_submit_failed")),
           submitting: false,
         });
       }

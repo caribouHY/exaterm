@@ -47,6 +47,9 @@ Avoid changes that remount terminal views or drop active tab state unless the ta
 - `src-tauri/src/external_control/` owns the typed terminal-operation API, GUI-local control protocol, client discovery, and GUI startup flow used by `exaterm-mcp` and `exaterm-cli`.
 - `src-tauri/src/mcp/` adapts the typed external-control API to the existing MCP tool behavior.
 - `src-tauri/src/terminal_cli.rs` defines the typed JSON terminal CLI.
+- `src-tauri/src/command_error.rs` defines the structured Tauri command error contract. Rust returns stable error codes, interpolation parameters, and English fallback messages; React translates known GUI errors through `src/features/backend-errors/` and i18next.
+
+Backend code does not keep GUI language state. The `language` argument passed to `ai_chat` controls the requested AI response language only; it does not select backend error wording. External control, MCP, and CLI errors remain English and use their existing machine-readable adapters.
 
 When adding a Tauri command, implement it in the responsible backend module and register it in `src-tauri/src/lib.rs`.
 

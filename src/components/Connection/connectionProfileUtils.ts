@@ -5,6 +5,10 @@ import type {
   SshAuthMethod,
   TerminalMode,
 } from "../../types";
+import {
+  translateBackendCommandError,
+  type BackendErrorTranslator,
+} from "../../features/backend-errors/backendCommandError";
 
 export const SSH_ENCODINGS: { label: string; value: Encoding }[] = [
   { label: "UTF-8", value: "utf-8" },
@@ -131,6 +135,8 @@ export const removeSavedProfile = (
   ),
 });
 
-export const getConnectionErrorMessage = (error: unknown, fallback: string) => {
-  return typeof error === "string" ? error : error instanceof Error ? error.message : fallback;
-};
+export const getConnectionErrorMessage = (
+  error: unknown,
+  t: BackendErrorTranslator,
+  fallback: string
+) => translateBackendCommandError(error, t, fallback);

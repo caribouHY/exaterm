@@ -15,38 +15,33 @@ function createController(overrides?: {
   loadConfiguredLanguage?: () => Promise<string | undefined>;
   getFrontendLanguage?: () => string | undefined;
   changeFrontendLanguage?: (language: "en" | "ja") => Promise<void>;
-  setBackendLanguage?: (language: "en" | "ja") => Promise<void>;
 }) {
   const errors: Array<{ stage: LanguageSyncStage; error: unknown }> = [];
   const changeFrontendLanguage =
     overrides?.changeFrontendLanguage ?? vi.fn(async (_language: "en" | "ja") => {});
-  const setBackendLanguage =
-    overrides?.setBackendLanguage ?? vi.fn(async (_language: "en" | "ja") => {});
   const controller = createLanguageSyncController({
     loadConfiguredLanguage: overrides?.loadConfiguredLanguage ?? vi.fn(async () => "ja"),
     getFrontendLanguage: overrides?.getFrontendLanguage ?? (() => "en"),
     changeFrontendLanguage,
-    setBackendLanguage,
     systemLanguage: "en-US",
     reportError: (stage, error) => errors.push({ stage, error }),
   });
 
-  return { controller, errors, changeFrontendLanguage, setBackendLanguage };
+  return { controller, errors, changeFrontendLanguage };
 }
 
 describe("createLanguageSyncController", () => {
-  it("applies the configured language to the frontend and backend", async () => {
-    const { controller, changeFrontendLanguage, setBackendLanguage } = createController();
+  it("applies the configured language to the frontend", async () => {
+    const { controller, changeFrontendLanguage } = createController();
 
     await controller.requestSync();
 
     expect(changeFrontendLanguage).toHaveBeenCalledWith("ja");
-    expect(setBackendLanguage).toHaveBeenCalledWith("ja");
   });
 
   it("uses the system language when the initial config load fails", async () => {
     const loadError = new Error("load failed");
-    const { controller, errors, changeFrontendLanguage, setBackendLanguage } = createController({
+    const { controller, errors, changeFrontendLanguage } = createController({
       loadConfiguredLanguage: vi.fn(async () => {
         throw loadError;
       }),
@@ -56,7 +51,6 @@ describe("createLanguageSyncController", () => {
     await controller.requestSync();
 
     expect(changeFrontendLanguage).toHaveBeenCalledWith("en");
-    expect(setBackendLanguage).toHaveBeenCalledWith("en");
     expect(errors).toEqual([{ stage: "config_load", error: loadError }]);
   });
 
@@ -66,20 +60,20 @@ describe("createLanguageSyncController", () => {
       .fn<() => Promise<string | undefined>>()
       .mockResolvedValueOnce("ja")
       .mockRejectedValueOnce(loadError);
-    const { controller, errors, setBackendLanguage } = createController({
+    const { controller, errors, changeFrontendLanguage } = createController({
       loadConfiguredLanguage,
     });
 
     await controller.requestSync();
     await controller.requestSync();
 
-    expect(setBackendLanguage).toHaveBeenCalledTimes(1);
+    expect(changeFrontendLanguage).toHaveBeenCalledTimes(1);
     expect(errors).toEqual([{ stage: "config_load", error: loadError }]);
   });
 
-  it("continues backend synchronization when the frontend update fails", async () => {
+  it("reports a frontend update failure", async () => {
     const frontendError = new Error("frontend failed");
-    const { controller, errors, setBackendLanguage } = createController({
+    const { controller, errors } = createController({
       changeFrontendLanguage: vi.fn(async () => {
         throw frontendError;
       }),
@@ -87,36 +81,21 @@ describe("createLanguageSyncController", () => {
 
     await controller.requestSync();
 
-    expect(setBackendLanguage).toHaveBeenCalledWith("ja");
     expect(errors).toEqual([{ stage: "frontend", error: frontendError }]);
   });
 
-  it("reports a backend failure without undoing the frontend update", async () => {
-    const backendError = new Error("backend failed");
-    const { controller, errors, changeFrontendLanguage } = createController({
-      setBackendLanguage: vi.fn(async () => {
-        throw backendError;
-      }),
-    });
-
-    await controller.requestSync();
-
-    expect(changeFrontendLanguage).toHaveBeenCalledWith("ja");
-    expect(errors).toEqual([{ stage: "backend", error: backendError }]);
-  });
-
   it("skips a redundant frontend language update", async () => {
-    const { controller, changeFrontendLanguage, setBackendLanguage } = createController({
+    const { controller, changeFrontendLanguage } = createController({
       getFrontendLanguage: () => "ja",
     });
 
     await controller.requestSync();
 
     expect(changeFrontendLanguage).not.toHaveBeenCalled();
-    expect(setBackendLanguage).toHaveBeenCalledWith("ja");
   });
 
   it("serializes overlapping refresh requests", async () => {
+    let currentLanguage = "en";
     let finishFirstLoad: ((language: string) => void) | undefined;
     const loadConfiguredLanguage = vi
       .fn<() => Promise<string | undefined>>()
@@ -127,7 +106,14 @@ describe("createLanguageSyncController", () => {
           })
       )
       .mockResolvedValueOnce("en");
-    const { controller, setBackendLanguage } = createController({ loadConfiguredLanguage });
+    const changeFrontendLanguage = vi.fn(async (language: "en" | "ja") => {
+      currentLanguage = language;
+    });
+    const { controller } = createController({
+      loadConfiguredLanguage,
+      getFrontendLanguage: () => currentLanguage,
+      changeFrontendLanguage,
+    });
 
     const firstSync = controller.requestSync();
     const overlappingSync = controller.requestSync();
@@ -135,18 +121,19 @@ describe("createLanguageSyncController", () => {
     await Promise.all([firstSync, overlappingSync]);
 
     expect(loadConfiguredLanguage).toHaveBeenCalledTimes(2);
-    expect(setBackendLanguage).toHaveBeenNthCalledWith(1, "ja");
-    expect(setBackendLanguage).toHaveBeenNthCalledWith(2, "en");
+    expect(changeFrontendLanguage).toHaveBeenNthCalledWith(1, "ja");
+    expect(changeFrontendLanguage).toHaveBeenNthCalledWith(2, "en");
   });
 
-  it("stops synchronization when disposed during a frontend update", async () => {
+  it("finishes an in-flight frontend update when disposed", async () => {
     const frontendStarted = createDeferred();
     const frontendUpdate = createDeferred();
-    const { controller, setBackendLanguage } = createController({
-      changeFrontendLanguage: vi.fn(() => {
-        frontendStarted.resolve();
-        return frontendUpdate.promise;
-      }),
+    const changeFrontendLanguage = vi.fn(() => {
+      frontendStarted.resolve();
+      return frontendUpdate.promise;
+    });
+    const { controller } = createController({
+      changeFrontendLanguage,
     });
 
     const sync = controller.requestSync();
@@ -155,6 +142,6 @@ describe("createLanguageSyncController", () => {
     frontendUpdate.resolve();
     await sync;
 
-    expect(setBackendLanguage).not.toHaveBeenCalled();
+    expect(changeFrontendLanguage).toHaveBeenCalledTimes(1);
   });
 });

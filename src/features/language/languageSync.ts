@@ -1,12 +1,11 @@
 import { resolveAppLanguage, type EffectiveLanguage } from "./languageModel";
 
-export type LanguageSyncStage = "event_listener" | "config_load" | "frontend" | "backend";
+export type LanguageSyncStage = "event_listener" | "config_load" | "frontend";
 
 interface LanguageSyncDependencies {
   loadConfiguredLanguage: () => Promise<string | undefined>;
   getFrontendLanguage: () => string | undefined;
   changeFrontendLanguage: (language: EffectiveLanguage) => Promise<void>;
-  setBackendLanguage: (language: EffectiveLanguage) => Promise<void>;
   systemLanguage: string | undefined;
   reportError: (stage: LanguageSyncStage, error: unknown) => void;
 }
@@ -20,7 +19,6 @@ export function createLanguageSyncController({
   loadConfiguredLanguage,
   getFrontendLanguage,
   changeFrontendLanguage,
-  setBackendLanguage,
   systemLanguage,
   reportError,
 }: LanguageSyncDependencies): LanguageSyncController {
@@ -50,12 +48,6 @@ export function createLanguageSyncController({
       }
     }
 
-    if (abortController.signal.aborted) return;
-    try {
-      await setBackendLanguage(effectiveLanguage);
-    } catch (error) {
-      reportError("backend", error);
-    }
     hasAppliedLanguage = true;
   };
 

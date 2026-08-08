@@ -385,25 +385,20 @@ fn log_sessions_for_mode(
     }
 }
 
-fn localize<T>(
-    language: &tauri::State<'_, crate::i18n::BackendLanguageState>,
+fn command_result<T>(
     result: Result<T, String>,
-) -> Result<T, String> {
-    result.map_err(|error| crate::i18n::translate_gui_error(language.inner(), &error))
+) -> Result<T, crate::command_error::BackendCommandError> {
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
 pub async fn logger_start_auto(
     state: tauri::State<'_, LoggerState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     connection_type: String,
     target: String,
-) -> Result<String, String> {
-    localize(
-        &language,
-        start_auto_log(&state, session_id, connection_type, target).await,
-    )
+) -> Result<String, crate::command_error::BackendCommandError> {
+    command_result(start_auto_log(&state, session_id, connection_type, target).await)
 }
 
 pub async fn start_auto_log(
@@ -434,15 +429,13 @@ pub async fn start_auto_log(
 #[tauri::command]
 pub async fn logger_start_manual(
     state: tauri::State<'_, LoggerState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     connection_type: String,
     target: String,
     file_path: Option<String>,
     write_mode: Option<String>,
-) -> Result<String, String> {
-    localize(
-        &language,
+) -> Result<String, crate::command_error::BackendCommandError> {
+    command_result(
         start_manual_log(
             &state,
             session_id,
@@ -486,21 +479,19 @@ pub async fn start_manual_log(
 #[tauri::command]
 pub async fn logger_start(
     state: tauri::State<'_, LoggerState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     connection_type: String,
     target: String,
-) -> Result<String, String> {
-    logger_start_auto(state, language, session_id, connection_type, target).await
+) -> Result<String, crate::command_error::BackendCommandError> {
+    logger_start_auto(state, session_id, connection_type, target).await
 }
 
 #[tauri::command]
 pub async fn logger_stop_manual(
     state: tauri::State<'_, LoggerState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
-) -> Result<(), String> {
-    localize(&language, stop_manual_log(&state, &session_id).await)
+) -> Result<(), crate::command_error::BackendCommandError> {
+    command_result(stop_manual_log(&state, &session_id).await)
 }
 
 pub async fn stop_manual_log(state: &LoggerState, session_id: &str) -> Result<(), String> {
@@ -537,10 +528,9 @@ pub async fn logger_is_manual_active(
 #[tauri::command]
 pub async fn logger_append(
     state: tauri::State<'_, LoggerState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     data: String,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     let active_sessions = {
         let sessions = state.sessions.lock().await;
         sessions
@@ -555,55 +545,46 @@ pub async fn logger_append(
             })
             .unwrap_or_default()
     };
-    localize(&language, append_to_log_sessions(&active_sessions, &data))
+    command_result(append_to_log_sessions(&active_sessions, &data))
 }
 
 #[tauri::command]
 pub async fn logger_append_to_mode(
     state: tauri::State<'_, LoggerState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     log_mode: String,
     data: String,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     let active_sessions = {
         let sessions = state.sessions.lock().await;
-        localize(
-            &language,
-            log_sessions_for_mode(sessions.get(&session_id), &log_mode),
-        )?
+        command_result(log_sessions_for_mode(sessions.get(&session_id), &log_mode))?
     };
-    localize(&language, append_to_log_sessions(&active_sessions, &data))
+    command_result(append_to_log_sessions(&active_sessions, &data))
 }
 
 #[tauri::command]
 pub async fn logger_get_sessions(
     state: tauri::State<'_, LoggerState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
-) -> Result<Vec<LogSession>, String> {
+) -> Result<Vec<LogSession>, crate::command_error::BackendCommandError> {
     let _sessions = state.sessions.lock().await;
-    localize(&language, read_log_index(&state.index_path))
+    command_result(read_log_index(&state.index_path))
 }
 
 #[tauri::command]
 pub async fn logger_bulk_delete_sessions(
     state: tauri::State<'_, LoggerState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     delete_auto_files: bool,
-) -> Result<LogBulkDeleteResult, String> {
+) -> Result<LogBulkDeleteResult, crate::command_error::BackendCommandError> {
     let active_keys = {
         let sessions = state.sessions.lock().await;
         active_log_keys(&sessions)
     };
-    localize(
-        &language,
-        bulk_delete_log_sessions(
-            &state.index_path,
-            &state.log_dir,
-            &active_keys,
-            delete_auto_files,
-        ),
-    )
+    command_result(bulk_delete_log_sessions(
+        &state.index_path,
+        &state.log_dir,
+        &active_keys,
+        delete_auto_files,
+    ))
 }
 
 #[tauri::command]

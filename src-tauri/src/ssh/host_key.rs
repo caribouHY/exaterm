@@ -356,7 +356,7 @@ pub async fn ssh_probe_host_key(
     state: tauri::State<'_, SshState>,
     options: SshProbeHostKeyOptions,
 ) -> Result<HostKeyCheckResult, String> {
-    let config = config_load()?;
+    let config = config_load().map_err(|error| error.message)?;
     let jump_profile = resolve_jump_profile(&config, options.jump_profile_id.as_deref(), None)?;
     let diagnostic = SshDiagnostic::new(&app, options.request_id.clone());
     let role = normalize_diagnostic_role(options.diagnostic_role);
