@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import type { IDecoration, IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -24,6 +24,14 @@ import {
 } from "../../features/shortcuts/shortcutModel";
 import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
 import { DEFAULT_TERMINAL_MODE } from "../../utils/terminalModes";
+import {
+  collectCiscoIosCommandSegments,
+  findCiscoIosPinnedCommand,
+  hasCiscoIosPromptInRange,
+  parseCiscoIosPrompt,
+  type CiscoIosCommandSegment,
+  type CiscoIosPinnedCommand,
+} from "./ciscoIosCommandModel";
 import appIcon from "../../../src-tauri/icons/icon.png";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
@@ -70,13 +78,6 @@ interface CommandDecoration {
   marker?: IMarker;
 }
 
-interface CommandDecorationSegment {
-  lineIndex: number;
-  x: number;
-  width: number;
-  text: string;
-}
-
 interface LineRange {
   firstLineIndex: number;
   lastLineIndex: number;
@@ -90,6 +91,13 @@ interface TerminalOutputSnapshot {
   start_cursor: number;
   cursor: number;
 }
+
+const CISCO_IOS_DECORATION_COLORS = {
+  prompt: "#7dd3fc",
+  configPrompt: "#facc15",
+  command: "#6ee7b7",
+  error: "#f87171",
+} as const;
 
 function normalizeCursorStyle(cursorStyle: string | undefined): "block" | "bar" | "underline" {
   if (cursorStyle === "bar" || cursorStyle === "underline") {
@@ -119,6 +127,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   ref
 ) {
   const { t } = useTranslation();
+  const [pinnedCiscoIosCommand, setPinnedCiscoIosCommand] = useState<CiscoIosPinnedCommand | null>(
+    null
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -136,6 +147,12 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const clipboardActionInProgressRef = useRef(false);
   const promptDecorationsRef = useRef<Map<number, PromptDecorationSet>>(new Map());
   const errorDecorationsRef = useRef<Map<number, LineDecorationSet>>(new Map());
+  const pinnedCommandContextRef = useRef<{
+    marker: IMarker;
+    commandLineCount: number;
+    pinnedCommand: CiscoIosPinnedCommand;
+    viewportY: number;
+  } | null>(null);
   const autoLogSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
@@ -155,9 +172,8 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
 
-  const ciscoIosPromptPattern = /^([\w+\-.:/\[\]]+)((?:\([^)]+\)){0,3})([>#]) ?(.*)$/;
-  const ciscoIosConfigPromptPattern = /^.+\(config(-.*)?\)#$/;
   const ciscoIosDecorationLookback = 80;
+  const ciscoIosPromptDecorationStyle = "text-only-v1";
   const ciscoIosErrorPatterns = [
     /ERROR:/i,
     /% ?Bad secret/,
@@ -214,6 +230,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         decorationRebuildRef.current = false;
       }
       decorateTerminalMode(term, terminalModeRef.current);
+      updatePinnedCiscoIosCommand(term);
     });
   };
 
@@ -302,6 +319,54 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     errorDecorationsRef.current.clear();
   };
 
+  const clearPinnedCiscoIosCommand = () => {
+    pinnedCommandContextRef.current?.marker.dispose();
+    pinnedCommandContextRef.current = null;
+    setPinnedCiscoIosCommand(null);
+  };
+
+  const updatePinnedCiscoIosCommand = (term: Terminal) => {
+    const buffer = term.buffer.active;
+    if (terminalModeRef.current !== "cisco_ios" || buffer.type === "alternate") {
+      clearPinnedCiscoIosCommand();
+      return;
+    }
+
+    const cachedContext = pinnedCommandContextRef.current;
+    if (cachedContext && !cachedContext.marker.isDisposed) {
+      const commandEndLineIndex = cachedContext.marker.line + cachedContext.commandLineCount - 1;
+      const crossedPrompt =
+        buffer.viewportY > cachedContext.viewportY &&
+        hasCiscoIosPromptInRange(
+          buffer,
+          Math.max(commandEndLineIndex + 1, cachedContext.viewportY),
+          buffer.viewportY
+        );
+
+      if (buffer.viewportY > commandEndLineIndex && !crossedPrompt) {
+        cachedContext.viewportY = buffer.viewportY;
+        setPinnedCiscoIosCommand(cachedContext.pinnedCommand);
+        return;
+      }
+    }
+
+    clearPinnedCiscoIosCommand();
+    const pinnedCommand = findCiscoIosPinnedCommand(buffer, terminalModeRef.current);
+    if (!pinnedCommand) return;
+
+    const cursorLineIndex = buffer.baseY + buffer.cursorY;
+    const marker = term.registerMarker(pinnedCommand.promptLineIndex - cursorLineIndex);
+    if (marker) {
+      pinnedCommandContextRef.current = {
+        marker,
+        commandLineCount: pinnedCommand.commandLineCount,
+        pinnedCommand,
+        viewportY: buffer.viewportY,
+      };
+    }
+    setPinnedCiscoIosCommand(pinnedCommand);
+  };
+
   const decorateCiscoIosTerminal = (term: Terminal) => {
     decorateCiscoIosPrompt(term);
     decorateCiscoIosErrors(term);
@@ -357,7 +422,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       for (let lineIndex = firstLineIndex; lineIndex <= lastLineIndex; lineIndex += 1) {
         const line = buffer.getLine(lineIndex)?.translateToString(true) ?? "";
         const trimmedLine = line.trimEnd();
-        if (!trimmedLine || ciscoIosPromptPattern.test(trimmedLine)) continue;
+        if (!trimmedLine || parseCiscoIosPrompt(trimmedLine)) continue;
         if (!ciscoIosErrorPatterns.some((pattern) => pattern.test(trimmedLine))) continue;
 
         const decorationStart = Math.max(0, trimmedLine.search(/\S/));
@@ -380,7 +445,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           marker,
           x: decorationStart,
           width: decorationWidth,
-          foregroundColor: "#f87171",
+          foregroundColor: CISCO_IOS_DECORATION_COLORS.error,
           layer: "top",
         });
 
@@ -421,20 +486,14 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         if (!bufferLine || bufferLine.isWrapped) continue;
 
         const trimmedLine = bufferLine.translateToString(true).trimEnd();
-        const promptMatch = ciscoIosPromptPattern.exec(trimmedLine);
-        if (!promptMatch) continue;
+        const prompt = parseCiscoIosPrompt(trimmedLine);
+        if (!prompt) continue;
 
-        const hostname = promptMatch[1];
-        const configMode = promptMatch[2];
-        const terminator = promptMatch[3];
-        const commandText = promptMatch[4].trimEnd();
-        const promptText = `${hostname}${configMode}${terminator}`;
-        const isConfigPrompt = ciscoIosConfigPromptPattern.test(promptText);
+        const { hostname, promptText, commandText, commandStart, isConfigPrompt } = prompt;
         const hostnameStart = trimmedLine.indexOf(hostname);
         if (hostnameStart < 0 || hostname.length === 0) continue;
         const promptWidth = promptText.length;
         if (promptWidth === 0) continue;
-        const commandStart = hostnameStart + promptMatch[0].length - promptMatch[4].length;
         const commandSegments = collectCiscoIosCommandSegments(
           buffer,
           lineIndex,
@@ -442,7 +501,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           commandText,
           lastLineIndex
         );
-        const promptSignature = `${hostnameStart}:${promptWidth}:${promptText}:${isConfigPrompt}`;
+        const promptSignature = `${hostnameStart}:${promptWidth}:${promptText}:${isConfigPrompt}:${ciscoIosPromptDecorationStyle}`;
         const commandSignature = commandSegments
           .map(
             (segment) =>
@@ -479,8 +538,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           marker,
           x: hostnameStart,
           width: promptWidth,
-          foregroundColor: isConfigPrompt ? "#facc15" : "#7dd3fc",
-          backgroundColor: isConfigPrompt ? "#3a2f0a" : "#0f2f3f",
+          foregroundColor: isConfigPrompt
+            ? CISCO_IOS_DECORATION_COLORS.configPrompt
+            : CISCO_IOS_DECORATION_COLORS.prompt,
           layer: "top",
         });
 
@@ -488,13 +548,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           marker.dispose();
           continue;
         }
-
-        promptDecoration.onRender((element) => {
-          element.classList.add("terminal-view__cisco-hostname");
-          if (isConfigPrompt) {
-            element.classList.add("terminal-view__cisco-hostname--config");
-          }
-        });
 
         const commandDecorations = registerCiscoIosCommandDecorations(
           term,
@@ -528,47 +581,11 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     });
   };
 
-  const collectCiscoIosCommandSegments = (
-    buffer: Terminal["buffer"]["active"],
-    promptLineIndex: number,
-    commandStart: number,
-    commandText: string,
-    lastLineIndex: number
-  ): CommandDecorationSegment[] => {
-    if (buffer.type === "alternate") return [];
-
-    const segments: CommandDecorationSegment[] = [];
-    if (commandText.length > 0) {
-      segments.push({
-        lineIndex: promptLineIndex,
-        x: commandStart,
-        width: commandText.length,
-        text: commandText,
-      });
-    }
-
-    for (let lineIndex = promptLineIndex + 1; lineIndex <= lastLineIndex; lineIndex += 1) {
-      const wrappedLine = buffer.getLine(lineIndex);
-      if (!wrappedLine?.isWrapped) break;
-
-      const wrappedText = wrappedLine.translateToString(true).trimEnd();
-      if (wrappedText.length > 0) {
-        segments.push({
-          lineIndex,
-          x: 0,
-          width: wrappedText.length,
-          text: wrappedText,
-        });
-      }
-    }
-
-    return segments;
-  };
   const registerCiscoIosCommandDecorations = (
     term: Terminal,
     promptMarker: IMarker,
     promptLineIndex: number,
-    segments: CommandDecorationSegment[],
+    segments: CiscoIosCommandSegment[],
     cursorLineIndex: number
   ): CommandDecoration[] => {
     const commandDecorations: CommandDecoration[] = [];
@@ -584,7 +601,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         marker,
         x: segment.x,
         width: segment.width,
-        foregroundColor: "#6ee7b7",
+        foregroundColor: CISCO_IOS_DECORATION_COLORS.command,
         layer: "top",
       });
 
@@ -676,14 +693,17 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     cancelScheduledDecoration();
     if (terminalMode === DEFAULT_TERMINAL_MODE) {
       clearModeDecorations();
+      clearPinnedCiscoIosCommand();
       return;
     }
     if (!canDecorateTerminalMode(terminalMode)) {
       clearModeDecorations();
+      clearPinnedCiscoIosCommand();
       return;
     }
     if (termRef.current) {
       decorateTerminalMode(termRef.current, terminalMode);
+      updatePinnedCiscoIosCommand(termRef.current);
     }
   }, [terminalMode]);
 
@@ -998,6 +1018,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       scrollDecorationDisposable.dispose();
       cancelScheduledDecoration();
       clearModeDecorations();
+      clearPinnedCiscoIosCommand();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -1074,6 +1095,30 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   return (
     <div className={`terminal-view ${!isActive ? "terminal-view--hidden" : ""}`}>
       <div ref={containerRef} className="terminal-view__terminal" />
+      {pinnedCiscoIosCommand ? (
+        <div
+          className="terminal-view__cisco-command-overlay"
+          style={{
+            fontFamily:
+              terminalConfig?.font_family || "'JetBrains Mono', Consolas, 'Courier New', monospace",
+            fontSize: terminalConfig?.font_size || 14,
+          }}
+          aria-hidden="true"
+        >
+          <span
+            style={{
+              color: pinnedCiscoIosCommand.isConfigPrompt
+                ? CISCO_IOS_DECORATION_COLORS.configPrompt
+                : CISCO_IOS_DECORATION_COLORS.prompt,
+            }}
+          >
+            {pinnedCiscoIosCommand.promptText}
+          </span>
+          <span style={{ color: CISCO_IOS_DECORATION_COLORS.command }}>
+            {pinnedCiscoIosCommand.commandText}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 });

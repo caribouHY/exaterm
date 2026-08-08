@@ -5,6 +5,7 @@
 ### Added
 
 - Added local recent-connection history for successful SSH and Telnet connections, with reusable form values, individual removal, and Settings controls to disable or clear history.
+- Added a pinned command line in Cisco IOS terminals so long command output remains identifiable while scrolling.
 
 ### Removed
 
