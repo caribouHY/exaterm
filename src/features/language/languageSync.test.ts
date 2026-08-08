@@ -4,7 +4,9 @@ import { createLanguageSyncController, type LanguageSyncStage } from "./language
 function createDeferred() {
   let resolvePromise = () => {};
   const promise = new Promise<void>((resolve) => {
-    resolvePromise = () => resolve();
+    resolvePromise = () => {
+      resolve();
+    };
   });
   return { promise, resolve: resolvePromise };
 }
