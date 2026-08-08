@@ -25,7 +25,9 @@ class FakeDecoration {
   dispose() {
     if (this.isDisposed) return;
     this.isDisposed = true;
-    this.disposeListeners.forEach((listener) => listener());
+    this.disposeListeners.forEach((listener) => {
+      listener();
+    });
   }
 }
 
@@ -63,7 +65,7 @@ function createTerminal(lines: string[], viewportY: number) {
     length: bufferLines.length,
     baseY: 0,
     cursorY: bufferLines.length - 1,
-    getLine: (lineIndex: number) => bufferLines[lineIndex],
+    getLine: (lineIndex: number) => bufferLines.find((_line, index) => index === lineIndex),
   };
   const terminal = {
     rows: 24,

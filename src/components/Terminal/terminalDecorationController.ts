@@ -59,7 +59,9 @@ export interface TerminalDecorationController {
 export function createTerminalDecorationController({
   onPinnedCommandChange,
   requestFrame = (callback) => window.requestAnimationFrame(callback),
-  cancelFrame = (handle) => window.cancelAnimationFrame(handle),
+  cancelFrame = (handle) => {
+    window.cancelAnimationFrame(handle);
+  },
 }: TerminalDecorationControllerOptions): TerminalDecorationController {
   let profile: TerminalDecorationProfile | null = null;
   let decorationFrame: number | null = null;
@@ -138,8 +140,13 @@ export function createTerminalDecorationController({
     return ranges
       .sort((a, b) => a.firstLineIndex - b.firstLineIndex)
       .reduce<LineRange[]>((mergedRanges, range) => {
+        if (mergedRanges.length === 0) {
+          mergedRanges.push({ ...range });
+          return mergedRanges;
+        }
+
         const previousRange = mergedRanges[mergedRanges.length - 1];
-        if (!previousRange || range.firstLineIndex > previousRange.lastLineIndex + 1) {
+        if (range.firstLineIndex > previousRange.lastLineIndex + 1) {
           mergedRanges.push({ ...range });
           return mergedRanges;
         }

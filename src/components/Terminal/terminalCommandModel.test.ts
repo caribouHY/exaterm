@@ -24,7 +24,7 @@ function createBuffer(
     type,
     viewportY,
     length: bufferLines.length,
-    getLine: (lineIndex) => bufferLines[lineIndex],
+    getLine: (lineIndex) => bufferLines.find((_line, index) => index === lineIndex),
   };
 }
 

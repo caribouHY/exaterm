@@ -39,6 +39,10 @@ describe("terminal decoration profile registry", () => {
   it("preserves the Cisco IOS scan limit and error matching", () => {
     expect(CISCO_IOS_DECORATION_PROFILE.decorationLookback).toBe(80);
     expect(CISCO_IOS_DECORATION_PROFILE.isErrorLine("% Invalid input detected")).toBe(true);
+    expect(CISCO_IOS_DECORATION_PROFILE.isErrorLine("Command Rejected: denied")).toBe(true);
+    expect(
+      CISCO_IOS_DECORATION_PROFILE.isErrorLine("Command Rejected (authorization): denied")
+    ).toBe(true);
     expect(CISCO_IOS_DECORATION_PROFILE.isErrorLine("interface is up")).toBe(false);
   });
 

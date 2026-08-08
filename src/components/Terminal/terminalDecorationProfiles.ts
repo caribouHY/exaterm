@@ -19,7 +19,8 @@ const CISCO_IOS_ERROR_PATTERNS = [
   /% ?\S+ ?Error: ?\s+/i,
   /% ?\S+ ?Informational: ?\s+/i,
   /Command authorization failed/,
-  /Command Rejected(\s*\([^)]*\))?\s*: ?\s+/i,
+  /Command Rejected[ \t]*:[ \t]+/i,
+  /Command Rejected[ \t]*\([^\r\n)]*\)[ \t]*:[ \t]+/i,
   /% General session commands not allowed under the address family/i,
   /% BGP: Error initializing topology/i,
   /%SNMP agent not enabled/i,
@@ -82,12 +83,12 @@ export const CISCO_IOS_DECORATION_PROFILE: TerminalDecorationProfile = {
   isErrorLine: (line) => CISCO_IOS_ERROR_PATTERNS.some((pattern) => pattern.test(line)),
 };
 
-const TERMINAL_DECORATION_PROFILES: Partial<Record<TerminalMode, TerminalDecorationProfile>> = {
-  cisco_ios: CISCO_IOS_DECORATION_PROFILE,
-};
+const TERMINAL_DECORATION_PROFILES = new Map<TerminalMode, TerminalDecorationProfile>([
+  ["cisco_ios", CISCO_IOS_DECORATION_PROFILE],
+]);
 
 export function getTerminalDecorationProfile(
   terminalMode: TerminalMode
 ): TerminalDecorationProfile | null {
-  return TERMINAL_DECORATION_PROFILES[terminalMode] ?? null;
+  return TERMINAL_DECORATION_PROFILES.get(terminalMode) ?? null;
 }
