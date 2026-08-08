@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   findCiscoIosPinnedCommand,
+  parseCiscoIosPrompt,
   type CiscoIosBuffer,
   type CiscoIosBufferLine,
 } from "./ciscoIosCommandModel";
@@ -22,9 +23,28 @@ function createBuffer(
     type,
     viewportY,
     length: bufferLines.length,
-    getLine: (lineIndex) => bufferLines[lineIndex],
+    getLine: (lineIndex) =>
+      bufferLines.find((_bufferLine, bufferLineIndex) => bufferLineIndex === lineIndex),
   };
 }
+
+describe("parseCiscoIosPrompt", () => {
+  it("parses configuration prompts without a regular expression", () => {
+    expect(parseCiscoIosPrompt("Router(config-if)# description uplink")).toEqual({
+      hostname: "Router",
+      promptText: "Router(config-if)#",
+      commandText: "description uplink",
+      commandStart: 19,
+      commandSeparator: " ",
+      isConfigPrompt: true,
+    });
+  });
+
+  it("rejects malformed and excessively nested mode prompts", () => {
+    expect(parseCiscoIosPrompt("Router(config#show run")).toBeNull();
+    expect(parseCiscoIosPrompt("Router(a)(b)(c)(d)#show run")).toBeNull();
+  });
+});
 
 describe("findCiscoIosPinnedCommand", () => {
   it("does not pin a command while its execution line is visible", () => {

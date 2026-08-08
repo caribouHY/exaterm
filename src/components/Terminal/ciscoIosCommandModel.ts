@@ -37,25 +37,47 @@ export interface CiscoIosPinnedCommand {
   commandLineCount: number;
 }
 
-const ciscoIosPromptPattern = /^([\w+\-.:/\[\]]+)((?:\([^)]+\)){0,3})([>#]) ?(.*)$/;
-const ciscoIosConfigPromptPattern = /^.+\(config(-.*)?\)#$/;
+function isCiscoIosHostnameCharacter(character: string): boolean {
+  const codePoint = character.charCodeAt(0);
+  const isAsciiLetter =
+    (codePoint >= 65 && codePoint <= 90) || (codePoint >= 97 && codePoint <= 122);
+  const isDigit = codePoint >= 48 && codePoint <= 57;
+  return isAsciiLetter || isDigit || "_+-.:/[]".includes(character);
+}
 
 export function parseCiscoIosPrompt(line: string): CiscoIosPrompt | null {
   const trimmedLine = line.trimEnd();
-  const promptMatch = ciscoIosPromptPattern.exec(trimmedLine);
-  if (!promptMatch) return null;
+  let cursor = 0;
+  while (cursor < trimmedLine.length && isCiscoIosHostnameCharacter(trimmedLine.charAt(cursor))) {
+    cursor += 1;
+  }
+  if (cursor === 0) return null;
 
-  const hostname = promptMatch[1];
-  const promptText = `${hostname}${promptMatch[2]}${promptMatch[3]}`;
-  const commandStart = promptMatch[0].length - promptMatch[4].length;
+  const hostname = trimmedLine.slice(0, cursor);
+  const modes: string[] = [];
+  while (modes.length < 3 && trimmedLine.charAt(cursor) === "(") {
+    const closingParenthesis = trimmedLine.indexOf(")", cursor + 1);
+    if (closingParenthesis <= cursor + 1) return null;
+    modes.push(trimmedLine.slice(cursor + 1, closingParenthesis));
+    cursor = closingParenthesis + 1;
+  }
+
+  const terminator = trimmedLine.charAt(cursor);
+  if (terminator !== ">" && terminator !== "#") return null;
+
+  const promptEnd = cursor + 1;
+  const promptText = trimmedLine.slice(0, promptEnd);
+  const commandStart = promptEnd + (trimmedLine.charAt(promptEnd) === " " ? 1 : 0);
+  const [lastMode] = modes.slice(-1);
 
   return {
     hostname,
     promptText,
-    commandText: promptMatch[4].trimEnd(),
+    commandText: trimmedLine.slice(commandStart),
     commandStart,
     commandSeparator: trimmedLine.slice(promptText.length, commandStart),
-    isConfigPrompt: ciscoIosConfigPromptPattern.test(promptText),
+    isConfigPrompt:
+      terminator === "#" && (lastMode === "config" || Boolean(lastMode?.startsWith("config-"))),
   };
 }
 
