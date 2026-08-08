@@ -68,7 +68,7 @@ export function parseCiscoIosPrompt(line: string): CiscoIosPrompt | null {
   const promptEnd = cursor + 1;
   const promptText = trimmedLine.slice(0, promptEnd);
   const commandStart = promptEnd + (trimmedLine.charAt(promptEnd) === " " ? 1 : 0);
-  const [lastMode] = modes.slice(-1);
+  const [lastMode = ""] = modes.slice(-1);
 
   return {
     hostname,
@@ -76,8 +76,7 @@ export function parseCiscoIosPrompt(line: string): CiscoIosPrompt | null {
     commandText: trimmedLine.slice(commandStart),
     commandStart,
     commandSeparator: trimmedLine.slice(promptText.length, commandStart),
-    isConfigPrompt:
-      terminator === "#" && (lastMode === "config" || Boolean(lastMode?.startsWith("config-"))),
+    isConfigPrompt: terminator === "#" && (lastMode === "config" || lastMode.startsWith("config-")),
   };
 }
 
