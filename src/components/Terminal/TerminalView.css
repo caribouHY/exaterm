@@ -37,7 +37,7 @@
   pointer-events: none;
 }
 
-.terminal-view__cisco-command-overlay {
+.terminal-view__pinned-command-overlay {
   position: absolute;
   top: 4px;
   right: 0;
