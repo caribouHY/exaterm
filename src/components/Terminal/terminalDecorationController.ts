@@ -68,6 +68,7 @@ export function createTerminalDecorationController({
   let decorationRebuild = false;
   let pinnedCommandContext: PinnedCommandContext | null = null;
   const promptDecorations = new Map<number, PromptDecorationSet>();
+  const contextDecorations = new Map<number, LineDecorationSet>();
   const errorDecorations = new Map<number, LineDecorationSet>();
 
   const disposeCommandDecoration = ({ decoration, marker }: CommandDecoration) => {
@@ -93,6 +94,8 @@ export function createTerminalDecorationController({
   const clearDecorationSets = () => {
     promptDecorations.forEach(disposePromptDecorationSet);
     promptDecorations.clear();
+    contextDecorations.forEach(disposeLineDecorationSet);
+    contextDecorations.clear();
     errorDecorations.forEach(disposeLineDecorationSet);
     errorDecorations.clear();
   };
@@ -218,6 +221,76 @@ export function createTerminalDecorationController({
 
       disposeLineDecorationSet(decorationSet);
       errorDecorations.delete(decoratedLineIndex);
+    });
+  };
+
+  const decorateContexts = (terminal: Terminal, activeProfile: TerminalDecorationProfile) => {
+    const parseContextLine = activeProfile.parseContextLine;
+    if (!parseContextLine) return;
+
+    const buffer = terminal.buffer.active;
+    if (buffer.type === "alternate") return;
+
+    const cursorLineIndex = buffer.baseY + buffer.cursorY;
+    const decorationRanges = getDecorationRanges(terminal, activeProfile);
+    const visitedContextLineIndexes = new Set<number>();
+
+    decorationRanges.forEach(({ firstLineIndex, lastLineIndex }) => {
+      for (let lineIndex = firstLineIndex; lineIndex <= lastLineIndex; lineIndex += 1) {
+        const bufferLine = buffer.getLine(lineIndex);
+        if (!bufferLine || bufferLine.isWrapped) continue;
+
+        const context = parseContextLine(bufferLine.translateToString(true));
+        const nextLine = buffer.getLine(lineIndex + 1);
+        const nextPrompt =
+          nextLine && !nextLine.isWrapped
+            ? activeProfile.parsePrompt(nextLine.translateToString(true))
+            : null;
+        if (!context || nextPrompt?.variant !== "configuration") continue;
+
+        const contextWidth = context.contextText.length;
+        if (context.contextStart < 0 || contextWidth === 0) continue;
+
+        const signature = `${context.contextStart}:${contextWidth}:${context.contextText}:${activeProfile.decorationStyle}`;
+        const existingDecorationSet = contextDecorations.get(lineIndex);
+        visitedContextLineIndexes.add(lineIndex);
+        if (existingDecorationSet?.signature === signature) continue;
+        if (existingDecorationSet) {
+          disposeLineDecorationSet(existingDecorationSet);
+          contextDecorations.delete(lineIndex);
+        }
+
+        const marker = terminal.registerMarker(lineIndex - cursorLineIndex);
+        if (!marker) continue;
+
+        const decoration = terminal.registerDecoration({
+          marker,
+          x: context.contextStart,
+          width: contextWidth,
+          foregroundColor: getTerminalPromptColor(context.variant),
+          layer: "top",
+        });
+
+        if (!decoration) {
+          marker.dispose();
+          continue;
+        }
+
+        decoration.onDispose(() => contextDecorations.delete(lineIndex));
+        contextDecorations.set(lineIndex, { signature, marker, decoration });
+      }
+    });
+
+    contextDecorations.forEach((decorationSet, decoratedLineIndex) => {
+      if (
+        !isLineInRanges(decoratedLineIndex, decorationRanges) ||
+        visitedContextLineIndexes.has(decoratedLineIndex)
+      ) {
+        return;
+      }
+
+      disposeLineDecorationSet(decorationSet);
+      contextDecorations.delete(decoratedLineIndex);
     });
   };
 
@@ -410,6 +483,7 @@ export function createTerminalDecorationController({
   const decorateNow = (terminal: Terminal) => {
     if (!profile) return;
     decoratePrompts(terminal, profile);
+    decorateContexts(terminal, profile);
     decorateErrors(terminal, profile);
     updatePinnedCommand(terminal, profile);
   };

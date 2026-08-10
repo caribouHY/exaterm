@@ -888,6 +888,10 @@ mod tests {
                     "id": "eos-switch",
                     "connection_type": "ssh",
                     "terminal_mode": "arista_eos"
+                }, {
+                    "id": "vyos-router",
+                    "connection_type": "ssh",
+                    "terminal_mode": "vyos"
                 }]
             }"#,
         )
@@ -900,6 +904,10 @@ mod tests {
         assert_eq!(
             cfg.saved_connections[1].terminal_mode.as_deref(),
             Some("arista_eos")
+        );
+        assert_eq!(
+            cfg.saved_connections[2].terminal_mode.as_deref(),
+            Some("vyos")
         );
     }
 

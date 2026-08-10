@@ -659,16 +659,26 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           }}
           aria-hidden="true"
         >
-          <span
-            style={{
-              color: getTerminalPromptColor(pinnedCommand.promptVariant),
-            }}
-          >
-            {pinnedCommand.promptText}
-          </span>
-          <span style={{ color: TERMINAL_DECORATION_COLORS.command }}>
-            {pinnedCommand.commandText}
-          </span>
+          {pinnedCommand.contextText ? (
+            <div
+              className="terminal-view__pinned-command-line"
+              style={{ color: getTerminalPromptColor("configuration") }}
+            >
+              {pinnedCommand.contextText}
+            </div>
+          ) : null}
+          <div className="terminal-view__pinned-command-line">
+            <span
+              style={{
+                color: getTerminalPromptColor(pinnedCommand.promptVariant),
+              }}
+            >
+              {pinnedCommand.promptText}
+            </span>
+            <span style={{ color: TERMINAL_DECORATION_COLORS.command }}>
+              {pinnedCommand.commandText}
+            </span>
+          </div>
         </div>
       ) : null}
     </div>

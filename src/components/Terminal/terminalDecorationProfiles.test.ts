@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   ARISTA_EOS_DECORATION_PROFILE,
   CISCO_IOS_DECORATION_PROFILE,
+  VYOS_DECORATION_PROFILE,
   getTerminalDecorationProfile,
   parseAristaEosPrompt,
   parseCiscoIosPrompt,
+  parseVyosContextLine,
+  parseVyosPrompt,
 } from "./terminalDecorationProfiles";
 import { TERMINAL_DECORATION_COLORS } from "./terminalDecorationTheme";
 
@@ -61,11 +64,58 @@ describe("parseAristaEosPrompt", () => {
   });
 });
 
+describe("parseVyosPrompt", () => {
+  it.each([
+    ["vyos@router$ show version", "default"],
+    ["vyos@router:~$show interfaces", "default"],
+    ["admin@edge-router# set system host-name edge", "configuration"],
+    ["admin@edge-router:~#commit", "configuration"],
+  ] as const)("parses the standard VyOS prompt %s", (line, variant) => {
+    expect(parseVyosPrompt(line)?.variant).toBe(variant);
+  });
+
+  it("separates the identity, prompt, separator, and command", () => {
+    expect(parseVyosPrompt("vyos@r4-1.5:~# set interfaces ethernet eth0 disable")).toMatchObject({
+      username: "vyos",
+      hostname: "r4-1.5",
+      promptText: "vyos@r4-1.5:~#",
+      commandSeparator: " ",
+      commandText: "set interfaces ethernet eth0 disable",
+      variant: "configuration",
+    });
+  });
+
+  it("rejects custom and malformed prompts", () => {
+    expect(parseVyosPrompt("vyos-router# show configuration")).toBeNull();
+    expect(parseVyosPrompt("@router$ show version")).toBeNull();
+    expect(parseVyosPrompt("vyos@$ show version")).toBeNull();
+    expect(parseVyosPrompt("vyos@router:/tmp$ pwd")).toBeNull();
+  });
+});
+
+describe("parseVyosContextLine", () => {
+  it("parses top-level and nested configuration contexts", () => {
+    expect(parseVyosContextLine("[edit]")?.contextText).toBe("[edit]");
+    expect(parseVyosContextLine("  [edit interfaces ethernet eth0]")).toEqual({
+      contextText: "[edit interfaces ethernet eth0]",
+      contextStart: 2,
+      variant: "configuration",
+    });
+  });
+
+  it("rejects unrelated and malformed context lines", () => {
+    expect(parseVyosContextLine("edit interfaces ethernet eth0")).toBeNull();
+    expect(parseVyosContextLine("[edit ]")).toBeNull();
+    expect(parseVyosContextLine("[editor]")).toBeNull();
+  });
+});
+
 describe("terminal decoration profile registry", () => {
   it("keeps general mode undecorated and resolves device profiles", () => {
     expect(getTerminalDecorationProfile("general")).toBeNull();
     expect(getTerminalDecorationProfile("cisco_ios")).toBe(CISCO_IOS_DECORATION_PROFILE);
     expect(getTerminalDecorationProfile("arista_eos")).toBe(ARISTA_EOS_DECORATION_PROFILE);
+    expect(getTerminalDecorationProfile("vyos")).toBe(VYOS_DECORATION_PROFILE);
   });
 
   it("preserves the Cisco IOS scan limit and error matching", () => {
@@ -87,6 +137,20 @@ describe("terminal decoration profile registry", () => {
     );
     expect(ARISTA_EOS_DECORATION_PROFILE.isErrorLine("Command Rejected: denied")).toBe(false);
     expect(ARISTA_EOS_DECORATION_PROFILE.isErrorLine("interface is up")).toBe(false);
+  });
+
+  it("uses conservative VyOS error matching and the shared scan limit", () => {
+    expect(VYOS_DECORATION_PROFILE.decorationLookback).toBe(80);
+    expect(VYOS_DECORATION_PROFILE.isErrorLine("Set failed")).toBe(true);
+    expect(VYOS_DECORATION_PROFILE.isErrorLine(" Commit failed")).toBe(true);
+    expect(VYOS_DECORATION_PROFILE.isErrorLine("Cannot exit: configuration modified.")).toBe(true);
+    expect(VYOS_DECORATION_PROFILE.isErrorLine("Invalid command: set interface")).toBe(true);
+    expect(
+      VYOS_DECORATION_PROFILE.isErrorLine(
+        "Configuration path: interfaces ethernet eth9 does not exist"
+      )
+    ).toBe(true);
+    expect(VYOS_DECORATION_PROFILE.isErrorLine("commit completed without error")).toBe(false);
   });
 
   it("uses one shared palette for terminal decoration", () => {

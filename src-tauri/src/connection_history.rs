@@ -127,7 +127,7 @@ fn normalize_input(
     }
     if !matches!(
         input.terminal_mode.as_str(),
-        "general" | "cisco_ios" | "arista_eos"
+        "general" | "cisco_ios" | "arista_eos" | "vyos"
     ) {
         return Err("Invalid connection history terminal mode".into());
     }
@@ -415,7 +415,7 @@ mod tests {
     }
 
     #[test]
-    fn accepts_arista_eos_terminal_mode_and_rejects_unknown_modes() {
+    fn accepts_device_terminal_modes_and_rejects_unknown_modes() {
         let mut history = ConnectionHistoryFile::default();
         let mut eos_input = ssh_input("switch.example", "admin");
         eos_input.terminal_mode = "arista_eos".into();
@@ -423,9 +423,15 @@ mod tests {
 
         assert_eq!(history.entries[0].terminal_mode, "arista_eos");
 
+        let mut vyos_input = ssh_input("vyos.example", "vyos");
+        vyos_input.terminal_mode = "vyos".into();
+        upsert_history(&mut history, vyos_input, at(2)).unwrap();
+
+        assert_eq!(history.entries[0].terminal_mode, "vyos");
+
         let mut unknown_input = ssh_input("router.example", "admin");
         unknown_input.terminal_mode = "unknown".into();
-        assert!(upsert_history(&mut history, unknown_input, at(2)).is_err());
+        assert!(upsert_history(&mut history, unknown_input, at(3)).is_err());
     }
 
     #[test]

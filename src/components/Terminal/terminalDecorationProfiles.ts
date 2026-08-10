@@ -1,5 +1,9 @@
 import type { TerminalMode } from "../../types";
-import type { TerminalDecorationProfile, TerminalParsedPrompt } from "./terminalDecorationTypes";
+import type {
+  TerminalDecorationProfile,
+  TerminalParsedContext,
+  TerminalParsedPrompt,
+} from "./terminalDecorationTypes";
 
 export interface CiscoIosPrompt extends TerminalParsedPrompt {
   hostname: string;
@@ -7,6 +11,11 @@ export interface CiscoIosPrompt extends TerminalParsedPrompt {
 
 export interface AristaEosPrompt extends TerminalParsedPrompt {
   hostname: string;
+}
+
+export interface VyosPrompt extends TerminalParsedPrompt {
+  hostname: string;
+  username: string;
 }
 
 const CISCO_IOS_ERROR_PATTERNS = [
@@ -37,6 +46,8 @@ const ARISTA_EOS_ERROR_PREFIXES = [
   "% incomplete command",
   "% invalid input",
 ];
+
+const VYOS_ERROR_PREFIXES = ["set failed", "commit failed", "cannot exit:", "invalid command"];
 
 function isNetworkDeviceHostnameCharacter(character: string): boolean {
   const codePoint = character.charCodeAt(0);
@@ -97,6 +108,66 @@ export function parseAristaEosPrompt(line: string): AristaEosPrompt | null {
   return parseNetworkDevicePrompt(line);
 }
 
+function isVyosIdentityCharacter(character: string): boolean {
+  const codePoint = character.charCodeAt(0);
+  const isAsciiLetter =
+    (codePoint >= 65 && codePoint <= 90) || (codePoint >= 97 && codePoint <= 122);
+  const isDigit = codePoint >= 48 && codePoint <= 57;
+  return isAsciiLetter || isDigit || "_.-".includes(character);
+}
+
+export function parseVyosPrompt(line: string): VyosPrompt | null {
+  const trimmedLine = line.trimEnd();
+  let cursor = 0;
+  while (cursor < trimmedLine.length && isVyosIdentityCharacter(trimmedLine.charAt(cursor))) {
+    cursor += 1;
+  }
+  if (cursor === 0 || trimmedLine.charAt(cursor) !== "@") return null;
+
+  const username = trimmedLine.slice(0, cursor);
+  cursor += 1;
+  const hostnameStart = cursor;
+  while (cursor < trimmedLine.length && isVyosIdentityCharacter(trimmedLine.charAt(cursor))) {
+    cursor += 1;
+  }
+  if (cursor === hostnameStart) return null;
+
+  const hostname = trimmedLine.slice(hostnameStart, cursor);
+  if (trimmedLine.slice(cursor, cursor + 2) === ":~") cursor += 2;
+
+  const terminator = trimmedLine.charAt(cursor);
+  if (terminator !== "$" && terminator !== "#") return null;
+
+  const promptEnd = cursor + 1;
+  const promptText = trimmedLine.slice(0, promptEnd);
+  const commandStart = promptEnd + (trimmedLine.charAt(promptEnd) === " " ? 1 : 0);
+  return {
+    hostname,
+    username,
+    promptText,
+    promptStart: 0,
+    commandText: trimmedLine.slice(commandStart),
+    commandStart,
+    commandSeparator: trimmedLine.slice(promptText.length, commandStart),
+    variant: terminator === "#" ? "configuration" : "default",
+  };
+}
+
+export function parseVyosContextLine(line: string): TerminalParsedContext | null {
+  const trimmedLine = line.trimEnd();
+  let contextStart = 0;
+  while (contextStart < trimmedLine.length && trimmedLine.charAt(contextStart) === " ") {
+    contextStart += 1;
+  }
+
+  const contextText = trimmedLine.slice(contextStart);
+  if (!contextText.startsWith("[edit") || !contextText.endsWith("]")) return null;
+  if (contextText !== "[edit]" && !contextText.startsWith("[edit ")) return null;
+  if (contextText === "[edit ]") return null;
+
+  return { contextText, contextStart, variant: "configuration" };
+}
+
 export const CISCO_IOS_DECORATION_PROFILE: TerminalDecorationProfile = {
   mode: "cisco_ios",
   decorationLookback: 80,
@@ -118,9 +189,26 @@ export const ARISTA_EOS_DECORATION_PROFILE: TerminalDecorationProfile = {
   },
 };
 
+export const VYOS_DECORATION_PROFILE: TerminalDecorationProfile = {
+  mode: "vyos",
+  decorationLookback: 80,
+  decorationStyle: "text-only-v1",
+  pinnedCommand: true,
+  parsePrompt: parseVyosPrompt,
+  parseContextLine: parseVyosContextLine,
+  isErrorLine: (line) => {
+    const normalizedLine = line.trimStart().toLowerCase();
+    return (
+      VYOS_ERROR_PREFIXES.some((prefix) => normalizedLine.startsWith(prefix)) ||
+      (normalizedLine.startsWith("configuration path") && normalizedLine.endsWith("does not exist"))
+    );
+  },
+};
+
 const TERMINAL_DECORATION_PROFILES = new Map<TerminalMode, TerminalDecorationProfile>([
   ["cisco_ios", CISCO_IOS_DECORATION_PROFILE],
   ["arista_eos", ARISTA_EOS_DECORATION_PROFILE],
+  ["vyos", VYOS_DECORATION_PROFILE],
 ]);
 
 export function getTerminalDecorationProfile(

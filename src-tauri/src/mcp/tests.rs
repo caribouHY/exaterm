@@ -351,6 +351,16 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
     assert!(read_schema.contains("\"recent\""));
     assert!(read_schema.contains("\"delta\""));
     assert!(read_schema.contains("\"wait\""));
+
+    let serial_connect_tool = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "connect_serial_console")
+        .unwrap();
+    assert!(serial_connect_tool["inputSchema"]
+        .to_string()
+        .contains("\"vyos\""));
 }
 
 async fn write_json_line_for_test<W>(writer: &mut W, value: Value)
@@ -1060,7 +1070,7 @@ fn prepare_serial_console_uses_defaults_and_line_settings() {
             parity: Some(McpSerialParity::Even),
             stop_bits: Some(2),
             flow_control: Some(McpSerialFlowControl::Hardware),
-            terminal_mode: Some(McpTerminalMode::AristaEos),
+            terminal_mode: Some(McpTerminalMode::Vyos),
             cols: Some(80),
             rows: Some(24),
         },
@@ -1077,7 +1087,7 @@ fn prepare_serial_console_uses_defaults_and_line_settings() {
     assert_eq!(prepared.target, "COM3");
     assert_eq!(prepared.title, "COM3");
     assert_eq!(prepared.encoding, "utf-8");
-    assert_eq!(prepared.terminal_mode, "arista_eos");
+    assert_eq!(prepared.terminal_mode, "vyos");
 
     let defaulted = prepare_serial_console_connection(
         ConnectSerialConsoleArgs {

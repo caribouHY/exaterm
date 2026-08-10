@@ -1,6 +1,7 @@
 import type { Terminal } from "@xterm/xterm";
 import { describe, expect, it } from "vitest";
 import { createTerminalDecorationController } from "./terminalDecorationController";
+import { VYOS_DECORATION_PROFILE } from "./terminalDecorationProfiles";
 import type { TerminalDecorationProfile, TerminalPinnedCommand } from "./terminalDecorationTypes";
 
 class FakeMarker {
@@ -125,5 +126,29 @@ describe("createTerminalDecorationController", () => {
     controller.setProfile(SYNTHETIC_PROFILE, terminal);
 
     expect(decorations).toHaveLength(0);
+  });
+
+  it("decorates a VyOS edit context only when followed by a configuration prompt", () => {
+    const valid = createTerminal(
+      ["[edit interfaces ethernet eth0]", "vyos@router:~# set description WAN", "output"],
+      2
+    );
+    const validController = createTerminalDecorationController({
+      onPinnedCommandChange: () => undefined,
+    });
+
+    validController.setProfile(VYOS_DECORATION_PROFILE, valid.terminal);
+    expect(valid.decorations).toHaveLength(3);
+
+    const stale = createTerminal(
+      ["[edit interfaces]", "unrelated output", "vyos@router# commit", "output"],
+      3
+    );
+    const staleController = createTerminalDecorationController({
+      onPinnedCommandChange: () => undefined,
+    });
+
+    staleController.setProfile(VYOS_DECORATION_PROFILE, stale.terminal);
+    expect(stale.decorations).toHaveLength(2);
   });
 });

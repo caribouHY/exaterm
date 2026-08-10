@@ -6,15 +6,20 @@ import {
 } from "./terminalModes";
 
 describe("terminal modes", () => {
-  it("lists Arista EOS as a supported mode", () => {
+  it("lists network operating system modes", () => {
     expect(TERMINAL_MODE_OPTIONS).toContainEqual({
       labelKey: "terminal_mode.arista_eos",
       value: "arista_eos",
     });
+    expect(TERMINAL_MODE_OPTIONS).toContainEqual({
+      labelKey: "terminal_mode.vyos",
+      value: "vyos",
+    });
   });
 
-  it("normalizes Arista EOS and preserves the existing fallback", () => {
+  it("normalizes device modes and preserves the existing fallback", () => {
     expect(normalizeTerminalMode("arista_eos")).toBe("arista_eos");
+    expect(normalizeTerminalMode("vyos")).toBe("vyos");
     expect(normalizeTerminalMode("unknown")).toBe(DEFAULT_TERMINAL_MODE);
   });
 });

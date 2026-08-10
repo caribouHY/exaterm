@@ -7,6 +7,7 @@
 - Added local recent-connection history for successful SSH and Telnet connections, with reusable form values, individual removal, and Settings controls to disable or clear history.
 - Added a pinned command line in Cisco IOS terminals so long command output remains identifiable while scrolling.
 - Added an Arista EOS terminal mode with prompt, command, error, and pinned-command highlighting.
+- Added a VyOS terminal mode with operational and configuration prompt, command, error, edit-context, and pinned-command highlighting.
 
 ### Changed
 
