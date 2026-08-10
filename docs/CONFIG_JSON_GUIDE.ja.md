@@ -310,7 +310,7 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 | `port`                     | number または null | SSH または Telnet 接続先ポートです。                                                                                                                                |
 | `username`                 | string または null | SSH ユーザー名です。Telnet プロファイルでは使用しません。                                                                                                           |
 | `encoding`                 | string または null | このプロファイルで接続したときのターミナル表示文字コードです。指定できる値は `"utf-8"`、`"shift-jis"`、`"euc-jp"` です。未設定の場合は `"utf-8"` として扱われます。 |
-| `terminal_mode`            | string または null | このプロファイルで接続したときのターミナルモードです。指定できる値は `"general"` と `"cisco_ios"` です。未設定の場合は `"general"` として扱われます。               |
+| `terminal_mode`            | string または null | このプロファイルで接続したときのターミナルモードです。指定できる値は `"general"`、`"cisco_ios"`、`"arista_eos"` です。未設定の場合は `"general"` として扱われます。 |
 | `auth_method`              | string または null | SSH 認証方式です。指定できる値は `"password"` と `"public_key"` です。未設定の場合は `"password"` として扱われます。Telnet プロファイルでは使用しません。           |
 | `private_key_path`         | string または null | SSH の `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                        |
 | `jump_profile_id`          | string または null | SSH 踏み台プロファイルの ID です。参照先は保存済み SSH プロファイルである必要があります。踏み台は 1 段のみ対応し、多段指定は拒否されます。                          |

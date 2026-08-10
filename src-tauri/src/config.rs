@@ -884,6 +884,10 @@ mod tests {
                     "id": "ios-router",
                     "connection_type": "ssh",
                     "terminal_mode": "cisco_ios"
+                }, {
+                    "id": "eos-switch",
+                    "connection_type": "ssh",
+                    "terminal_mode": "arista_eos"
                 }]
             }"#,
         )
@@ -892,6 +896,10 @@ mod tests {
         assert_eq!(
             cfg.saved_connections[0].terminal_mode.as_deref(),
             Some("cisco_ios")
+        );
+        assert_eq!(
+            cfg.saved_connections[1].terminal_mode.as_deref(),
+            Some("arista_eos")
         );
     }
 

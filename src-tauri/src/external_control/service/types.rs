@@ -146,6 +146,7 @@ pub(crate) enum ExternalControlTerminalMode {
     #[default]
     General,
     CiscoIos,
+    AristaEos,
 }
 
 impl ExternalControlTerminalMode {
@@ -153,6 +154,7 @@ impl ExternalControlTerminalMode {
         match self {
             Self::General => "general",
             Self::CiscoIos => "cisco_ios",
+            Self::AristaEos => "arista_eos",
         }
     }
 }

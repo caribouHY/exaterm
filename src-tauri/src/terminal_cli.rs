@@ -136,6 +136,7 @@ enum FlowControl {
 enum TerminalMode {
     General,
     CiscoIos,
+    AristaEos,
 }
 
 #[derive(Debug, Args)]
@@ -562,6 +563,7 @@ impl TerminalMode {
         match self {
             Self::General => ExternalControlTerminalMode::General,
             Self::CiscoIos => ExternalControlTerminalMode::CiscoIos,
+            Self::AristaEos => ExternalControlTerminalMode::AristaEos,
         }
     }
 }
@@ -811,6 +813,38 @@ mod tests {
                 terminal_mode: Some(ExternalControlTerminalMode::CiscoIos),
                 cols: Some(140),
                 rows: Some(40),
+            })
+        );
+    }
+
+    #[test]
+    fn serial_connect_accepts_arista_eos_terminal_mode() {
+        let request = build_request(
+            parse(&[
+                "exaterm-cli",
+                "serial",
+                "connect",
+                "--port",
+                "COM3",
+                "--terminal-mode",
+                "arista-eos",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
+                port: "COM3".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: Some(ExternalControlTerminalMode::AristaEos),
+                cols: None,
+                rows: None,
             })
         );
     }

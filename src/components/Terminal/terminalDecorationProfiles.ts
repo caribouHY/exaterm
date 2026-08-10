@@ -5,6 +5,10 @@ export interface CiscoIosPrompt extends TerminalParsedPrompt {
   hostname: string;
 }
 
+export interface AristaEosPrompt extends TerminalParsedPrompt {
+  hostname: string;
+}
+
 const CISCO_IOS_ERROR_PATTERNS = [
   /ERROR:/i,
   /% ?Bad secret/,
@@ -28,7 +32,13 @@ const CISCO_IOS_ERROR_PATTERNS = [
   /%You must disable VTPv1 and VTPv2 or switch to VTPv3 before configuring a VLAN name longer than 32 characters/i,
 ];
 
-function isCiscoIosHostnameCharacter(character: string): boolean {
+const ARISTA_EOS_ERROR_PREFIXES = [
+  "% ambiguous command",
+  "% incomplete command",
+  "% invalid input",
+];
+
+function isNetworkDeviceHostnameCharacter(character: string): boolean {
   const codePoint = character.charCodeAt(0);
   const isAsciiLetter =
     (codePoint >= 65 && codePoint <= 90) || (codePoint >= 97 && codePoint <= 122);
@@ -36,10 +46,15 @@ function isCiscoIosHostnameCharacter(character: string): boolean {
   return isAsciiLetter || isDigit || "_+-.:/[]".includes(character);
 }
 
-export function parseCiscoIosPrompt(line: string): CiscoIosPrompt | null {
+function parseNetworkDevicePrompt(
+  line: string
+): (TerminalParsedPrompt & { hostname: string }) | null {
   const trimmedLine = line.trimEnd();
   let cursor = 0;
-  while (cursor < trimmedLine.length && isCiscoIosHostnameCharacter(trimmedLine.charAt(cursor))) {
+  while (
+    cursor < trimmedLine.length &&
+    isNetworkDeviceHostnameCharacter(trimmedLine.charAt(cursor))
+  ) {
     cursor += 1;
   }
   if (cursor === 0) return null;
@@ -74,6 +89,14 @@ export function parseCiscoIosPrompt(line: string): CiscoIosPrompt | null {
   };
 }
 
+export function parseCiscoIosPrompt(line: string): CiscoIosPrompt | null {
+  return parseNetworkDevicePrompt(line);
+}
+
+export function parseAristaEosPrompt(line: string): AristaEosPrompt | null {
+  return parseNetworkDevicePrompt(line);
+}
+
 export const CISCO_IOS_DECORATION_PROFILE: TerminalDecorationProfile = {
   mode: "cisco_ios",
   decorationLookback: 80,
@@ -83,8 +106,21 @@ export const CISCO_IOS_DECORATION_PROFILE: TerminalDecorationProfile = {
   isErrorLine: (line) => CISCO_IOS_ERROR_PATTERNS.some((pattern) => pattern.test(line)),
 };
 
+export const ARISTA_EOS_DECORATION_PROFILE: TerminalDecorationProfile = {
+  mode: "arista_eos",
+  decorationLookback: 80,
+  decorationStyle: "text-only-v1",
+  pinnedCommand: true,
+  parsePrompt: parseAristaEosPrompt,
+  isErrorLine: (line) => {
+    const normalizedLine = line.trimStart().toLowerCase();
+    return ARISTA_EOS_ERROR_PREFIXES.some((prefix) => normalizedLine.startsWith(prefix));
+  },
+};
+
 const TERMINAL_DECORATION_PROFILES = new Map<TerminalMode, TerminalDecorationProfile>([
   ["cisco_ios", CISCO_IOS_DECORATION_PROFILE],
+  ["arista_eos", ARISTA_EOS_DECORATION_PROFILE],
 ]);
 
 export function getTerminalDecorationProfile(

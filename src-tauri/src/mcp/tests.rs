@@ -656,7 +656,7 @@ fn prepare_saved_profile_builds_connection_metadata() {
         username: Some("admin".into()),
         auth_method: Some("password".into()),
         encoding: Some("shift-jis".into()),
-        terminal_mode: Some("cisco_ios".into()),
+        terminal_mode: Some("arista_eos".into()),
         ..SavedConnection::default()
     }];
 
@@ -676,7 +676,7 @@ fn prepare_saved_profile_builds_connection_metadata() {
     assert_eq!(prepared.target, "admin@192.0.2.10:2222");
     assert_eq!(prepared.title, "admin@192.0.2.10");
     assert_eq!(prepared.encoding, "shift-jis");
-    assert_eq!(prepared.terminal_mode, "cisco_ios");
+    assert_eq!(prepared.terminal_mode, "arista_eos");
     assert_eq!(prepared.cols, 80);
     assert_eq!(prepared.rows, 24);
 }
@@ -1060,7 +1060,7 @@ fn prepare_serial_console_uses_defaults_and_line_settings() {
             parity: Some(McpSerialParity::Even),
             stop_bits: Some(2),
             flow_control: Some(McpSerialFlowControl::Hardware),
-            terminal_mode: Some(McpTerminalMode::CiscoIos),
+            terminal_mode: Some(McpTerminalMode::AristaEos),
             cols: Some(80),
             rows: Some(24),
         },
@@ -1077,7 +1077,7 @@ fn prepare_serial_console_uses_defaults_and_line_settings() {
     assert_eq!(prepared.target, "COM3");
     assert_eq!(prepared.title, "COM3");
     assert_eq!(prepared.encoding, "utf-8");
-    assert_eq!(prepared.terminal_mode, "cisco_ios");
+    assert_eq!(prepared.terminal_mode, "arista_eos");
 
     let defaulted = prepare_serial_console_connection(
         ConnectSerialConsoleArgs {
@@ -1174,7 +1174,7 @@ async fn service_connects_serial_console_and_registers_workspace_metadata() {
             parity: Some(McpSerialParity::Even),
             stop_bits: Some(2),
             flow_control: Some(McpSerialFlowControl::Hardware),
-            terminal_mode: Some(McpTerminalMode::CiscoIos),
+            terminal_mode: Some(McpTerminalMode::AristaEos),
             cols: Some(90),
             rows: Some(30),
         })
@@ -1186,7 +1186,7 @@ async fn service_connects_serial_console_and_registers_workspace_metadata() {
     assert_eq!(result["target"], "COM3");
     assert_eq!(result["title"], "COM3");
     assert_eq!(result["encoding"], "utf-8");
-    assert_eq!(result["terminal_mode"], "cisco_ios");
+    assert_eq!(result["terminal_mode"], "arista_eos");
 
     let session = runtime.terminals.session_info(session_id).await.unwrap();
     assert_eq!(session.protocol, TerminalProtocol::Serial);
@@ -1196,7 +1196,7 @@ async fn service_connects_serial_console_and_registers_workspace_metadata() {
     assert_eq!(snapshot.tabs.len(), 1);
     assert_eq!(snapshot.tabs[0].session_id, session_id);
     assert_eq!(snapshot.tabs[0].title, "COM3");
-    assert_eq!(snapshot.tabs[0].terminal_mode, "cisco_ios");
+    assert_eq!(snapshot.tabs[0].terminal_mode, "arista_eos");
     assert_eq!(snapshot.tabs[0].connection_info, None);
 }
 

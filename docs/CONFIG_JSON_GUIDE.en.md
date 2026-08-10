@@ -310,7 +310,7 @@ Unknown names, duplicate names, and empty custom categories are rejected. Intern
 | `port`                     | number or null | SSH or Telnet target port.                                                                                                                                  |
 | `username`                 | string or null | SSH username. Not used for Telnet profiles.                                                                                                                 |
 | `encoding`                 | string or null | Initial terminal display encoding for the profile. Supported values are `"utf-8"`, `"shift-jis"`, and `"euc-jp"`. Missing values default to `"utf-8"`.      |
-| `terminal_mode`            | string or null | Initial terminal mode for the profile. Supported values are `"general"` and `"cisco_ios"`. Missing values default to `"general"`.                           |
+| `terminal_mode`            | string or null | Initial terminal mode for the profile. Supported values are `"general"`, `"cisco_ios"`, and `"arista_eos"`. Missing values default to `"general"`.          |
 | `auth_method`              | string or null | SSH authentication method. Supported values are `"password"` and `"public_key"`. Missing values default to `"password"`. Not used for Telnet profiles.      |
 | `private_key_path`         | string or null | Private key file path used with SSH `"public_key"` authentication, such as an `id_ed25519` file. The file contents and passphrase are not stored.           |
 | `jump_profile_id`          | string or null | SSH jump host profile ID. The referenced profile must be a saved SSH profile. Only one jump host is supported; nested jump hosts are rejected.              |
