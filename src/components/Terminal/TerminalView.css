@@ -53,6 +53,12 @@
   white-space: nowrap;
 }
 
+.terminal-view__pinned-command-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .terminal-view__empty {
   display: flex;
   flex-direction: column;

@@ -6,6 +6,7 @@ export const TERMINAL_MODE_OPTIONS: Array<{ labelKey: string; value: TerminalMod
   { labelKey: "terminal_mode.general", value: "general" },
   { labelKey: "terminal_mode.cisco_ios", value: "cisco_ios" },
   { labelKey: "terminal_mode.arista_eos", value: "arista_eos" },
+  { labelKey: "terminal_mode.vyos", value: "vyos" },
 ];
 
 export function normalizeTerminalMode(terminalMode: string | null | undefined): TerminalMode {

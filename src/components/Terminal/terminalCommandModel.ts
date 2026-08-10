@@ -82,8 +82,14 @@ export function findTerminalPinnedCommand(
     const commandText = `${prompt.commandSeparator}${segments
       .map((segment) => segment.text)
       .join("")}`;
+    const contextLine = buffer.getLine(lineIndex - 1);
+    const context =
+      prompt.variant === "configuration" && contextLine && !contextLine.isWrapped
+        ? profile.parseContextLine?.(contextLine.translateToString(true))
+        : null;
     return {
       displayText: `${prompt.promptText}${commandText}`,
+      ...(context ? { contextText: context.contextText } : {}),
       promptText: prompt.promptText,
       commandText,
       promptVariant: prompt.variant,

@@ -67,7 +67,20 @@ pub(crate) fn normalize_profile_terminal_mode(value: Option<&str>) -> String {
     match value.map(str::trim) {
         Some("cisco_ios") => "cisco_ios".into(),
         Some("arista_eos") => "arista_eos".into(),
+        Some("vyos") => "vyos".into(),
         _ => "general".into(),
+    }
+}
+
+#[cfg(test)]
+mod terminal_mode_tests {
+    use super::normalize_profile_terminal_mode;
+
+    #[test]
+    fn terminal_mode_normalization_accepts_vyos_and_preserves_the_fallback() {
+        assert_eq!(normalize_profile_terminal_mode(Some("vyos")), "vyos");
+        assert_eq!(normalize_profile_terminal_mode(Some("unknown")), "general");
+        assert_eq!(normalize_profile_terminal_mode(None), "general");
     }
 }
 

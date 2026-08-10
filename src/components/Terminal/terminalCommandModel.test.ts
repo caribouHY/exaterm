@@ -3,6 +3,7 @@ import { findTerminalPinnedCommand, hasTerminalPromptInRange } from "./terminalC
 import {
   ARISTA_EOS_DECORATION_PROFILE,
   CISCO_IOS_DECORATION_PROFILE,
+  VYOS_DECORATION_PROFILE,
 } from "./terminalDecorationProfiles";
 import type {
   TerminalBufferLike,
@@ -157,5 +158,36 @@ describe("findTerminalPinnedCommand", () => {
       commandText: " description uplink",
       promptVariant: "configuration",
     });
+  });
+
+  it("pins a VyOS configuration command with its immediate edit context", () => {
+    const buffer = createBuffer(
+      [
+        "[edit interfaces ethernet eth0]",
+        "vyos@router:~# set description WAN",
+        "output",
+        "more output",
+      ],
+      3
+    );
+
+    expect(findTerminalPinnedCommand(buffer, VYOS_DECORATION_PROFILE)).toMatchObject({
+      displayText: "vyos@router:~# set description WAN",
+      contextText: "[edit interfaces ethernet eth0]",
+      promptText: "vyos@router:~#",
+      commandText: " set description WAN",
+      promptVariant: "configuration",
+    });
+  });
+
+  it("does not associate a stale VyOS edit context", () => {
+    const buffer = createBuffer(
+      ["[edit interfaces]", "unrelated output", "vyos@router# commit", "output"],
+      3
+    );
+
+    expect(findTerminalPinnedCommand(buffer, VYOS_DECORATION_PROFILE)).not.toHaveProperty(
+      "contextText"
+    );
   });
 });

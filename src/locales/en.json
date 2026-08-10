@@ -232,6 +232,7 @@
   "terminal_mode.general": "General",
   "terminal_mode.cisco_ios": "Cisco IOS",
   "terminal_mode.arista_eos": "Arista EOS",
+  "terminal_mode.vyos": "VyOS",
   "logs.title": "Session Logs",
   "logs.loading": "Loading...",
   "logs.no_logs": "No logs available",
