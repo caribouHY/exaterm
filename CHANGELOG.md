@@ -17,6 +17,7 @@
 
 ### Fixed
 
+- Enabled SSH password profiles to connect to servers that require keyboard-interactive authentication, including multi-step prompts and jump hosts.
 - Kept the display and backend language synchronized at startup and across all open windows after settings changes.
 - Moved GUI backend-error translation to React while preserving stable English errors for CLI, MCP, and external control clients.
 

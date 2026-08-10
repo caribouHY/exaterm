@@ -21,6 +21,20 @@ describe("backendCommandError", () => {
     expect(translateBackendCommandError(error, t, "fallback")).toBe("接続失敗: refused");
   });
 
+  it("translates SSH authentication prompt errors", () => {
+    const t = vi.fn((key: string) => `translated:${key}`);
+    expect(
+      translateBackendCommandError(
+        {
+          code: "ssh.auth_prompt_timed_out",
+          message: "The SSH authentication prompt timed out",
+        },
+        t,
+        "fallback"
+      )
+    ).toBe("translated:backend_errors.ssh_auth_prompt_timed_out");
+  });
+
   it("uses English message for an unknown future code", () => {
     const t = vi.fn();
     expect(

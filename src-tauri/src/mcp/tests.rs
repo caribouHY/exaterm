@@ -1038,8 +1038,8 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
 }
 
 #[test]
-fn ssh_credential_required_keeps_password_prompt_and_rejects_missing_key() {
-    assert!(ssh_credential_required("password", None).unwrap());
+fn ssh_credential_required_defers_password_prompt_and_rejects_missing_key() {
+    assert!(!ssh_credential_required("password", None).unwrap());
 
     let error = ssh_credential_required("public_key", None).unwrap_err();
     assert!(error.contains("private key"));

@@ -1,4 +1,5 @@
 mod auth;
+mod authentication_prompt;
 mod client_config;
 mod connection;
 mod diagnostics;
@@ -48,10 +49,11 @@ pub fn ssh_private_key_requires_passphrase(
 #[tauri::command]
 pub async fn ssh_probe_host_key(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     state: SshCommandState<'_>,
     options: SshProbeHostKeyOptions,
 ) -> Result<crate::ssh_known_hosts::HostKeyCheckResult, crate::command_error::BackendCommandError> {
-    command_result(host_key::ssh_probe_host_key(app, state, options).await)
+    command_result(host_key::ssh_probe_host_key(app, window, state, options).await)
 }
 
 #[tauri::command]
@@ -67,6 +69,7 @@ pub async fn ssh_trust_host_key(
 #[tauri::command]
 pub async fn ssh_connect(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     state: SshCommandState<'_>,
     terminals: TerminalCommandState<'_>,
     workspace: WorkspaceCommandState<'_>,
@@ -74,7 +77,30 @@ pub async fn ssh_connect(
     options: SshConnectOptions,
 ) -> Result<SshConnectResult, crate::command_error::BackendCommandError> {
     command_result(
-        connection::connect(&app, &state, &terminals, &workspace, Some(&logger), options).await,
+        connection::connect(
+            &app,
+            &state,
+            &terminals,
+            &workspace,
+            Some(&logger),
+            window.label().to_string(),
+            options,
+        )
+        .await,
+    )
+}
+
+#[tauri::command]
+pub async fn ssh_authentication_respond(
+    state: SshCommandState<'_>,
+    request_id: String,
+    responses: Option<Vec<String>>,
+) -> Result<(), crate::command_error::BackendCommandError> {
+    command_result(
+        state
+            .authentication_prompts
+            .submit(request_id, responses)
+            .await,
     )
 }
 

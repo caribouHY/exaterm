@@ -8,15 +8,16 @@ use uuid::Uuid;
 use crate::config::config_load;
 use crate::logger::LoggerState;
 use crate::ssh::auth::{authenticate_ssh, build_auth_request};
+use crate::ssh::authentication_prompt::SshAuthenticationPrompter;
 use crate::ssh::client_config::build_client_config;
 use crate::ssh::diagnostics::{emit_host_key_diagnostic, map_connect_error, SshDiagnostic};
 use crate::ssh::host_key::{HostKeyVerifier, ProbeClientHandler};
 use crate::ssh::io::{
     run_ssh_operation_with_timeout, spawn_ssh_read_processor, SshClientHandler, SshReadDropState,
-    SshReadRequest, SshSession, SshState, SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR,
-    SSH_CHANNEL_OPEN_TIMEOUT, SSH_CHANNEL_OPEN_TIMEOUT_ERROR, SSH_CONNECT_TIMEOUT,
-    SSH_CONNECT_TIMEOUT_ERROR, SSH_PTY_TIMEOUT, SSH_PTY_TIMEOUT_ERROR, SSH_READ_QUEUE_CAPACITY,
-    SSH_SHELL_TIMEOUT, SSH_SHELL_TIMEOUT_ERROR,
+    SshReadRequest, SshSession, SshState, SSH_AUTH_TIMEOUT_ERROR, SSH_CHANNEL_OPEN_TIMEOUT,
+    SSH_CHANNEL_OPEN_TIMEOUT_ERROR, SSH_CONNECT_TIMEOUT, SSH_CONNECT_TIMEOUT_ERROR,
+    SSH_PTY_TIMEOUT, SSH_PTY_TIMEOUT_ERROR, SSH_READ_QUEUE_CAPACITY, SSH_SHELL_TIMEOUT,
+    SSH_SHELL_TIMEOUT_ERROR,
 };
 use crate::ssh::jump::connect_jump_profile;
 use crate::ssh::profiles::resolve_jump_profile;
@@ -51,6 +52,7 @@ pub async fn connect(
     terminals: &TerminalControlState,
     workspace: &WorkspaceState,
     logger_state: Option<&LoggerState>,
+    prompt_window_id: String,
     options: SshConnectOptions,
 ) -> Result<SshConnectResult, String> {
     let prepared = prepare_connect(app, state, terminals, workspace, logger_state, &options)?;
@@ -64,6 +66,8 @@ pub async fn connect(
         handler,
         read_rx,
     } = prepared;
+    let prompter =
+        SshAuthenticationPrompter::new(app, state.authentication_prompts.clone(), prompt_window_id);
     let (mut handle, jump_handle) = connect_target_handle(
         config,
         handler,
@@ -71,13 +75,21 @@ pub async fn connect(
         &options,
         &host_verifier,
         &diagnostic,
+        &prompter,
     )
     .await?;
     if let Some(result) = host_verifier.last_result() {
         emit_host_key_diagnostic(&diagnostic, &result);
     }
-    let channel =
-        establish_target_shell(&mut handle, &jump_handle, auth, &options, &diagnostic).await?;
+    let channel = establish_target_shell(
+        &mut handle,
+        &jump_handle,
+        auth,
+        &options,
+        &diagnostic,
+        &prompter,
+    )
+    .await?;
     let completion = ConnectCompletion {
         session_id,
         diagnostic,
@@ -138,8 +150,18 @@ async fn establish_target_shell(
     auth: SshAuthRequest,
     options: &SshConnectOptions,
     diagnostic: &SshDiagnostic,
+    prompter: &SshAuthenticationPrompter,
 ) -> Result<TargetSessionChannel, String> {
-    authenticate_target(handle, jump_handle, &options.username, auth, diagnostic).await?;
+    let auth_context = prompter.context("target", &options.host, options.port, &options.username);
+    authenticate_target(
+        handle,
+        jump_handle,
+        &options.username,
+        auth,
+        diagnostic,
+        &auth_context,
+    )
+    .await?;
     let channel = open_target_session_channel(handle, jump_handle, diagnostic).await?;
     request_target_pty(
         handle,
@@ -205,6 +227,7 @@ async fn connect_target_handle(
     options: &SshConnectOptions,
     host_verifier: &HostKeyVerifier,
     diagnostic: &SshDiagnostic,
+    prompter: &SshAuthenticationPrompter,
 ) -> Result<(TargetHandle, Option<JumpHandle>), String> {
     match jump_profile {
         Some(jump_profile) => {
@@ -215,6 +238,7 @@ async fn connect_target_handle(
                 options,
                 host_verifier,
                 diagnostic,
+                prompter,
             )
             .await
         }
@@ -229,6 +253,7 @@ async fn connect_target_via_jump(
     options: &SshConnectOptions,
     host_verifier: &HostKeyVerifier,
     diagnostic: &SshDiagnostic,
+    prompter: &SshAuthenticationPrompter,
 ) -> Result<(TargetHandle, Option<JumpHandle>), String> {
     let (jump_handle, jump_channel) = connect_jump_profile(
         config.clone(),
@@ -238,6 +263,7 @@ async fn connect_target_via_jump(
         options.jump_password.clone(),
         options.jump_key_passphrase.clone(),
         Some(diagnostic),
+        prompter,
     )
     .await?;
     let stream = jump_channel.into_stream();
@@ -336,12 +362,10 @@ async fn authenticate_target(
     username: &str,
     auth: SshAuthRequest,
     diagnostic: &SshDiagnostic,
+    context: &crate::ssh::authentication_prompt::SshAuthenticationContext<'_>,
 ) -> Result<(), String> {
     diagnostic.info("target: authentication started");
-    let result = run_ssh_operation_with_timeout(SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR, async {
-        authenticate_ssh(handle, username, auth).await
-    })
-    .await;
+    let result = authenticate_ssh(handle, username, auth, context).await;
     match result {
         Ok(()) => {
             diagnostic.info("target: authentication succeeded");

@@ -110,6 +110,23 @@ async fn window_registration_returns_empty_snapshot() {
 }
 
 #[tokio::test]
+async fn preferred_window_tracks_the_last_focused_existing_window() {
+    let state = WorkspaceState::new();
+    assert_eq!(state.preferred_window_id().await, "main");
+
+    state
+        .register_window("main".into(), "main".into(), true)
+        .await;
+    state
+        .register_window("other".into(), "other".into(), true)
+        .await;
+    assert_eq!(state.preferred_window_id().await, "other");
+
+    state.unregister_window("other".into()).await;
+    assert_eq!(state.preferred_window_id().await, "main");
+}
+
+#[tokio::test]
 async fn connected_session_count_spans_windows_and_ignores_disconnected_tabs() {
     let state = WorkspaceState::new();
     state

@@ -93,6 +93,7 @@ pub fn run() {
         .manage(external_control_log_control_state.clone())
         .on_window_event({
             let workspace_state = workspace_state.clone();
+            let ssh_state = ssh_state.clone();
             move |window, event| match event {
                 tauri::WindowEvent::Focused(true) => {
                     let app = window.app_handle().clone();
@@ -106,8 +107,13 @@ pub fn run() {
                 tauri::WindowEvent::Destroyed => {
                     let app = window.app_handle().clone();
                     let workspace_state = workspace_state.clone();
+                    let ssh_state = ssh_state.clone();
                     let window_id = window.label().to_string();
                     tauri::async_runtime::spawn(async move {
+                        ssh_state
+                            .authentication_prompts
+                            .cancel_window(&window_id)
+                            .await;
                         let result = workspace_state.unregister_window(window_id).await;
                         workspace::emit_workspace_updates(&app, &result.snapshots);
                         workspace::emit_workspace_window_closed(&app, &result);
@@ -164,6 +170,7 @@ pub fn run() {
             ssh::ssh_trust_host_key,
             ssh::ssh_private_key_requires_passphrase,
             ssh::ssh_connect,
+            ssh::ssh_authentication_respond,
             ssh::ssh_write,
             ssh::ssh_resize,
             ssh::ssh_disconnect,
