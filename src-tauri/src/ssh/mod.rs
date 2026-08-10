@@ -4,6 +4,7 @@ mod client_config;
 mod connection;
 mod diagnostics;
 mod host_key;
+mod host_key_prompt;
 mod io;
 mod jump;
 mod profiles;
@@ -15,11 +16,10 @@ mod tests;
 pub use auth::private_key_requires_passphrase;
 #[allow(unused_imports)]
 pub use connection::connect;
-#[cfg(not(test))]
-pub use host_key::{verify_trusted_host_key, verify_trusted_host_key_via_jump};
+pub use host_key::HostKeyHandling;
 pub use io::{write_data, SshState};
 pub use profiles::resolve_jump_profile;
-pub use types::{SshConnectOptions, SshConnectResult, SshJumpProfile, SshProbeHostKeyOptions};
+pub use types::{SshConnectOptions, SshConnectResult, SshJumpProfile};
 
 pub(crate) use client_config::{legacy_algorithm_selection, validate_algorithm_config};
 
@@ -47,26 +47,6 @@ pub fn ssh_private_key_requires_passphrase(
 }
 
 #[tauri::command]
-pub async fn ssh_probe_host_key(
-    app: tauri::AppHandle,
-    window: tauri::WebviewWindow,
-    state: SshCommandState<'_>,
-    options: SshProbeHostKeyOptions,
-) -> Result<crate::ssh_known_hosts::HostKeyCheckResult, crate::command_error::BackendCommandError> {
-    command_result(host_key::ssh_probe_host_key(app, window, state, options).await)
-}
-
-#[tauri::command]
-pub async fn ssh_trust_host_key(
-    state: SshCommandState<'_>,
-    host: String,
-    port: u16,
-    replace: bool,
-) -> Result<(), crate::command_error::BackendCommandError> {
-    command_result(host_key::ssh_trust_host_key(state, host, port, replace).await)
-}
-
-#[tauri::command]
 pub async fn ssh_connect(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
@@ -84,10 +64,20 @@ pub async fn ssh_connect(
             &workspace,
             Some(&logger),
             window.label().to_string(),
+            HostKeyHandling::Prompt,
             options,
         )
         .await,
     )
+}
+
+#[tauri::command]
+pub async fn ssh_host_key_respond(
+    state: SshCommandState<'_>,
+    request_id: String,
+    accept: bool,
+) -> Result<(), crate::command_error::BackendCommandError> {
+    command_result(state.host_key_prompts.submit(request_id, accept).await)
 }
 
 #[tauri::command]

@@ -66,6 +66,14 @@ impl BackendCommandError {
             "The SSH authentication response count does not match the prompt count" => {
                 "ssh.auth_prompt_response_mismatch"
             }
+            "The SSH host key prompt was cancelled" => "ssh.host_key_prompt_cancelled",
+            "The SSH host key prompt timed out" => "ssh.host_key_prompt_timed_out",
+            "The SSH host key prompt request was not found" => {
+                "ssh.host_key_prompt_request_not_found"
+            }
+            "The SSH host key prompt request has already finished" => {
+                "ssh.host_key_prompt_already_finished"
+            }
             "Failed to retrieve the SSH host key" => "ssh.host_key_retrieval_failed",
             "An SSH jump profile cannot reference itself" => "ssh.jump_profile_self_reference",
             "SSH jump profile not found" => "ssh.jump_profile_not_found",
@@ -334,6 +342,29 @@ mod tests {
             )
             .code,
             "ssh.auth_prompt_response_mismatch"
+        );
+    }
+
+    #[test]
+    fn classifies_ssh_host_key_prompt_errors() {
+        assert_eq!(
+            BackendCommandError::from_message("The SSH host key prompt was cancelled").code,
+            "ssh.host_key_prompt_cancelled"
+        );
+        assert_eq!(
+            BackendCommandError::from_message("The SSH host key prompt timed out").code,
+            "ssh.host_key_prompt_timed_out"
+        );
+        assert_eq!(
+            BackendCommandError::from_message("The SSH host key prompt request was not found").code,
+            "ssh.host_key_prompt_request_not_found"
+        );
+        assert_eq!(
+            BackendCommandError::from_message(
+                "The SSH host key prompt request has already finished"
+            )
+            .code,
+            "ssh.host_key_prompt_already_finished"
         );
     }
 

@@ -10,7 +10,6 @@ import {
   ModalHeader,
   ModalTitle,
 } from "../Common";
-import { HostKeyConfirmation } from "./HostKeyConfirmation";
 import { SerialConnectionForm } from "./SerialConnectionForm";
 import { SshConnectionForm } from "./SshConnectionForm";
 import { SshDiagnosticsPanel } from "./SshDiagnosticsPanel";
@@ -19,7 +18,6 @@ import type {
   SerialFormState,
   SshFormActions,
   SshFormState,
-  SshHostKeyCheck,
   TelnetFormActions,
   TelnetFormState,
 } from "./connectionDialogTypes";
@@ -32,10 +30,7 @@ interface ConnectionDialogViewProps {
   connecting: boolean;
   error: string;
   historyError: string;
-  hostKeyCheck: SshHostKeyCheck | null;
-  setHostKeyCheck: (value: SshHostKeyCheck | null) => void;
   shortcutText: string;
-  hostKeyTitle: string;
   sshProfiles: SavedConnection[];
   sshHistoryEntries: ConnectionHistoryEntry[];
   jumpProfileOptions: SavedConnection[];
@@ -75,10 +70,7 @@ export function ConnectionDialogView({
   connecting,
   error,
   historyError,
-  hostKeyCheck,
-  setHostKeyCheck,
   shortcutText,
-  hostKeyTitle,
   sshProfiles,
   sshHistoryEntries,
   jumpProfileOptions,
@@ -109,47 +101,41 @@ export function ConnectionDialogView({
         }}
       >
         <ModalHeader className="connection-dialog__header">
-          <ModalTitle className="connection-dialog__title">
-            {hostKeyCheck ? hostKeyTitle : t("connection.new")}
-          </ModalTitle>
+          <ModalTitle className="connection-dialog__title">{t("connection.new")}</ModalTitle>
           <button className="btn-icon" onClick={onClose}>
             <X size={16} />
           </button>
         </ModalHeader>
 
-        {!hostKeyCheck && (
-          <div className="connection-dialog__tabs">
-            <button
-              className={`connection-dialog__tab ${tab === "ssh" ? "connection-dialog__tab--active" : ""}`}
-              onClick={() => {
-                setTab("ssh");
-              }}
-            >
-              {t("connection.ssh")}
-            </button>
-            <button
-              className={`connection-dialog__tab ${tab === "telnet" ? "connection-dialog__tab--active" : ""}`}
-              onClick={() => {
-                setTab("telnet");
-              }}
-            >
-              {t("connection.telnet")}
-            </button>
-            <button
-              className={`connection-dialog__tab ${tab === "serial" ? "connection-dialog__tab--active" : ""}`}
-              onClick={() => {
-                setTab("serial");
-              }}
-            >
-              {t("connection.serial")}
-            </button>
-          </div>
-        )}
+        <div className="connection-dialog__tabs">
+          <button
+            className={`connection-dialog__tab ${tab === "ssh" ? "connection-dialog__tab--active" : ""}`}
+            onClick={() => {
+              setTab("ssh");
+            }}
+          >
+            {t("connection.ssh")}
+          </button>
+          <button
+            className={`connection-dialog__tab ${tab === "telnet" ? "connection-dialog__tab--active" : ""}`}
+            onClick={() => {
+              setTab("telnet");
+            }}
+          >
+            {t("connection.telnet")}
+          </button>
+          <button
+            className={`connection-dialog__tab ${tab === "serial" ? "connection-dialog__tab--active" : ""}`}
+            onClick={() => {
+              setTab("serial");
+            }}
+          >
+            {t("connection.serial")}
+          </button>
+        </div>
 
         <ModalBody className="connection-dialog__body">
-          {hostKeyCheck ? (
-            <HostKeyConfirmation hostKeyCheck={hostKeyCheck} />
-          ) : tab === "ssh" ? (
+          {tab === "ssh" ? (
             <SshConnectionForm
               formState={sshFormState}
               formActions={sshFormActions}
@@ -193,28 +179,6 @@ export function ConnectionDialogView({
             <ModalBusy className="connection-dialog__connecting">
               {t("connection.connecting")}
             </ModalBusy>
-          ) : hostKeyCheck ? (
-            <>
-              <button
-                className="btn btn-ghost"
-                onClick={() => {
-                  setHostKeyCheck(null);
-                }}
-              >
-                {t("connection.cancel")}
-              </button>
-              <button
-                className={`btn ${hostKeyCheck.status === "mismatch" ? "btn-danger" : "btn-primary"}`}
-                onClick={() =>
-                  void connectionActions.handleTrustAndConnect(hostKeyCheck.status === "mismatch")
-                }
-              >
-                {hostKeyCheck.status === "mismatch"
-                  ? t("connection.host_key_replace_connect")
-                  : t("connection.host_key_trust_connect")}{" "}
-                <span className="connection-dialog__shortcut">{shortcutText}</span>
-              </button>
-            </>
           ) : (
             <>
               <button className="btn btn-ghost" onClick={onClose}>

@@ -186,16 +186,6 @@ async fn connect_prepared_ssh_profile(
     })?;
     let prompt_window_id = runtime.workspace.preferred_window_id().await;
     let jump_credential = request_jump_credential(credentials, app, parts.jump_profile).await?;
-    verify_profile_host_key(
-        runtime,
-        app,
-        prompt_window_id.clone(),
-        parts.host,
-        parts.port,
-        parts.jump_profile,
-        jump_credential.clone(),
-    )
-    .await?;
     let profile_credential = request_profile_credential(
         credentials,
         app,
@@ -218,6 +208,7 @@ async fn connect_prepared_ssh_profile(
         &runtime.workspace,
         runtime.logger.as_ref(),
         prompt_window_id,
+        ssh::HostKeyHandling::RequireTrusted,
         options,
     )
     .await
@@ -258,9 +249,6 @@ async fn request_jump_credential(
     let Some(jump_profile) = jump_profile else {
         return Ok(None);
     };
-    ssh::verify_trusted_host_key(&jump_profile.host, jump_profile.port)
-        .await
-        .map_err(invalid_params)?;
     request_profile_credential(
         credentials,
         app,
@@ -277,37 +265,6 @@ async fn request_jump_credential(
         &format!("{}@{}", jump_profile.username, jump_profile.host),
     )
     .await
-}
-
-#[cfg(not(test))]
-async fn verify_profile_host_key(
-    runtime: &ExternalControlRuntime,
-    app: &AppHandle,
-    prompt_window_id: String,
-    host: &str,
-    port: u16,
-    jump_profile: Option<&ssh::SshJumpProfile>,
-    jump_credential: Option<String>,
-) -> Result<(), ExternalControlError> {
-    match jump_profile {
-        Some(jump_profile) => {
-            let (jump_password, jump_key_passphrase) =
-                split_optional_ssh_credential(&jump_profile.auth_method, jump_credential);
-            ssh::verify_trusted_host_key_via_jump(
-                app,
-                &runtime.ssh,
-                prompt_window_id,
-                host,
-                port,
-                jump_profile.clone(),
-                jump_password,
-                jump_key_passphrase,
-            )
-            .await
-        }
-        None => ssh::verify_trusted_host_key(host, port).await,
-    }
-    .map_err(invalid_params)
 }
 
 #[cfg(not(test))]

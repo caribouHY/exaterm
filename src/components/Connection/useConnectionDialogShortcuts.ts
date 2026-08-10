@@ -1,27 +1,21 @@
 import { useEffect } from "react";
-import type { SshCredentialPrompt, SshHostKeyCheck } from "./connectionDialogTypes";
+import type { SshCredentialPrompt } from "./connectionDialogTypes";
 
 interface UseConnectionDialogShortcutsParams {
   connecting: boolean;
   credentialPrompt: SshCredentialPrompt | null;
-  hostKeyCheck: SshHostKeyCheck | null;
   onClose: () => void;
   onCloseCredentialPrompt: () => void;
-  onCancelHostKeyCheck: () => void;
   onCredentialSubmit: () => void;
-  onTrustAndConnect: (replace: boolean) => void;
   onConnect: () => void;
 }
 
 export const useConnectionDialogShortcuts = ({
   connecting,
   credentialPrompt,
-  hostKeyCheck,
   onClose,
   onCloseCredentialPrompt,
-  onCancelHostKeyCheck,
   onCredentialSubmit,
-  onTrustAndConnect,
   onConnect,
 }: UseConnectionDialogShortcutsParams) => {
   useEffect(() => {
@@ -32,10 +26,6 @@ export const useConnectionDialogShortcuts = ({
         onCloseCredentialPrompt();
         return;
       }
-      if (hostKeyCheck) {
-        onCancelHostKeyCheck();
-        return;
-      }
       onClose();
     };
 
@@ -44,10 +34,6 @@ export const useConnectionDialogShortcuts = ({
       if (connecting) return;
       if (credentialPrompt) {
         onCredentialSubmit();
-        return;
-      }
-      if (hostKeyCheck) {
-        onTrustAndConnect(hostKeyCheck.status === "mismatch");
         return;
       }
       onConnect();
@@ -70,12 +56,9 @@ export const useConnectionDialogShortcuts = ({
   }, [
     connecting,
     credentialPrompt,
-    hostKeyCheck,
-    onCancelHostKeyCheck,
     onClose,
     onCloseCredentialPrompt,
     onConnect,
     onCredentialSubmit,
-    onTrustAndConnect,
   ]);
 };

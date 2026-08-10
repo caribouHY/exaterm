@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use russh::keys::{Algorithm, EcdsaCurve, HashAlg};
 use serde::Serialize;
 
-use crate::config::{config_load, SshAlgorithmSelection, SshConfig};
+use crate::config::{SshAlgorithmSelection, SshConfig};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SshAlgorithmCatalogItem {
@@ -337,9 +337,4 @@ pub(super) fn build_client_config(ssh_config: &SshConfig) -> Result<russh::clien
         )),
     };
     Ok(config)
-}
-
-pub(super) fn load_client_config() -> Result<russh::client::Config, String> {
-    let app_config = config_load().map_err(|error| error.message)?;
-    build_client_config(&app_config.ssh)
 }

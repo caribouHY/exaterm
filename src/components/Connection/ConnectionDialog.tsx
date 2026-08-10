@@ -17,7 +17,6 @@ import type {
   SshCredentialPrompt,
   SshFormActions,
   SshFormState,
-  SshHostKeyCheck,
   TelnetFormActions,
   TelnetFormState,
 } from "./connectionDialogTypes";
@@ -54,7 +53,6 @@ export default function ConnectionDialog({
   const [tab, setTab] = useState<ConnectionType>("ssh");
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
-  const [hostKeyCheck, setHostKeyCheck] = useState<SshHostKeyCheck | null>(null);
   const [credentialPrompt, setCredentialPrompt] = useState<SshCredentialPrompt | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [selectedProfileIds, setSelectedProfileIds] = useState({ ssh: "", telnet: "" });
@@ -399,8 +397,6 @@ export default function ConnectionDialog({
     connectingRef,
     setConnecting,
     setError,
-    hostKeyCheck,
-    setHostKeyCheck,
     credentialPrompt,
     setCredentialPrompt,
     sshProfiles,
@@ -497,17 +493,10 @@ export default function ConnectionDialog({
   useConnectionDialogShortcuts({
     connecting,
     credentialPrompt,
-    hostKeyCheck,
     onClose,
     onCloseCredentialPrompt: closeCredentialPrompt,
-    onCancelHostKeyCheck: () => {
-      setHostKeyCheck(null);
-    },
     onCredentialSubmit: () => {
       void connectionActions.handleCredentialSubmit();
-    },
-    onTrustAndConnect: (replace) => {
-      void connectionActions.handleTrustAndConnect(replace);
     },
     onConnect: () => {
       void connectionActions.handleConnect();
@@ -638,10 +627,6 @@ export default function ConnectionDialog({
     onExternalControlEnabledChange: setTelnetExternalControlEnabled,
     onSaveProfile: handleSaveTelnetProfile,
   };
-  const hostKeyTitle =
-    hostKeyCheck?.status === "mismatch"
-      ? t("connection.host_key_mismatch.title")
-      : t("connection.host_key_unknown.title");
   const shortcutText = t("connection.shortcut_ctrl_enter");
 
   return (
@@ -659,10 +644,7 @@ export default function ConnectionDialog({
             )
           : ""
       }
-      hostKeyCheck={hostKeyCheck}
-      setHostKeyCheck={setHostKeyCheck}
       shortcutText={shortcutText}
-      hostKeyTitle={hostKeyTitle}
       sshProfiles={sshProfiles}
       sshHistoryEntries={connectionHistory.sshEntries}
       jumpProfileOptions={jumpProfileOptions}

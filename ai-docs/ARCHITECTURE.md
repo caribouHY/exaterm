@@ -34,7 +34,7 @@ Avoid changes that remount terminal views or drop active tab state unless the ta
 
 ## Backend Areas
 
-- `src-tauri/src/ssh.rs` handles SSH sessions, writes, resizes, disconnects, and host-key probing/trust flow integration.
+- `src-tauri/src/ssh.rs` handles SSH sessions, writes, resizes, disconnects, and in-handshake host-key verification/trust flow integration.
 - `src-tauri/src/ssh_known_hosts.rs` handles the ExaTerm known-hosts file and fingerprint trust decisions.
 - `src-tauri/src/serial.rs` handles serial port listing and serial sessions.
 - `src-tauri/src/telnet.rs` handles Telnet sessions, minimal option negotiation, writes, resizes, and disconnects.
@@ -74,7 +74,7 @@ Preserve the opt-in logging model unless the task explicitly changes it.
 - Terminal input writes to the matching backend command (`ssh_write`, `serial_write`, or `telnet_write`); terminal output is rendered by xterm.js and may be appended to logs only when auto session logging is enabled.
 - Settings are loaded through `config_load` and saved through `config_save`.
 - AI chat loads configured provider/model preferences, checks secret status for cloud providers, and calls `ai_chat`.
-- SSH host keys are probed before trust decisions and stored through the known-hosts module.
+- GUI SSH connections verify and, when needed, confirm host keys inside the active handshake so authentication continues on the same TCP connection. External-control connections require an already trusted key without opening a separate probe connection.
 
 ## Documentation Boundaries
 

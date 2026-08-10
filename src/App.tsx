@@ -47,7 +47,8 @@ import { useAppUpdate } from "./features/app-update/useAppUpdate";
 import { AppExitDialog } from "./features/app-exit/AppExitDialog";
 import { useAppExit } from "./features/app-exit/useAppExit";
 import { SshAuthenticationPromptDialog } from "./features/ssh-authentication/SshAuthenticationPromptDialog";
-import { useSshAuthenticationPrompts } from "./features/ssh-authentication/useSshAuthenticationPrompts";
+import { SshHostKeyPromptDialog } from "./features/ssh-authentication/SshHostKeyPromptDialog";
+import { useSshPrompts } from "./features/ssh-authentication/useSshPrompts";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -96,7 +97,7 @@ interface McpLogControlRequestPayload {
 export default function App() {
   const { t } = useTranslation();
   const windowTabs = useWindowTabs();
-  const sshAuthenticationPrompts = useSshAuthenticationPrompts();
+  const sshPrompts = useSshPrompts();
   const {
     tabs,
     appTabs,
@@ -838,15 +839,26 @@ export default function App() {
           />
         </Suspense>
       )}
-      {sshAuthenticationPrompts.activePrompt !== null && (
+      {sshPrompts.activePrompt?.kind === "authentication" && (
         <SshAuthenticationPromptDialog
-          prompt={sshAuthenticationPrompts.activePrompt}
-          onResponseChange={sshAuthenticationPrompts.updateResponse}
+          prompt={sshPrompts.activePrompt.value}
+          onResponseChange={sshPrompts.updateResponse}
           onSubmit={() => {
-            void sshAuthenticationPrompts.submit();
+            void sshPrompts.submit();
           }}
           onCancel={() => {
-            void sshAuthenticationPrompts.cancel();
+            void sshPrompts.cancel();
+          }}
+        />
+      )}
+      {sshPrompts.activePrompt?.kind === "host_key" && (
+        <SshHostKeyPromptDialog
+          prompt={sshPrompts.activePrompt.value}
+          onAccept={() => {
+            void sshPrompts.submit();
+          }}
+          onCancel={() => {
+            void sshPrompts.cancel();
           }}
         />
       )}

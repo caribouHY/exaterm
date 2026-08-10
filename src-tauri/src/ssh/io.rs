@@ -14,15 +14,16 @@ use tokio::time;
 use crate::logger;
 use crate::logger::LoggerState;
 use crate::ssh::authentication_prompt::SshAuthenticationPromptState;
-use crate::ssh::diagnostics::PendingHostKey;
-use crate::ssh::host_key::{HostKeyVerifier, ProbeClientHandler};
+use crate::ssh::diagnostics::SshDiagnostic;
+use crate::ssh::host_key::{verify_server_key, HostKeyVerifier, SshHostKeyHandler};
+use crate::ssh::host_key_prompt::{SshHostKeyPromptState, SshHostKeyPrompter};
 use crate::terminal_control::TerminalControlState;
 use crate::workspace::{emit_workspace_updated, WorkspaceState};
 
 pub(super) struct SshSession {
     pub(super) handle: russh::client::Handle<SshClientHandler>,
     pub(super) channel: Arc<Mutex<russh::ChannelWriteHalf<russh::client::Msg>>>,
-    pub(super) jump_handle: Option<russh::client::Handle<ProbeClientHandler>>,
+    pub(super) jump_handle: Option<russh::client::Handle<SshHostKeyHandler>>,
 }
 
 pub(super) const SSH_READ_QUEUE_CAPACITY: usize = 1024;
@@ -168,16 +169,16 @@ where
 #[derive(Clone)]
 pub struct SshState {
     pub(super) sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
-    pub(super) pending_host_keys: Arc<Mutex<HashMap<String, PendingHostKey>>>,
     pub(crate) authentication_prompts: SshAuthenticationPromptState,
+    pub(crate) host_key_prompts: SshHostKeyPromptState,
 }
 
 impl SshState {
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            pending_host_keys: Arc::new(Mutex::new(HashMap::new())),
             authentication_prompts: SshAuthenticationPromptState::default(),
+            host_key_prompts: SshHostKeyPromptState::default(),
         }
     }
 }
@@ -187,6 +188,8 @@ pub(super) struct SshClientHandler {
     pub(super) session_id: String,
     pub(super) sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
     pub(super) host_verifier: HostKeyVerifier,
+    pub(super) host_key_prompter: Option<SshHostKeyPrompter>,
+    pub(super) diagnostic: SshDiagnostic,
     pub(super) terminals: TerminalControlState,
     pub(super) workspace: WorkspaceState,
     pub(super) logger: Option<LoggerState>,
@@ -201,8 +204,20 @@ impl russh::client::Handler for SshClientHandler {
         &mut self,
         server_public_key: &PublicKey,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
-        let result = self.host_verifier.check_key(server_public_key);
-        async move { result }
+        let verifier = self.host_verifier.clone();
+        let prompter = self.host_key_prompter.clone();
+        let diagnostic = self.diagnostic.clone();
+        let server_public_key = server_public_key.clone();
+        async move {
+            verify_server_key(
+                verifier,
+                prompter,
+                "target",
+                Some(diagnostic),
+                server_public_key,
+            )
+            .await
+        }
     }
 
     fn data(

@@ -5,14 +5,13 @@ import type {
   ConnectionHistoryRecordInput,
   ConnectionType,
   Encoding,
-  HostKeyCheckResult,
   SavedConnection,
   SshAuthMethod,
   TerminalMode,
   WorkspaceConnectionInfo,
 } from "../../types";
 import { connectionHistoryClient } from "../../features/connection-history/connectionHistoryClient";
-import type { SshCredentialPrompt, SshHostKeyCheck } from "./connectionDialogTypes";
+import type { SshCredentialPrompt } from "./connectionDialogTypes";
 import { getConnectionErrorMessage, normalizeSshAuthMethod } from "./connectionProfileUtils";
 
 interface UseConnectionActionsParams {
@@ -20,8 +19,6 @@ interface UseConnectionActionsParams {
   connectingRef: MutableRefObject<boolean>;
   setConnecting: (value: boolean) => void;
   setError: (value: string) => void;
-  hostKeyCheck: SshHostKeyCheck | null;
-  setHostKeyCheck: (value: SshHostKeyCheck | null) => void;
   credentialPrompt: SshCredentialPrompt | null;
   setCredentialPrompt: Dispatch<SetStateAction<SshCredentialPrompt | null>>;
   sshProfiles: SavedConnection[];
@@ -96,8 +93,6 @@ export const useConnectionActions = ({
   connectingRef,
   setConnecting,
   setError,
-  hostKeyCheck,
-  setHostKeyCheck,
   credentialPrompt,
   setCredentialPrompt,
   sshProfiles,
@@ -233,39 +228,11 @@ export const useConnectionActions = ({
     [openCredentialPrompt, performSshConnect, setBusy, ssh]
   );
 
-  const probeTargetHostKey = useCallback(
-    async (sshPort: number, currentJumpCredential = ssh.jumpCredential) => {
-      const jumpProfile = sshProfiles.find((profile) => profile.id === ssh.jumpProfileId);
-      const jumpAuthMethod = normalizeSshAuthMethod(jumpProfile?.auth_method);
-      const result = await invoke<HostKeyCheckResult>("ssh_probe_host_key", {
-        options: {
-          host: ssh.host,
-          port: sshPort,
-          jumpProfileId: ssh.jumpProfileId || null,
-          jumpPassword: jumpAuthMethod === "password" ? currentJumpCredential : "",
-          jumpKeyPassphrase: jumpAuthMethod === "public_key" ? currentJumpCredential : "",
-          requestId: diagnostics.currentRequestId(),
-          diagnosticRole: "target",
-        },
-      });
-
-      if (result.status === "trusted") {
-        await continueSshConnect(sshPort, currentJumpCredential);
-        return;
-      }
-
-      ssh.setJumpCredential(currentJumpCredential);
-      setHostKeyCheck({ ...result, phase: "target" });
-      setBusy(false);
-    },
-    [continueSshConnect, diagnostics, setBusy, setHostKeyCheck, ssh, sshProfiles]
-  );
-
-  const continueAfterJumpTrusted = useCallback(
+  const prepareJumpCredentialAndConnect = useCallback(
     async (sshPort: number) => {
       const jumpProfile = sshProfiles.find((profile) => profile.id === ssh.jumpProfileId);
       if (!ssh.jumpProfileId || !jumpProfile) {
-        await probeTargetHostKey(sshPort, "");
+        await continueSshConnect(sshPort, "");
         return;
       }
 
@@ -292,7 +259,7 @@ export const useConnectionActions = ({
 
       if (jumpAuthMethod === "password") {
         ssh.setJumpCredential("");
-        await probeTargetHostKey(sshPort, "");
+        await continueSshConnect(sshPort, "");
         return;
       }
 
@@ -305,9 +272,9 @@ export const useConnectionActions = ({
       }
 
       ssh.setJumpCredential("");
-      await probeTargetHostKey(sshPort, "");
+      await continueSshConnect(sshPort, "");
     },
-    [openCredentialPrompt, probeTargetHostKey, setBusy, ssh, sshProfiles, t]
+    [continueSshConnect, openCredentialPrompt, setBusy, ssh, sshProfiles, t]
   );
 
   const handleCredentialSubmit = useCallback(async () => {
@@ -319,7 +286,7 @@ export const useConnectionActions = ({
       if (credentialPrompt.phase === "jump") {
         setCredentialPrompt(null);
         ssh.setJumpCredential(credentialPrompt.value);
-        await probeTargetHostKey(
+        await continueSshConnect(
           credentialPrompt.targetPort ?? credentialPrompt.port,
           credentialPrompt.value
         );
@@ -346,51 +313,13 @@ export const useConnectionActions = ({
   }, [
     connectingRef,
     credentialPrompt,
+    continueSshConnect,
     performSshConnect,
-    probeTargetHostKey,
     setBusy,
     setCredentialPrompt,
     ssh,
     t,
   ]);
-
-  const handleTrustAndConnect = useCallback(
-    async (replace: boolean) => {
-      if (!hostKeyCheck || connectingRef.current) return;
-
-      setError("");
-      setBusy(true);
-      try {
-        await invoke("ssh_trust_host_key", {
-          host: hostKeyCheck.host,
-          port: hostKeyCheck.port,
-          replace,
-        });
-        const phase = hostKeyCheck.phase;
-        const checkedPort = hostKeyCheck.port;
-        setHostKeyCheck(null);
-        if (phase === "jump") {
-          await continueAfterJumpTrusted(parsePort(ssh.port, t("connection.error")));
-        } else {
-          await continueSshConnect(checkedPort);
-        }
-      } catch (error: unknown) {
-        setError(getConnectionErrorMessage(error, t, t("connection.error")));
-        setBusy(false);
-      }
-    },
-    [
-      connectingRef,
-      continueAfterJumpTrusted,
-      continueSshConnect,
-      hostKeyCheck,
-      setBusy,
-      setError,
-      setHostKeyCheck,
-      ssh.port,
-      t,
-    ]
-  );
 
   const handleConnect = useCallback(async () => {
     if (connectingRef.current) return;
@@ -403,41 +332,7 @@ export const useConnectionActions = ({
         const sshPort = parsePort(ssh.port, t("connection.error"));
         ssh.setJumpCredential("");
 
-        if (ssh.jumpProfileId) {
-          const jumpProfile = sshProfiles.find((profile) => profile.id === ssh.jumpProfileId);
-          if (!jumpProfile) {
-            throw new Error(t("connection.jump_profile_not_found", { profile: ssh.jumpProfileId }));
-          }
-          if (jumpProfile.jump_profile_id) {
-            throw new Error(t("connection.jump_profile_nested"));
-          }
-          if (!jumpProfile.host || !jumpProfile.username) {
-            throw new Error(
-              t("connection.jump_profile_incomplete", { profile: ssh.jumpProfileId })
-            );
-          }
-
-          const jumpResult = await invoke<HostKeyCheckResult>("ssh_probe_host_key", {
-            options: {
-              host: jumpProfile.host,
-              port: jumpProfile.port ?? 22,
-              jumpProfileId: null,
-              jumpPassword: "",
-              jumpKeyPassphrase: "",
-              requestId: diagnostics.currentRequestId(),
-              diagnosticRole: "jump",
-            },
-          });
-          if (jumpResult.status === "trusted") {
-            await continueAfterJumpTrusted(sshPort);
-            return;
-          }
-          setHostKeyCheck({ ...jumpResult, phase: "jump" });
-          setBusy(false);
-          return;
-        }
-
-        await probeTargetHostKey(sshPort, "");
+        await prepareJumpCredentialAndConnect(sshPort);
         return;
       }
 
@@ -514,14 +409,12 @@ export const useConnectionActions = ({
     }
   }, [
     connectingRef,
-    continueAfterJumpTrusted,
     diagnostics,
     onConnect,
-    probeTargetHostKey,
+    prepareJumpCredentialAndConnect,
     serial,
     setBusy,
     setError,
-    setHostKeyCheck,
     ssh,
     sshProfiles,
     tab,
@@ -532,6 +425,5 @@ export const useConnectionActions = ({
   return {
     handleConnect,
     handleCredentialSubmit,
-    handleTrustAndConnect,
   };
 };

@@ -128,3 +128,51 @@
   flex-direction: column;
   gap: 5px;
 }
+
+.ssh-host-key-prompt__content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ssh-host-key-prompt__message {
+  color: var(--text-primary);
+}
+
+.ssh-host-key-prompt__message,
+.ssh-host-key-prompt__warning {
+  line-height: 1.5;
+}
+
+.ssh-host-key-prompt__grid {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 8px 12px;
+  padding: 12px;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+}
+
+.ssh-host-key-prompt__label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ssh-host-key-prompt__value {
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.ssh-host-key-prompt__value--mono {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 520px) {
+  .ssh-host-key-prompt__grid {
+    grid-template-columns: 1fr;
+  }
+}
