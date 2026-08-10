@@ -30,10 +30,6 @@ pub fn known_hosts_path() -> PathBuf {
         .join("known_hosts")
 }
 
-pub fn endpoint_cache_key(host: &str, port: u16) -> String {
-    format!("{}:{}", host, port)
-}
-
 fn sha256_fingerprint(key: &PublicKey) -> String {
     key.fingerprint(HashAlg::Sha256)
         .to_string()
@@ -90,15 +86,6 @@ pub fn inspect_host_key_with_path<P: AsRef<Path>>(
         fingerprint: sha256_fingerprint(key),
         known_fingerprint: if trusted { None } else { matched_fingerprint },
     })
-}
-
-pub fn write_trusted_host(
-    host: &str,
-    port: u16,
-    key: &PublicKey,
-    replace: bool,
-) -> Result<(), String> {
-    write_trusted_host_with_path(host, port, key, replace, &known_hosts_path())
 }
 
 pub fn write_trusted_host_with_path<P: AsRef<Path>>(

@@ -35,6 +35,20 @@ describe("backendCommandError", () => {
     ).toBe("translated:backend_errors.ssh_auth_prompt_timed_out");
   });
 
+  it("translates SSH host key prompt response errors", () => {
+    const t = vi.fn((key: string) => `translated:${key}`);
+    expect(
+      translateBackendCommandError(
+        {
+          code: "ssh.host_key_prompt_request_not_found",
+          message: "The SSH host key prompt request was not found",
+        },
+        t,
+        "fallback"
+      )
+    ).toBe("translated:backend_errors.ssh_host_key_prompt_request_not_found");
+  });
+
   it("uses English message for an unknown future code", () => {
     const t = vi.fn();
     expect(

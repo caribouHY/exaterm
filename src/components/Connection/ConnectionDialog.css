@@ -220,48 +220,6 @@
   white-space: nowrap;
 }
 
-.connection-dialog__host-key {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.connection-dialog__host-key-message {
-  color: var(--text-primary);
-  line-height: 1.5;
-}
-
-.connection-dialog__host-key-grid {
-  display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
-  gap: 8px 12px;
-  padding: 12px;
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
-}
-
-.connection-dialog__host-key-label {
-  color: var(--text-secondary);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.connection-dialog__host-key-value {
-  color: var(--text-primary);
-  font-size: 12px;
-  line-height: 1.5;
-  word-break: break-word;
-}
-
-.connection-dialog__host-key-value--mono {
-  font-family: var(--font-mono);
-}
-
-.connection-dialog__host-key-warning {
-  line-height: 1.5;
-}
-
 .connection-credential-modal {
   width: min(360px, 100%);
   animation: slideInUp 0.16s ease;

@@ -3,7 +3,6 @@ import type {
   ConnectionHistoryEntry,
   ConnectionType,
   Encoding,
-  HostKeyCheckResult,
   PortInfo,
   SavedConnection,
   SshAuthMethod,
@@ -44,10 +43,6 @@ export interface SshCredentialPrompt {
   value: string;
   error: string;
 }
-
-export type SshHostKeyCheck = HostKeyCheckResult & {
-  phase: "jump" | "target";
-};
 
 export interface SshDiagnosticEvent {
   level: "info" | "error";

@@ -12,8 +12,8 @@ use super::auth::{
     private_key_format_hint, SUPPORTED_PRIVATE_KEY_LABELS,
 };
 use super::client_config::{algorithm_catalog, build_client_config, validate_algorithm_config};
-use super::diagnostics::{normalize_diagnostic_role, ssh_diagnostic_event_name};
-use super::host_key::{HostKeyVerificationMode, HostKeyVerifier};
+use super::diagnostics::ssh_diagnostic_event_name;
+use super::host_key::{HostKeyHandling, HostKeyVerifier};
 use super::io::{
     record_ssh_read_drop, run_ssh_channel_operation_with_timeout, run_ssh_operation_with_timeout,
     ssh_read_overflow_event_name, SshReadDropNotice, SshReadDropState, SSH_CONNECT_TIMEOUT_ERROR,
@@ -52,6 +52,11 @@ fn diagnostic_event_name_scopes_to_request_id() {
         ssh_diagnostic_event_name("request-1"),
         "ssh://connect-diagnostic/request-1"
     );
+}
+
+#[test]
+fn gui_and_external_control_use_distinct_host_key_handling() {
+    assert_ne!(HostKeyHandling::Prompt, HostKeyHandling::RequireTrusted);
 }
 
 #[test]
@@ -162,17 +167,6 @@ async fn ssh_operation_timeout_preserves_success_value() {
     assert_eq!(value, "connected");
 }
 
-#[test]
-fn diagnostic_role_only_allows_known_roles() {
-    assert_eq!(normalize_diagnostic_role(Some("jump".into())), "jump");
-    assert_eq!(normalize_diagnostic_role(Some("target".into())), "target");
-    assert_eq!(
-        normalize_diagnostic_role(Some("host.example.com".into())),
-        "target"
-    );
-    assert_eq!(normalize_diagnostic_role(None), "target");
-}
-
 fn generate_temp_private_key(passphrase: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("exaterm-ssh-keygen-{}", Uuid::new_v4()));
     fs::create_dir_all(&dir).unwrap();
@@ -188,13 +182,9 @@ fn generate_temp_private_key(passphrase: &str) -> PathBuf {
 }
 
 #[test]
-fn verifier_rejects_unknown_keys_in_enforce_mode() {
-    let verifier = HostKeyVerifier::with_path(
-        "example.com".to_string(),
-        22,
-        HostKeyVerificationMode::Enforce,
-        temp_known_hosts_path(),
-    );
+fn verifier_rejects_unknown_keys() {
+    let verifier =
+        HostKeyVerifier::with_path("example.com".to_string(), 22, temp_known_hosts_path());
     let key = read_test_key("AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ");
 
     let allowed = verifier.check_key(&key).unwrap();
@@ -206,7 +196,7 @@ fn verifier_rejects_unknown_keys_in_enforce_mode() {
 }
 
 #[test]
-fn verifier_rejects_mismatched_keys_in_enforce_mode() {
+fn verifier_rejects_mismatched_keys() {
     let known_hosts_path = temp_known_hosts_path();
     let stored_key =
         read_test_key("AAAAC3NzaC1lZDI1NTE5AAAAILIG2T/B0l0gaqj3puu510tu9N1OkQ4znY3LYuEm5zCF");
@@ -219,12 +209,8 @@ fn verifier_rejects_mismatched_keys_in_enforce_mode() {
     )
     .unwrap();
 
-    let verifier = HostKeyVerifier::with_path(
-        "example.com".to_string(),
-        22,
-        HostKeyVerificationMode::Enforce,
-        known_hosts_path.clone(),
-    );
+    let verifier =
+        HostKeyVerifier::with_path("example.com".to_string(), 22, known_hosts_path.clone());
     let new_key =
         read_test_key("AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ");
 
@@ -235,6 +221,29 @@ fn verifier_rejects_mismatched_keys_in_enforce_mode() {
         HostKeyCheckStatus::Mismatch
     );
 
+    let _ = fs::remove_file(known_hosts_path);
+}
+
+#[test]
+fn verifier_accepts_trusted_key_without_prompt() {
+    let known_hosts_path = temp_known_hosts_path();
+    let key = read_test_key("AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ");
+    crate::ssh_known_hosts::write_trusted_host_with_path(
+        "example.com",
+        22,
+        &key,
+        false,
+        &known_hosts_path,
+    )
+    .unwrap();
+    let verifier =
+        HostKeyVerifier::with_path("example.com".to_string(), 22, known_hosts_path.clone());
+
+    assert!(verifier.check_key(&key).unwrap());
+    assert_eq!(
+        verifier.last_result().unwrap().status,
+        HostKeyCheckStatus::Trusted
+    );
     let _ = fs::remove_file(known_hosts_path);
 }
 

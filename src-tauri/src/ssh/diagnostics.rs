@@ -1,14 +1,8 @@
-use russh::keys::PublicKey;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::ssh::host_key::HostKeyVerifier;
 use crate::ssh_known_hosts::{HostKeyCheckResult, HostKeyCheckStatus};
-
-#[derive(Clone)]
-pub(super) struct PendingHostKey {
-    pub(super) key: PublicKey,
-}
 
 #[derive(Clone)]
 pub(super) struct SshDiagnostic {
@@ -84,31 +78,15 @@ pub(super) fn host_key_error_message(result: &HostKeyCheckResult) -> String {
 }
 
 pub(super) fn map_connect_error(error: russh::Error, verifier: &HostKeyVerifier) -> String {
+    if let Some(error) = verifier.last_error() {
+        return error;
+    }
     if let Some(result) = verifier.last_result() {
         if result.status != HostKeyCheckStatus::Trusted {
             return host_key_error_message(&result);
         }
     }
     format!("SSH connection error: {}", error)
-}
-
-pub(super) fn emit_host_key_diagnostic(diagnostic: &SshDiagnostic, result: &HostKeyCheckResult) {
-    diagnostic.info(format!(
-        "target: host key received {} SHA256:{}",
-        result.algorithm, result.fingerprint
-    ));
-    match result.status {
-        HostKeyCheckStatus::Trusted => diagnostic.info("target: host key trusted"),
-        HostKeyCheckStatus::Unknown => diagnostic.info("target: host key unknown"),
-        HostKeyCheckStatus::Mismatch => diagnostic.info("target: host key mismatch"),
-    }
-}
-
-pub(super) fn normalize_diagnostic_role(value: Option<String>) -> &'static str {
-    match value.as_deref() {
-        Some("jump") => "jump",
-        _ => "target",
-    }
 }
 
 pub(super) fn emit_host_key_diagnostic_for_role(

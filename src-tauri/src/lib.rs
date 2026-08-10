@@ -114,6 +114,7 @@ pub fn run() {
                             .authentication_prompts
                             .cancel_window(&window_id)
                             .await;
+                        ssh_state.host_key_prompts.cancel_window(&window_id).await;
                         let result = workspace_state.unregister_window(window_id).await;
                         workspace::emit_workspace_updates(&app, &result.snapshots);
                         workspace::emit_workspace_window_closed(&app, &result);
@@ -166,10 +167,9 @@ pub fn run() {
             // SSH
             startup_cli_request_get,
             ssh::ssh_algorithm_catalog,
-            ssh::ssh_probe_host_key,
-            ssh::ssh_trust_host_key,
             ssh::ssh_private_key_requires_passphrase,
             ssh::ssh_connect,
+            ssh::ssh_host_key_respond,
             ssh::ssh_authentication_respond,
             ssh::ssh_write,
             ssh::ssh_resize,
