@@ -181,18 +181,39 @@ impl SshHostKeyPromptState {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::{Path, PathBuf};
 
     use crate::ssh_known_hosts::inspect_host_key_with_path;
 
-    fn test_key(base64: &str) -> PublicKey {
-        russh::keys::parse_public_key_base64(base64).unwrap()
+    struct TestKnownHosts {
+        directory: PathBuf,
+        path: PathBuf,
     }
 
-    fn temp_known_hosts_path() -> std::path::PathBuf {
-        let directory =
-            std::env::temp_dir().join(format!("exaterm-host-key-prompt-{}", Uuid::new_v4()));
-        fs::create_dir_all(&directory).unwrap();
-        directory.join("known_hosts")
+    impl TestKnownHosts {
+        fn new() -> Self {
+            let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("target")
+                .join("test-known-hosts")
+                .join(Uuid::new_v4().to_string());
+            fs::create_dir_all(&directory).unwrap();
+            let path = directory.join("known_hosts");
+            Self { directory, path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestKnownHosts {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.directory);
+        }
+    }
+
+    fn test_key(base64: &str) -> PublicKey {
+        russh::keys::parse_public_key_base64(base64).unwrap()
     }
 
     fn check_result(status: HostKeyCheckStatus) -> HostKeyCheckResult {
@@ -237,7 +258,7 @@ mod tests {
     async fn rejection_returns_cancelled_without_writing_known_hosts() {
         let state = SshHostKeyPromptState::default();
         let receiver = insert_prompt(&state, "request", "main").await;
-        let path = temp_known_hosts_path();
+        let known_hosts = TestKnownHosts::new();
 
         state.submit("request".to_string(), false).await.unwrap();
         let error = state
@@ -246,7 +267,7 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(error, HOST_KEY_PROMPT_CANCELLED);
-        assert!(!path.exists());
+        assert!(!known_hosts.path().exists());
     }
 
     #[tokio::test]
@@ -279,38 +300,46 @@ mod tests {
 
     #[test]
     fn accepting_unknown_key_writes_trusted_entry() {
-        let path = temp_known_hosts_path();
+        let known_hosts = TestKnownHosts::new();
         let key = test_key("AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ");
 
-        trust_prompted_host_key(&check_result(HostKeyCheckStatus::Unknown), &key, &path).unwrap();
+        trust_prompted_host_key(
+            &check_result(HostKeyCheckStatus::Unknown),
+            &key,
+            known_hosts.path(),
+        )
+        .unwrap();
 
         assert_eq!(
-            inspect_host_key_with_path("example.com", 22, &key, &path)
+            inspect_host_key_with_path("example.com", 22, &key, known_hosts.path())
                 .unwrap()
                 .status,
             HostKeyCheckStatus::Trusted
         );
-        let _ = fs::remove_file(path);
     }
 
     #[test]
     fn accepting_mismatch_replaces_saved_entry() {
-        let path = temp_known_hosts_path();
+        let known_hosts = TestKnownHosts::new();
         let old_key =
             test_key("AAAAC3NzaC1lZDI1NTE5AAAAILIG2T/B0l0gaqj3puu510tu9N1OkQ4znY3LYuEm5zCF");
         let new_key =
             test_key("AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ");
-        write_trusted_host_with_path("example.com", 22, &old_key, false, &path).unwrap();
-
-        trust_prompted_host_key(&check_result(HostKeyCheckStatus::Mismatch), &new_key, &path)
+        write_trusted_host_with_path("example.com", 22, &old_key, false, known_hosts.path())
             .unwrap();
 
+        trust_prompted_host_key(
+            &check_result(HostKeyCheckStatus::Mismatch),
+            &new_key,
+            known_hosts.path(),
+        )
+        .unwrap();
+
         assert_eq!(
-            inspect_host_key_with_path("example.com", 22, &new_key, &path)
+            inspect_host_key_with_path("example.com", 22, &new_key, known_hosts.path())
                 .unwrap()
                 .status,
             HostKeyCheckStatus::Trusted
         );
-        let _ = fs::remove_file(path);
     }
 }

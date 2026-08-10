@@ -43,7 +43,9 @@ export function SshHostKeyPromptDialog({
       }
     };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [onAccept, onCancel, prompt.submitting]);
 
   return (
