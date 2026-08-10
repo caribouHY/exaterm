@@ -361,6 +361,9 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
     assert!(serial_connect_tool["inputSchema"]
         .to_string()
         .contains("\"vyos\""));
+    assert!(serial_connect_tool["inputSchema"]
+        .to_string()
+        .contains("\"fujitsu_sir\""));
 }
 
 async fn write_json_line_for_test<W>(writer: &mut W, value: Value)
@@ -1070,7 +1073,7 @@ fn prepare_serial_console_uses_defaults_and_line_settings() {
             parity: Some(McpSerialParity::Even),
             stop_bits: Some(2),
             flow_control: Some(McpSerialFlowControl::Hardware),
-            terminal_mode: Some(McpTerminalMode::Vyos),
+            terminal_mode: Some(McpTerminalMode::FujitsuSir),
             cols: Some(80),
             rows: Some(24),
         },
@@ -1087,7 +1090,7 @@ fn prepare_serial_console_uses_defaults_and_line_settings() {
     assert_eq!(prepared.target, "COM3");
     assert_eq!(prepared.title, "COM3");
     assert_eq!(prepared.encoding, "utf-8");
-    assert_eq!(prepared.terminal_mode, "vyos");
+    assert_eq!(prepared.terminal_mode, "fujitsu_sir");
 
     let defaulted = prepare_serial_console_connection(
         ConnectSerialConsoleArgs {

@@ -148,6 +148,7 @@ pub(crate) enum ExternalControlTerminalMode {
     CiscoIos,
     AristaEos,
     Vyos,
+    FujitsuSir,
 }
 
 impl ExternalControlTerminalMode {
@@ -157,6 +158,7 @@ impl ExternalControlTerminalMode {
             Self::CiscoIos => "cisco_ios",
             Self::AristaEos => "arista_eos",
             Self::Vyos => "vyos",
+            Self::FujitsuSir => "fujitsu_sir",
         }
     }
 }

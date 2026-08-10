@@ -3,6 +3,7 @@ import { findTerminalPinnedCommand, hasTerminalPromptInRange } from "./terminalC
 import {
   ARISTA_EOS_DECORATION_PROFILE,
   CISCO_IOS_DECORATION_PROFILE,
+  FUJITSU_SIR_DECORATION_PROFILE,
   VYOS_DECORATION_PROFILE,
 } from "./terminalDecorationProfiles";
 import type {
@@ -176,6 +177,20 @@ describe("findTerminalPinnedCommand", () => {
       contextText: "[edit interfaces ethernet eth0]",
       promptText: "vyos@router:~#",
       commandText: " set description WAN",
+      promptVariant: "configuration",
+    });
+  });
+
+  it("pins a Fujitsu Si-R config2 command without dropping its configuration name", () => {
+    const buffer = createBuffer(
+      ["Si-R G121 config2(config)# lan 0 vlan 1", "output", "more output"],
+      2
+    );
+
+    expect(findTerminalPinnedCommand(buffer, FUJITSU_SIR_DECORATION_PROFILE)).toMatchObject({
+      displayText: "Si-R G121 config2(config)# lan 0 vlan 1",
+      promptText: "Si-R G121 config2(config)#",
+      commandText: " lan 0 vlan 1",
       promptVariant: "configuration",
     });
   });

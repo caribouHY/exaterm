@@ -183,7 +183,7 @@ export interface SshAlgorithmCatalogItem {
 
 export type SshAlgorithmCatalog = Record<SshAlgorithmGroup, SshAlgorithmCatalogItem[]>;
 
-export type TerminalMode = "general" | "cisco_ios" | "arista_eos" | "vyos";
+export type TerminalMode = "general" | "cisco_ios" | "arista_eos" | "vyos" | "fujitsu_sir";
 
 export interface SavedConnection {
   id: string;
