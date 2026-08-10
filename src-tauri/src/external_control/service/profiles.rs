@@ -66,6 +66,7 @@ pub(crate) fn normalize_profile_encoding(value: Option<&str>) -> String {
 pub(crate) fn normalize_profile_terminal_mode(value: Option<&str>) -> String {
     match value.map(str::trim) {
         Some("cisco_ios") => "cisco_ios".into(),
+        Some("arista_eos") => "arista_eos".into(),
         _ => "general".into(),
     }
 }

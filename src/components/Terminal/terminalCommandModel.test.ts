@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { findTerminalPinnedCommand, hasTerminalPromptInRange } from "./terminalCommandModel";
-import { CISCO_IOS_DECORATION_PROFILE } from "./terminalDecorationProfiles";
+import {
+  ARISTA_EOS_DECORATION_PROFILE,
+  CISCO_IOS_DECORATION_PROFILE,
+} from "./terminalDecorationProfiles";
 import type {
   TerminalBufferLike,
   TerminalBufferLineLike,
@@ -140,5 +143,19 @@ describe("findTerminalPinnedCommand", () => {
       commandText: " inspect system",
     });
     expect(hasTerminalPromptInRange(buffer, SYNTHETIC_PROFILE, 0, 1)).toBe(true);
+  });
+
+  it("pins Arista EOS commands with configuration prompt coloring", () => {
+    const buffer = createBuffer(
+      ["switch(config-if-Et24)# description uplink", "output", "more output"],
+      2
+    );
+
+    expect(findTerminalPinnedCommand(buffer, ARISTA_EOS_DECORATION_PROFILE)).toMatchObject({
+      displayText: "switch(config-if-Et24)# description uplink",
+      promptText: "switch(config-if-Et24)#",
+      commandText: " description uplink",
+      promptVariant: "configuration",
+    });
   });
 });

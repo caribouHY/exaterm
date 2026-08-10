@@ -125,7 +125,10 @@ fn normalize_input(
     if !matches!(input.encoding.as_str(), "utf-8" | "shift-jis" | "euc-jp") {
         return Err("Invalid connection history encoding".into());
     }
-    if !matches!(input.terminal_mode.as_str(), "general" | "cisco_ios") {
+    if !matches!(
+        input.terminal_mode.as_str(),
+        "general" | "cisco_ios" | "arista_eos"
+    ) {
         return Err("Invalid connection history terminal mode".into());
     }
 
@@ -409,6 +412,20 @@ mod tests {
         assert_eq!(history.entries[0].id, id);
         assert_eq!(history.entries[0].encoding, "euc-jp");
         assert_eq!(history.entries[0].last_connected_at, at(2));
+    }
+
+    #[test]
+    fn accepts_arista_eos_terminal_mode_and_rejects_unknown_modes() {
+        let mut history = ConnectionHistoryFile::default();
+        let mut eos_input = ssh_input("switch.example", "admin");
+        eos_input.terminal_mode = "arista_eos".into();
+        upsert_history(&mut history, eos_input, at(1)).unwrap();
+
+        assert_eq!(history.entries[0].terminal_mode, "arista_eos");
+
+        let mut unknown_input = ssh_input("router.example", "admin");
+        unknown_input.terminal_mode = "unknown".into();
+        assert!(upsert_history(&mut history, unknown_input, at(2)).is_err());
     }
 
     #[test]
