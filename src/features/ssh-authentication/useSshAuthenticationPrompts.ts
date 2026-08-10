@@ -19,7 +19,7 @@ interface SshAuthenticationPromptDismissedPayload {
 export function useSshAuthenticationPrompts() {
   const { t } = useTranslation();
   const [queue, setQueue] = useState<SshAuthenticationPromptState[]>([]);
-  const activePrompt = queue[0] ?? null;
+  const activePrompt: SshAuthenticationPromptState | null = queue.length === 0 ? null : queue[0];
 
   useEffect(() => {
     const unlistenPrompt = listen<SshAuthenticationPromptPayload>(
@@ -52,7 +52,7 @@ export function useSshAuthenticationPrompts() {
 
   const updateResponse = useCallback(
     (index: number, value: string) => {
-      if (!activePrompt) return;
+      if (activePrompt === null) return;
       updatePrompt(activePrompt.requestId, (prompt) =>
         updateSshAuthenticationResponse(prompt, index, value)
       );
@@ -62,7 +62,7 @@ export function useSshAuthenticationPrompts() {
 
   const resolve = useCallback(
     async (responses: string[] | null) => {
-      if (!activePrompt || activePrompt.submitting) return;
+      if (activePrompt === null || activePrompt.submitting) return;
       const requestId = activePrompt.requestId;
       updatePrompt(requestId, (prompt) => ({ ...prompt, error: "", submitting: true }));
       try {
@@ -85,7 +85,7 @@ export function useSshAuthenticationPrompts() {
   return {
     activePrompt,
     updateResponse,
-    submit: () => resolve(activePrompt?.responses ?? []),
+    submit: () => resolve(activePrompt === null ? [] : activePrompt.responses),
     cancel: () => resolve(null),
   };
 }

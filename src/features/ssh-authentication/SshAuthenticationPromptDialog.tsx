@@ -73,6 +73,9 @@ export function SshAuthenticationPromptDialog({
             <div className="ssh-auth-prompt__fields">
               {prompt.prompts.map((field, index) => {
                 const inputId = `ssh-auth-prompt-response-${index}`;
+                const response = prompt.responses.find(
+                  (_value, responseIndex) => responseIndex === index
+                );
                 const label = field.prompt
                   ? field.prompt
                   : prompt.method === "password"
@@ -89,9 +92,11 @@ export function SshAuthenticationPromptDialog({
                       type={field.echo ? "text" : "password"}
                       autoFocus={index === 0}
                       autoComplete="off"
-                      value={prompt.responses[index]}
+                      value={response ?? ""}
                       disabled={prompt.submitting}
-                      onChange={(event) => onResponseChange(index, event.target.value)}
+                      onChange={(event) => {
+                        onResponseChange(index, event.target.value);
+                      }}
                       onKeyDown={(event) => {
                         if (event.key === "Escape") {
                           event.preventDefault();
