@@ -838,7 +838,7 @@ export default function App() {
           />
         </Suspense>
       )}
-      {sshAuthenticationPrompts.activePrompt && (
+      {sshAuthenticationPrompts.activePrompt !== null && (
         <SshAuthenticationPromptDialog
           prompt={sshAuthenticationPrompts.activePrompt}
           onResponseChange={sshAuthenticationPrompts.updateResponse}
