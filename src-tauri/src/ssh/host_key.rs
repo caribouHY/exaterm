@@ -7,6 +7,7 @@ use russh::Disconnect;
 use tauri::AppHandle;
 
 use crate::config::config_load;
+use crate::ssh::authentication_prompt::SshAuthenticationPrompter;
 use crate::ssh::client_config::load_client_config;
 #[cfg(not(test))]
 use crate::ssh::diagnostics::host_key_error_message;
@@ -134,6 +135,7 @@ struct ProbeConnectContext<'a> {
     port: u16,
     diagnostic: Option<&'a SshDiagnostic>,
     role: &'static str,
+    prompter: Option<&'a SshAuthenticationPrompter>,
 }
 
 impl russh::client::Handler for ProbeClientHandler {
@@ -156,6 +158,7 @@ async fn run_host_key_probe(
     jump_key_passphrase: Option<String>,
     diagnostic: Option<SshDiagnostic>,
     role: &'static str,
+    prompter: Option<&SshAuthenticationPrompter>,
 ) -> Result<(HostKeyCheckResult, PendingHostKey), String> {
     let config = Arc::new(load_client_config()?);
     let verifier = HostKeyVerifier::probe(host.to_string(), port);
@@ -169,6 +172,7 @@ async fn run_host_key_probe(
         port,
         diagnostic: diagnostic.as_ref(),
         role,
+        prompter,
     };
     let (handle, jump_handle) =
         connect_probe_handle(context, jump_profile, jump_password, jump_key_passphrase).await?;
@@ -220,6 +224,9 @@ async fn connect_probe_via_jump(
         jump_password,
         jump_key_passphrase,
         context.diagnostic,
+        context
+            .prompter
+            .ok_or_else(|| "SSH authentication prompt state is unavailable".to_string())?,
     )
     .await?;
     let stream = jump_channel.into_stream();
@@ -318,7 +325,8 @@ fn collected_probe_result(
 
 #[cfg(not(test))]
 pub async fn verify_trusted_host_key(host: &str, port: u16) -> Result<(), String> {
-    let (result, _) = run_host_key_probe(host, port, None, None, None, None, "target").await?;
+    let (result, _) =
+        run_host_key_probe(host, port, None, None, None, None, "target", None).await?;
     if result.status == HostKeyCheckStatus::Trusted {
         Ok(())
     } else {
@@ -328,12 +336,17 @@ pub async fn verify_trusted_host_key(host: &str, port: u16) -> Result<(), String
 
 #[cfg(not(test))]
 pub async fn verify_trusted_host_key_via_jump(
+    app: &AppHandle,
+    state: &SshState,
+    prompt_window_id: String,
     host: &str,
     port: u16,
     jump_profile: SshJumpProfile,
     jump_password: Option<String>,
     jump_key_passphrase: Option<String>,
 ) -> Result<(), String> {
+    let prompter =
+        SshAuthenticationPrompter::new(app, state.authentication_prompts.clone(), prompt_window_id);
     let (result, _) = run_host_key_probe(
         host,
         port,
@@ -342,6 +355,7 @@ pub async fn verify_trusted_host_key_via_jump(
         jump_key_passphrase,
         None,
         "target",
+        Some(&prompter),
     )
     .await?;
     if result.status == HostKeyCheckStatus::Trusted {
@@ -353,6 +367,7 @@ pub async fn verify_trusted_host_key_via_jump(
 
 pub async fn ssh_probe_host_key(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, SshState>,
     options: SshProbeHostKeyOptions,
 ) -> Result<HostKeyCheckResult, String> {
@@ -360,6 +375,11 @@ pub async fn ssh_probe_host_key(
     let jump_profile = resolve_jump_profile(&config, options.jump_profile_id.as_deref(), None)?;
     let diagnostic = SshDiagnostic::new(&app, options.request_id.clone());
     let role = normalize_diagnostic_role(options.diagnostic_role);
+    let prompter = SshAuthenticationPrompter::new(
+        &app,
+        state.authentication_prompts.clone(),
+        window.label().to_string(),
+    );
     let (result, pending_key) = run_host_key_probe(
         &options.host,
         options.port,
@@ -368,6 +388,7 @@ pub async fn ssh_probe_host_key(
         options.jump_key_passphrase,
         Some(diagnostic),
         role,
+        Some(&prompter),
     )
     .await?;
     state

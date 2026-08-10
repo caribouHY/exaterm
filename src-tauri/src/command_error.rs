@@ -61,6 +61,11 @@ impl BackendCommandError {
             "Destination snapshot not found" => "workspace.destination_snapshot_not_found",
             "The saved SSH host key does not match" => "ssh.host_key_mismatch",
             "The SSH authentication method is invalid" => "ssh.invalid_auth_method",
+            "The SSH authentication prompt was cancelled" => "ssh.auth_prompt_cancelled",
+            "The SSH authentication prompt timed out" => "ssh.auth_prompt_timed_out",
+            "The SSH authentication response count does not match the prompt count" => {
+                "ssh.auth_prompt_response_mismatch"
+            }
             "Failed to retrieve the SSH host key" => "ssh.host_key_retrieval_failed",
             "An SSH jump profile cannot reference itself" => "ssh.jump_profile_self_reference",
             "SSH jump profile not found" => "ssh.jump_profile_not_found",
@@ -311,6 +316,25 @@ mod tests {
         assert_eq!(error.code, "telnet.connect_failed");
         assert_eq!(error.params["detail"], "refused");
         assert_eq!(error.message, "Failed to connect over Telnet: refused");
+    }
+
+    #[test]
+    fn classifies_ssh_authentication_prompt_errors() {
+        assert_eq!(
+            BackendCommandError::from_message("The SSH authentication prompt was cancelled").code,
+            "ssh.auth_prompt_cancelled"
+        );
+        assert_eq!(
+            BackendCommandError::from_message("The SSH authentication prompt timed out").code,
+            "ssh.auth_prompt_timed_out"
+        );
+        assert_eq!(
+            BackendCommandError::from_message(
+                "The SSH authentication response count does not match the prompt count"
+            )
+            .code,
+            "ssh.auth_prompt_response_mismatch"
+        );
     }
 
     #[test]

@@ -46,6 +46,8 @@ import { AppUpdateDialog } from "./features/app-update/AppUpdateDialog";
 import { useAppUpdate } from "./features/app-update/useAppUpdate";
 import { AppExitDialog } from "./features/app-exit/AppExitDialog";
 import { useAppExit } from "./features/app-exit/useAppExit";
+import { SshAuthenticationPromptDialog } from "./features/ssh-authentication/SshAuthenticationPromptDialog";
+import { useSshAuthenticationPrompts } from "./features/ssh-authentication/useSshAuthenticationPrompts";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -94,6 +96,7 @@ interface McpLogControlRequestPayload {
 export default function App() {
   const { t } = useTranslation();
   const windowTabs = useWindowTabs();
+  const sshAuthenticationPrompts = useSshAuthenticationPrompts();
   const {
     tabs,
     appTabs,
@@ -834,6 +837,18 @@ export default function App() {
             onConnect={handleConnect}
           />
         </Suspense>
+      )}
+      {sshAuthenticationPrompts.activePrompt !== null && (
+        <SshAuthenticationPromptDialog
+          prompt={sshAuthenticationPrompts.activePrompt}
+          onResponseChange={sshAuthenticationPrompts.updateResponse}
+          onSubmit={() => {
+            void sshAuthenticationPrompts.submit();
+          }}
+          onCancel={() => {
+            void sshAuthenticationPrompts.cancel();
+          }}
+        />
       )}
       {activeMcpCredentialPrompt && (
         <div className="app-credential-overlay">

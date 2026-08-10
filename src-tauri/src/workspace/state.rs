@@ -12,6 +12,11 @@ impl WorkspaceState {
         Self::default()
     }
 
+    pub async fn preferred_window_id(&self) -> String {
+        let model = self.model.lock().await;
+        last_focused_existing_window(&model).unwrap_or_else(|| "main".to_string())
+    }
+
     pub async fn register_window(
         &self,
         window_id: String,

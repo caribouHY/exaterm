@@ -13,6 +13,7 @@ use tokio::time;
 
 use crate::logger;
 use crate::logger::LoggerState;
+use crate::ssh::authentication_prompt::SshAuthenticationPromptState;
 use crate::ssh::diagnostics::PendingHostKey;
 use crate::ssh::host_key::{HostKeyVerifier, ProbeClientHandler};
 use crate::terminal_control::TerminalControlState;
@@ -168,6 +169,7 @@ where
 pub struct SshState {
     pub(super) sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
     pub(super) pending_host_keys: Arc<Mutex<HashMap<String, PendingHostKey>>>,
+    pub(crate) authentication_prompts: SshAuthenticationPromptState,
 }
 
 impl SshState {
@@ -175,6 +177,7 @@ impl SshState {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             pending_host_keys: Arc::new(Mutex::new(HashMap::new())),
+            authentication_prompts: SshAuthenticationPromptState::default(),
         }
     }
 }

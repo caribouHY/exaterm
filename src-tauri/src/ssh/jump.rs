@@ -3,12 +3,12 @@ use std::sync::Arc;
 use russh::Disconnect;
 
 use crate::ssh::auth::{authenticate_ssh, build_auth_request};
+use crate::ssh::authentication_prompt::SshAuthenticationPrompter;
 use crate::ssh::diagnostics::{map_connect_error, SshDiagnostic};
 use crate::ssh::host_key::{HostKeyVerifier, ProbeClientHandler};
 use crate::ssh::io::{
-    run_ssh_operation_with_timeout, SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR,
-    SSH_CHANNEL_OPEN_TIMEOUT, SSH_CONNECT_TIMEOUT, SSH_CONNECT_TIMEOUT_ERROR,
-    SSH_JUMP_CHANNEL_OPEN_TIMEOUT_ERROR,
+    run_ssh_operation_with_timeout, SSH_AUTH_TIMEOUT_ERROR, SSH_CHANNEL_OPEN_TIMEOUT,
+    SSH_CONNECT_TIMEOUT, SSH_CONNECT_TIMEOUT_ERROR, SSH_JUMP_CHANNEL_OPEN_TIMEOUT_ERROR,
 };
 use crate::ssh::types::SshJumpProfile;
 
@@ -20,6 +20,7 @@ pub(super) async fn connect_jump_profile(
     jump_password: Option<String>,
     jump_key_passphrase: Option<String>,
     diagnostic: Option<&SshDiagnostic>,
+    prompter: &SshAuthenticationPrompter,
 ) -> Result<
     (
         russh::client::Handle<ProbeClientHandler>,
@@ -35,7 +36,20 @@ pub(super) async fn connect_jump_profile(
     )?;
     let jump_verifier = HostKeyVerifier::enforce(jump_profile.host.clone(), jump_profile.port);
     let mut handle = connect_jump_ssh(config, &jump_profile, &jump_verifier, diagnostic).await?;
-    authenticate_jump(&mut handle, &jump_profile.username, auth, diagnostic).await?;
+    let auth_context = prompter.context(
+        "jump",
+        &jump_profile.host,
+        jump_profile.port,
+        &jump_profile.username,
+    );
+    authenticate_jump(
+        &mut handle,
+        &jump_profile.username,
+        auth,
+        diagnostic,
+        &auth_context,
+    )
+    .await?;
     let channel = open_jump_direct_tcpip(&mut handle, target_host, target_port, diagnostic).await?;
     Ok((handle, channel))
 }
@@ -78,15 +92,13 @@ async fn authenticate_jump(
     username: &str,
     auth: crate::ssh::types::SshAuthRequest,
     diagnostic: Option<&SshDiagnostic>,
+    context: &crate::ssh::authentication_prompt::SshAuthenticationContext<'_>,
 ) -> Result<(), String> {
     if let Some(diagnostic) = diagnostic {
         diagnostic.info("jump: host key accepted");
         diagnostic.info("jump: authentication started");
     }
-    let result = run_ssh_operation_with_timeout(SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR, async {
-        authenticate_ssh(handle, username, auth).await
-    })
-    .await;
+    let result = authenticate_ssh(handle, username, auth, context).await;
     match result {
         Ok(()) => {
             if let Some(diagnostic) = diagnostic {

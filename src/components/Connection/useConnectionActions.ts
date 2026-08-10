@@ -206,15 +206,8 @@ export const useConnectionActions = ({
   const continueSshConnect = useCallback(
     async (sshPort: number, currentJumpCredential = ssh.jumpCredential) => {
       if (ssh.authMethod === "password") {
-        openCredentialPrompt(
-          "target",
-          ssh.host,
-          sshPort,
-          ssh.username,
-          ssh.authMethod,
-          ssh.privateKeyPath
-        );
-        setBusy(false);
+        const autoLog = await getAutoLogPreference();
+        await performSshConnect(autoLog, sshPort, "", "password", currentJumpCredential);
         return;
       }
 
@@ -298,7 +291,8 @@ export const useConnectionActions = ({
       };
 
       if (jumpAuthMethod === "password") {
-        promptForJumpCredential();
+        ssh.setJumpCredential("");
+        await probeTargetHostKey(sshPort, "");
         return;
       }
 

@@ -184,8 +184,12 @@ async fn connect_prepared_ssh_profile(
     let credentials = runtime.credentials.as_ref().ok_or_else(|| {
         internal_error("Credential prompt state required for external control is unavailable")
     })?;
+    let prompt_window_id = runtime.workspace.preferred_window_id().await;
     let jump_credential = request_jump_credential(credentials, app, parts.jump_profile).await?;
     verify_profile_host_key(
+        runtime,
+        app,
+        prompt_window_id.clone(),
         parts.host,
         parts.port,
         parts.jump_profile,
@@ -213,6 +217,7 @@ async fn connect_prepared_ssh_profile(
         &runtime.terminals,
         &runtime.workspace,
         runtime.logger.as_ref(),
+        prompt_window_id,
         options,
     )
     .await
@@ -276,6 +281,9 @@ async fn request_jump_credential(
 
 #[cfg(not(test))]
 async fn verify_profile_host_key(
+    runtime: &ExternalControlRuntime,
+    app: &AppHandle,
+    prompt_window_id: String,
     host: &str,
     port: u16,
     jump_profile: Option<&ssh::SshJumpProfile>,
@@ -286,6 +294,9 @@ async fn verify_profile_host_key(
             let (jump_password, jump_key_passphrase) =
                 split_optional_ssh_credential(&jump_profile.auth_method, jump_credential);
             ssh::verify_trusted_host_key_via_jump(
+                app,
+                &runtime.ssh,
+                prompt_window_id,
                 host,
                 port,
                 jump_profile.clone(),

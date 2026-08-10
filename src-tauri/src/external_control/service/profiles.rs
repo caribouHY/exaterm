@@ -83,7 +83,7 @@ pub(crate) fn ssh_credential_required(
     private_key_path: Option<&str>,
 ) -> Result<bool, String> {
     match auth_method {
-        "password" => Ok(true),
+        "password" => Ok(false),
         "public_key" => {
             let private_key_path = private_key_path
                 .map(str::trim)

@@ -103,3 +103,28 @@
 .app-credential-modal__footer {
   padding: 12px 16px;
 }
+
+.ssh-auth-prompt form {
+  display: flex;
+  flex-direction: column;
+  max-height: min(680px, calc(100vh - 32px));
+}
+
+.ssh-auth-prompt__title,
+.ssh-auth-prompt__instructions,
+.ssh-auth-prompt__field .label {
+  white-space: pre-wrap;
+}
+
+.ssh-auth-prompt__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.ssh-auth-prompt__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
