@@ -16,14 +16,7 @@ interface SshAuthenticationPromptDismissedPayload {
   requestId: string;
 }
 
-interface SshAuthenticationPrompts {
-  activePrompt: SshAuthenticationPromptState | null;
-  updateResponse: (index: number, value: string) => void;
-  submit: () => Promise<void>;
-  cancel: () => Promise<void>;
-}
-
-export function useSshAuthenticationPrompts(): SshAuthenticationPrompts {
+export function useSshAuthenticationPrompts() {
   const { t } = useTranslation();
   const [queue, setQueue] = useState<SshAuthenticationPromptState[]>([]);
   const activePrompt: SshAuthenticationPromptState | null = queue.length === 0 ? null : queue[0];
