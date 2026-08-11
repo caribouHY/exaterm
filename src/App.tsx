@@ -124,6 +124,9 @@ export default function App() {
   const [aiSelectedModel, setAiSelectedModel] = useState("");
   const [startupCliRequest, setStartupCliRequest] = useState<StartupCliRequest | null>(null);
   const [mcpCredentialPrompts, setMcpCredentialPrompts] = useState<McpCredentialPromptState[]>([]);
+  const [terminalSelectionByTab, setTerminalSelectionByTab] = useState<
+    ReadonlyMap<string, boolean>
+  >(new Map());
   const activeTerminalBuffer = useRef("");
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
@@ -138,6 +141,12 @@ export default function App() {
   const removeTerminalFromState = useCallback(
     (tabId: string) => {
       terminalBuffers.current.delete(tabId);
+      setTerminalSelectionByTab((current) => {
+        if (!current.has(tabId)) return current;
+        const next = new Map(current);
+        next.delete(tabId);
+        return next;
+      });
       if (getCurrentWindowTabsState().activeTabId === tabId) {
         activeTerminalBuffer.current = "";
       }
@@ -158,6 +167,34 @@ export default function App() {
     if (!activeTabId) return;
     terminalViewRefs.current.get(activeTabId)?.clearBuffer();
   }, [activeTabId]);
+
+  const selectAllActiveTerminal = useCallback(() => {
+    if (!activeTabId) return;
+    terminalViewRefs.current.get(activeTabId)?.selectAll();
+  }, [activeTabId]);
+
+  const copyActiveTerminalSelection = useCallback(() => {
+    if (!activeTabId) return;
+    terminalViewRefs.current.get(activeTabId)?.copySelection();
+  }, [activeTabId]);
+
+  const pasteIntoActiveTerminal = useCallback(() => {
+    if (!activeTabId) return;
+    terminalViewRefs.current.get(activeTabId)?.paste();
+  }, [activeTabId]);
+
+  const handleTerminalSelectionChange = useCallback((tabId: string, hasSelection: boolean) => {
+    setTerminalSelectionByTab((current) => {
+      if (Boolean(current.get(tabId)) === hasSelection) return current;
+      const next = new Map(current);
+      if (hasSelection) {
+        next.set(tabId, true);
+      } else {
+        next.delete(tabId);
+      }
+      return next;
+    });
+  }, []);
 
   const terminalTabLifecycle = useTerminalTabLifecycle({
     tabs: windowTabs,
@@ -565,6 +602,15 @@ export default function App() {
 
   const openWindow = windowTabs.createWorkspaceWindow;
 
+  const activeTerminalTab =
+    activeView === "terminal" && activeTab?.kind === "terminal" ? activeTab : null;
+  const canAccessActiveTerminal = Boolean(activeTerminalTab?.sessionId);
+  const canCopyActiveTerminal =
+    canAccessActiveTerminal && Boolean(activeTabId && terminalSelectionByTab.get(activeTabId));
+  const canPasteActiveTerminal = Boolean(
+    activeTerminalTab?.sessionId && activeTerminalTab.isConnected
+  );
+
   const toggleAiPanel = useCallback(() => {
     setShowAiPanel((current) => {
       if (!current) {
@@ -691,11 +737,12 @@ export default function App() {
         onViewChange={handleViewChange}
         onOpenConnection={openConnection}
         onOpenWindow={openWindow}
-        canClearTerminal={
-          activeView === "terminal" &&
-          activeTab?.kind === "terminal" &&
-          Boolean(activeTab.sessionId)
-        }
+        canAccessTerminal={canAccessActiveTerminal}
+        canCopyTerminal={canCopyActiveTerminal}
+        canPasteTerminal={canPasteActiveTerminal}
+        onSelectAllTerminal={selectAllActiveTerminal}
+        onCopyTerminal={copyActiveTerminalSelection}
+        onPasteTerminal={pasteIntoActiveTerminal}
         onClearTerminalViewport={clearActiveTerminalViewport}
         onClearTerminalBuffer={clearActiveTerminalBuffer}
         onToggleAiPanel={toggleAiPanel}
@@ -771,6 +818,9 @@ export default function App() {
                       }}
                       onTerminalLogShortcut={(action) => {
                         handleTerminalLogShortcut(tab.id, action);
+                      }}
+                      onTerminalSelectionChange={(hasSelection) => {
+                        handleTerminalSelectionChange(tab.id, hasSelection);
                       }}
                       encoding={tab.encoding}
                       terminalMode={tab.terminalMode}

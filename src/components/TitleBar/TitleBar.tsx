@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ChevronDown, Menu, Minus, Square, X } from "lucide-react";
+import { Minus, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ShortcutConfig, ViewMode } from "../../types";
-import { formatShortcut } from "../../features/shortcuts/shortcutModel";
 import AIAssistantLogo from "../AI/AIAssistantLogo";
-import { PopoverMenu, type PopoverMenuItem } from "../Common";
+import { PopoverMenu } from "../Common";
+import { createTitleBarMenus, type TitleBarMenuKey } from "./titleBarMenuModel";
+import appIcon from "../../../src-tauri/icons/icon.png";
 import "./TitleBar.css";
 
 interface TitleBarProps {
@@ -15,7 +16,12 @@ interface TitleBarProps {
   onViewChange: (view: ViewMode) => void;
   onOpenConnection: () => void;
   onOpenWindow: () => void;
-  canClearTerminal: boolean;
+  canAccessTerminal: boolean;
+  canCopyTerminal: boolean;
+  canPasteTerminal: boolean;
+  onSelectAllTerminal: () => void;
+  onCopyTerminal: () => void;
+  onPasteTerminal: () => void;
   onClearTerminalViewport: () => void;
   onClearTerminalBuffer: () => void;
   onToggleAiPanel: () => void;
@@ -30,7 +36,12 @@ export default function TitleBar({
   onViewChange,
   onOpenConnection,
   onOpenWindow,
-  canClearTerminal,
+  canAccessTerminal,
+  canCopyTerminal,
+  canPasteTerminal,
+  onSelectAllTerminal,
+  onCopyTerminal,
+  onPasteTerminal,
   onClearTerminalViewport,
   onClearTerminalBuffer,
   onToggleAiPanel,
@@ -39,21 +50,26 @@ export default function TitleBar({
 }: TitleBarProps) {
   const { t } = useTranslation();
   const appWindow = getCurrentWindow();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [openMenu, setOpenMenu] = useState<TitleBarMenuKey | null>(null);
+  const menuBarRef = useRef<HTMLDivElement>(null);
+  const fileTriggerRef = useRef<HTMLButtonElement>(null);
+  const editTriggerRef = useRef<HTMLButtonElement>(null);
+  const getTriggerRef = (menu: TitleBarMenuKey) =>
+    menu === "file" ? fileTriggerRef : editTriggerRef;
 
   useEffect(() => {
-    if (!isMenuOpen) return;
+    if (!openMenu) return;
 
     const handlePointerDown = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) {
-        setIsMenuOpen(false);
+      if (!menuBarRef.current?.contains(event.target as Node)) {
+        setOpenMenu(null);
       }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setIsMenuOpen(false);
+        getTriggerRef(openMenu).current?.focus();
+        setOpenMenu(null);
       }
     };
 
@@ -63,112 +79,138 @@ export default function TitleBar({
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isMenuOpen]);
+  }, [openMenu]);
 
   const runMenuAction = (action: () => void) => {
+    setOpenMenu(null);
     action();
-    setIsMenuOpen(false);
   };
 
-  const menuItems: PopoverMenuItem[] = [
-    {
-      key: "new_connection",
-      label: t("titlebar.menu.new_connection"),
-      shortcut: formatShortcut(shortcuts.new_connection) || undefined,
-      active: false,
-      action: onOpenConnection,
+  const menus = createTitleBarMenus({
+    activeView,
+    shortcuts,
+    canAccessTerminal,
+    canCopyTerminal,
+    canPasteTerminal,
+    labels: {
+      newConnection: t("titlebar.menu.new_connection"),
+      newWindow: t("titlebar.menu.new_window"),
+      sessionLogs: t("titlebar.menu.session_logs"),
+      settings: t("titlebar.menu.settings"),
+      checkUpdates: t("titlebar.menu.check_updates"),
+      exit: t("titlebar.menu.exit"),
+      selectAll: t("titlebar.menu.terminal_select_all"),
+      copy: t("titlebar.menu.terminal_copy"),
+      paste: t("titlebar.menu.terminal_paste"),
+      clearViewport: t("titlebar.menu.terminal_clear_viewport"),
+      clearBuffer: t("titlebar.menu.terminal_clear_buffer"),
     },
-    {
-      key: "new_window",
-      label: t("titlebar.menu.new_window"),
-      shortcut: formatShortcut(shortcuts.new_window) || undefined,
-      active: false,
-      action: onOpenWindow,
-    },
-    { key: "separator-new-terminal", separator: true },
-    {
-      key: "terminal_clear_viewport",
-      label: t("titlebar.menu.terminal_clear_viewport"),
-      shortcut: formatShortcut(shortcuts.terminal_clear_viewport) || undefined,
-      active: false,
-      disabled: !canClearTerminal,
-      action: onClearTerminalViewport,
-    },
-    {
-      key: "terminal_clear_buffer",
-      label: t("titlebar.menu.terminal_clear_buffer"),
-      shortcut: formatShortcut(shortcuts.terminal_clear_buffer) || undefined,
-      active: false,
-      disabled: !canClearTerminal,
-      action: onClearTerminalBuffer,
-    },
-    { key: "separator-terminal-ai", separator: true },
-    {
-      key: "ai_assistant",
-      label: t("titlebar.menu.ai_assistant"),
-      active: showAiPanel,
-      action: onToggleAiPanel,
-    },
-    {
-      key: "logs",
-      label: t("titlebar.menu.logs"),
-      active: activeView === "logs",
-      action: () => {
+    actions: {
+      openConnection: onOpenConnection,
+      openWindow: onOpenWindow,
+      openSessionLogs: () => {
         onViewChange("logs");
       },
-    },
-    { key: "separator-logs-settings", separator: true },
-    {
-      key: "settings",
-      label: t("titlebar.menu.settings"),
-      shortcut: formatShortcut(shortcuts.open_settings) || undefined,
-      active: activeView === "settings",
-      action: () => {
+      openSettings: () => {
         onViewChange("settings");
       },
+      checkUpdates: onCheckForUpdates,
+      exit: onExit,
+      selectAll: onSelectAllTerminal,
+      copy: onCopyTerminal,
+      paste: onPasteTerminal,
+      clearViewport: onClearTerminalViewport,
+      clearBuffer: onClearTerminalBuffer,
     },
-    {
-      key: "check_updates",
-      label: t("titlebar.menu.check_updates"),
-      active: false,
-      action: onCheckForUpdates,
-    },
-    { key: "separator-updates-exit", separator: true },
-    {
-      key: "exit",
-      label: t("titlebar.menu.exit"),
-      shortcut: formatShortcut(shortcuts.exit) || undefined,
-      active: false,
-      action: onExit,
-    },
-  ];
+  });
+
+  const switchMenu = (menu: TitleBarMenuKey) => {
+    setOpenMenu(menu);
+  };
+
+  const closeMenuAndRestoreFocus = () => {
+    if (openMenu) {
+      getTriggerRef(openMenu).current?.focus();
+    }
+    setOpenMenu(null);
+  };
+
+  const navigateMenu = () => {
+    const target = openMenu === "file" ? "edit" : "file";
+    switchMenu(target);
+  };
+
+  const handleTriggerKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    menu: TitleBarMenuKey
+  ) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      switchMenu(menu);
+      return;
+    }
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      const target = menu === "file" ? "edit" : "file";
+      getTriggerRef(target).current?.focus();
+      if (openMenu) {
+        switchMenu(target);
+      }
+    }
+  };
 
   return (
     <div className="titlebar" data-tauri-drag-region>
       <div className="titlebar__left">
-        <div className="titlebar__logo">E</div>
+        <img className="titlebar__logo" src={appIcon} alt="" aria-hidden="true" draggable={false} />
 
-        <div className="titlebar__menu" ref={menuRef}>
-          <button
-            className={`titlebar__menu-trigger ${isMenuOpen ? "titlebar__menu-trigger--open" : ""}`}
-            onClick={() => {
-              setIsMenuOpen((current) => !current);
-            }}
-            aria-expanded={isMenuOpen}
-            aria-haspopup="menu"
-          >
-            <Menu size={14} />
-            <span>{t("titlebar.menu.label")}</span>
-            <ChevronDown size={13} />
-          </button>
+        <div className="titlebar__menubar" ref={menuBarRef} role="menubar">
+          {(["file", "edit"] as const).map((menu) => {
+            const isOpen = openMenu === menu;
+            const triggerId = `titlebar-${menu}-menu-trigger`;
+            return (
+              <div
+                key={menu}
+                className="titlebar__menu"
+                onPointerEnter={() => {
+                  if (openMenu && !isOpen) {
+                    switchMenu(menu);
+                  }
+                }}
+              >
+                <button
+                  ref={(element) => {
+                    getTriggerRef(menu).current = element;
+                  }}
+                  id={triggerId}
+                  className={`titlebar__menu-trigger ${isOpen ? "titlebar__menu-trigger--open" : ""}`}
+                  onClick={() => {
+                    setOpenMenu(isOpen ? null : menu);
+                  }}
+                  onKeyDown={(event) => {
+                    handleTriggerKeyDown(event, menu);
+                  }}
+                  aria-expanded={isOpen}
+                  aria-haspopup="menu"
+                  role="menuitem"
+                >
+                  {t(`titlebar.menu.${menu}`)}
+                </button>
 
-          {isMenuOpen && (
-            <PopoverMenu
-              items={menuItems}
-              onAction={runMenuAction}
-              className="titlebar__menu-popover"
-            />
-          )}
+                {isOpen && (
+                  <PopoverMenu
+                    items={menu === "file" ? menus.file : menus.edit}
+                    onAction={runMenuAction}
+                    className={`titlebar__menu-popover titlebar__menu-popover--${menu}`}
+                    autoFocus
+                    ariaLabelledBy={triggerId}
+                    onClose={closeMenuAndRestoreFocus}
+                    onNavigateHorizontal={navigateMenu}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
