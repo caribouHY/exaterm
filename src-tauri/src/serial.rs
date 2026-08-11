@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use crate::connect_attempt::{run_with_attempt, ConnectAttempt, ConnectAttemptState};
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 use crate::workspace::{emit_workspace_updated, WorkspaceState};
 use crate::{logger, logger::LoggerState};
@@ -35,6 +36,9 @@ pub fn list_ports() -> Result<Vec<PortInfo>, String> {
 }
 
 const SERIAL_IO_TIMEOUT: Duration = Duration::from_millis(5);
+const SERIAL_CONNECT_CANCELLED: &str = "The Serial connection attempt was cancelled";
+const SERIAL_CONNECT_DUPLICATE: &str =
+    "A Serial connection attempt with this request ID already exists";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SerialConfig {
@@ -71,12 +75,17 @@ struct SerialSession {
 #[derive(Clone)]
 pub struct SerialState {
     sessions: Arc<Mutex<HashMap<String, SerialSession>>>,
+    connect_attempts: ConnectAttemptState,
 }
 
 impl SerialState {
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            connect_attempts: ConnectAttemptState::new(
+                SERIAL_CONNECT_CANCELLED,
+                SERIAL_CONNECT_DUPLICATE,
+            ),
         }
     }
 }
@@ -182,7 +191,23 @@ pub async fn serial_connect(
     port: String,
     config: SerialConfig,
     encoding: Option<String>,
+    request_id: Option<String>,
 ) -> Result<String, crate::command_error::BackendCommandError> {
+    let request_id = request_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            crate::command_error::BackendCommandError::new(
+                "serial.connect_request_id_required",
+                "A Serial connection request ID is required",
+            )
+        })?
+        .to_string();
+    let attempt = state
+        .connect_attempts
+        .register(request_id)
+        .map_err(crate::command_error::BackendCommandError::from)?;
     connect(
         &app,
         &state,
@@ -192,6 +217,7 @@ pub async fn serial_connect(
         port,
         config,
         encoding,
+        Some(attempt),
     )
     .await
     .map_err(Into::into)
@@ -206,22 +232,27 @@ pub async fn connect(
     port: String,
     config: SerialConfig,
     encoding: Option<String>,
+    mut attempt: Option<ConnectAttempt>,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let running = Arc::new(AtomicBool::new(true));
 
-    let serial_port = serialport::new(&port, config.baud_rate)
-        .data_bits(to_data_bits(config.data_bits))
-        .parity(to_parity(&config.parity))
-        .stop_bits(to_stop_bits(config.stop_bits))
-        .flow_control(to_flow_control(&config.flow_control))
-        .timeout(SERIAL_IO_TIMEOUT)
-        .open()
-        .map_err(|e| format!("Failed to open the serial port: {}", e))?;
-
-    let mut writer_port = serial_port
-        .try_clone()
-        .map_err(|e| format!("Failed to clone the serial port handle: {}", e))?;
+    let open_port = port.clone();
+    let open_config = config.clone();
+    let open_operation = async move {
+        tokio::task::spawn_blocking(move || open_serial_port_pair(open_port, open_config))
+            .await
+            .map_err(|error| format!("Failed to open the serial port: {}", error))?
+    };
+    // Dropping the join handle cannot stop every platform driver, but it ensures a late result is
+    // dropped without registering a session after cancellation.
+    let (serial_port, mut writer_port) = run_with_attempt(attempt.as_ref(), open_operation).await?;
+    if attempt
+        .as_mut()
+        .is_some_and(|attempt| !attempt.begin_completion())
+    {
+        return Err(SERIAL_CONNECT_CANCELLED.to_string());
+    }
     let (writer, write_rx) = mpsc::channel::<Vec<u8>>();
 
     let session = SerialSession {
@@ -336,6 +367,38 @@ pub async fn connect(
 
     let _ = app.emit("serial://connected", &session_id);
     Ok(session_id)
+}
+
+fn open_serial_port_pair(
+    port: String,
+    config: SerialConfig,
+) -> Result<
+    (
+        Box<dyn serialport::SerialPort>,
+        Box<dyn serialport::SerialPort>,
+    ),
+    String,
+> {
+    let serial_port = serialport::new(&port, config.baud_rate)
+        .data_bits(to_data_bits(config.data_bits))
+        .parity(to_parity(&config.parity))
+        .stop_bits(to_stop_bits(config.stop_bits))
+        .flow_control(to_flow_control(&config.flow_control))
+        .timeout(SERIAL_IO_TIMEOUT)
+        .open()
+        .map_err(|error| format!("Failed to open the serial port: {}", error))?;
+    let writer_port = serial_port
+        .try_clone()
+        .map_err(|error| format!("Failed to clone the serial port handle: {}", error))?;
+    Ok((serial_port, writer_port))
+}
+
+#[tauri::command]
+pub async fn serial_connect_cancel(
+    state: tauri::State<'_, SerialState>,
+    request_id: String,
+) -> Result<bool, crate::command_error::BackendCommandError> {
+    Ok(state.connect_attempts.cancel(&request_id))
 }
 
 #[tauri::command]

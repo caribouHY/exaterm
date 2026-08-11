@@ -13,7 +13,7 @@
 
 ### Changed
 
-- Added an SSH connection progress view with safe cancellation, immediate credential clearing, and visible recovery from connection errors.
+- Added connection progress views with safe cancellation and visible error recovery for SSH, Telnet, and Serial connections, while immediately clearing SSH credentials.
 - Refactored terminal color decoration into a shared palette and reusable profiles for future network operating systems while preserving Cisco IOS behavior.
 
 ### Removed

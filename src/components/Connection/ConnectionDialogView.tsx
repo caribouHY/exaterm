@@ -95,8 +95,8 @@ export function ConnectionDialogView({
   const errorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (tab === "ssh" && error) errorRef.current?.focus();
-  }, [error, tab]);
+    if (error) errorRef.current?.focus();
+  }, [error]);
 
   return (
     <div className="connection-overlay" onMouseDown={onOverlayMouseDown} onClick={onOverlayClick}>
@@ -145,7 +145,7 @@ export function ConnectionDialogView({
           </button>
         </div>
 
-        {tab === "ssh" && error && (
+        {error && (
           <div
             ref={errorRef}
             className="connection-dialog__error-banner"
@@ -182,11 +182,6 @@ export function ConnectionDialogView({
             />
           ) : (
             <SerialConnectionForm formState={serialFormState} formActions={serialActions} />
-          )}
-          {tab !== "ssh" && error && (
-            <FeedbackMessage tone="error" className="connection-dialog__error">
-              {error}
-            </FeedbackMessage>
           )}
           {tab !== "serial" && historyError && (
             <FeedbackMessage tone="error" className="connection-dialog__error">
