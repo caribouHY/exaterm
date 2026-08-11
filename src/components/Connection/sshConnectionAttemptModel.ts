@@ -72,6 +72,13 @@ export function sshConnectionAttemptReducer(
   }
 }
 
+export function isCurrentSshConnectionAttempt(
+  currentRequestId: string | null,
+  requestId: string
+): boolean {
+  return currentRequestId === requestId;
+}
+
 const SSH_CANCELLATION_CODES = new Set([
   "ssh.connect_cancelled",
   "ssh.auth_prompt_cancelled",

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   consumeSshCredential,
   initialSshConnectionAttemptState,
+  isCurrentSshConnectionAttempt,
   isSshConnectionCancellation,
   sshConnectionAttemptReducer,
 } from "./sshConnectionAttemptModel";
@@ -32,6 +33,12 @@ describe("sshConnectionAttemptModel", () => {
     });
 
     expect(unchanged).toBe(connecting);
+  });
+
+  it("invalidates asynchronous work from an old connection attempt", () => {
+    expect(isCurrentSshConnectionAttempt("request-1", "request-1")).toBe(true);
+    expect(isCurrentSshConnectionAttempt("request-2", "request-1")).toBe(false);
+    expect(isCurrentSshConnectionAttempt(null, "request-1")).toBe(false);
   });
 
   it("keeps repeated cancellation idempotent", () => {
