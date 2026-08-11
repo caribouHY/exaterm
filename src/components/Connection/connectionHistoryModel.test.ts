@@ -6,6 +6,7 @@ import {
   historyEntriesForType,
   historyEntryToInitialValues,
   parseConnectionSource,
+  shouldRecordConnectionHistory,
 } from "./connectionHistoryModel";
 
 const sshEntry: ConnectionHistoryEntry = {
@@ -48,6 +49,12 @@ describe("connection history model", () => {
   it("filters history by SSH and Telnet without a Serial history type", () => {
     expect(historyEntriesForType([sshEntry, telnetEntry], "ssh")).toEqual([sshEntry]);
     expect(historyEntriesForType([sshEntry, telnetEntry], "telnet")).toEqual([telnetEntry]);
+  });
+
+  it("records manual and history-based connections but skips saved profiles", () => {
+    expect(shouldRecordConnectionHistory("")).toBe(true);
+    expect(shouldRecordConnectionHistory("ssh-profile")).toBe(false);
+    expect(shouldRecordConnectionHistory("telnet-profile")).toBe(false);
   });
 
   it("converts a history entry to dialog initial values", () => {

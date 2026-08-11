@@ -421,7 +421,12 @@
 }
 
 .settings-connection-history .btn {
+  align-self: flex-end;
   flex-shrink: 0;
+}
+
+.settings-connection-history__feedback {
+  margin-bottom: var(--space-lg);
 }
 
 .settings-ssh__catalog-error,
@@ -629,6 +634,10 @@
 
   .settings-connection-history {
     flex-direction: column;
+  }
+
+  .settings-connection-history .btn {
+    align-self: flex-start;
   }
 
   .settings-actions {
