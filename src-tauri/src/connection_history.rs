@@ -127,7 +127,7 @@ fn normalize_input(
     }
     if !matches!(
         input.terminal_mode.as_str(),
-        "general" | "cisco_ios" | "arista_eos" | "vyos" | "fujitsu_sir"
+        "general" | "cisco_ios" | "arista_eos" | "vyos" | "fujitsu_sir" | "allied_telesis_awplus"
     ) {
         return Err("Invalid connection history terminal mode".into());
     }
@@ -434,6 +434,12 @@ mod tests {
         upsert_history(&mut history, sir_input, at(3)).unwrap();
 
         assert_eq!(history.entries[0].terminal_mode, "fujitsu_sir");
+
+        let mut awplus_input = ssh_input("awplus.example", "manager");
+        awplus_input.terminal_mode = "allied_telesis_awplus".into();
+        upsert_history(&mut history, awplus_input, at(4)).unwrap();
+
+        assert_eq!(history.entries[0].terminal_mode, "allied_telesis_awplus");
 
         let mut unknown_input = ssh_input("router.example", "admin");
         unknown_input.terminal_mode = "unknown".into();

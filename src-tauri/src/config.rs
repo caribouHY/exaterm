@@ -896,6 +896,10 @@ mod tests {
                     "id": "sir-router",
                     "connection_type": "ssh",
                     "terminal_mode": "fujitsu_sir"
+                }, {
+                    "id": "awplus-switch",
+                    "connection_type": "ssh",
+                    "terminal_mode": "allied_telesis_awplus"
                 }]
             }"#,
         )
@@ -916,6 +920,10 @@ mod tests {
         assert_eq!(
             cfg.saved_connections[3].terminal_mode.as_deref(),
             Some("fujitsu_sir")
+        );
+        assert_eq!(
+            cfg.saved_connections[4].terminal_mode.as_deref(),
+            Some("allied_telesis_awplus")
         );
     }
 

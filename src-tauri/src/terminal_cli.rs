@@ -139,6 +139,7 @@ enum TerminalMode {
     AristaEos,
     Vyos,
     FujitsuSir,
+    AlliedTelesisAwplus,
 }
 
 #[derive(Debug, Args)]
@@ -568,6 +569,7 @@ impl TerminalMode {
             Self::AristaEos => ExternalControlTerminalMode::AristaEos,
             Self::Vyos => ExternalControlTerminalMode::Vyos,
             Self::FujitsuSir => ExternalControlTerminalMode::FujitsuSir,
+            Self::AlliedTelesisAwplus => ExternalControlTerminalMode::AlliedTelesisAwplus,
         }
     }
 }
@@ -911,6 +913,38 @@ mod tests {
                 stop_bits: None,
                 flow_control: None,
                 terminal_mode: Some(ExternalControlTerminalMode::FujitsuSir),
+                cols: None,
+                rows: None,
+            })
+        );
+    }
+
+    #[test]
+    fn serial_connect_accepts_allied_telesis_awplus_terminal_mode() {
+        let request = build_request(
+            parse(&[
+                "exaterm-cli",
+                "serial",
+                "connect",
+                "--port",
+                "COM3",
+                "--terminal-mode",
+                "allied-telesis-awplus",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
+                port: "COM3".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: Some(ExternalControlTerminalMode::AlliedTelesisAwplus),
                 cols: None,
                 rows: None,
             })

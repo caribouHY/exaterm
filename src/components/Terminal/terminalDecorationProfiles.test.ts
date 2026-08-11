@@ -1,17 +1,42 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE,
   ARISTA_EOS_DECORATION_PROFILE,
   CISCO_IOS_DECORATION_PROFILE,
   FUJITSU_SIR_DECORATION_PROFILE,
   VYOS_DECORATION_PROFILE,
   getTerminalDecorationProfile,
   parseAristaEosPrompt,
+  parseAlliedTelesisAwplusPrompt,
   parseCiscoIosPrompt,
   parseFujitsuSirPrompt,
   parseVyosContextLine,
   parseVyosPrompt,
 } from "./terminalDecorationProfiles";
 import { TERMINAL_DECORATION_COLORS } from "./terminalDecorationTheme";
+
+const ALLIED_TELESIS_AWPLUS_DOCUMENTED_ERROR_FIXTURES = {
+  x330: [
+    "% Incomplete command.",
+    "% Invalid input detected at '^' marker.",
+    "% Can't find interface ppp0",
+    "% Unrecognized command",
+    "Login incorrect",
+    "% Working set must contain only single node for this command",
+  ],
+  ar3050sAr4050s: [
+    "% Incomplete command.",
+    "% Invalid input detected at '^' marker.",
+    "% Can't find interface ppp0",
+    "% Unrecognized command",
+    "Login incorrect",
+    "% Working set must contain only single node for this command",
+  ],
+} as const;
+
+const ALLIED_TELESIS_AWPLUS_DOCUMENTED_WARNING_FIXTURES = [
+  "% Warning: Telnet is insecure and deprecated. Please use SSH.",
+] as const;
 
 describe("parseCiscoIosPrompt", () => {
   it("parses configuration prompts without a regular expression", () => {
@@ -108,6 +133,47 @@ describe("parseFujitsuSirPrompt", () => {
   });
 });
 
+describe("parseAlliedTelesisAwplusPrompt", () => {
+  it.each([
+    ["awplus> show version", "default"],
+    ["awplus#show system", "default"],
+    ["edge-switch(config)# hostname edge-switch", "configuration"],
+    ["edge-switch(config-if)# description uplink", "configuration"],
+    ["edge-switch(dhcp-config)# network 192.0.2.0/24", "configuration"],
+    ["edge-switch(g8032-profile-config)# description ring", "configuration"],
+    ["ar4050(config-apn)# apn example", "configuration"],
+    ["ar4050(config-router)# network 192.0.2.0/24", "configuration"],
+    ["ar4050(config-vrf)# description branch", "configuration"],
+    ["ar4050(config-pbr)# policy-based-routing enable", "configuration"],
+    ["ar4050(ca-trustpoint)# enrollment terminal", "configuration"],
+  ] as const)("parses the AlliedWare Plus prompt %s", (line, variant) => {
+    expect(parseAlliedTelesisAwplusPrompt(line)?.variant).toBe(variant);
+  });
+
+  it("separates the hostname, mode, prompt, and command", () => {
+    expect(parseAlliedTelesisAwplusPrompt("branch-fw(config-if)# tunnel mode ipsec")).toEqual({
+      hostname: "branch-fw",
+      mode: "config-if",
+      promptText: "branch-fw(config-if)#",
+      promptStart: 0,
+      commandText: "tunnel mode ipsec",
+      commandStart: 22,
+      commandSeparator: " ",
+      variant: "configuration",
+    });
+  });
+
+  it("rejects login prompts, output, and malformed prompts", () => {
+    expect(parseAlliedTelesisAwplusPrompt("awplus login: manager")).toBeNull();
+    expect(parseAlliedTelesisAwplusPrompt("Password:")).toBeNull();
+    expect(parseAlliedTelesisAwplusPrompt("status output without a prompt")).toBeNull();
+    expect(parseAlliedTelesisAwplusPrompt("edge switch(config)# show version")).toBeNull();
+    expect(parseAlliedTelesisAwplusPrompt("edge-switch(config)> show version")).toBeNull();
+    expect(parseAlliedTelesisAwplusPrompt("edge-switch(config# show version")).toBeNull();
+    expect(parseAlliedTelesisAwplusPrompt("edge-switch(config)(sub)# show version")).toBeNull();
+  });
+});
+
 describe("parseVyosPrompt", () => {
   it.each([
     ["vyos@router$ show version", "default"],
@@ -161,6 +227,9 @@ describe("terminal decoration profile registry", () => {
     expect(getTerminalDecorationProfile("arista_eos")).toBe(ARISTA_EOS_DECORATION_PROFILE);
     expect(getTerminalDecorationProfile("vyos")).toBe(VYOS_DECORATION_PROFILE);
     expect(getTerminalDecorationProfile("fujitsu_sir")).toBe(FUJITSU_SIR_DECORATION_PROFILE);
+    expect(getTerminalDecorationProfile("allied_telesis_awplus")).toBe(
+      ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE
+    );
   });
 
   it("preserves the Cisco IOS scan limit and error matching", () => {
@@ -215,6 +284,79 @@ describe("terminal decoration profile registry", () => {
     expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.("syslog warning count: 0")).toBe(false);
     expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine("syslog error count: 0")).toBe(false);
     expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine(" <ERROR> indented output")).toBe(false);
+  });
+
+  it.each(Object.entries(ALLIED_TELESIS_AWPLUS_DOCUMENTED_ERROR_FIXTURES))(
+    "matches documented AlliedWare Plus errors from %s",
+    (_manual, errors) => {
+      errors.forEach((line) =>
+        expect(ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE.isErrorLine(line)).toBe(true)
+      );
+    }
+  );
+
+  it("preserves the AlliedWare Plus scan limit", () => {
+    expect(ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE.decorationLookback).toBe(80);
+  });
+
+  it("matches bounded AlliedWare Plus compatibility errors", () => {
+    const errors = [
+      "% Error",
+      "% Bad secret",
+      "Bad passwords",
+      "% Ambiguous command.",
+      "Connection timed out while opening the session",
+      "% Internal error: Access-list is not found.",
+      "'copy startup-config' returned error code: 7",
+      "Bad mask /33",
+      "% 192.0.2.0/24 overlaps with 192.0.2.128/25",
+      "% ACL Error: entry rejected",
+      "Command authorization failed for user",
+    ];
+
+    errors.forEach((line) =>
+      expect(ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE.isErrorLine(line)).toBe(true)
+    );
+  });
+
+  it("matches case-insensitive documented errors with display padding", () => {
+    expect(
+      ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE.isErrorLine("   % iNCOMPLETE COMMAND.   ")
+    ).toBe(true);
+    expect(ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE.isErrorLine("   LOGIN INCORRECT   ")).toBe(
+      true
+    );
+  });
+
+  it("handles long compatibility prefixes without broad regular expressions", () => {
+    const displayPadding = " ".repeat(4096);
+    expect(
+      ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE.isErrorLine(`${displayPadding}% Ambiguous command.`)
+    ).toBe(true);
+    expect(
+      ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE.isErrorLine(`${displayPadding}Ambiguous commandX`)
+    ).toBe(false);
+  });
+
+  it("does not color warnings, informational output, or partial error-like text", () => {
+    const normalOutput = [
+      ...ALLIED_TELESIS_AWPLUS_DOCUMENTED_WARNING_FIXTURES,
+      "% Service Informational: operation completed",
+      "user.warning awplus NSM[123]: Port up notification received",
+      "                   ^",
+      "unambiguous command result",
+      "% route not found but recovered",
+      "%foooverlaps withbar",
+      "% Error-free status",
+      "% Default password needs to be changed.",
+      "% route not found!",
+      "'x' returned error code: 7",
+      "% ACL Error:",
+    ];
+
+    normalOutput.forEach((line) =>
+      expect(ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE.isErrorLine(line)).toBe(false)
+    );
   });
 
   it("uses one shared palette for terminal decoration", () => {
