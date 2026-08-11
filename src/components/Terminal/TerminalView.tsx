@@ -49,10 +49,14 @@ interface TerminalViewProps {
   onOpenConnection: () => void;
   onTerminalData?: (data: string) => void;
   onTerminalLogShortcut?: (action: TerminalLogShortcutAction) => void;
+  onTerminalSelectionChange?: (hasSelection: boolean) => void;
 }
 
 export interface TerminalViewHandle {
   insertText: (text: string) => void;
+  selectAll: () => void;
+  copySelection: () => void;
+  paste: () => void;
   clearViewport: () => void;
   clearBuffer: () => void;
   flushManualLogBuffer: () => Promise<void>;
@@ -67,6 +71,18 @@ interface TerminalOutputSnapshot {
   start_cursor: number;
   cursor: number;
 }
+
+interface TerminalEditActions {
+  selectAll: () => void;
+  copySelection: () => void;
+  paste: () => void;
+}
+
+const EMPTY_TERMINAL_EDIT_ACTIONS: TerminalEditActions = {
+  selectAll: () => {},
+  copySelection: () => {},
+  paste: () => {},
+};
 
 function normalizeCursorStyle(cursorStyle: string | undefined): "block" | "bar" | "underline" {
   if (cursorStyle === "bar" || cursorStyle === "underline") {
@@ -92,6 +108,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     onOpenConnection,
     onTerminalData,
     onTerminalLogShortcut,
+    onTerminalSelectionChange,
   },
   ref
 ) {
@@ -108,7 +125,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const isLoggingPausedRef = useRef(isLoggingPaused);
   const shortcutsRef = useRef(shortcuts);
   const onTerminalLogShortcutRef = useRef(onTerminalLogShortcut);
+  const onTerminalSelectionChangeRef = useRef(onTerminalSelectionChange);
   const clipboardActionInProgressRef = useRef(false);
+  const terminalEditActionsRef = useRef<TerminalEditActions>(EMPTY_TERMINAL_EDIT_ACTIONS);
   const decorationControllerRef = useRef<TerminalDecorationController | null>(null);
   const decorationController =
     decorationControllerRef.current ??
@@ -155,6 +174,10 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   useEffect(() => {
     onTerminalLogShortcutRef.current = onTerminalLogShortcut;
   }, [onTerminalLogShortcut]);
+
+  useEffect(() => {
+    onTerminalSelectionChangeRef.current = onTerminalSelectionChange;
+  }, [onTerminalSelectionChange]);
   const manualLogSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
@@ -228,6 +251,15 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         if (!term) return;
         term.paste(data);
         term.focus();
+      },
+      selectAll: () => {
+        terminalEditActionsRef.current.selectAll();
+      },
+      copySelection: () => {
+        terminalEditActionsRef.current.copySelection();
+      },
+      paste: () => {
+        terminalEditActionsRef.current.paste();
       },
       clearViewport,
       clearBuffer,
@@ -352,6 +384,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     const scrollDecorationDisposable = term.onScroll(() => {
       decorationController.schedule(term);
     });
+    const selectionDisposable = term.onSelectionChange(() => {
+      onTerminalSelectionChangeRef.current?.(term.hasSelection());
+    });
     let disposed = false;
 
     const copyTerminalSelection = async (clearSelectionAfterCopy: boolean) => {
@@ -414,6 +449,20 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         });
     };
 
+    const terminalEditActions: TerminalEditActions = {
+      selectAll: () => {
+        term.selectAll();
+        term.focus();
+      },
+      copySelection: () => {
+        runClipboardAction(() => copyTerminalSelection(false));
+      },
+      paste: () => {
+        runClipboardAction(pasteClipboardIntoTerminal);
+      },
+    };
+    terminalEditActionsRef.current = terminalEditActions;
+
     term.attachCustomKeyEventHandler((event) => {
       if (findShortcutAction(shortcutsRef.current, event, "application")) {
         return false;
@@ -432,13 +481,13 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
       switch (action) {
         case "terminal_select_all":
-          term.selectAll();
+          terminalEditActions.selectAll();
           break;
         case "terminal_copy":
-          runClipboardAction(() => copyTerminalSelection(false));
+          terminalEditActions.copySelection();
           break;
         case "terminal_paste":
-          runClipboardAction(pasteClipboardIntoTerminal);
+          terminalEditActions.paste();
           break;
         case "terminal_clear_viewport":
           clearTerminalViewport(term, () => {
@@ -466,9 +515,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     const handleContextMenu = (event: MouseEvent) => {
       event.preventDefault();
       runClipboardAction(
-        term.getSelection().length > 0
-          ? () => copyTerminalSelection(true)
-          : pasteClipboardIntoTerminal
+        term.hasSelection() ? () => copyTerminalSelection(true) : pasteClipboardIntoTerminal
       );
     };
 
@@ -611,6 +658,11 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       }
       resizeObserver.disconnect();
       scrollDecorationDisposable.dispose();
+      selectionDisposable.dispose();
+      onTerminalSelectionChangeRef.current?.(false);
+      if (terminalEditActionsRef.current === terminalEditActions) {
+        terminalEditActionsRef.current = EMPTY_TERMINAL_EDIT_ACTIONS;
+      }
       decorationController.clear();
       term.dispose();
       termRef.current = null;
