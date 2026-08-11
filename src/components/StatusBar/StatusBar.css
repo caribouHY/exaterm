@@ -104,6 +104,14 @@
   min-width: 220px;
 }
 
+.statusbar__menu--terminal-mode {
+  width: max-content;
+}
+
+.statusbar__menu--terminal-mode .statusbar__menu-item {
+  white-space: nowrap;
+}
+
 .statusbar__menu-item {
   display: flex;
   align-items: center;

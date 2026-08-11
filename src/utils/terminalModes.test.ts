@@ -1,40 +1,38 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TERMINAL_MODE,
+  getTerminalModeOptions,
+  isTerminalMode,
   normalizeTerminalMode,
-  TERMINAL_MODE_OPTIONS,
+  TERMINAL_MODE_CATALOG,
 } from "./terminalModes";
 
 describe("terminal modes", () => {
-  it("lists network operating system modes", () => {
-    expect(TERMINAL_MODE_OPTIONS).toContainEqual({
-      labelKey: "terminal_mode.arista_eos",
-      value: "arista_eos",
-    });
-    expect(TERMINAL_MODE_OPTIONS).toContainEqual({
-      labelKey: "terminal_mode.vyos",
-      value: "vyos",
-    });
-    expect(TERMINAL_MODE_OPTIONS).toContainEqual({
-      labelKey: "terminal_mode.fujitsu_sir",
-      value: "fujitsu_sir",
-    });
-    expect(TERMINAL_MODE_OPTIONS).toContainEqual({
-      labelKey: "terminal_mode.allied_telesis_awplus",
-      value: "allied_telesis_awplus",
-    });
-    expect(TERMINAL_MODE_OPTIONS).toContainEqual({
-      labelKey: "terminal_mode.furukawa_fitelnet",
-      value: "furukawa_fitelnet",
-    });
+  it("keeps general first and sorts device modes by their stable English names", () => {
+    const labelsByKey = new Map(
+      TERMINAL_MODE_CATALOG.map((definition) => [definition.labelKey, definition.sortName])
+    );
+
+    expect(getTerminalModeOptions((labelKey) => labelsByKey.get(labelKey) ?? labelKey)).toEqual([
+      { label: "General", value: "general" },
+      { label: "Allied Telesis AW+", value: "allied_telesis_awplus" },
+      { label: "Arista EOS", value: "arista_eos" },
+      { label: "Cisco IOS", value: "cisco_ios" },
+      { label: "Fujitsu Si-R", value: "fujitsu_sir" },
+      { label: "Furukawa FITELnet", value: "furukawa_fitelnet" },
+      { label: "VyOS", value: "vyos" },
+    ]);
   });
 
-  it("normalizes device modes and preserves the existing fallback", () => {
-    expect(normalizeTerminalMode("arista_eos")).toBe("arista_eos");
-    expect(normalizeTerminalMode("vyos")).toBe("vyos");
-    expect(normalizeTerminalMode("fujitsu_sir")).toBe("fujitsu_sir");
-    expect(normalizeTerminalMode("allied_telesis_awplus")).toBe("allied_telesis_awplus");
-    expect(normalizeTerminalMode("furukawa_fitelnet")).toBe("furukawa_fitelnet");
+  it("derives valid modes and normalization from the catalog", () => {
+    TERMINAL_MODE_CATALOG.forEach(({ value }) => {
+      expect(isTerminalMode(value)).toBe(true);
+      expect(normalizeTerminalMode(value)).toBe(value);
+    });
+
+    expect(isTerminalMode("unknown")).toBe(false);
     expect(normalizeTerminalMode("unknown")).toBe(DEFAULT_TERMINAL_MODE);
+    expect(normalizeTerminalMode(null)).toBe(DEFAULT_TERMINAL_MODE);
+    expect(normalizeTerminalMode(undefined)).toBe(DEFAULT_TERMINAL_MODE);
   });
 });

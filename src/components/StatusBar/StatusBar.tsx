@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { CircleDot, FilePlus, FileText, Pause, Play } from "lucide-react";
 import packageJson from "../../../package.json";
 import type { TabInfo, Encoding, TerminalMode, ManualLogWriteMode } from "../../types";
-import { TERMINAL_MODE_OPTIONS } from "../../utils/terminalModes";
+import { getTerminalModeOptions } from "../../utils/terminalModes";
 import "./StatusBar.css";
 
 interface StatusBarProps {
@@ -61,10 +61,7 @@ export default function StatusBar({
     { label: "EUC-JP", value: "euc-jp" },
   ];
 
-  const terminalModes = TERMINAL_MODE_OPTIONS.map((mode) => ({
-    label: t(mode.labelKey),
-    value: mode.value,
-  }));
+  const terminalModes = getTerminalModeOptions(t);
 
   const getLogLabel = () => {
     if (logStatusMessage) return t(logStatusMessage);
@@ -202,7 +199,7 @@ export default function StatusBar({
                 activeTab.terminalMode}
             </button>
             {openMenu === "terminalMode" && (
-              <div className="statusbar__menu">
+              <div className="statusbar__menu statusbar__menu--terminal-mode">
                 {terminalModes.map((mode) => (
                   <button
                     key={mode.value}
