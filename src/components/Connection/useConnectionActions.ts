@@ -22,6 +22,7 @@ import { getConnectionErrorMessage, normalizeSshAuthMethod } from "./connectionP
 import {
   createConnectionRequestId,
   isConnectionCancellation,
+  isCurrentConnectionAttempt,
   type BasicConnectionType,
   type ConnectionAttemptAction,
 } from "./connectionAttemptModel";
@@ -329,7 +330,7 @@ export const useConnectionActions = ({
 
   const finishConnectionAttempt = useCallback(
     (requestId: string) => {
-      if (connectionAttemptRef.current?.requestId !== requestId) return;
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
       connectionAttemptRef.current = null;
       connectionAttemptDispatch({ type: "finish", requestId });
       setBusy(false);
@@ -432,7 +433,7 @@ export const useConnectionActions = ({
         requestId: connectionRequestId,
       });
       const autoLog = await getAutoLogPreference();
-      if (connectionAttemptRef.current?.requestId !== connectionRequestId) return;
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, connectionRequestId)) return;
 
       if (tab === "telnet") {
         const parsedTelnetPort = parsePort(telnet.port, t("connection.error"));
@@ -513,7 +514,7 @@ export const useConnectionActions = ({
       const staleConnectionAttempt =
         tab !== "ssh" &&
         connectionRequestId !== null &&
-        connectionAttemptRef.current?.requestId !== connectionRequestId;
+        !isCurrentConnectionAttempt(connectionAttemptRef.current, connectionRequestId);
       if (staleConnectionAttempt) return;
       const cancelled =
         tab === "ssh" ? isSshConnectionCancellation(error) : isConnectionCancellation(error);
@@ -592,13 +593,13 @@ export const useConnectionActions = ({
       attempt.connectionType === "telnet" ? "telnet_connect_cancel" : "serial_connect_cancel";
     try {
       const accepted = await invoke<boolean>(command, { requestId: attempt.requestId });
-      if (connectionAttemptRef.current?.requestId !== attempt.requestId) return;
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, attempt.requestId)) return;
       if (!accepted) {
         attempt.cancelPending = false;
         connectionAttemptDispatch({ type: "resume", requestId: attempt.requestId });
       }
     } catch (error: unknown) {
-      if (connectionAttemptRef.current?.requestId !== attempt.requestId) return;
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, attempt.requestId)) return;
       attempt.cancelPending = false;
       connectionAttemptDispatch({
         type: "cancel_failed",

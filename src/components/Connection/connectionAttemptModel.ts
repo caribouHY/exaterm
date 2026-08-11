@@ -65,4 +65,11 @@ export function isConnectionCancellation(error: unknown): boolean {
   return parsed !== null && CONNECTION_CANCELLATION_CODES.has(parsed.code);
 }
 
+export function isCurrentConnectionAttempt(
+  attempt: { requestId: string } | null,
+  requestId: string
+): boolean {
+  return attempt?.requestId === requestId;
+}
+
 export const createConnectionRequestId = () => globalThis.crypto.randomUUID();

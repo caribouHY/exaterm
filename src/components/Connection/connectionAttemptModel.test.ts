@@ -3,6 +3,7 @@ import {
   connectionAttemptReducer,
   initialConnectionAttemptState,
   isConnectionCancellation,
+  isCurrentConnectionAttempt,
 } from "./connectionAttemptModel";
 
 describe("connectionAttemptModel", () => {
@@ -86,5 +87,11 @@ describe("connectionAttemptModel", () => {
     expect(isConnectionCancellation({ code: "telnet.connect_failed", message: "failed" })).toBe(
       false
     );
+  });
+
+  it("identifies the current attempt without treating a cleared attempt as current", () => {
+    expect(isCurrentConnectionAttempt({ requestId: "current" }, "current")).toBe(true);
+    expect(isCurrentConnectionAttempt({ requestId: "old" }, "current")).toBe(false);
+    expect(isCurrentConnectionAttempt(null, "current")).toBe(false);
   });
 });
