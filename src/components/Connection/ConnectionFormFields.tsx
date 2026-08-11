@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { ConnectionHistoryEntry, Encoding, SavedConnection, TerminalMode } from "../../types";
-import { normalizeTerminalMode, TERMINAL_MODE_OPTIONS } from "../../utils/terminalModes";
+import { getTerminalModeOptions, normalizeTerminalMode } from "../../utils/terminalModes";
 import { encodeConnectionSource } from "./connectionHistoryModel";
 import { normalizeEncoding, SSH_ENCODINGS } from "./connectionProfileUtils";
 
@@ -133,6 +133,7 @@ interface TerminalModeSelectProps {
 
 export function TerminalModeSelect({ value, onChange }: TerminalModeSelectProps) {
   const { t } = useTranslation();
+  const terminalModeOptions = getTerminalModeOptions(t);
 
   return (
     <div>
@@ -145,9 +146,9 @@ export function TerminalModeSelect({ value, onChange }: TerminalModeSelectProps)
           onChange(normalizeTerminalMode(event.target.value));
         }}
       >
-        {TERMINAL_MODE_OPTIONS.map((entry) => (
+        {terminalModeOptions.map((entry) => (
           <option key={entry.value} value={entry.value}>
-            {t(entry.labelKey)}
+            {entry.label}
           </option>
         ))}
       </select>

@@ -16,6 +16,7 @@ import {
   parseVyosPrompt,
 } from "./terminalDecorationProfiles";
 import { TERMINAL_DECORATION_COLORS } from "./terminalDecorationTheme";
+import { DEFAULT_TERMINAL_MODE, TERMINAL_MODE_CATALOG } from "../../utils/terminalModes";
 
 const ALLIED_TELESIS_AWPLUS_DOCUMENTED_ERROR_FIXTURES = {
   x330: [
@@ -515,6 +516,18 @@ describe("terminal decoration profile registry", () => {
       command: "#6ee7b7",
       warning: "#fb923c",
       error: "#f87171",
+    });
+  });
+
+  it("provides a decoration profile for every catalog mode except general", () => {
+    TERMINAL_MODE_CATALOG.forEach(({ value }) => {
+      const profile = getTerminalDecorationProfile(value);
+
+      if (value === DEFAULT_TERMINAL_MODE) {
+        expect(profile).toBeNull();
+      } else {
+        expect(profile?.mode).toBe(value);
+      }
     });
   });
 });
