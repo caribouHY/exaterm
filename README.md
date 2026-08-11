@@ -1,4 +1,16 @@
-# ExaTerm
+<p align="center">
+  <img src="src-tauri/icons/128x128.png" width="128" height="128" alt="ExaTerm icon">
+</p>
+
+<h1 align="center">ExaTerm</h1>
+
+<p align="center">
+  <a href="https://github.com/caribouHY/exaterm/releases"><img src="https://img.shields.io/github/v/release/caribouHY/exaterm?display_name=tag&label=release" alt="Latest release"></a>
+  <a href="#supported-os"><img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Windows"></a>
+  <a href="https://app.codacy.com/gh/caribouHY/exaterm/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade"><img src="https://app.codacy.com/project/badge/Grade/ea195c48da78487a872c769c4e5815f5" alt="Codacy Badge"></a>
+  <a href="https://github.com/caribouHY/exaterm/releases"><img src="https://img.shields.io/github/downloads/caribouHY/exaterm/total?label=downloads" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/caribouHY/exaterm?label=license" alt="License"></a>
+</p>
 
 ExaTerm is a terminal app for SSH, Telnet, and serial communication with AI agent integration and built-in AI chat.
 
