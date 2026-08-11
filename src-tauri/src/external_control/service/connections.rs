@@ -210,6 +210,7 @@ async fn connect_prepared_ssh_profile(
         prompt_window_id,
         ssh::HostKeyHandling::RequireTrusted,
         options,
+        None,
     )
     .await
     .map_err(invalid_params)

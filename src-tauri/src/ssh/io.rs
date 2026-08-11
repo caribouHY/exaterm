@@ -169,6 +169,7 @@ where
 #[derive(Clone)]
 pub struct SshState {
     pub(super) sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
+    pub(super) connect_attempts: crate::ssh::connect_attempt::SshConnectAttemptState,
     pub(crate) authentication_prompts: SshAuthenticationPromptState,
     pub(crate) host_key_prompts: SshHostKeyPromptState,
 }
@@ -177,6 +178,7 @@ impl SshState {
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            connect_attempts: crate::ssh::connect_attempt::SshConnectAttemptState::default(),
             authentication_prompts: SshAuthenticationPromptState::default(),
             host_key_prompts: SshHostKeyPromptState::default(),
         }

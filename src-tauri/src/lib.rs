@@ -169,6 +169,7 @@ pub fn run() {
             ssh::ssh_algorithm_catalog,
             ssh::ssh_private_key_requires_passphrase,
             ssh::ssh_connect,
+            ssh::ssh_connect_cancel,
             ssh::ssh_host_key_respond,
             ssh::ssh_authentication_respond,
             ssh::ssh_write,

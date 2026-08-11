@@ -12,7 +12,7 @@ use super::auth::{
     private_key_format_hint, SUPPORTED_PRIVATE_KEY_LABELS,
 };
 use super::client_config::{algorithm_catalog, build_client_config, validate_algorithm_config};
-use super::diagnostics::ssh_diagnostic_event_name;
+use super::diagnostics::{ssh_diagnostic_event_name, ssh_progress_event_name};
 use super::host_key::{HostKeyHandling, HostKeyVerifier};
 use super::io::{
     record_ssh_read_drop, run_ssh_channel_operation_with_timeout, run_ssh_operation_with_timeout,
@@ -51,6 +51,14 @@ fn diagnostic_event_name_scopes_to_request_id() {
     assert_eq!(
         ssh_diagnostic_event_name("request-1"),
         "ssh://connect-diagnostic/request-1"
+    );
+}
+
+#[test]
+fn progress_event_name_scopes_to_request_id() {
+    assert_eq!(
+        ssh_progress_event_name("request-1"),
+        "ssh://connect-progress/request-1"
     );
 }
 

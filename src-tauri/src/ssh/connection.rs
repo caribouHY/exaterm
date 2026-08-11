@@ -11,6 +11,7 @@ use crate::logger::LoggerState;
 use crate::ssh::auth::{authenticate_ssh, build_auth_request};
 use crate::ssh::authentication_prompt::SshAuthenticationPrompter;
 use crate::ssh::client_config::build_client_config;
+use crate::ssh::connect_attempt::{run_with_attempt, SshConnectAttempt, SSH_CONNECT_CANCELLED};
 use crate::ssh::diagnostics::{map_connect_error, SshDiagnostic};
 use crate::ssh::host_key::{HostKeyHandling, HostKeyVerifier, SshHostKeyHandler};
 use crate::ssh::host_key_prompt::{SshHostKeyPrompter, HOST_KEY_PROMPT_TIMEOUT};
@@ -57,14 +58,22 @@ pub async fn connect(
     prompt_window_id: String,
     host_key_handling: HostKeyHandling,
     options: SshConnectOptions,
+    mut attempt: Option<SshConnectAttempt>,
 ) -> Result<SshConnectResult, String> {
     let authentication_prompter = SshAuthenticationPrompter::new(
         app,
         state.authentication_prompts.clone(),
         prompt_window_id.clone(),
+        options.request_id.clone(),
     );
-    let host_key_prompter = (host_key_handling == HostKeyHandling::Prompt)
-        .then(|| SshHostKeyPrompter::new(app, state.host_key_prompts.clone(), prompt_window_id));
+    let host_key_prompter = (host_key_handling == HostKeyHandling::Prompt).then(|| {
+        SshHostKeyPrompter::new(
+            app,
+            state.host_key_prompts.clone(),
+            prompt_window_id.clone(),
+            options.request_id.clone(),
+        )
+    });
     let connect_timeout = if host_key_prompter.is_some() {
         SSH_CONNECT_TIMEOUT + HOST_KEY_PROMPT_TIMEOUT
     } else {
@@ -76,6 +85,7 @@ pub async fn connect(
         terminals,
         workspace,
         logger_state,
+        &prompt_window_id,
         &options,
         host_key_prompter.clone(),
     )?;
@@ -99,17 +109,37 @@ pub async fn connect(
         &authentication_prompter,
         host_key_prompter.as_ref(),
         connect_timeout,
+        attempt.as_ref(),
     )
     .await?;
-    let channel = establish_target_shell(
-        &mut handle,
-        &jump_handle,
-        auth,
-        &options,
-        &diagnostic,
-        &authentication_prompter,
+    let channel = match run_with_attempt(
+        attempt.as_ref(),
+        establish_target_shell(
+            &mut handle,
+            &jump_handle,
+            auth,
+            &options,
+            &diagnostic,
+            &authentication_prompter,
+        ),
     )
-    .await?;
+    .await
+    {
+        Ok(channel) => channel,
+        Err(error) => {
+            if error == SSH_CONNECT_CANCELLED {
+                disconnect_target_handles(&handle, &jump_handle, "Connection cancelled").await;
+            }
+            return Err(error);
+        }
+    };
+    if attempt
+        .as_mut()
+        .is_some_and(|attempt| !attempt.begin_completion())
+    {
+        disconnect_target_handles(&handle, &jump_handle, "Connection cancelled").await;
+        return Err(SSH_CONNECT_CANCELLED.to_string());
+    }
     let completion = ConnectCompletion {
         session_id,
         diagnostic,
@@ -202,11 +232,16 @@ fn prepare_connect(
     terminals: &TerminalControlState,
     workspace: &WorkspaceState,
     logger_state: Option<&LoggerState>,
+    prompt_window_id: &str,
     options: &SshConnectOptions,
     host_key_prompter: Option<SshHostKeyPrompter>,
 ) -> Result<ConnectPreparation, String> {
     let session_id = Uuid::new_v4().to_string();
-    let diagnostic = SshDiagnostic::new(app, options.request_id.clone());
+    let diagnostic = SshDiagnostic::new(
+        app,
+        options.request_id.clone(),
+        prompt_window_id.to_string(),
+    );
     let auth = build_auth_request(
         options.auth_method.clone(),
         options.password.clone(),
@@ -253,6 +288,7 @@ async fn connect_target_handle(
     authentication_prompter: &SshAuthenticationPrompter,
     host_key_prompter: Option<&SshHostKeyPrompter>,
     connect_timeout: Duration,
+    attempt: Option<&SshConnectAttempt>,
 ) -> Result<(TargetHandle, Option<JumpHandle>), String> {
     match jump_profile {
         Some(jump_profile) => {
@@ -266,6 +302,7 @@ async fn connect_target_handle(
                 authentication_prompter,
                 host_key_prompter,
                 connect_timeout,
+                attempt,
             )
             .await
         }
@@ -277,6 +314,7 @@ async fn connect_target_handle(
                 host_verifier,
                 diagnostic,
                 connect_timeout,
+                attempt,
             )
             .await
         }
@@ -293,6 +331,7 @@ async fn connect_target_via_jump(
     authentication_prompter: &SshAuthenticationPrompter,
     host_key_prompter: Option<&SshHostKeyPrompter>,
     connect_timeout: Duration,
+    attempt: Option<&SshConnectAttempt>,
 ) -> Result<(TargetHandle, Option<JumpHandle>), String> {
     let (jump_handle, jump_channel) = connect_jump_profile(
         config.clone(),
@@ -305,24 +344,32 @@ async fn connect_target_via_jump(
         authentication_prompter,
         host_key_prompter,
         connect_timeout,
+        attempt,
     )
     .await?;
     let stream = jump_channel.into_stream();
+    diagnostic.progress("target", "connecting");
     diagnostic.info("target: starting SSH handshake");
-    let handle =
+    let handle = run_with_attempt(
+        attempt,
         run_ssh_operation_with_timeout(connect_timeout, SSH_CONNECT_TIMEOUT_ERROR, async {
             russh::client::connect_stream(config, stream, handler)
                 .await
                 .map_err(|error| map_connect_error(error, host_verifier))
-        })
-        .await
-        .map_err(|error| {
-            emit_target_timeout_or_failure(diagnostic, &error, "SSH handshake", "SSH handshake");
-            error
-        });
+        }),
+    )
+    .await;
     match handle {
         Ok(handle) => Ok((handle, Some(jump_handle))),
         Err(error) => {
+            if error != SSH_CONNECT_CANCELLED {
+                emit_target_timeout_or_failure(
+                    diagnostic,
+                    &error,
+                    "SSH handshake",
+                    "SSH handshake",
+                );
+            }
             let _ = jump_handle
                 .disconnect(Disconnect::ByApplication, "Target handshake failed", "en")
                 .await;
@@ -338,19 +385,25 @@ async fn connect_target_direct(
     host_verifier: &HostKeyVerifier,
     diagnostic: &SshDiagnostic,
     connect_timeout: Duration,
+    attempt: Option<&SshConnectAttempt>,
 ) -> Result<(TargetHandle, Option<JumpHandle>), String> {
+    diagnostic.progress("target", "connecting");
     diagnostic.info("target: starting SSH handshake");
-    let handle =
+    let handle = run_with_attempt(
+        attempt,
         run_ssh_operation_with_timeout(connect_timeout, SSH_CONNECT_TIMEOUT_ERROR, async {
             russh::client::connect(config, (options.host.as_str(), options.port), handler)
                 .await
                 .map_err(|error| map_connect_error(error, host_verifier))
-        })
-        .await
-        .map_err(|error| {
+        }),
+    )
+    .await
+    .map_err(|error| {
+        if error != SSH_CONNECT_CANCELLED {
             emit_target_timeout_or_failure(diagnostic, &error, "SSH handshake", "SSH handshake");
-            error
-        })?;
+        }
+        error
+    })?;
     Ok((handle, None))
 }
 
@@ -395,6 +448,7 @@ async fn authenticate_target(
     diagnostic: &SshDiagnostic,
     context: &crate::ssh::authentication_prompt::SshAuthenticationContext<'_>,
 ) -> Result<(), String> {
+    diagnostic.progress("target", "authenticating");
     diagnostic.info("target: authentication started");
     let result = authenticate_ssh(handle, username, auth, context).await;
     match result {
@@ -415,6 +469,7 @@ async fn open_target_session_channel(
     jump_handle: &Option<JumpHandle>,
     diagnostic: &SshDiagnostic,
 ) -> Result<TargetSessionChannel, String> {
+    diagnostic.progress("target", "opening_session");
     diagnostic.info("target: opening session channel");
     let result = run_ssh_operation_with_timeout(
         SSH_CHANNEL_OPEN_TIMEOUT,

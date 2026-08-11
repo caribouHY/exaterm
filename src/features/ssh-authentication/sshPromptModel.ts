@@ -66,7 +66,15 @@ export function setSshPromptSubmission(
   error = ""
 ): SshPromptState {
   if (prompt.kind === "authentication") {
-    return { ...prompt, value: { ...prompt.value, error, submitting } };
+    return {
+      ...prompt,
+      value: {
+        ...prompt.value,
+        error,
+        submitting,
+        responses: submitting ? prompt.value.responses.map(() => "") : prompt.value.responses,
+      },
+    };
   }
   return { ...prompt, value: { ...prompt.value, error, submitting } };
 }

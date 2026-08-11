@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
@@ -12,6 +12,7 @@ import type {
 import { DEFAULT_TERMINAL_MODE, normalizeTerminalMode } from "../../utils/terminalModes";
 import { ConnectionDialogView } from "./ConnectionDialogView";
 import { CredentialPromptModal } from "./CredentialPromptModal";
+import { SshConnectionProgressDialog } from "./SshConnectionProgressDialog";
 import type {
   ConnectionDialogProps,
   SshCredentialPrompt,
@@ -36,6 +37,10 @@ import { useConnectionProfileSelection } from "./useConnectionProfileSelection";
 import { useSavedConnectionProfiles } from "./useSavedConnectionProfiles";
 import { useSshDiagnostics } from "./useSshDiagnostics";
 import { useStartupConnectionRequest } from "./useStartupConnectionRequest";
+import {
+  initialSshConnectionAttemptState,
+  sshConnectionAttemptReducer,
+} from "./sshConnectionAttemptModel";
 import "./ConnectionDialog.css";
 
 export default function ConnectionDialog({
@@ -54,6 +59,10 @@ export default function ConnectionDialog({
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
   const [credentialPrompt, setCredentialPrompt] = useState<SshCredentialPrompt | null>(null);
+  const [sshAttempt, dispatchSshAttempt] = useReducer(
+    sshConnectionAttemptReducer,
+    initialSshConnectionAttemptState
+  );
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [selectedProfileIds, setSelectedProfileIds] = useState({ ssh: "", telnet: "" });
   const [selectedHistoryIds, setSelectedHistoryIds] = useState({ ssh: "", telnet: "" });
@@ -68,7 +77,6 @@ export default function ConnectionDialog({
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [jumpProfileId, setJumpProfileId] = useState("");
   const [missingInitialJumpProfileId, setMissingInitialJumpProfileId] = useState("");
-  const [jumpCredential, setJumpCredential] = useState("");
   const [encoding, setEncoding] = useState<"utf-8" | "shift-jis" | "euc-jp">("utf-8");
   const [sshTerminalMode, setSshTerminalMode] = useState(DEFAULT_TERMINAL_MODE);
   const [sshMemo, setSshMemo] = useState("");
@@ -178,7 +186,6 @@ export default function ConnectionDialog({
       setPrivateKeyPath(info.private_key_path ?? "");
       setJumpProfileId(info.jump_profile_id ?? "");
       setMissingInitialJumpProfileId(missingJumpProfileId);
-      setJumpCredential("");
       setEncoding(initialValues.encoding);
       setSshTerminalMode(initialValues.terminalMode);
       if (missingJumpProfileId) {
@@ -218,7 +225,6 @@ export default function ConnectionDialog({
       setAuthMethod,
       setPrivateKeyPath,
       setJumpProfileId: handleJumpProfileChange,
-      setJumpCredential,
       setEncoding,
       setTerminalMode: setSshTerminalMode,
       setMemo: setSshMemo,
@@ -253,7 +259,6 @@ export default function ConnectionDialog({
     setPrivateKeyPath(info.private_key_path ?? "");
     setJumpProfileId(info.jump_profile_id ?? "");
     setMissingInitialJumpProfileId(missingJumpProfileId);
-    setJumpCredential("");
     setEncoding(entry.encoding);
     setSshTerminalMode(entry.terminal_mode);
     setSshMemo("");
@@ -381,15 +386,11 @@ export default function ConnectionDialog({
     try {
       const selected = await open({ multiple: false });
       if (!selected || Array.isArray(selected)) return;
+      setError("");
       setPrivateKeyPath(selected);
     } catch {
       // Dialog cancellation and platform errors should not disturb the form.
     }
-  };
-
-  const closeCredentialPrompt = () => {
-    if (connectingRef.current) return;
-    setCredentialPrompt(null);
   };
 
   const connectionActions = useConnectionActions({
@@ -399,6 +400,7 @@ export default function ConnectionDialog({
     setError,
     credentialPrompt,
     setCredentialPrompt,
+    sshAttemptDispatch: dispatchSshAttempt,
     sshProfiles,
     ssh: {
       host,
@@ -407,8 +409,6 @@ export default function ConnectionDialog({
       authMethod,
       privateKeyPath,
       jumpProfileId,
-      jumpCredential,
-      setJumpCredential,
       encoding,
       terminalMode: sshTerminalMode,
     },
@@ -442,7 +442,6 @@ export default function ConnectionDialog({
       setAuthMethod("password");
       setPrivateKeyPath("");
       setJumpProfileId("");
-      setJumpCredential("");
       setEncoding("utf-8");
       setSshTerminalMode(DEFAULT_TERMINAL_MODE);
     },
@@ -490,11 +489,16 @@ export default function ConnectionDialog({
     void connectionActions.handleConnect();
   }, [connectionActions, pendingStartupConnect]);
 
+  useEffect(() => {
+    if (!diagnostics.progress) return;
+    dispatchSshAttempt({ type: "progress", ...diagnostics.progress });
+  }, [diagnostics.progress]);
+
   useConnectionDialogShortcuts({
     connecting,
     credentialPrompt,
     onClose,
-    onCloseCredentialPrompt: closeCredentialPrompt,
+    onCloseCredentialPrompt: connectionActions.handleCredentialCancel,
     onCredentialSubmit: () => {
       void connectionActions.handleCredentialSubmit();
     },
@@ -532,7 +536,7 @@ export default function ConnectionDialog({
         credentialPrompt={credentialPrompt}
         connecting={connecting}
         diagnostics={diagnosticsPanelProps}
-        onClose={closeCredentialPrompt}
+        onClose={connectionActions.handleCredentialCancel}
         onSubmit={() => {
           void connectionActions.handleCredentialSubmit();
         }}
@@ -542,6 +546,19 @@ export default function ConnectionDialog({
             value,
             error: "",
           });
+        }}
+      />
+    );
+  }
+
+  if (tab === "ssh" && sshAttempt.status !== "editing") {
+    return (
+      <SshConnectionProgressDialog
+        attempt={sshAttempt}
+        target={`${username}@${host}:${port}`}
+        diagnostics={diagnosticsPanelProps}
+        onCancel={() => {
+          void connectionActions.handleCancelSshConnect();
         }}
       />
     );
@@ -570,26 +587,50 @@ export default function ConnectionDialog({
     onDeleteHistory: () => {
       void handleDeleteHistory("ssh");
     },
-    onProfileNameChange: setSshProfileName,
-    onHostChange: setHost,
-    onPortChange: setPort,
-    onUsernameChange: setUsername,
+    onProfileNameChange: (value) => {
+      setError("");
+      setSshProfileName(value);
+    },
+    onHostChange: (value) => {
+      setError("");
+      setHost(value);
+    },
+    onPortChange: (value) => {
+      setError("");
+      setPort(value);
+    },
+    onUsernameChange: (value) => {
+      setError("");
+      setUsername(value);
+    },
     onAuthMethodChange: (value) => {
+      setError("");
       setAuthMethod(normalizeSshAuthMethod(value));
     },
-    onPrivateKeyPathChange: setPrivateKeyPath,
+    onPrivateKeyPathChange: (value) => {
+      setError("");
+      setPrivateKeyPath(value);
+    },
     onSelectPrivateKeyFile: () => {
       void selectSshAuthFile();
     },
     onJumpProfileChange: handleJumpProfileChange,
     onEncodingChange: (value) => {
+      setError("");
       setEncoding(normalizeEncoding(value));
     },
     onTerminalModeChange: (value) => {
+      setError("");
       setSshTerminalMode(normalizeTerminalMode(value));
     },
-    onMemoChange: setSshMemo,
-    onExternalControlEnabledChange: setSshExternalControlEnabled,
+    onMemoChange: (value) => {
+      setError("");
+      setSshMemo(value);
+    },
+    onExternalControlEnabledChange: (value) => {
+      setError("");
+      setSshExternalControlEnabled(value);
+    },
     onSaveProfile: handleSaveSshProfile,
   };
   const telnetFormState: TelnetFormState = {
@@ -632,7 +673,10 @@ export default function ConnectionDialog({
   return (
     <ConnectionDialogView
       tab={tab}
-      setTab={setTab}
+      setTab={(value) => {
+        setError("");
+        setTab(value);
+      }}
       connecting={connecting}
       error={error}
       historyError={

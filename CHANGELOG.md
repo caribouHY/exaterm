@@ -13,6 +13,7 @@
 
 ### Changed
 
+- Added an SSH connection progress view with safe cancellation, immediate credential clearing, and visible recovery from connection errors.
 - Refactored terminal color decoration into a shared palette and reusable profiles for future network operating systems while preserving Cisco IOS behavior.
 
 ### Removed

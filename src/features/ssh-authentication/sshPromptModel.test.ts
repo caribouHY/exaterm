@@ -80,4 +80,21 @@ describe("SSH prompt queue", () => {
       actionClassName: "btn-danger",
     });
   });
+
+  it("clears authentication responses when submission starts", () => {
+    const prompt = enqueueAuthenticationPrompt([], authenticationPrompt)[0];
+    if (prompt.kind !== "authentication") throw new Error("authentication prompt expected");
+    const populated = {
+      ...prompt,
+      value: { ...prompt.value, responses: ["secret"] },
+    };
+
+    const submitting = setSshPromptSubmission(populated, true);
+
+    expect(submitting.kind).toBe("authentication");
+    if (submitting.kind === "authentication") {
+      expect(submitting.value.responses).toEqual([""]);
+      expect(submitting.value.submitting).toBe(true);
+    }
+  });
 });

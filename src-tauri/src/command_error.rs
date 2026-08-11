@@ -60,6 +60,7 @@ impl BackendCommandError {
             "No tab is currently being dragged" => "workspace.no_active_drag",
             "Destination snapshot not found" => "workspace.destination_snapshot_not_found",
             "The saved SSH host key does not match" => "ssh.host_key_mismatch",
+            "The SSH connection attempt was cancelled" => "ssh.connect_cancelled",
             "The SSH authentication method is invalid" => "ssh.invalid_auth_method",
             "The SSH authentication prompt was cancelled" => "ssh.auth_prompt_cancelled",
             "The SSH authentication prompt timed out" => "ssh.auth_prompt_timed_out",
@@ -342,6 +343,14 @@ mod tests {
             )
             .code,
             "ssh.auth_prompt_response_mismatch"
+        );
+    }
+
+    #[test]
+    fn classifies_ssh_connection_cancellation() {
+        assert_eq!(
+            BackendCommandError::from_message("The SSH connection attempt was cancelled").code,
+            "ssh.connect_cancelled"
         );
     }
 

@@ -1,4 +1,5 @@
 import { X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { ConnectionHistoryEntry, ConnectionType, SavedConnection } from "../../types";
 import {
@@ -91,18 +92,28 @@ export function ConnectionDialogView({
   onOverlayClick,
 }: ConnectionDialogViewProps) {
   const { t } = useTranslation();
+  const errorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (tab === "ssh" && error) errorRef.current?.focus();
+  }, [error, tab]);
 
   return (
     <div className="connection-overlay" onMouseDown={onOverlayMouseDown} onClick={onOverlayClick}>
       <ModalFrame
         className="connection-dialog"
+        role="dialog"
+        ariaModal
+        ariaLabelledBy="connection-dialog-title"
         onClick={(event) => {
           event.stopPropagation();
         }}
       >
         <ModalHeader className="connection-dialog__header">
-          <ModalTitle className="connection-dialog__title">{t("connection.new")}</ModalTitle>
-          <button className="btn-icon" onClick={onClose}>
+          <ModalTitle className="connection-dialog__title" id="connection-dialog-title">
+            {t("connection.new")}
+          </ModalTitle>
+          <button className="btn-icon" onClick={onClose} aria-label={t("connection.cancel")}>
             <X size={16} />
           </button>
         </ModalHeader>
@@ -134,6 +145,17 @@ export function ConnectionDialogView({
           </button>
         </div>
 
+        {tab === "ssh" && error && (
+          <div
+            ref={errorRef}
+            className="connection-dialog__error-banner"
+            role="alert"
+            tabIndex={-1}
+          >
+            <FeedbackMessage tone="error">{error}</FeedbackMessage>
+          </div>
+        )}
+
         <ModalBody className="connection-dialog__body">
           {tab === "ssh" ? (
             <SshConnectionForm
@@ -161,7 +183,7 @@ export function ConnectionDialogView({
           ) : (
             <SerialConnectionForm formState={serialFormState} formActions={serialActions} />
           )}
-          {error && (
+          {tab !== "ssh" && error && (
             <FeedbackMessage tone="error" className="connection-dialog__error">
               {error}
             </FeedbackMessage>
