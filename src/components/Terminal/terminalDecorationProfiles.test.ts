@@ -199,6 +199,8 @@ describe("terminal decoration profile registry", () => {
   });
 
   it("uses Si-R-specific error matching and the shared scan limit", () => {
+    const lowercaseWarningLine = ["<", "warning", "> lowercase output"].join("");
+
     expect(FUJITSU_SIR_DECORATION_PROFILE.decorationLookback).toBe(80);
     expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine("<ERROR> Authentication failed.")).toBe(true);
     expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine("<WARNING> weak password")).toBe(false);
@@ -209,9 +211,7 @@ describe("terminal decoration profile registry", () => {
     expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.(" <WARNING> indented output")).toBe(
       false
     );
-    expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.("<warning> lowercase output")).toBe(
-      false
-    );
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.(lowercaseWarningLine)).toBe(false);
     expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.("syslog warning count: 0")).toBe(false);
     expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine("syslog error count: 0")).toBe(false);
     expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine(" <ERROR> indented output")).toBe(false);
