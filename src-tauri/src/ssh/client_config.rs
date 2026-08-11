@@ -48,8 +48,8 @@ fn kex_catalog() -> Vec<(russh::kex::Name, bool)> {
         (russh::kex::ECDH_SHA2_NISTP521, false),
         (russh::kex::ECDH_SHA2_NISTP384, false),
         (russh::kex::ECDH_SHA2_NISTP256, false),
-        (russh::kex::DH_GEX_SHA1, true),
         (russh::kex::DH_G14_SHA1, true),
+        (russh::kex::DH_GEX_SHA1, true),
         (russh::kex::DH_G1_SHA1, true),
     ]
 }
