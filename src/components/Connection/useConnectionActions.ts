@@ -98,6 +98,9 @@ const recordConnectionHistory = (input: ConnectionHistoryRecordInput) => {
   });
 };
 
+// Cancellation handlers can update this ref while a frontend preflight request is awaiting.
+const wasSshPreparationCancelled = (ref: MutableRefObject<boolean>) => ref.current;
+
 export const useConnectionActions = ({
   tab,
   connectingRef,
@@ -218,7 +221,7 @@ export const useConnectionActions = ({
     async (sshPort: number, currentJumpCredential = jumpCredentialRef.current) => {
       if (ssh.authMethod === "password") {
         const autoLog = await getAutoLogPreference();
-        if (preparationCancelledRef.current) return;
+        if (wasSshPreparationCancelled(preparationCancelledRef)) return;
         jumpCredentialRef.current = "";
         await performSshConnect(autoLog, sshPort, "", "password", currentJumpCredential);
         return;
@@ -227,7 +230,7 @@ export const useConnectionActions = ({
       const requiresPassphrase = await invoke<boolean>("ssh_private_key_requires_passphrase", {
         privateKeyPath: ssh.privateKeyPath,
       });
-      if (preparationCancelledRef.current) return;
+      if (wasSshPreparationCancelled(preparationCancelledRef)) return;
       if (requiresPassphrase) {
         openCredentialPrompt(
           "target",
@@ -242,7 +245,7 @@ export const useConnectionActions = ({
       }
 
       const autoLog = await getAutoLogPreference();
-      if (preparationCancelledRef.current) return;
+      if (wasSshPreparationCancelled(preparationCancelledRef)) return;
       jumpCredentialRef.current = "";
       await performSshConnect(autoLog, sshPort, "", "public_key", currentJumpCredential);
     },
@@ -286,7 +289,7 @@ export const useConnectionActions = ({
       const requiresPassphrase = await invoke<boolean>("ssh_private_key_requires_passphrase", {
         privateKeyPath: jumpPrivateKeyPath,
       });
-      if (preparationCancelledRef.current) return;
+      if (wasSshPreparationCancelled(preparationCancelledRef)) return;
       if (requiresPassphrase) {
         promptForJumpCredential();
         return;
@@ -322,7 +325,7 @@ export const useConnectionActions = ({
       }
 
       const autoLog = await getAutoLogPreference();
-      if (preparationCancelledRef.current) return;
+      if (wasSshPreparationCancelled(preparationCancelledRef)) return;
       const jumpCredential = jumpCredentialRef.current;
       jumpCredentialRef.current = "";
       await performSshConnect(
@@ -362,7 +365,7 @@ export const useConnectionActions = ({
         jumpCredentialRef.current = "";
         sshAttemptDispatch({ type: "begin" });
         const requestId = await diagnostics.start();
-        if (preparationCancelledRef.current) return;
+        if (wasSshPreparationCancelled(preparationCancelledRef)) return;
         sshAttemptDispatch({ type: "started", requestId });
         const sshPort = parsePort(ssh.port, t("connection.error"));
 
