@@ -96,6 +96,43 @@ describe("shortcutModel", () => {
     expect(
       findShortcutAction(DEFAULT_SHORTCUT_CONFIG, keyEvent("c", { ctrlKey: true }), "terminal")
     ).toBeNull();
+
+    const shortcuts = {
+      ...DEFAULT_SHORTCUT_CONFIG,
+      terminal_clear_viewport: { key: "k", ctrl: true, alt: false, shift: true },
+      terminal_clear_buffer: { key: "F8", ctrl: true, alt: false, shift: true },
+    };
+    expect(
+      findShortcutAction(shortcuts, keyEvent("K", { ctrlKey: true, shiftKey: true }), "terminal")
+    ).toBe("terminal_clear_viewport");
+    expect(
+      findShortcutAction(shortcuts, keyEvent("F8", { ctrlKey: true, shiftKey: true }), "terminal")
+    ).toBe("terminal_clear_buffer");
+    expect(
+      findShortcutAction(shortcuts, keyEvent("K", { ctrlKey: true, shiftKey: true }), "application")
+    ).toBeNull();
+  });
+
+  it("defines terminal clear actions as unassigned by default", () => {
+    expect(DEFAULT_SHORTCUT_CONFIG.terminal_clear_viewport).toBeNull();
+    expect(DEFAULT_SHORTCUT_CONFIG.terminal_clear_buffer).toBeNull();
+    expect(
+      SHORTCUT_ACTIONS.filter(({ id }) => id.startsWith("terminal_clear_")).map(
+        ({ id, scope }) => ({ id, scope })
+      )
+    ).toEqual([
+      { id: "terminal_clear_viewport", scope: "terminal" },
+      { id: "terminal_clear_buffer", scope: "terminal" },
+    ]);
+
+    expect(
+      findShortcutConflict(DEFAULT_SHORTCUT_CONFIG, "terminal_clear_viewport", {
+        key: "n",
+        ctrl: true,
+        alt: false,
+        shift: false,
+      })
+    ).toBe("new_connection");
   });
 
   it("defines all log actions in terminal scope with only start and stop assigned by default", () => {
@@ -189,6 +226,8 @@ describe("shortcutModel", () => {
     expect(normalized.terminal_select_all).toEqual(DEFAULT_SHORTCUT_CONFIG.terminal_select_all);
     expect(normalized.terminal_copy).toBeNull();
     expect(normalized.terminal_paste).toEqual(DEFAULT_SHORTCUT_CONFIG.terminal_paste);
+    expect(normalized.terminal_clear_viewport).toBeNull();
+    expect(normalized.terminal_clear_buffer).toBeNull();
     expect(normalized.terminal_log_start_overwrite).toEqual(
       DEFAULT_SHORTCUT_CONFIG.terminal_log_start_overwrite
     );
@@ -196,6 +235,16 @@ describe("shortcutModel", () => {
     expect(normalized.terminal_log_stop).toEqual(DEFAULT_SHORTCUT_CONFIG.terminal_log_stop);
     expect(normalized.terminal_log_pause).toBeNull();
     expect(normalized.terminal_log_resume).toBeNull();
+  });
+
+  it("preserves explicit null terminal clear shortcuts", () => {
+    const normalized = normalizeShortcutConfig({
+      terminal_clear_viewport: null,
+      terminal_clear_buffer: null,
+    });
+
+    expect(normalized.terminal_clear_viewport).toBeNull();
+    expect(normalized.terminal_clear_buffer).toBeNull();
   });
 
   it("preserves explicit null log shortcuts and detects conflicts with their defaults", () => {

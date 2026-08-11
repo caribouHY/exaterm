@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -29,6 +29,7 @@ import {
 import { getTerminalDecorationProfile } from "./terminalDecorationProfiles";
 import { getTerminalPromptColor, TERMINAL_DECORATION_COLORS } from "./terminalDecorationTheme";
 import type { TerminalPinnedCommand } from "./terminalDecorationTypes";
+import { clearTerminalBuffer, clearTerminalViewport } from "./terminalClearActions";
 import appIcon from "../../../src-tauri/icons/icon.png";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
@@ -52,6 +53,8 @@ interface TerminalViewProps {
 
 export interface TerminalViewHandle {
   insertText: (text: string) => void;
+  clearViewport: () => void;
+  clearBuffer: () => void;
   flushManualLogBuffer: () => Promise<void>;
   flushLogBuffersForMove: () => Promise<void>;
 }
@@ -116,6 +119,30 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const autoLogSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
+
+  const refreshDecorationsAfterClear = useCallback(
+    (terminal: Terminal) => {
+      decorationController.clear();
+      decorationController.schedule(terminal, true);
+    },
+    [decorationController]
+  );
+
+  const clearViewport = useCallback(() => {
+    const terminal = termRef.current;
+    if (!terminal) return;
+    clearTerminalViewport(terminal, () => {
+      refreshDecorationsAfterClear(terminal);
+    });
+  }, [refreshDecorationsAfterClear]);
+
+  const clearBuffer = useCallback(() => {
+    const terminal = termRef.current;
+    if (!terminal) return;
+    clearTerminalBuffer(terminal, () => {
+      refreshDecorationsAfterClear(terminal);
+    });
+  }, [refreshDecorationsAfterClear]);
 
   useEffect(() => {
     shortcutsRef.current = shortcuts;
@@ -202,6 +229,8 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         term.paste(data);
         term.focus();
       },
+      clearViewport,
+      clearBuffer,
       flushManualLogBuffer: async () => {
         if (!sessionId) return;
         const logText = manualLogSanitizerRef.current.flush();
@@ -242,7 +271,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         await Promise.all(appendTasks);
       },
     }),
-    [sessionId]
+    [clearBuffer, clearViewport, sessionId]
   );
 
   // Update decoder when encoding changes
@@ -411,6 +440,16 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         case "terminal_paste":
           runClipboardAction(pasteClipboardIntoTerminal);
           break;
+        case "terminal_clear_viewport":
+          clearTerminalViewport(term, () => {
+            refreshDecorationsAfterClear(term);
+          });
+          break;
+        case "terminal_clear_buffer":
+          clearTerminalBuffer(term, () => {
+            refreshDecorationsAfterClear(term);
+          });
+          break;
         case "terminal_log_start_overwrite":
         case "terminal_log_start_append":
         case "terminal_log_stop":
@@ -577,7 +616,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [sessionId, connectionType]);
+  }, [sessionId, connectionType, refreshDecorationsAfterClear]);
 
   // Re-fit the terminal whenever this tab becomes active (container goes from display:none to visible)
   useEffect(() => {
