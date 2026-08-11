@@ -91,6 +91,10 @@ pub struct ShortcutConfig {
     pub terminal_copy: Option<ShortcutBinding>,
     #[serde(default = "default_terminal_paste_shortcut")]
     pub terminal_paste: Option<ShortcutBinding>,
+    #[serde(default)]
+    pub terminal_clear_viewport: Option<ShortcutBinding>,
+    #[serde(default)]
+    pub terminal_clear_buffer: Option<ShortcutBinding>,
     #[serde(default = "default_terminal_log_start_overwrite_shortcut")]
     pub terminal_log_start_overwrite: Option<ShortcutBinding>,
     #[serde(default)]
@@ -154,6 +158,8 @@ impl Default for ShortcutConfig {
             terminal_select_all: default_terminal_select_all_shortcut(),
             terminal_copy: default_terminal_copy_shortcut(),
             terminal_paste: default_terminal_paste_shortcut(),
+            terminal_clear_viewport: None,
+            terminal_clear_buffer: None,
             terminal_log_start_overwrite: default_terminal_log_start_overwrite_shortcut(),
             terminal_log_start_append: None,
             terminal_log_stop: default_terminal_log_stop_shortcut(),
@@ -185,6 +191,8 @@ impl ShortcutConfig {
             &mut self.terminal_select_all,
             &mut self.terminal_copy,
             &mut self.terminal_paste,
+            &mut self.terminal_clear_viewport,
+            &mut self.terminal_clear_buffer,
             &mut self.terminal_log_start_overwrite,
             &mut self.terminal_log_start_append,
             &mut self.terminal_log_stop,
@@ -217,6 +225,11 @@ fn validate_shortcut_config(shortcuts: &ShortcutConfig) -> Result<(), String> {
         ("terminal_select_all", &shortcuts.terminal_select_all),
         ("terminal_copy", &shortcuts.terminal_copy),
         ("terminal_paste", &shortcuts.terminal_paste),
+        (
+            "terminal_clear_viewport",
+            &shortcuts.terminal_clear_viewport,
+        ),
+        ("terminal_clear_buffer", &shortcuts.terminal_clear_buffer),
         (
             "terminal_log_start_overwrite",
             &shortcuts.terminal_log_start_overwrite,
@@ -1148,6 +1161,8 @@ mod tests {
             cfg.shortcuts.terminal_paste,
             default_terminal_paste_shortcut()
         );
+        assert_eq!(cfg.shortcuts.terminal_clear_viewport, None);
+        assert_eq!(cfg.shortcuts.terminal_clear_buffer, None);
         assert_eq!(
             cfg.shortcuts.terminal_log_start_overwrite,
             default_terminal_log_start_overwrite_shortcut()
@@ -1173,6 +1188,7 @@ mod tests {
                     "open_settings": null,
                     "exit": {"key": "Q", "ctrl": true, "shift": true},
                     "terminal_select_all": {"key": "A", "ctrl": true, "shift": true},
+                    "terminal_clear_viewport": {"key": "K", "ctrl": true, "shift": true},
                     "terminal_log_stop": {"key": "f10", "ctrl": true, "shift": true}
                 }
             }"#,
@@ -1184,6 +1200,10 @@ mod tests {
         assert_eq!(cfg.shortcuts.new_window.as_ref().unwrap().key, "F2");
         assert_eq!(cfg.shortcuts.exit.as_ref().unwrap().key, "q");
         assert_eq!(cfg.shortcuts.terminal_select_all.as_ref().unwrap().key, "a");
+        assert_eq!(
+            cfg.shortcuts.terminal_clear_viewport.as_ref().unwrap().key,
+            "k"
+        );
         assert_eq!(cfg.shortcuts.terminal_log_stop.as_ref().unwrap().key, "F10");
         assert!(validate_shortcut_config(&cfg.shortcuts).is_ok());
     }
@@ -1194,6 +1214,20 @@ mod tests {
 
         assert_eq!(cfg.shortcuts.exit, None);
         assert!(serde_json::to_value(cfg).unwrap()["shortcuts"]["exit"].is_null());
+    }
+
+    #[test]
+    fn shortcut_config_preserves_explicit_null_terminal_clear_actions() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{"shortcuts":{"terminal_clear_viewport":null,"terminal_clear_buffer":null}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(cfg.shortcuts.terminal_clear_viewport, None);
+        assert_eq!(cfg.shortcuts.terminal_clear_buffer, None);
+        let value = serde_json::to_value(cfg).unwrap();
+        assert!(value["shortcuts"]["terminal_clear_viewport"].is_null());
+        assert!(value["shortcuts"]["terminal_clear_buffer"].is_null());
     }
 
     #[test]
@@ -1210,8 +1244,10 @@ mod tests {
             open_settings: None,
             exit: None,
             terminal_select_all: None,
-            terminal_copy: duplicate,
+            terminal_copy: None,
             terminal_paste: None,
+            terminal_clear_viewport: None,
+            terminal_clear_buffer: duplicate,
             terminal_log_start_overwrite: None,
             terminal_log_start_append: None,
             terminal_log_stop: None,
@@ -1240,6 +1276,8 @@ mod tests {
             terminal_select_all: None,
             terminal_copy: None,
             terminal_paste: None,
+            terminal_clear_viewport: None,
+            terminal_clear_buffer: None,
             terminal_log_start_overwrite: None,
             terminal_log_start_append: None,
             terminal_log_stop: None,

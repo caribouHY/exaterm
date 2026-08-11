@@ -83,6 +83,12 @@
   top: calc(100% + 4px);
   left: 0;
   z-index: 1000;
+  width: max-content;
+}
+
+.titlebar__menu-popover .ui-popover-menu__item-label {
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .titlebar__controls {

@@ -65,6 +65,16 @@ export const SHORTCUT_ACTIONS: Array<{
     scope: "terminal",
   },
   {
+    id: "terminal_clear_viewport",
+    labelKey: "settings.shortcuts.action.terminal_clear_viewport",
+    scope: "terminal",
+  },
+  {
+    id: "terminal_clear_buffer",
+    labelKey: "settings.shortcuts.action.terminal_clear_buffer",
+    scope: "terminal",
+  },
+  {
     id: "terminal_log_start_overwrite",
     labelKey: "settings.shortcuts.action.terminal_log_start_overwrite",
     scope: "terminal",
@@ -148,6 +158,8 @@ export const DEFAULT_SHORTCUT_CONFIG: ShortcutConfig = {
   terminal_select_all: DEFAULT_TERMINAL_SELECT_ALL_SHORTCUT,
   terminal_copy: DEFAULT_TERMINAL_COPY_SHORTCUT,
   terminal_paste: DEFAULT_TERMINAL_PASTE_SHORTCUT,
+  terminal_clear_viewport: null,
+  terminal_clear_buffer: null,
   terminal_log_start_overwrite: DEFAULT_TERMINAL_LOG_START_OVERWRITE_SHORTCUT,
   terminal_log_start_append: null,
   terminal_log_stop: DEFAULT_TERMINAL_LOG_STOP_SHORTCUT,
@@ -164,6 +176,8 @@ export function createDefaultShortcutConfig(): ShortcutConfig {
     terminal_select_all: { ...DEFAULT_TERMINAL_SELECT_ALL_SHORTCUT },
     terminal_copy: { ...DEFAULT_TERMINAL_COPY_SHORTCUT },
     terminal_paste: { ...DEFAULT_TERMINAL_PASTE_SHORTCUT },
+    terminal_clear_viewport: null,
+    terminal_clear_buffer: null,
     terminal_log_start_overwrite: { ...DEFAULT_TERMINAL_LOG_START_OVERWRITE_SHORTCUT },
     terminal_log_start_append: null,
     terminal_log_stop: { ...DEFAULT_TERMINAL_LOG_STOP_SHORTCUT },
@@ -306,6 +320,14 @@ export function normalizeShortcutConfig(shortcuts?: Partial<ShortcutConfig>): Sh
       shortcuts.terminal_copy === undefined ? defaults.terminal_copy : shortcuts.terminal_copy,
     terminal_paste:
       shortcuts.terminal_paste === undefined ? defaults.terminal_paste : shortcuts.terminal_paste,
+    terminal_clear_viewport:
+      shortcuts.terminal_clear_viewport === undefined
+        ? defaults.terminal_clear_viewport
+        : shortcuts.terminal_clear_viewport,
+    terminal_clear_buffer:
+      shortcuts.terminal_clear_buffer === undefined
+        ? defaults.terminal_clear_buffer
+        : shortcuts.terminal_clear_buffer,
     terminal_log_start_overwrite:
       shortcuts.terminal_log_start_overwrite === undefined
         ? defaults.terminal_log_start_overwrite

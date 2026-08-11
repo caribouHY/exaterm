@@ -15,6 +15,9 @@ interface TitleBarProps {
   onViewChange: (view: ViewMode) => void;
   onOpenConnection: () => void;
   onOpenWindow: () => void;
+  canClearTerminal: boolean;
+  onClearTerminalViewport: () => void;
+  onClearTerminalBuffer: () => void;
   onToggleAiPanel: () => void;
   onCheckForUpdates: () => void;
   onExit: () => void;
@@ -27,6 +30,9 @@ export default function TitleBar({
   onViewChange,
   onOpenConnection,
   onOpenWindow,
+  canClearTerminal,
+  onClearTerminalViewport,
+  onClearTerminalBuffer,
   onToggleAiPanel,
   onCheckForUpdates,
   onExit,
@@ -79,7 +85,24 @@ export default function TitleBar({
       active: false,
       action: onOpenWindow,
     },
-    { key: "separator-new-ai", separator: true },
+    { key: "separator-new-terminal", separator: true },
+    {
+      key: "terminal_clear_viewport",
+      label: t("titlebar.menu.terminal_clear_viewport"),
+      shortcut: formatShortcut(shortcuts.terminal_clear_viewport) || undefined,
+      active: false,
+      disabled: !canClearTerminal,
+      action: onClearTerminalViewport,
+    },
+    {
+      key: "terminal_clear_buffer",
+      label: t("titlebar.menu.terminal_clear_buffer"),
+      shortcut: formatShortcut(shortcuts.terminal_clear_buffer) || undefined,
+      active: false,
+      disabled: !canClearTerminal,
+      action: onClearTerminalBuffer,
+    },
+    { key: "separator-terminal-ai", separator: true },
     {
       key: "ai_assistant",
       label: t("titlebar.menu.ai_assistant"),

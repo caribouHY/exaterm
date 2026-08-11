@@ -61,6 +61,8 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "terminal_select_all": { "key": "a", "ctrl": true, "alt": false, "shift": true },
     "terminal_copy": { "key": "c", "ctrl": true, "alt": false, "shift": true },
     "terminal_paste": { "key": "v", "ctrl": true, "alt": false, "shift": true },
+    "terminal_clear_viewport": null,
+    "terminal_clear_buffer": null,
     "terminal_log_start_overwrite": { "key": "F9", "ctrl": true, "alt": false, "shift": true },
     "terminal_log_start_append": null,
     "terminal_log_stop": { "key": "F10", "ctrl": true, "alt": false, "shift": true },
@@ -238,6 +240,8 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 | `shortcuts.terminal_select_all`          | `Ctrl+Shift+A`   | ターミナルの画面とスクロールバック全体を選択します。                             |
 | `shortcuts.terminal_copy`                | `Ctrl+Shift+C`   | ターミナルで選択した文字をコピーします。                                         |
 | `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | 接続中のターミナルへクリップボードの文字をペーストします。                       |
+| `shortcuts.terminal_clear_viewport`      | 未割り当て       | 接続先へ入力を送信せず、ローカルのターミナル表示領域をクリアします。             |
+| `shortcuts.terminal_clear_buffer`        | 未割り当て       | セッションを終了せず、ローカルのスクロールバックバッファーをクリアします。       |
 | `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | 保存ダイアログを開き、新しい手動ログを開始するか選択したファイルを上書きします。 |
 | `shortcuts.terminal_log_start_append`    | 未割り当て       | 保存ダイアログを開き、選択した手動ログファイルへ追記します。                     |
 | `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | 保留中の画面表示をflushして、実行中の手動ログを停止します。                      |
@@ -247,6 +251,8 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 英字キーは小文字、空白キーは `"Space"`、ファンクションキーは `"F2"` のような大文字表記で保存されます。修飾キーは完全一致で判定するため、たとえば `Ctrl+Shift+N` は `Ctrl+N` としては実行されません。
 
 ターミナル用ショートカットは、ターミナルにキーボードフォーカスがある場合だけ動作します。`Ctrl+A`、`Ctrl+C`、`Ctrl+V`をアプリまたはターミナル操作へ割り当てると、ExaTermにフォーカスがある間は、行頭移動、中断、quoted insertなどリモート側で一般的な操作より割り当てた操作が優先されます。
+
+ターミナルの表示領域またはバッファーのクリアは、ローカルのxterm表示だけに作用します。接続先へクリア操作を送信せず、セッション、保存済みログ、バックエンドが保持する出力も削除しません。
 
 ## terminal
 

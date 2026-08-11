@@ -149,6 +149,16 @@ export default function App() {
     await terminalViewRefs.current.get(tabId)?.flushLogBuffersForMove();
   }, []);
 
+  const clearActiveTerminalViewport = useCallback(() => {
+    if (!activeTabId) return;
+    terminalViewRefs.current.get(activeTabId)?.clearViewport();
+  }, [activeTabId]);
+
+  const clearActiveTerminalBuffer = useCallback(() => {
+    if (!activeTabId) return;
+    terminalViewRefs.current.get(activeTabId)?.clearBuffer();
+  }, [activeTabId]);
+
   const terminalTabLifecycle = useTerminalTabLifecycle({
     tabs: windowTabs,
     onTerminalRemoved: removeTerminalFromState,
@@ -681,6 +691,13 @@ export default function App() {
         onViewChange={handleViewChange}
         onOpenConnection={openConnection}
         onOpenWindow={openWindow}
+        canClearTerminal={
+          activeView === "terminal" &&
+          activeTab?.kind === "terminal" &&
+          Boolean(activeTab.sessionId)
+        }
+        onClearTerminalViewport={clearActiveTerminalViewport}
+        onClearTerminalBuffer={clearActiveTerminalBuffer}
         onToggleAiPanel={toggleAiPanel}
         onCheckForUpdates={appUpdate.checkManually}
         onExit={appExit.requestExit}

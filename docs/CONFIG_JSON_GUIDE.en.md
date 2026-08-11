@@ -61,6 +61,8 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "terminal_select_all": { "key": "a", "ctrl": true, "alt": false, "shift": true },
     "terminal_copy": { "key": "c", "ctrl": true, "alt": false, "shift": true },
     "terminal_paste": { "key": "v", "ctrl": true, "alt": false, "shift": true },
+    "terminal_clear_viewport": null,
+    "terminal_clear_buffer": null,
     "terminal_log_start_overwrite": { "key": "F9", "ctrl": true, "alt": false, "shift": true },
     "terminal_log_start_append": null,
     "terminal_log_stop": { "key": "F10", "ctrl": true, "alt": false, "shift": true },
@@ -238,6 +240,8 @@ Each shortcut is either an object with `key`, `ctrl`, `alt`, and `shift` fields 
 | `shortcuts.terminal_select_all`          | `Ctrl+Shift+A`   | Selects the terminal screen and scrollback buffer.                                 |
 | `shortcuts.terminal_copy`                | `Ctrl+Shift+C`   | Copies the selected terminal text.                                                 |
 | `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | Pastes clipboard text into a connected terminal.                                   |
+| `shortcuts.terminal_clear_viewport`      | Unassigned       | Clears the visible terminal display locally without sending input to the session.  |
+| `shortcuts.terminal_clear_buffer`        | Unassigned       | Clears the local terminal scrollback buffer without ending the session.            |
 | `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | Opens the save dialog and starts a new manual log or overwrites the selected file. |
 | `shortcuts.terminal_log_start_append`    | Unassigned       | Opens the save dialog and appends to the selected manual log file.                 |
 | `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | Flushes pending displayed output and stops the active manual log.                  |
@@ -247,6 +251,8 @@ Each shortcut is either an object with `key`, `ctrl`, `alt`, and `shift` fields 
 Letter keys are stored in lowercase, `Space` uses the literal string `"Space"`, and function keys use uppercase names such as `"F2"`. Modifier matching is exact. For example, `Ctrl+Shift+N` does not also match `Ctrl+N`.
 
 Terminal shortcuts run only while the terminal has keyboard focus. Assigning `Ctrl+A`, `Ctrl+C`, or `Ctrl+V` to an application or terminal action overrides common remote shortcuts such as beginning-of-line, interrupt, and quoted insert while ExaTerm has focus.
+
+Clearing the terminal display or buffer affects only the local xterm view. It does not send a clear command to the connected device, end the session, delete saved logs, or delete backend-retained output.
 
 ## terminal
 
