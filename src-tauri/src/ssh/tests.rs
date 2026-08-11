@@ -340,6 +340,28 @@ fn custom_client_config_uses_catalog_order_and_keeps_kex_extensions() {
 }
 
 #[test]
+fn custom_client_config_prefers_group14_sha1_over_group_exchange_sha1() {
+    let mut ssh_config = minimal_custom_config();
+    ssh_config.algorithms.kex = vec![
+        "diffie-hellman-group-exchange-sha1".into(),
+        "diffie-hellman-group14-sha1".into(),
+    ];
+
+    let config = build_client_config(&ssh_config).unwrap();
+    let kex = preferred_names(config.preferred.kex.as_ref());
+    let group14_position = kex
+        .iter()
+        .position(|name| *name == "diffie-hellman-group14-sha1")
+        .unwrap();
+    let group_exchange_position = kex
+        .iter()
+        .position(|name| *name == "diffie-hellman-group-exchange-sha1")
+        .unwrap();
+
+    assert!(group14_position < group_exchange_position);
+}
+
+#[test]
 fn custom_algorithm_validation_rejects_empty_unknown_and_duplicate_values() {
     let mut ssh_config = minimal_custom_config();
     ssh_config.algorithms.mac.clear();
