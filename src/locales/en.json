@@ -10,7 +10,7 @@
   "settings.check_updates_on_startup_desc": "Checks the latest published stable release once at startup; updates are installed only after confirmation",
   "settings.connection_history_title": "Connection History",
   "settings.connection_history_enabled": "Save connection history",
-  "settings.connection_history_enabled_desc": "Save connection settings locally after successful SSH or Telnet connections. Turning this off keeps existing history.",
+  "settings.connection_history_enabled_desc": "Save connection settings locally after successful manual or recent SSH/Telnet connections. Saved profile connections are excluded. Turning this off keeps existing history.",
   "settings.connection_history_count": "Saved history entries: {{count}}",
   "settings.connection_history_count_unknown": "Could not read the saved history count",
   "settings.connection_history_privacy": "Hosts, usernames, private-key paths, and related settings are stored locally as plaintext. Passwords and passphrases are not saved.",

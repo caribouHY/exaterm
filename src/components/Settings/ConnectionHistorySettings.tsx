@@ -95,12 +95,15 @@ export function ConnectionHistorySettings({ config, onChange }: ConnectionHistor
         </button>
       </div>
       {loadFailed && (
-        <FeedbackMessage tone="error">
+        <FeedbackMessage tone="error" className="settings-connection-history__feedback">
           {t("settings.connection_history_load_failed")}
         </FeedbackMessage>
       )}
       {clearResult && (
-        <FeedbackMessage tone={clearResult === "success" ? "success" : "error"}>
+        <FeedbackMessage
+          tone={clearResult === "success" ? "success" : "error"}
+          className="settings-connection-history__feedback"
+        >
           {t(
             clearResult === "success"
               ? "settings.connection_history_clear_success"

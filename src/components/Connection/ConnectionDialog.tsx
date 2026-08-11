@@ -407,6 +407,7 @@ export default function ConnectionDialog({
     setCredentialPrompt,
     sshAttemptDispatch: dispatchSshAttempt,
     connectionAttemptDispatch: dispatchConnectionAttempt,
+    selectedProfileIds,
     sshProfiles,
     ssh: {
       host,

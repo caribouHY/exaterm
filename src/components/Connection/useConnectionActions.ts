@@ -17,7 +17,8 @@ import type {
   WorkspaceConnectionInfo,
 } from "../../types";
 import { connectionHistoryClient } from "../../features/connection-history/connectionHistoryClient";
-import type { SshCredentialPrompt } from "./connectionDialogTypes";
+import type { ProfileSelectionState, SshCredentialPrompt } from "./connectionDialogTypes";
+import { shouldRecordConnectionHistory } from "./connectionHistoryModel";
 import { getConnectionErrorMessage, normalizeSshAuthMethod } from "./connectionProfileUtils";
 import {
   createConnectionRequestId,
@@ -42,6 +43,7 @@ interface UseConnectionActionsParams {
   setCredentialPrompt: Dispatch<SetStateAction<SshCredentialPrompt | null>>;
   sshAttemptDispatch: Dispatch<SshConnectionAttemptAction>;
   connectionAttemptDispatch: Dispatch<ConnectionAttemptAction>;
+  selectedProfileIds: ProfileSelectionState;
   sshProfiles: SavedConnection[];
   ssh: {
     host: string;
@@ -116,6 +118,7 @@ export const useConnectionActions = ({
   setCredentialPrompt,
   sshAttemptDispatch,
   connectionAttemptDispatch,
+  selectedProfileIds,
   sshProfiles,
   ssh,
   telnet,
@@ -222,13 +225,15 @@ export const useConnectionActions = ({
         ssh.terminalMode,
         connectionInfo
       );
-      recordConnectionHistory({
-        connection_info: connectionInfo,
-        encoding: ssh.encoding,
-        terminal_mode: ssh.terminalMode,
-      });
+      if (shouldRecordConnectionHistory(selectedProfileIds.ssh)) {
+        recordConnectionHistory({
+          connection_info: connectionInfo,
+          encoding: ssh.encoding,
+          terminal_mode: ssh.terminalMode,
+        });
+      }
     },
-    [onConnect, ssh, sshProfiles]
+    [onConnect, selectedProfileIds.ssh, ssh, sshProfiles]
   );
 
   const continueSshConnect = useCallback(
@@ -467,11 +472,13 @@ export const useConnectionActions = ({
           telnet.terminalMode,
           connectionInfo
         );
-        recordConnectionHistory({
-          connection_info: connectionInfo,
-          encoding: telnet.encoding,
-          terminal_mode: telnet.terminalMode,
-        });
+        if (shouldRecordConnectionHistory(selectedProfileIds.telnet)) {
+          recordConnectionHistory({
+            connection_info: connectionInfo,
+            encoding: telnet.encoding,
+            terminal_mode: telnet.terminalMode,
+          });
+        }
         finishConnectionAttempt(connectionRequestId);
         return;
       }
@@ -532,6 +539,7 @@ export const useConnectionActions = ({
     finishSshAttempt,
     onConnect,
     prepareJumpCredentialAndConnect,
+    selectedProfileIds.telnet,
     serial,
     setBusy,
     setError,

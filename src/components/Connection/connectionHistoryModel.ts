@@ -28,6 +28,10 @@ export function parseConnectionSource(value: string): ConnectionSourceSelection 
   return { kind: "manual" };
 }
 
+export function shouldRecordConnectionHistory(selectedProfileId: string): boolean {
+  return selectedProfileId === "";
+}
+
 export function historyEntriesForType(
   entries: ConnectionHistoryEntry[],
   type: Extract<ConnectionType, "ssh" | "telnet">
