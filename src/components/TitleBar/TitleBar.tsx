@@ -52,10 +52,10 @@ export default function TitleBar({
   const appWindow = getCurrentWindow();
   const [openMenu, setOpenMenu] = useState<TitleBarMenuKey | null>(null);
   const menuBarRef = useRef<HTMLDivElement>(null);
-  const triggerRefs = useRef<Record<TitleBarMenuKey, HTMLButtonElement | null>>({
-    file: null,
-    edit: null,
-  });
+  const fileTriggerRef = useRef<HTMLButtonElement>(null);
+  const editTriggerRef = useRef<HTMLButtonElement>(null);
+  const getTriggerRef = (menu: TitleBarMenuKey) =>
+    menu === "file" ? fileTriggerRef : editTriggerRef;
 
   useEffect(() => {
     if (!openMenu) return;
@@ -68,7 +68,7 @@ export default function TitleBar({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        triggerRefs.current[openMenu]?.focus();
+        getTriggerRef(openMenu).current?.focus();
         setOpenMenu(null);
       }
     };
@@ -130,7 +130,7 @@ export default function TitleBar({
 
   const closeMenuAndRestoreFocus = () => {
     if (openMenu) {
-      triggerRefs.current[openMenu]?.focus();
+      getTriggerRef(openMenu).current?.focus();
     }
     setOpenMenu(null);
   };
@@ -152,7 +152,7 @@ export default function TitleBar({
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       event.preventDefault();
       const target = menu === "file" ? "edit" : "file";
-      triggerRefs.current[target]?.focus();
+      getTriggerRef(target).current?.focus();
       if (openMenu) {
         switchMenu(target);
       }
@@ -180,7 +180,7 @@ export default function TitleBar({
               >
                 <button
                   ref={(element) => {
-                    triggerRefs.current[menu] = element;
+                    getTriggerRef(menu).current = element;
                   }}
                   id={triggerId}
                   className={`titlebar__menu-trigger ${isOpen ? "titlebar__menu-trigger--open" : ""}`}
@@ -199,7 +199,7 @@ export default function TitleBar({
 
                 {isOpen && (
                   <PopoverMenu
-                    items={menus[menu]}
+                    items={menu === "file" ? menus.file : menus.edit}
                     onAction={runMenuAction}
                     className={`titlebar__menu-popover titlebar__menu-popover--${menu}`}
                     autoFocus

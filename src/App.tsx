@@ -602,11 +602,14 @@ export default function App() {
 
   const openWindow = windowTabs.createWorkspaceWindow;
 
-  const canAccessActiveTerminal =
-    activeView === "terminal" && activeTab?.kind === "terminal" && Boolean(activeTab.sessionId);
+  const activeTerminalTab =
+    activeView === "terminal" && activeTab?.kind === "terminal" ? activeTab : null;
+  const canAccessActiveTerminal = Boolean(activeTerminalTab?.sessionId);
   const canCopyActiveTerminal =
     canAccessActiveTerminal && Boolean(activeTabId && terminalSelectionByTab.get(activeTabId));
-  const canPasteActiveTerminal = canAccessActiveTerminal && Boolean(activeTab?.isConnected);
+  const canPasteActiveTerminal = Boolean(
+    activeTerminalTab?.sessionId && activeTerminalTab.isConnected
+  );
 
   const toggleAiPanel = useCallback(() => {
     setShowAiPanel((current) => {
