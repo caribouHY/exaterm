@@ -367,6 +367,9 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
     assert!(serial_connect_tool["inputSchema"]
         .to_string()
         .contains("\"allied_telesis_awplus\""));
+    assert!(serial_connect_tool["inputSchema"]
+        .to_string()
+        .contains("\"furukawa_fitelnet\""));
 }
 
 async fn write_json_line_for_test<W>(writer: &mut W, value: Value)
@@ -1112,6 +1115,24 @@ fn prepare_serial_console_uses_defaults_and_line_settings() {
     .unwrap();
 
     assert_eq!(awplus.terminal_mode, "allied_telesis_awplus");
+
+    let fitelnet = prepare_serial_console_connection(
+        ConnectSerialConsoleArgs {
+            port: "COM3".into(),
+            baud_rate: None,
+            data_bits: None,
+            parity: None,
+            stop_bits: None,
+            flow_control: None,
+            terminal_mode: Some(McpTerminalMode::FurukawaFitelnet),
+            cols: None,
+            rows: None,
+        },
+        &ports,
+    )
+    .unwrap();
+
+    assert_eq!(fitelnet.terminal_mode, "furukawa_fitelnet");
 
     let defaulted = prepare_serial_console_connection(
         ConnectSerialConsoleArgs {

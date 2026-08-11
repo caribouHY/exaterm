@@ -73,15 +73,15 @@ CLI 引数では受け取らず、ExaTerm UI で入力します。
 
 `serial connect` は次の設定を受け付けます。
 
-| オプション         | 既定値      | 許可値                                                                               |
-| ------------------ | ----------- | ------------------------------------------------------------------------------------ |
-| `--baud-rate`      | `9600`      | 1 以上の整数                                                                         |
-| `--data-bits`      | `8`         | `5`, `6`, `7`, `8`                                                                   |
-| `--parity`         | `none`      | `none`, `odd`, `even`                                                                |
-| `--stop-bits`      | `1`         | `1`, `2`                                                                             |
-| `--flow-control`   | `none`      | `none`, `software`, `hardware`                                                       |
-| `--terminal-mode`  | `general`   | `general`, `cisco-ios`, `arista-eos`, `vyos`, `fujitsu-sir`, `allied-telesis-awplus` |
-| `--cols`, `--rows` | `120`, `30` | `1` から `1000`                                                                      |
+| オプション         | 既定値      | 許可値                                                                                                    |
+| ------------------ | ----------- | --------------------------------------------------------------------------------------------------------- |
+| `--baud-rate`      | `9600`      | 1 以上の整数                                                                                              |
+| `--data-bits`      | `8`         | `5`, `6`, `7`, `8`                                                                                        |
+| `--parity`         | `none`      | `none`, `odd`, `even`                                                                                     |
+| `--stop-bits`      | `1`         | `1`, `2`                                                                                                  |
+| `--flow-control`   | `none`      | `none`, `software`, `hardware`                                                                            |
+| `--terminal-mode`  | `general`   | `general`, `cisco-ios`, `arista-eos`, `vyos`, `fujitsu-sir`, `allied-telesis-awplus`, `furukawa-fitelnet` |
+| `--cols`, `--rows` | `120`, `30` | `1` から `1000`                                                                                           |
 
 ポート名は `serial ports` が返す値と完全一致する必要があります。
 

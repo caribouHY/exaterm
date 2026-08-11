@@ -900,6 +900,10 @@ mod tests {
                     "id": "awplus-switch",
                     "connection_type": "ssh",
                     "terminal_mode": "allied_telesis_awplus"
+                }, {
+                    "id": "fitelnet-router",
+                    "connection_type": "ssh",
+                    "terminal_mode": "furukawa_fitelnet"
                 }]
             }"#,
         )
@@ -924,6 +928,10 @@ mod tests {
         assert_eq!(
             cfg.saved_connections[4].terminal_mode.as_deref(),
             Some("allied_telesis_awplus")
+        );
+        assert_eq!(
+            cfg.saved_connections[5].terminal_mode.as_deref(),
+            Some("furukawa_fitelnet")
         );
     }
 

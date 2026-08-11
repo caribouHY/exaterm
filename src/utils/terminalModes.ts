@@ -9,6 +9,7 @@ export const TERMINAL_MODE_OPTIONS: Array<{ labelKey: string; value: TerminalMod
   { labelKey: "terminal_mode.vyos", value: "vyos" },
   { labelKey: "terminal_mode.fujitsu_sir", value: "fujitsu_sir" },
   { labelKey: "terminal_mode.allied_telesis_awplus", value: "allied_telesis_awplus" },
+  { labelKey: "terminal_mode.furukawa_fitelnet", value: "furukawa_fitelnet" },
 ];
 
 export function normalizeTerminalMode(terminalMode: string | null | undefined): TerminalMode {

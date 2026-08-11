@@ -70,6 +70,7 @@ pub(crate) fn normalize_profile_terminal_mode(value: Option<&str>) -> String {
         Some("vyos") => "vyos".into(),
         Some("fujitsu_sir") => "fujitsu_sir".into(),
         Some("allied_telesis_awplus") => "allied_telesis_awplus".into(),
+        Some("furukawa_fitelnet") => "furukawa_fitelnet".into(),
         _ => "general".into(),
     }
 }
@@ -88,6 +89,10 @@ mod terminal_mode_tests {
         assert_eq!(
             normalize_profile_terminal_mode(Some("allied_telesis_awplus")),
             "allied_telesis_awplus"
+        );
+        assert_eq!(
+            normalize_profile_terminal_mode(Some("furukawa_fitelnet")),
+            "furukawa_fitelnet"
         );
         assert_eq!(normalize_profile_terminal_mode(Some("unknown")), "general");
         assert_eq!(normalize_profile_terminal_mode(None), "general");

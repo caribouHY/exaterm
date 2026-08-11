@@ -253,6 +253,7 @@
   "terminal_mode.vyos": "VyOS",
   "terminal_mode.fujitsu_sir": "Fujitsu Si-R",
   "terminal_mode.allied_telesis_awplus": "Allied Telesis AW+",
+  "terminal_mode.furukawa_fitelnet": "Furukawa FITELnet",
   "logs.title": "Session Logs",
   "logs.loading": "Loading...",
   "logs.no_logs": "No logs available",

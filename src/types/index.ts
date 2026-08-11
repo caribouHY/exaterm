@@ -189,7 +189,8 @@ export type TerminalMode =
   | "arista_eos"
   | "vyos"
   | "fujitsu_sir"
-  | "allied_telesis_awplus";
+  | "allied_telesis_awplus"
+  | "furukawa_fitelnet";
 
 export interface SavedConnection {
   id: string;

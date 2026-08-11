@@ -75,15 +75,15 @@ UI, never as CLI arguments.
 
 `serial connect` supports:
 
-| Option             | Default     | Allowed values                                                                       |
-| ------------------ | ----------- | ------------------------------------------------------------------------------------ |
-| `--baud-rate`      | `9600`      | Positive integer                                                                     |
-| `--data-bits`      | `8`         | `5`, `6`, `7`, `8`                                                                   |
-| `--parity`         | `none`      | `none`, `odd`, `even`                                                                |
-| `--stop-bits`      | `1`         | `1`, `2`                                                                             |
-| `--flow-control`   | `none`      | `none`, `software`, `hardware`                                                       |
-| `--terminal-mode`  | `general`   | `general`, `cisco-ios`, `arista-eos`, `vyos`, `fujitsu-sir`, `allied-telesis-awplus` |
-| `--cols`, `--rows` | `120`, `30` | `1` through `1000`                                                                   |
+| Option             | Default     | Allowed values                                                                                            |
+| ------------------ | ----------- | --------------------------------------------------------------------------------------------------------- |
+| `--baud-rate`      | `9600`      | Positive integer                                                                                          |
+| `--data-bits`      | `8`         | `5`, `6`, `7`, `8`                                                                                        |
+| `--parity`         | `none`      | `none`, `odd`, `even`                                                                                     |
+| `--stop-bits`      | `1`         | `1`, `2`                                                                                                  |
+| `--flow-control`   | `none`      | `none`, `software`, `hardware`                                                                            |
+| `--terminal-mode`  | `general`   | `general`, `cisco-ios`, `arista-eos`, `vyos`, `fujitsu-sir`, `allied-telesis-awplus`, `furukawa-fitelnet` |
+| `--cols`, `--rows` | `120`, `30` | `1` through `1000`                                                                                        |
 
 The port must exactly match a value returned by `serial ports`.
 

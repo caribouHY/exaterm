@@ -4,12 +4,14 @@ import {
   ARISTA_EOS_DECORATION_PROFILE,
   CISCO_IOS_DECORATION_PROFILE,
   FUJITSU_SIR_DECORATION_PROFILE,
+  FURUKAWA_FITELNET_DECORATION_PROFILE,
   VYOS_DECORATION_PROFILE,
   getTerminalDecorationProfile,
   parseAristaEosPrompt,
   parseAlliedTelesisAwplusPrompt,
   parseCiscoIosPrompt,
   parseFujitsuSirPrompt,
+  parseFurukawaFitelnetPrompt,
   parseVyosContextLine,
   parseVyosPrompt,
 } from "./terminalDecorationProfiles";
@@ -174,6 +176,50 @@ describe("parseAlliedTelesisAwplusPrompt", () => {
   });
 });
 
+describe("parseFurukawaFitelnetPrompt", () => {
+  it.each([
+    ["> show version", "default"],
+    ["#show running.cfg", "default"],
+    ["F70-Router> show status", "default"],
+    ["F71_Router# show version", "default"],
+    ["F220_Router(config)# hostname branch", "configuration"],
+    ["F221-Router#show version", "default"],
+    ["(config)# hostname branch-router", "configuration"],
+    ["Router(config)# interface GigaEthernet 1/1", "configuration"],
+    ["(config-if-ge 1/1)# vlan-id 1", "configuration"],
+    ["Router(config-if-ch 1)# ip address 192.0.2.1 255.255.255.0", "configuration"],
+  ] as const)("parses the FITELnet prompt %s", (line, variant) => {
+    expect(parseFurukawaFitelnetPrompt(line)?.variant).toBe(variant);
+  });
+
+  it("separates hostname, mode, prompt, and command", () => {
+    expect(parseFurukawaFitelnetPrompt("branch-router(config-if-ge 1/1)# vlan-id 1")).toEqual({
+      hostname: "branch-router",
+      mode: "config-if-ge 1/1",
+      promptText: "branch-router(config-if-ge 1/1)#",
+      promptStart: 0,
+      commandText: "vlan-id 1",
+      commandStart: 33,
+      commandSeparator: " ",
+      variant: "configuration",
+    });
+  });
+
+  it("rejects shell output, malformed modes, and excessive lengths", () => {
+    expect(parseFurukawaFitelnetPrompt("operator@router:~$ pwd")).toBeNull();
+    expect(parseFurukawaFitelnetPrompt("Router (config)# show running.cfg")).toBeNull();
+    expect(parseFurukawaFitelnetPrompt("Router(config)> show running.cfg")).toBeNull();
+    expect(parseFurukawaFitelnetPrompt("Router(config# show running.cfg")).toBeNull();
+    expect(parseFurukawaFitelnetPrompt("Router(config)(sub)# show running.cfg")).toBeNull();
+    expect(parseFurukawaFitelnetPrompt("Router(config-)# show running.cfg")).toBeNull();
+    expect(parseFurukawaFitelnetPrompt("Router(config-if )# show running.cfg")).toBeNull();
+    expect(parseFurukawaFitelnetPrompt(`${"r".repeat(255)}# show version`)).toBeNull();
+    expect(
+      parseFurukawaFitelnetPrompt(`Router(config-${"x".repeat(129)})# show running.cfg`)
+    ).toBeNull();
+  });
+});
+
 describe("parseVyosPrompt", () => {
   it.each([
     ["vyos@router$ show version", "default"],
@@ -229,6 +275,9 @@ describe("terminal decoration profile registry", () => {
     expect(getTerminalDecorationProfile("fujitsu_sir")).toBe(FUJITSU_SIR_DECORATION_PROFILE);
     expect(getTerminalDecorationProfile("allied_telesis_awplus")).toBe(
       ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE
+    );
+    expect(getTerminalDecorationProfile("furukawa_fitelnet")).toBe(
+      FURUKAWA_FITELNET_DECORATION_PROFILE
     );
   });
 
@@ -297,6 +346,106 @@ describe("terminal decoration profile registry", () => {
 
   it("preserves the AlliedWare Plus scan limit", () => {
     expect(ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE.decorationLookback).toBe(80);
+  });
+
+  it("matches documented FITELnet errors and warnings", () => {
+    const errors = [
+      "ERROR:'Tunnel mode ipsec' exceeds max configurations. (20001/20000)",
+      "<ERROR> Incomplete command",
+      "<ERROR> Invalid input detected at '^' marker.",
+      "% Can not refresh",
+      "% Command failed.",
+      "% Entry not found.",
+      '% Cannot resolve "invalid.example" (Name or service not known)',
+      "% Invalid source address",
+      "% Invalid default ICMP source address",
+      "% Please answer 'yes or 'no'.",
+      "% A decimal number between 1 and 255.",
+      "% A Hex number between 0x0000 and 0xffff.",
+      "% Bad minimum size",
+      "% Bad maximum size",
+      "% Bad Interval size",
+      "% Only one source route option allowed",
+      "% No room for that option",
+      "% Up to 9 routes can be specified",
+      "% Invalid Number of Hops",
+      "% Invalid Number of Timestamps",
+      "% No such VRF",
+      "This command cannot be executed.",
+      "Time out, Operation failed.",
+      'Unknown protocol -"ipx", type ping ? for help',
+      "Unknown output interface GigaEthernet9/9",
+      "Unknown source interface GigaEthernet9/9",
+      "****Warning! sendto failed***",
+      "packet too short (8 bytes) from 192.0.2.1",
+      "wrong total length 84 instead of 100",
+      "wrong data byte #4 should have been ff but was 00",
+      "unknown option 0xff",
+    ];
+
+    expect(FURUKAWA_FITELNET_DECORATION_PROFILE.decorationLookback).toBe(80);
+    errors.forEach((line) =>
+      expect(FURUKAWA_FITELNET_DECORATION_PROFILE.isErrorLine(line)).toBe(true)
+    );
+    expect(
+      FURUKAWA_FITELNET_DECORATION_PROFILE.isWarningLine?.(
+        "WARNING: You have NOT saved after editing working.cfg."
+      )
+    ).toBe(true);
+    expect(
+      FURUKAWA_FITELNET_DECORATION_PROFILE.isWarningLine?.("<WARNING> Configuration is unsaved")
+    ).toBe(true);
+  });
+
+  it("does not treat FITELnet progress, success, or statistics as errors", () => {
+    const normalOutput = [
+      "% Command succeeded.",
+      "% reading configuration file",
+      "% reading configuration file.",
+      "% saving working-config",
+      "% Key pair was generated at: Mon Jul 10 13:52:56 2023",
+      "% Key type: SSH2-RSA Key",
+      "100% |***************************************| 10199 / 10199 (Bytes)",
+      "STOP: rollback-config timer",
+      "Rollback-config is running.",
+      "0 invalid packet received, 0 not synchronized received",
+      "request send error: 0",
+      "Invalid argument : 0",
+      " ERROR: indented output",
+      "ERROR:",
+      " <ERROR> indented output",
+      "<ERROR>",
+      " WARNING: indented output",
+      "WARNING:",
+      " <WARNING> indented output",
+      "<WARNING>",
+      '% Cannot resolve "" (reason)',
+      "% A decimal number between one and 255.",
+      "% A Hex number between 0x0000 and 0xgggg.",
+      "Unknown output interface edge port",
+      "unknown option 0xzz",
+    ];
+
+    normalOutput.forEach((line) => {
+      expect(FURUKAWA_FITELNET_DECORATION_PROFILE.isErrorLine(line)).toBe(false);
+      expect(FURUKAWA_FITELNET_DECORATION_PROFILE.isWarningLine?.(line)).toBe(false);
+    });
+  });
+
+  it("rejects long and incomplete FITELnet error-like output", () => {
+    const longPadding = " ".repeat(4096);
+    const errorLikeOutput = [
+      `${longPadding}ERROR: indented output`,
+      `% Cannot resolve "${"x".repeat(4096)}`,
+      `% Cannot resolve "host" ()`,
+      `% A decimal number between ${"1".repeat(4096)} and invalid.`,
+      `Unknown output interface ${"edge ".repeat(1024)}`,
+      `wrong total length ${"1".repeat(4096)} instead of invalid`,
+    ];
+
+    errorLikeOutput.forEach((line) =>
+      expect(FURUKAWA_FITELNET_DECORATION_PROFILE.isErrorLine(line)).toBe(false)
+    );
   });
 
   it("matches bounded AlliedWare Plus compatibility errors", () => {

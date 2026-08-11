@@ -140,6 +140,7 @@ enum TerminalMode {
     Vyos,
     FujitsuSir,
     AlliedTelesisAwplus,
+    FurukawaFitelnet,
 }
 
 #[derive(Debug, Args)]
@@ -570,6 +571,7 @@ impl TerminalMode {
             Self::Vyos => ExternalControlTerminalMode::Vyos,
             Self::FujitsuSir => ExternalControlTerminalMode::FujitsuSir,
             Self::AlliedTelesisAwplus => ExternalControlTerminalMode::AlliedTelesisAwplus,
+            Self::FurukawaFitelnet => ExternalControlTerminalMode::FurukawaFitelnet,
         }
     }
 }
@@ -945,6 +947,38 @@ mod tests {
                 stop_bits: None,
                 flow_control: None,
                 terminal_mode: Some(ExternalControlTerminalMode::AlliedTelesisAwplus),
+                cols: None,
+                rows: None,
+            })
+        );
+    }
+
+    #[test]
+    fn serial_connect_accepts_furukawa_fitelnet_terminal_mode() {
+        let request = build_request(
+            parse(&[
+                "exaterm-cli",
+                "serial",
+                "connect",
+                "--port",
+                "COM3",
+                "--terminal-mode",
+                "furukawa-fitelnet",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
+                port: "COM3".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: Some(ExternalControlTerminalMode::FurukawaFitelnet),
                 cols: None,
                 rows: None,
             })

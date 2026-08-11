@@ -150,6 +150,7 @@ pub(crate) enum ExternalControlTerminalMode {
     Vyos,
     FujitsuSir,
     AlliedTelesisAwplus,
+    FurukawaFitelnet,
 }
 
 impl ExternalControlTerminalMode {
@@ -161,6 +162,7 @@ impl ExternalControlTerminalMode {
             Self::Vyos => "vyos",
             Self::FujitsuSir => "fujitsu_sir",
             Self::AlliedTelesisAwplus => "allied_telesis_awplus",
+            Self::FurukawaFitelnet => "furukawa_fitelnet",
         }
     }
 }

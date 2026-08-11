@@ -28,6 +28,11 @@ export interface AlliedTelesisAwplusPrompt extends TerminalParsedPrompt {
   mode: string | null;
 }
 
+export interface FurukawaFitelnetPrompt extends TerminalParsedPrompt {
+  hostname: string;
+  mode: string | null;
+}
+
 const CISCO_IOS_ERROR_PATTERNS = [
   /ERROR:/i,
   /% ?Bad secret/,
@@ -171,6 +176,158 @@ const ALLIED_TELESIS_AWPLUS_ERROR_PATTERNS: AlliedTelesisAwplusErrorPattern[] = 
   ({ lowerText }) =>
     startsWithAlliedTelesisAwplusBoundary(lowerText, "command authorization failed", ":."),
 ];
+
+const FURUKAWA_FITELNET_EXACT_ERRORS = new Set([
+  "% Can not refresh",
+  "% Command failed.",
+  "% Entry not found.",
+  "% Invalid source address",
+  "% Invalid default ICMP source address",
+  "% Please answer 'yes or 'no'.",
+  "% Bad minimum size",
+  "% Bad maximum size",
+  "% Bad Interval size",
+  "% Only one source route option allowed",
+  "% No room for that option",
+  "% Up to 9 routes can be specified",
+  "% Invalid Number of Hops",
+  "% Invalid Number of Timestamps",
+  "% No such VRF",
+  "This command cannot be executed.",
+  "Time out, Operation failed.",
+  "****Warning! sendto failed***",
+]);
+
+function hasNonEmptyMarkerPayload(line: string, marker: string): boolean {
+  return line.startsWith(marker) && line.slice(marker.length).trim().length > 0;
+}
+
+function matchesFitelnetDecimalRange(line: string): boolean {
+  const prefix = "% A decimal number between ";
+  if (!line.startsWith(prefix) || !line.endsWith(".")) return false;
+  const range = line.slice(prefix.length, -1);
+  const separator = " and ";
+  const separatorIndex = range.indexOf(separator);
+  if (separatorIndex <= 0 || range.indexOf(separator, separatorIndex + separator.length) !== -1) {
+    return false;
+  }
+  return (
+    isAsciiDigits(range.slice(0, separatorIndex)) &&
+    isAsciiDigits(range.slice(separatorIndex + separator.length))
+  );
+}
+
+function isAsciiHexDigits(text: string): boolean {
+  if (text.length === 0) return false;
+  for (const character of text) {
+    const lowerCharacter = character.toLowerCase();
+    if (!(isAsciiDigits(character) || (lowerCharacter >= "a" && lowerCharacter <= "f"))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function matchesFitelnetHexRange(line: string): boolean {
+  const prefix = "% A Hex number between 0x";
+  if (!line.startsWith(prefix) || !line.endsWith(".")) return false;
+  const range = line.slice(prefix.length, -1);
+  const separator = " and 0x";
+  const separatorIndex = range.indexOf(separator);
+  if (separatorIndex <= 0 || range.indexOf(separator, separatorIndex + separator.length) !== -1) {
+    return false;
+  }
+  return (
+    isAsciiHexDigits(range.slice(0, separatorIndex)) &&
+    isAsciiHexDigits(range.slice(separatorIndex + separator.length))
+  );
+}
+
+function matchesFitelnetCannotResolve(line: string): boolean {
+  const prefix = '% Cannot resolve "';
+  if (!line.startsWith(prefix) || !line.endsWith(")")) return false;
+  const closingQuote = line.indexOf('"', prefix.length);
+  if (closingQuote === -1 || closingQuote === prefix.length) return false;
+  const reasonStart = closingQuote + 2;
+  return (
+    line.charAt(closingQuote + 1) === " " &&
+    line.charAt(reasonStart) === "(" &&
+    reasonStart + 1 < line.length - 1
+  );
+}
+
+function matchesFitelnetUnknownValue(line: string, prefix: string): boolean {
+  if (!line.startsWith(prefix)) return false;
+  return isNonWhitespaceText(line.slice(prefix.length));
+}
+
+function matchesFitelnetUnknownProtocol(line: string): boolean {
+  const prefix = 'Unknown protocol -"';
+  const suffix = '", type ping ? for help';
+  return (
+    line.startsWith(prefix) && line.endsWith(suffix) && line.length > prefix.length + suffix.length
+  );
+}
+
+function matchesFitelnetPacketTooShort(line: string): boolean {
+  const prefix = "packet too short (";
+  const separator = " bytes) from ";
+  if (!line.startsWith(prefix)) return false;
+  const separatorIndex = line.indexOf(separator, prefix.length);
+  return (
+    separatorIndex > prefix.length &&
+    isAsciiDigits(line.slice(prefix.length, separatorIndex)) &&
+    isNonWhitespaceText(line.slice(separatorIndex + separator.length))
+  );
+}
+
+function matchesFitelnetWrongTotalLength(line: string): boolean {
+  const prefix = "wrong total length ";
+  const separator = " instead of ";
+  if (!line.startsWith(prefix)) return false;
+  const separatorIndex = line.indexOf(separator, prefix.length);
+  return (
+    separatorIndex > prefix.length &&
+    isAsciiDigits(line.slice(prefix.length, separatorIndex)) &&
+    isAsciiDigits(line.slice(separatorIndex + separator.length))
+  );
+}
+
+function matchesFitelnetWrongDataByte(line: string): boolean {
+  const prefix = "wrong data byte #";
+  const expectedSeparator = " should have been ";
+  const actualSeparator = " but was ";
+  if (!line.startsWith(prefix)) return false;
+  const expectedIndex = line.indexOf(expectedSeparator, prefix.length);
+  if (expectedIndex <= prefix.length) return false;
+  const actualIndex = line.indexOf(actualSeparator, expectedIndex + expectedSeparator.length);
+  if (actualIndex <= expectedIndex + expectedSeparator.length) return false;
+  return [
+    line.slice(prefix.length, expectedIndex),
+    line.slice(expectedIndex + expectedSeparator.length, actualIndex),
+    line.slice(actualIndex + actualSeparator.length),
+  ].every(isNonWhitespaceText);
+}
+
+function isFurukawaFitelnetErrorLine(line: string): boolean {
+  const trimmedLine = line.trimEnd();
+  return (
+    hasNonEmptyMarkerPayload(trimmedLine, "ERROR:") ||
+    hasNonEmptyMarkerPayload(trimmedLine, "<ERROR>") ||
+    FURUKAWA_FITELNET_EXACT_ERRORS.has(trimmedLine) ||
+    matchesFitelnetDecimalRange(trimmedLine) ||
+    matchesFitelnetHexRange(trimmedLine) ||
+    matchesFitelnetCannotResolve(trimmedLine) ||
+    matchesFitelnetUnknownProtocol(trimmedLine) ||
+    matchesFitelnetUnknownValue(trimmedLine, "Unknown output interface ") ||
+    matchesFitelnetUnknownValue(trimmedLine, "Unknown source interface ") ||
+    matchesFitelnetPacketTooShort(trimmedLine) ||
+    matchesFitelnetWrongTotalLength(trimmedLine) ||
+    matchesFitelnetWrongDataByte(trimmedLine) ||
+    (trimmedLine.startsWith("unknown option 0x") &&
+      isAsciiHexDigits(trimmedLine.slice("unknown option 0x".length)))
+  );
+}
 
 function isNetworkDeviceHostnameCharacter(character: string): boolean {
   const codePoint = character.charCodeAt(0);
@@ -358,6 +515,70 @@ export function parseAlliedTelesisAwplusPrompt(line: string): AlliedTelesisAwplu
   };
 }
 
+function isFurukawaFitelnetHostnameCharacter(character: string): boolean {
+  const codePoint = character.charCodeAt(0);
+  const isAsciiLetter =
+    (codePoint >= 65 && codePoint <= 90) || (codePoint >= 97 && codePoint <= 122);
+  const isDigit = codePoint >= 48 && codePoint <= 57;
+  return isAsciiLetter || isDigit || "_.-".includes(character);
+}
+
+function isFurukawaFitelnetModeCharacter(character: string): boolean {
+  return isFurukawaFitelnetHostnameCharacter(character) || " /:".includes(character);
+}
+
+export function parseFurukawaFitelnetPrompt(line: string): FurukawaFitelnetPrompt | null {
+  const trimmedLine = line.trimEnd();
+  let cursor = 0;
+  while (
+    cursor < trimmedLine.length &&
+    cursor < 254 &&
+    isFurukawaFitelnetHostnameCharacter(trimmedLine.charAt(cursor))
+  ) {
+    cursor += 1;
+  }
+  if (cursor === 254 && isFurukawaFitelnetHostnameCharacter(trimmedLine.charAt(cursor))) {
+    return null;
+  }
+
+  const hostname = trimmedLine.slice(0, cursor);
+  let mode: string | null = null;
+  if (trimmedLine.charAt(cursor) === "(") {
+    const modeStart = cursor + 1;
+    const closingParenthesis = trimmedLine.indexOf(")", modeStart);
+    if (closingParenthesis === -1 || closingParenthesis === modeStart) return null;
+
+    mode = trimmedLine.slice(modeStart, closingParenthesis);
+    if (
+      mode.length > 128 ||
+      (mode !== "config" && (!mode.startsWith("config-") || mode === "config-")) ||
+      mode.endsWith(" ") ||
+      Array.from(mode).some((character) => !isFurukawaFitelnetModeCharacter(character))
+    ) {
+      return null;
+    }
+    cursor = closingParenthesis + 1;
+  }
+
+  const terminator = trimmedLine.charAt(cursor);
+  if (terminator !== ">" && terminator !== "#") return null;
+  if (mode !== null && terminator !== "#") return null;
+
+  const promptEnd = cursor + 1;
+  const promptText = trimmedLine.slice(0, promptEnd);
+  const commandStart = promptEnd + (trimmedLine.charAt(promptEnd) === " " ? 1 : 0);
+  return {
+    hostname,
+    mode,
+    promptText,
+    promptStart: 0,
+    commandText: trimmedLine.slice(commandStart),
+    commandStart,
+    commandSeparator: trimmedLine.slice(promptText.length, commandStart),
+    variant: mode === null ? "default" : "configuration",
+  };
+}
+
 function isVyosIdentityCharacter(character: string): boolean {
   const codePoint = character.charCodeAt(0);
   const isAsciiLetter =
@@ -477,12 +698,29 @@ export const ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE: TerminalDecorationProfile
   },
 };
 
+export const FURUKAWA_FITELNET_DECORATION_PROFILE: TerminalDecorationProfile = {
+  mode: "furukawa_fitelnet",
+  decorationLookback: 80,
+  decorationStyle: "text-only-v1",
+  pinnedCommand: true,
+  parsePrompt: parseFurukawaFitelnetPrompt,
+  isErrorLine: isFurukawaFitelnetErrorLine,
+  isWarningLine: (line) => {
+    const trimmedLine = line.trimEnd();
+    return (
+      hasNonEmptyMarkerPayload(trimmedLine, "WARNING:") ||
+      hasNonEmptyMarkerPayload(trimmedLine, "<WARNING>")
+    );
+  },
+};
+
 const TERMINAL_DECORATION_PROFILES = new Map<TerminalMode, TerminalDecorationProfile>([
   ["cisco_ios", CISCO_IOS_DECORATION_PROFILE],
   ["arista_eos", ARISTA_EOS_DECORATION_PROFILE],
   ["vyos", VYOS_DECORATION_PROFILE],
   ["fujitsu_sir", FUJITSU_SIR_DECORATION_PROFILE],
   ["allied_telesis_awplus", ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE],
+  ["furukawa_fitelnet", FURUKAWA_FITELNET_DECORATION_PROFILE],
 ]);
 
 export function getTerminalDecorationProfile(

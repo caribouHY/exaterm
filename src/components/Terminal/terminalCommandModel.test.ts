@@ -5,6 +5,7 @@ import {
   ARISTA_EOS_DECORATION_PROFILE,
   CISCO_IOS_DECORATION_PROFILE,
   FUJITSU_SIR_DECORATION_PROFILE,
+  FURUKAWA_FITELNET_DECORATION_PROFILE,
   VYOS_DECORATION_PROFILE,
 } from "./terminalDecorationProfiles";
 import type {
@@ -208,6 +209,20 @@ describe("findTerminalPinnedCommand", () => {
       displayText: "ar4050(config-if)# tunnel mode ipsec",
       promptText: "ar4050(config-if)#",
       commandText: " tunnel mode ipsec",
+      promptVariant: "configuration",
+    });
+  });
+
+  it("pins a Furukawa FITELnet configuration command", () => {
+    const buffer = createBuffer(
+      ["F221-Router(config-if-ge 1/1)# vlan-id 1", "output", "more output"],
+      2
+    );
+
+    expect(findTerminalPinnedCommand(buffer, FURUKAWA_FITELNET_DECORATION_PROFILE)).toMatchObject({
+      displayText: "F221-Router(config-if-ge 1/1)# vlan-id 1",
+      promptText: "F221-Router(config-if-ge 1/1)#",
+      commandText: " vlan-id 1",
       promptVariant: "configuration",
     });
   });
