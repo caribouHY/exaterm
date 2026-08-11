@@ -3,9 +3,9 @@ use std::time::Duration;
 
 use russh::Disconnect;
 
+use crate::connect_attempt::{run_with_attempt, ConnectAttempt};
 use crate::ssh::auth::{authenticate_ssh, build_auth_request};
 use crate::ssh::authentication_prompt::SshAuthenticationPrompter;
-use crate::ssh::connect_attempt::{run_with_attempt, SshConnectAttempt};
 use crate::ssh::diagnostics::{map_connect_error, SshDiagnostic};
 use crate::ssh::host_key::{HostKeyVerifier, SshHostKeyHandler};
 use crate::ssh::host_key_prompt::SshHostKeyPrompter;
@@ -26,7 +26,7 @@ pub(super) async fn connect_jump_profile(
     authentication_prompter: &SshAuthenticationPrompter,
     host_key_prompter: Option<&SshHostKeyPrompter>,
     connect_timeout: Duration,
-    attempt: Option<&SshConnectAttempt>,
+    attempt: Option<&ConnectAttempt>,
 ) -> Result<
     (
         russh::client::Handle<SshHostKeyHandler>,

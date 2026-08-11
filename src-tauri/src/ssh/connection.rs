@@ -7,11 +7,11 @@ use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
 use crate::config::config_load;
+use crate::connect_attempt::{run_with_attempt, ConnectAttempt};
 use crate::logger::LoggerState;
 use crate::ssh::auth::{authenticate_ssh, build_auth_request};
 use crate::ssh::authentication_prompt::SshAuthenticationPrompter;
 use crate::ssh::client_config::build_client_config;
-use crate::ssh::connect_attempt::{run_with_attempt, SshConnectAttempt, SSH_CONNECT_CANCELLED};
 use crate::ssh::diagnostics::{map_connect_error, SshDiagnostic};
 use crate::ssh::host_key::{HostKeyHandling, HostKeyVerifier, SshHostKeyHandler};
 use crate::ssh::host_key_prompt::{SshHostKeyPrompter, HOST_KEY_PROMPT_TIMEOUT};
@@ -27,6 +27,8 @@ use crate::ssh::profiles::resolve_jump_profile;
 use crate::ssh::types::{SshAuthRequest, SshConnectOptions, SshConnectResult, SshJumpProfile};
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 use crate::workspace::WorkspaceState;
+
+const SSH_CONNECT_CANCELLED: &str = "The SSH connection attempt was cancelled";
 
 type TargetHandle = russh::client::Handle<SshClientHandler>;
 type JumpHandle = russh::client::Handle<SshHostKeyHandler>;
@@ -58,7 +60,7 @@ pub async fn connect(
     prompt_window_id: String,
     host_key_handling: HostKeyHandling,
     options: SshConnectOptions,
-    mut attempt: Option<SshConnectAttempt>,
+    mut attempt: Option<ConnectAttempt>,
 ) -> Result<SshConnectResult, String> {
     let authentication_prompter = SshAuthenticationPrompter::new(
         app,
@@ -288,7 +290,7 @@ async fn connect_target_handle(
     authentication_prompter: &SshAuthenticationPrompter,
     host_key_prompter: Option<&SshHostKeyPrompter>,
     connect_timeout: Duration,
-    attempt: Option<&SshConnectAttempt>,
+    attempt: Option<&ConnectAttempt>,
 ) -> Result<(TargetHandle, Option<JumpHandle>), String> {
     match jump_profile {
         Some(jump_profile) => {
@@ -331,7 +333,7 @@ async fn connect_target_via_jump(
     authentication_prompter: &SshAuthenticationPrompter,
     host_key_prompter: Option<&SshHostKeyPrompter>,
     connect_timeout: Duration,
-    attempt: Option<&SshConnectAttempt>,
+    attempt: Option<&ConnectAttempt>,
 ) -> Result<(TargetHandle, Option<JumpHandle>), String> {
     let (jump_handle, jump_channel) = connect_jump_profile(
         config.clone(),
@@ -385,7 +387,7 @@ async fn connect_target_direct(
     host_verifier: &HostKeyVerifier,
     diagnostic: &SshDiagnostic,
     connect_timeout: Duration,
-    attempt: Option<&SshConnectAttempt>,
+    attempt: Option<&ConnectAttempt>,
 ) -> Result<(TargetHandle, Option<JumpHandle>), String> {
     diagnostic.progress("target", "connecting");
     diagnostic.info("target: starting SSH handshake");

@@ -11,8 +11,8 @@ import type {
 } from "../../types";
 import { DEFAULT_TERMINAL_MODE, normalizeTerminalMode } from "../../utils/terminalModes";
 import { ConnectionDialogView } from "./ConnectionDialogView";
+import { ConnectionProgressDialog } from "./ConnectionProgressDialog";
 import { CredentialPromptModal } from "./CredentialPromptModal";
-import { SshConnectionProgressDialog } from "./SshConnectionProgressDialog";
 import type {
   ConnectionDialogProps,
   SshCredentialPrompt,
@@ -41,6 +41,7 @@ import {
   initialSshConnectionAttemptState,
   sshConnectionAttemptReducer,
 } from "./sshConnectionAttemptModel";
+import { connectionAttemptReducer, initialConnectionAttemptState } from "./connectionAttemptModel";
 import "./ConnectionDialog.css";
 
 export default function ConnectionDialog({
@@ -62,6 +63,10 @@ export default function ConnectionDialog({
   const [sshAttempt, dispatchSshAttempt] = useReducer(
     sshConnectionAttemptReducer,
     initialSshConnectionAttemptState
+  );
+  const [connectionAttempt, dispatchConnectionAttempt] = useReducer(
+    connectionAttemptReducer,
+    initialConnectionAttemptState
   );
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [selectedProfileIds, setSelectedProfileIds] = useState({ ssh: "", telnet: "" });
@@ -401,6 +406,7 @@ export default function ConnectionDialog({
     credentialPrompt,
     setCredentialPrompt,
     sshAttemptDispatch: dispatchSshAttempt,
+    connectionAttemptDispatch: dispatchConnectionAttempt,
     sshProfiles,
     ssh: {
       host,
@@ -552,13 +558,46 @@ export default function ConnectionDialog({
   }
 
   if (tab === "ssh" && sshAttempt.status !== "editing") {
+    const sshProgressLabelKey =
+      sshAttempt.status === "cancelling"
+        ? "connection.progress_cancelling"
+        : sshAttempt.status === "preparing" || sshAttempt.progress === null
+          ? "connection.progress_preparing"
+          : `connection.ssh_progress_${sshAttempt.progress.phase}`;
     return (
-      <SshConnectionProgressDialog
-        attempt={sshAttempt}
+      <ConnectionProgressDialog
+        connectionType="ssh"
         target={`${username}@${host}:${port}`}
+        statusLabel={t(sshProgressLabelKey)}
+        cancelling={sshAttempt.status === "cancelling"}
+        cancelError={sshAttempt.cancelError}
+        roleLabel={sshAttempt.progress?.target === "jump" ? t("connection.ssh_progress_jump") : ""}
         diagnostics={diagnosticsPanelProps}
         onCancel={() => {
           void connectionActions.handleCancelSshConnect();
+        }}
+      />
+    );
+  }
+
+  if (connectionAttempt.status !== "editing" && connectionAttempt.connectionType) {
+    const connectionType = connectionAttempt.connectionType;
+    const target = connectionType === "telnet" ? `${telnetHost}:${telnetPort}` : selectedPort;
+    const statusLabelKey =
+      connectionAttempt.status === "cancelling"
+        ? "connection.progress_cancelling"
+        : connectionType === "serial"
+          ? "connection.serial_progress_opening"
+          : "connection.progress_connecting";
+    return (
+      <ConnectionProgressDialog
+        connectionType={connectionType}
+        target={target}
+        statusLabel={t(statusLabelKey)}
+        cancelling={connectionAttempt.status === "cancelling"}
+        cancelError={connectionAttempt.cancelError}
+        onCancel={() => {
+          void connectionActions.handleCancelConnection();
         }}
       />
     );
@@ -652,20 +691,37 @@ export default function ConnectionDialog({
     onDeleteHistory: () => {
       void handleDeleteHistory("telnet");
     },
-    onProfileNameChange: setTelnetProfileName,
-    onHostChange: setTelnetHost,
-    onPortChange: setTelnetPort,
+    onProfileNameChange: (value) => {
+      setError("");
+      setTelnetProfileName(value);
+    },
+    onHostChange: (value) => {
+      setError("");
+      setTelnetHost(value);
+    },
+    onPortChange: (value) => {
+      setError("");
+      setTelnetPort(value);
+    },
     onPortEnter: () => {
       void connectionActions.handleConnect();
     },
     onEncodingChange: (value) => {
+      setError("");
       setTelnetEncoding(normalizeEncoding(value));
     },
     onTerminalModeChange: (value) => {
+      setError("");
       setTelnetTerminalMode(normalizeTerminalMode(value));
     },
-    onMemoChange: setTelnetMemo,
-    onExternalControlEnabledChange: setTelnetExternalControlEnabled,
+    onMemoChange: (value) => {
+      setError("");
+      setTelnetMemo(value);
+    },
+    onExternalControlEnabledChange: (value) => {
+      setError("");
+      setTelnetExternalControlEnabled(value);
+    },
     onSaveProfile: handleSaveTelnetProfile,
   };
   const shortcutText = t("connection.shortcut_ctrl_enter");
@@ -710,12 +766,28 @@ export default function ConnectionDialog({
         terminalMode: serialTerminalMode,
       }}
       serialActions={{
-        onSelectedPortChange: setSelectedPort,
-        onBaudRateChange: setBaudRate,
-        onDataBitsChange: setDataBits,
-        onParityChange: setParity,
-        onStopBitsChange: setStopBits,
+        onSelectedPortChange: (value) => {
+          setError("");
+          setSelectedPort(value);
+        },
+        onBaudRateChange: (value) => {
+          setError("");
+          setBaudRate(value);
+        },
+        onDataBitsChange: (value) => {
+          setError("");
+          setDataBits(value);
+        },
+        onParityChange: (value) => {
+          setError("");
+          setParity(value);
+        },
+        onStopBitsChange: (value) => {
+          setError("");
+          setStopBits(value);
+        },
         onTerminalModeChange: (value) => {
+          setError("");
           setSerialTerminalMode(normalizeTerminalMode(value));
         },
       }}

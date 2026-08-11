@@ -1,7 +1,6 @@
 mod auth;
 mod authentication_prompt;
 mod client_config;
-mod connect_attempt;
 mod connection;
 mod diagnostics;
 mod host_key;

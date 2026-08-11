@@ -4,6 +4,7 @@ mod app_update;
 mod cli;
 mod command_error;
 mod config;
+mod connect_attempt;
 mod connection_history;
 mod external_control;
 mod logger;
@@ -178,10 +179,12 @@ pub fn run() {
             // Serial
             serial::serial_list_ports,
             serial::serial_connect,
+            serial::serial_connect_cancel,
             serial::serial_write,
             serial::serial_disconnect,
             // Telnet
             telnet::telnet_connect,
+            telnet::telnet_connect_cancel,
             telnet::telnet_write,
             telnet::telnet_resize,
             telnet::telnet_disconnect,

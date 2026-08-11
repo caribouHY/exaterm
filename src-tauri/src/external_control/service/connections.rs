@@ -236,6 +236,7 @@ async fn connect_prepared_telnet_profile(
         prepared.cols,
         prepared.rows,
         Some(prepared.encoding.clone()),
+        None,
     )
     .await
     .map_err(invalid_params)
@@ -457,6 +458,7 @@ async fn connect_prepared_serial_console(
         prepared.port.clone(),
         prepared.config,
         Some(prepared.encoding.clone()),
+        None,
     )
     .await
     .map_err(invalid_params)?;

@@ -61,6 +61,8 @@ impl BackendCommandError {
             "Destination snapshot not found" => "workspace.destination_snapshot_not_found",
             "The saved SSH host key does not match" => "ssh.host_key_mismatch",
             "The SSH connection attempt was cancelled" => "ssh.connect_cancelled",
+            "The Telnet connection attempt was cancelled" => "telnet.connect_cancelled",
+            "The Serial connection attempt was cancelled" => "serial.connect_cancelled",
             "The SSH authentication method is invalid" => "ssh.invalid_auth_method",
             "The SSH authentication prompt was cancelled" => "ssh.auth_prompt_cancelled",
             "The SSH authentication prompt timed out" => "ssh.auth_prompt_timed_out",
@@ -351,6 +353,18 @@ mod tests {
         assert_eq!(
             BackendCommandError::from_message("The SSH connection attempt was cancelled").code,
             "ssh.connect_cancelled"
+        );
+    }
+
+    #[test]
+    fn classifies_telnet_and_serial_connection_cancellation() {
+        assert_eq!(
+            BackendCommandError::from_message("The Telnet connection attempt was cancelled").code,
+            "telnet.connect_cancelled"
+        );
+        assert_eq!(
+            BackendCommandError::from_message("The Serial connection attempt was cancelled").code,
+            "serial.connect_cancelled"
         );
     }
 

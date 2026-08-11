@@ -49,6 +49,25 @@ describe("backendCommandError", () => {
     ).toBe("translated:backend_errors.ssh_host_key_prompt_request_not_found");
   });
 
+  it("translates Telnet and Serial connection cancellation errors", () => {
+    const t = vi.fn((key: string) => `translated:${key}`);
+
+    expect(
+      translateBackendCommandError(
+        { code: "telnet.connect_cancelled", message: "Telnet cancelled" },
+        t,
+        "fallback"
+      )
+    ).toBe("translated:backend_errors.telnet_connect_cancelled");
+    expect(
+      translateBackendCommandError(
+        { code: "serial.connect_cancelled", message: "Serial cancelled" },
+        t,
+        "fallback"
+      )
+    ).toBe("translated:backend_errors.serial_connect_cancelled");
+  });
+
   it("uses English message for an unknown future code", () => {
     const t = vi.fn();
     expect(
