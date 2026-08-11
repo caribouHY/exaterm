@@ -15,11 +15,16 @@ describe("terminal modes", () => {
       labelKey: "terminal_mode.vyos",
       value: "vyos",
     });
+    expect(TERMINAL_MODE_OPTIONS).toContainEqual({
+      labelKey: "terminal_mode.fujitsu_sir",
+      value: "fujitsu_sir",
+    });
   });
 
   it("normalizes device modes and preserves the existing fallback", () => {
     expect(normalizeTerminalMode("arista_eos")).toBe("arista_eos");
     expect(normalizeTerminalMode("vyos")).toBe("vyos");
+    expect(normalizeTerminalMode("fujitsu_sir")).toBe("fujitsu_sir");
     expect(normalizeTerminalMode("unknown")).toBe(DEFAULT_TERMINAL_MODE);
   });
 });

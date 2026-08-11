@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   ARISTA_EOS_DECORATION_PROFILE,
   CISCO_IOS_DECORATION_PROFILE,
+  FUJITSU_SIR_DECORATION_PROFILE,
   VYOS_DECORATION_PROFILE,
   getTerminalDecorationProfile,
   parseAristaEosPrompt,
   parseCiscoIosPrompt,
+  parseFujitsuSirPrompt,
   parseVyosContextLine,
   parseVyosPrompt,
 } from "./terminalDecorationProfiles";
@@ -64,6 +66,48 @@ describe("parseAristaEosPrompt", () => {
   });
 });
 
+describe("parseFujitsuSirPrompt", () => {
+  it.each([
+    ["Si-R G121# show system information", "config1", "default"],
+    ["Si-R G121(config)# lan 0 ip address 192.0.2.1/24 3", "config1", "configuration"],
+    ["Si-R G121 config2# show system information", "config2", "default"],
+    ["Si-R G121 config2(config)# lan 0 vlan 1", "config2", "configuration"],
+    ["branch-router>", "config1", "default"],
+    ["branch-router config2(config-ip)# lan 0 ip route 0 default", "config2", "configuration"],
+  ] as const)("parses the standard Si-R G prompt %s", (line, configurationFile, variant) => {
+    expect(parseFujitsuSirPrompt(line)).toMatchObject({ configurationFile, variant });
+  });
+
+  it("keeps config2 in the parsed prompt and separates the command", () => {
+    expect(parseFujitsuSirPrompt("Si-R G121 config2(config)# lan 0 vlan 1")).toEqual({
+      hostname: "Si-R G121",
+      configurationFile: "config2",
+      promptText: "Si-R G121 config2(config)#",
+      promptStart: 0,
+      commandText: "lan 0 vlan 1",
+      commandStart: 27,
+      commandSeparator: " ",
+      variant: "configuration",
+    });
+  });
+
+  it("accepts the standard separating space used by some G models", () => {
+    expect(parseFujitsuSirPrompt("Si-R G120 # show system information")).toMatchObject({
+      hostname: "Si-R G120",
+      promptText: "Si-R G120 #",
+      variant: "default",
+    });
+  });
+
+  it("rejects custom, config2-like output, and malformed prompts", () => {
+    expect(parseFujitsuSirPrompt("[production]# show system information")).toBeNull();
+    expect(parseFujitsuSirPrompt("status config2 pending# output")).toBeNull();
+    expect(parseFujitsuSirPrompt("Si-R GX500# show system information")).toBeNull();
+    expect(parseFujitsuSirPrompt("Si-R G121(config# show running-config")).toBeNull();
+    expect(parseFujitsuSirPrompt("Si-R G121(a)(b)(c)(d)# show running-config")).toBeNull();
+  });
+});
+
 describe("parseVyosPrompt", () => {
   it.each([
     ["vyos@router$ show version", "default"],
@@ -116,6 +160,7 @@ describe("terminal decoration profile registry", () => {
     expect(getTerminalDecorationProfile("cisco_ios")).toBe(CISCO_IOS_DECORATION_PROFILE);
     expect(getTerminalDecorationProfile("arista_eos")).toBe(ARISTA_EOS_DECORATION_PROFILE);
     expect(getTerminalDecorationProfile("vyos")).toBe(VYOS_DECORATION_PROFILE);
+    expect(getTerminalDecorationProfile("fujitsu_sir")).toBe(FUJITSU_SIR_DECORATION_PROFILE);
   });
 
   it("preserves the Cisco IOS scan limit and error matching", () => {
@@ -153,11 +198,31 @@ describe("terminal decoration profile registry", () => {
     expect(VYOS_DECORATION_PROFILE.isErrorLine("commit completed without error")).toBe(false);
   });
 
+  it("uses Si-R-specific error matching and the shared scan limit", () => {
+    const lowercaseWarningLine = ["<", "warning", "> lowercase output"].join("");
+
+    expect(FUJITSU_SIR_DECORATION_PROFILE.decorationLookback).toBe(80);
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine("<ERROR> Authentication failed.")).toBe(true);
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine("<WARNING> weak password")).toBe(false);
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.("<WARNING> weak password")).toBe(true);
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.("<ERROR> Authentication failed.")).toBe(
+      false
+    );
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.(" <WARNING> indented output")).toBe(
+      false
+    );
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.(lowercaseWarningLine)).toBe(false);
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.("syslog warning count: 0")).toBe(false);
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine("syslog error count: 0")).toBe(false);
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine(" <ERROR> indented output")).toBe(false);
+  });
+
   it("uses one shared palette for terminal decoration", () => {
     expect(TERMINAL_DECORATION_COLORS).toEqual({
       prompt: "#7dd3fc",
       configurationPrompt: "#facc15",
       command: "#6ee7b7",
+      warning: "#fb923c",
       error: "#f87171",
     });
   });

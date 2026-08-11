@@ -892,6 +892,10 @@ mod tests {
                     "id": "vyos-router",
                     "connection_type": "ssh",
                     "terminal_mode": "vyos"
+                }, {
+                    "id": "sir-router",
+                    "connection_type": "ssh",
+                    "terminal_mode": "fujitsu_sir"
                 }]
             }"#,
         )
@@ -908,6 +912,10 @@ mod tests {
         assert_eq!(
             cfg.saved_connections[2].terminal_mode.as_deref(),
             Some("vyos")
+        );
+        assert_eq!(
+            cfg.saved_connections[3].terminal_mode.as_deref(),
+            Some("fujitsu_sir")
         );
     }
 

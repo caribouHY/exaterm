@@ -4,6 +4,7 @@ export const TERMINAL_DECORATION_COLORS = {
   prompt: "#7dd3fc",
   configurationPrompt: "#facc15",
   command: "#6ee7b7",
+  warning: "#fb923c",
   error: "#f87171",
 } as const;
 

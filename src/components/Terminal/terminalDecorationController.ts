@@ -69,7 +69,7 @@ export function createTerminalDecorationController({
   let pinnedCommandContext: PinnedCommandContext | null = null;
   const promptDecorations = new Map<number, PromptDecorationSet>();
   const contextDecorations = new Map<number, LineDecorationSet>();
-  const errorDecorations = new Map<number, LineDecorationSet>();
+  const messageDecorations = new Map<number, LineDecorationSet>();
 
   const disposeCommandDecoration = ({ decoration, marker }: CommandDecoration) => {
     decoration.dispose();
@@ -96,8 +96,8 @@ export function createTerminalDecorationController({
     promptDecorations.clear();
     contextDecorations.forEach(disposeLineDecorationSet);
     contextDecorations.clear();
-    errorDecorations.forEach(disposeLineDecorationSet);
-    errorDecorations.clear();
+    messageDecorations.forEach(disposeLineDecorationSet);
+    messageDecorations.clear();
   };
 
   const clearPinnedCommand = () => {
@@ -162,32 +162,42 @@ export function createTerminalDecorationController({
   const isLineInRanges = (lineIndex: number, ranges: LineRange[]) =>
     ranges.some((range) => lineIndex >= range.firstLineIndex && lineIndex <= range.lastLineIndex);
 
-  const decorateErrors = (terminal: Terminal, activeProfile: TerminalDecorationProfile) => {
+  const getMessageForegroundColor = (
+    line: string,
+    activeProfile: TerminalDecorationProfile
+  ): string | null => {
+    if (activeProfile.isErrorLine(line)) return TERMINAL_DECORATION_COLORS.error;
+    if (activeProfile.isWarningLine?.(line)) return TERMINAL_DECORATION_COLORS.warning;
+    return null;
+  };
+
+  const decorateMessages = (terminal: Terminal, activeProfile: TerminalDecorationProfile) => {
     const buffer = terminal.buffer.active;
     if (buffer.type === "alternate") return;
 
     const cursorLineIndex = buffer.baseY + buffer.cursorY;
     const decorationRanges = getDecorationRanges(terminal, activeProfile);
-    const visitedErrorLineIndexes = new Set<number>();
+    const visitedMessageLineIndexes = new Set<number>();
 
     decorationRanges.forEach(({ firstLineIndex, lastLineIndex }) => {
       for (let lineIndex = firstLineIndex; lineIndex <= lastLineIndex; lineIndex += 1) {
         const line = buffer.getLine(lineIndex)?.translateToString(true) ?? "";
         const trimmedLine = line.trimEnd();
         if (!trimmedLine || activeProfile.parsePrompt(trimmedLine)) continue;
-        if (!activeProfile.isErrorLine(trimmedLine)) continue;
+        const foregroundColor = getMessageForegroundColor(trimmedLine, activeProfile);
+        if (!foregroundColor) continue;
 
         const decorationStart = Math.max(0, trimmedLine.search(/\S/));
         const decorationWidth = trimmedLine.length - decorationStart;
         if (decorationWidth <= 0) continue;
 
-        const signature = `${decorationStart}:${decorationWidth}:${trimmedLine}`;
-        const existingDecorationSet = errorDecorations.get(lineIndex);
-        visitedErrorLineIndexes.add(lineIndex);
+        const signature = `${decorationStart}:${decorationWidth}:${foregroundColor}:${trimmedLine}`;
+        const existingDecorationSet = messageDecorations.get(lineIndex);
+        visitedMessageLineIndexes.add(lineIndex);
         if (existingDecorationSet?.signature === signature) continue;
         if (existingDecorationSet) {
           disposeLineDecorationSet(existingDecorationSet);
-          errorDecorations.delete(lineIndex);
+          messageDecorations.delete(lineIndex);
         }
 
         const marker = terminal.registerMarker(lineIndex - cursorLineIndex);
@@ -197,7 +207,7 @@ export function createTerminalDecorationController({
           marker,
           x: decorationStart,
           width: decorationWidth,
-          foregroundColor: TERMINAL_DECORATION_COLORS.error,
+          foregroundColor,
           layer: "top",
         });
 
@@ -206,21 +216,21 @@ export function createTerminalDecorationController({
           continue;
         }
 
-        decoration.onDispose(() => errorDecorations.delete(lineIndex));
-        errorDecorations.set(lineIndex, { signature, marker, decoration });
+        decoration.onDispose(() => messageDecorations.delete(lineIndex));
+        messageDecorations.set(lineIndex, { signature, marker, decoration });
       }
     });
 
-    errorDecorations.forEach((decorationSet, decoratedLineIndex) => {
+    messageDecorations.forEach((decorationSet, decoratedLineIndex) => {
       if (
         !isLineInRanges(decoratedLineIndex, decorationRanges) ||
-        visitedErrorLineIndexes.has(decoratedLineIndex)
+        visitedMessageLineIndexes.has(decoratedLineIndex)
       ) {
         return;
       }
 
       disposeLineDecorationSet(decorationSet);
-      errorDecorations.delete(decoratedLineIndex);
+      messageDecorations.delete(decoratedLineIndex);
     });
   };
 
@@ -484,7 +494,7 @@ export function createTerminalDecorationController({
     if (!profile) return;
     decoratePrompts(terminal, profile);
     decorateContexts(terminal, profile);
-    decorateErrors(terminal, profile);
+    decorateMessages(terminal, profile);
     updatePinnedCommand(terminal, profile);
   };
 

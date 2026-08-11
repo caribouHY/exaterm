@@ -138,6 +138,7 @@ enum TerminalMode {
     CiscoIos,
     AristaEos,
     Vyos,
+    FujitsuSir,
 }
 
 #[derive(Debug, Args)]
@@ -566,6 +567,7 @@ impl TerminalMode {
             Self::CiscoIos => ExternalControlTerminalMode::CiscoIos,
             Self::AristaEos => ExternalControlTerminalMode::AristaEos,
             Self::Vyos => ExternalControlTerminalMode::Vyos,
+            Self::FujitsuSir => ExternalControlTerminalMode::FujitsuSir,
         }
     }
 }
@@ -877,6 +879,38 @@ mod tests {
                 stop_bits: None,
                 flow_control: None,
                 terminal_mode: Some(ExternalControlTerminalMode::Vyos),
+                cols: None,
+                rows: None,
+            })
+        );
+    }
+
+    #[test]
+    fn serial_connect_accepts_fujitsu_sir_terminal_mode() {
+        let request = build_request(
+            parse(&[
+                "exaterm-cli",
+                "serial",
+                "connect",
+                "--port",
+                "COM3",
+                "--terminal-mode",
+                "fujitsu-sir",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
+                port: "COM3".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: Some(ExternalControlTerminalMode::FujitsuSir),
                 cols: None,
                 rows: None,
             })
