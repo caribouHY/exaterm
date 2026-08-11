@@ -235,6 +235,7 @@
   "terminal_mode.arista_eos": "Arista EOS",
   "terminal_mode.vyos": "VyOS",
   "terminal_mode.fujitsu_sir": "Fujitsu Si-R",
+  "terminal_mode.allied_telesis_awplus": "Allied Telesis AW+",
   "logs.title": "セッションログ",
   "logs.loading": "読み込み中...",
   "logs.no_logs": "ログがありません",

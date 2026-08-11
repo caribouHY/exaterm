@@ -364,6 +364,9 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
     assert!(serial_connect_tool["inputSchema"]
         .to_string()
         .contains("\"fujitsu_sir\""));
+    assert!(serial_connect_tool["inputSchema"]
+        .to_string()
+        .contains("\"allied_telesis_awplus\""));
 }
 
 async fn write_json_line_for_test<W>(writer: &mut W, value: Value)
@@ -1091,6 +1094,24 @@ fn prepare_serial_console_uses_defaults_and_line_settings() {
     assert_eq!(prepared.title, "COM3");
     assert_eq!(prepared.encoding, "utf-8");
     assert_eq!(prepared.terminal_mode, "fujitsu_sir");
+
+    let awplus = prepare_serial_console_connection(
+        ConnectSerialConsoleArgs {
+            port: "COM3".into(),
+            baud_rate: None,
+            data_bits: None,
+            parity: None,
+            stop_bits: None,
+            flow_control: None,
+            terminal_mode: Some(McpTerminalMode::AlliedTelesisAwplus),
+            cols: None,
+            rows: None,
+        },
+        &ports,
+    )
+    .unwrap();
+
+    assert_eq!(awplus.terminal_mode, "allied_telesis_awplus");
 
     let defaulted = prepare_serial_console_connection(
         ConnectSerialConsoleArgs {

@@ -9,6 +9,7 @@
 - Added an Arista EOS terminal mode with prompt, command, error, and pinned-command highlighting.
 - Added a VyOS terminal mode with operational and configuration prompt, command, error, edit-context, and pinned-command highlighting.
 - Added a Fujitsu Si-R G terminal mode with config1/config2 prompt, command, error, warning, and pinned-command highlighting.
+- Added an Allied Telesis AW+ terminal mode with operational and configuration prompt, command, documented error, and pinned-command highlighting.
 
 ### Changed
 

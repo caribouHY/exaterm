@@ -23,6 +23,11 @@ export interface FujitsuSirPrompt extends TerminalParsedPrompt {
   configurationFile: "config1" | "config2";
 }
 
+export interface AlliedTelesisAwplusPrompt extends TerminalParsedPrompt {
+  hostname: string;
+  mode: string | null;
+}
+
 const CISCO_IOS_ERROR_PATTERNS = [
   /ERROR:/i,
   /% ?Bad secret/,
@@ -53,6 +58,26 @@ const ARISTA_EOS_ERROR_PREFIXES = [
 ];
 
 const VYOS_ERROR_PREFIXES = ["set failed", "commit failed", "cannot exit:", "invalid command"];
+
+const ALLIED_TELESIS_AWPLUS_ERROR_PATTERNS = [
+  /^\s*%\s+Incomplete command\.\s*$/i,
+  /^\s*%\s+Invalid input detected at '\^' marker\.\s*$/i,
+  /^\s*%\s+Can't find\b.*$/i,
+  /^\s*%\s+Unrecognized command\s*$/i,
+  /^\s*Login incorrect\s*$/i,
+  /^\s*%\s+Working set must contain only single node for this command\s*$/i,
+  /^\s*%\s*Error(?:$|[:.\s])/i,
+  /^\s*%\s*Bad secret(?:$|[:.\s])/i,
+  /^\s*(?:%\s*)?Bad passwords(?:$|[:.\s])/i,
+  /^\s*(?:%\s*)?Ambiguous command(?:$|[.\s])/i,
+  /^\s*(?:%\s*)?Connection timed out(?:$|[.\s])/i,
+  /^\s*%\s+.+\snot found\.?\s*$/i,
+  /^\s*(?:%\s*)?'[^'\r\n]+'\s+returned error code:\s*\d+\s*$/i,
+  /^\s*(?:%\s*)?Bad mask(?:$|[:.\s])/i,
+  /^\s*%\s+\S+\s+overlaps with\s+\S+\s*$/i,
+  /^\s*%\s+(?:\S+\s+)?Error:\s+\S.*$/i,
+  /^\s*(?:%\s*)?Command authorization failed(?:$|[:.\s])/i,
+];
 
 function isNetworkDeviceHostnameCharacter(character: string): boolean {
   const codePoint = character.charCodeAt(0);
@@ -185,6 +210,61 @@ export function parseFujitsuSirPrompt(line: string): FujitsuSirPrompt | null {
   };
 }
 
+function isAlliedTelesisAwplusModeCharacter(character: string): boolean {
+  const codePoint = character.charCodeAt(0);
+  const isAsciiLetter =
+    (codePoint >= 65 && codePoint <= 90) || (codePoint >= 97 && codePoint <= 122);
+  const isDigit = codePoint >= 48 && codePoint <= 57;
+  return isAsciiLetter || isDigit || character === "-" || character === "_";
+}
+
+export function parseAlliedTelesisAwplusPrompt(line: string): AlliedTelesisAwplusPrompt | null {
+  const trimmedLine = line.trimEnd();
+  let cursor = 0;
+  while (cursor < trimmedLine.length && cursor < 64) {
+    const character = trimmedLine.charAt(cursor);
+    if (character === "(" || character === ">" || character === "#") break;
+    if (/\s/.test(character) || character === "?" || character === ")") return null;
+    cursor += 1;
+  }
+  if (cursor === 0 || cursor >= trimmedLine.length) return null;
+
+  const hostname = trimmedLine.slice(0, cursor);
+  let mode: string | null = null;
+  if (trimmedLine.charAt(cursor) === "(") {
+    const modeStart = cursor + 1;
+    const closingParenthesis = trimmedLine.indexOf(")", modeStart);
+    if (closingParenthesis === -1 || closingParenthesis === modeStart) return null;
+
+    mode = trimmedLine.slice(modeStart, closingParenthesis);
+    if (
+      mode.length > 64 ||
+      Array.from(mode).some((character) => !isAlliedTelesisAwplusModeCharacter(character))
+    ) {
+      return null;
+    }
+    cursor = closingParenthesis + 1;
+  }
+
+  const terminator = trimmedLine.charAt(cursor);
+  if (terminator !== ">" && terminator !== "#") return null;
+  if (mode !== null && terminator !== "#") return null;
+
+  const promptEnd = cursor + 1;
+  const promptText = trimmedLine.slice(0, promptEnd);
+  const commandStart = promptEnd + (trimmedLine.charAt(promptEnd) === " " ? 1 : 0);
+  return {
+    hostname,
+    mode,
+    promptText,
+    promptStart: 0,
+    commandText: trimmedLine.slice(commandStart),
+    commandStart,
+    commandSeparator: trimmedLine.slice(promptText.length, commandStart),
+    variant: mode === null ? "default" : "configuration",
+  };
+}
+
 function isVyosIdentityCharacter(character: string): boolean {
   const codePoint = character.charCodeAt(0);
   const isAsciiLetter =
@@ -292,11 +372,21 @@ export const FUJITSU_SIR_DECORATION_PROFILE: TerminalDecorationProfile = {
   isWarningLine: (line) => line.startsWith("<WARNING>"),
 };
 
+export const ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE: TerminalDecorationProfile = {
+  mode: "allied_telesis_awplus",
+  decorationLookback: 80,
+  decorationStyle: "text-only-v1",
+  pinnedCommand: true,
+  parsePrompt: parseAlliedTelesisAwplusPrompt,
+  isErrorLine: (line) => ALLIED_TELESIS_AWPLUS_ERROR_PATTERNS.some((pattern) => pattern.test(line)),
+};
+
 const TERMINAL_DECORATION_PROFILES = new Map<TerminalMode, TerminalDecorationProfile>([
   ["cisco_ios", CISCO_IOS_DECORATION_PROFILE],
   ["arista_eos", ARISTA_EOS_DECORATION_PROFILE],
   ["vyos", VYOS_DECORATION_PROFILE],
   ["fujitsu_sir", FUJITSU_SIR_DECORATION_PROFILE],
+  ["allied_telesis_awplus", ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE],
 ]);
 
 export function getTerminalDecorationProfile(

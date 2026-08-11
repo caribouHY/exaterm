@@ -149,6 +149,7 @@ pub(crate) enum ExternalControlTerminalMode {
     AristaEos,
     Vyos,
     FujitsuSir,
+    AlliedTelesisAwplus,
 }
 
 impl ExternalControlTerminalMode {
@@ -159,6 +160,7 @@ impl ExternalControlTerminalMode {
             Self::AristaEos => "arista_eos",
             Self::Vyos => "vyos",
             Self::FujitsuSir => "fujitsu_sir",
+            Self::AlliedTelesisAwplus => "allied_telesis_awplus",
         }
     }
 }

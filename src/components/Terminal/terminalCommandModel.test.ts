@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { findTerminalPinnedCommand, hasTerminalPromptInRange } from "./terminalCommandModel";
 import {
+  ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE,
   ARISTA_EOS_DECORATION_PROFILE,
   CISCO_IOS_DECORATION_PROFILE,
   FUJITSU_SIR_DECORATION_PROFILE,
@@ -191,6 +192,22 @@ describe("findTerminalPinnedCommand", () => {
       displayText: "Si-R G121 config2(config)# lan 0 vlan 1",
       promptText: "Si-R G121 config2(config)#",
       commandText: " lan 0 vlan 1",
+      promptVariant: "configuration",
+    });
+  });
+
+  it("pins an AlliedWare Plus configuration command", () => {
+    const buffer = createBuffer(
+      ["ar4050(config-if)# tunnel mode ipsec", "output", "more output"],
+      2
+    );
+
+    expect(
+      findTerminalPinnedCommand(buffer, ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE)
+    ).toMatchObject({
+      displayText: "ar4050(config-if)# tunnel mode ipsec",
+      promptText: "ar4050(config-if)#",
+      commandText: " tunnel mode ipsec",
       promptVariant: "configuration",
     });
   });
