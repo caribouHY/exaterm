@@ -42,6 +42,10 @@ import { useTerminalTabLifecycle } from "./features/workspace-tabs/useTerminalTa
 import { useWorkspaceTabMovement } from "./features/workspace-tabs/useWorkspaceTabMovement";
 import { DEFAULT_SHORTCUT_CONFIG, findShortcutAction } from "./features/shortcuts/shortcutModel";
 import type { TerminalLogShortcutAction } from "./features/shortcuts/shortcutModel";
+import {
+  canPauseManualLog,
+  canResumeManualLog,
+} from "./features/terminal-logging/terminalLoggingModel";
 import { AppUpdateDialog } from "./features/app-update/AppUpdateDialog";
 import { useAppUpdate } from "./features/app-update/useAppUpdate";
 import { AppExitDialog } from "./features/app-exit/AppExitDialog";
@@ -311,6 +315,10 @@ export default function App() {
           return;
         }
         if (tab.isManualLogging && tab.manualLogFilePath) {
+          if (tab.isManualLoggingPaused) {
+            await updateWorkspaceTabMetadata(tab.id, { isManualLoggingPaused: false });
+            await waitForUiUpdate();
+          }
           await submitLogControl(payload.request_id, tab.manualLogFilePath, null);
           return;
         }
@@ -325,7 +333,7 @@ export default function App() {
           });
           await updateWorkspaceTabMetadata(payload.session_id, {
             isManualLogging: true,
-            isLoggingPaused: false,
+            isManualLoggingPaused: false,
             manualLogFilePath: filePath,
           });
           await waitForUiUpdate();
@@ -362,7 +370,7 @@ export default function App() {
           await invoke("logger_stop_manual", { sessionId: payload.session_id });
           await updateWorkspaceTabMetadata(payload.session_id, {
             isManualLogging: false,
-            isLoggingPaused: tab.isAutoLogging ? tab.isLoggingPaused : false,
+            isManualLoggingPaused: false,
           });
           await waitForUiUpdate();
           await submitLogControl(payload.request_id, null, null);
@@ -493,7 +501,7 @@ export default function App() {
         });
         await updateWorkspaceTabMetadata(activeTab.id, {
           isManualLogging: true,
-          isLoggingPaused: false,
+          isManualLoggingPaused: false,
           manualLogFilePath: filePath,
         });
       } catch (error) {
@@ -515,7 +523,7 @@ export default function App() {
       await invoke("logger_stop_manual", { sessionId: activeTab.sessionId });
       await updateWorkspaceTabMetadata(activeTab.id, {
         isManualLogging: false,
-        isLoggingPaused: activeTab.isAutoLogging ? activeTab.isLoggingPaused : false,
+        isManualLoggingPaused: false,
       });
     } catch (error) {
       console.error("Failed to stop manual log:", error);
@@ -525,11 +533,12 @@ export default function App() {
     }
   }, [activeTab, showTemporaryLogStatus, updateWorkspaceTabMetadata]);
 
-  const handleSetLoggingPaused = useCallback(
+  const handleSetManualLoggingPaused = useCallback(
     (paused: boolean) => {
-      if (!activeTab?.isConnected || !(activeTab.isAutoLogging || activeTab.isManualLogging))
-        return;
-      updateWorkspaceTabMetadata(activeTab.id, { isLoggingPaused: paused }).catch(console.error);
+      if (!activeTab?.isConnected || !activeTab.isManualLogging) return;
+      updateWorkspaceTabMetadata(activeTab.id, { isManualLoggingPaused: paused }).catch(
+        console.error
+      );
     },
     [activeTab, updateWorkspaceTabMetadata]
   );
@@ -545,7 +554,6 @@ export default function App() {
         return;
       }
 
-      const isLoggingActive = Boolean(activeTab.isAutoLogging || activeTab.isManualLogging);
       switch (action) {
         case "terminal_log_start_overwrite":
           if (!activeTab.isManualLogging) {
@@ -563,20 +571,30 @@ export default function App() {
           }
           break;
         case "terminal_log_pause":
-          if (isLoggingActive && !activeTab.isLoggingPaused) {
-            handleSetLoggingPaused(true);
+          if (
+            canPauseManualLog(
+              Boolean(activeTab.isManualLogging),
+              Boolean(activeTab.isManualLoggingPaused)
+            )
+          ) {
+            handleSetManualLoggingPaused(true);
           }
           break;
         case "terminal_log_resume":
-          if (isLoggingActive && activeTab.isLoggingPaused) {
-            handleSetLoggingPaused(false);
+          if (
+            canResumeManualLog(
+              Boolean(activeTab.isManualLogging),
+              Boolean(activeTab.isManualLoggingPaused)
+            )
+          ) {
+            handleSetManualLoggingPaused(false);
           }
           break;
       }
     },
     [
       activeTab,
-      handleSetLoggingPaused,
+      handleSetManualLoggingPaused,
       handleStartManualLog,
       handleStopManualLog,
       manualLogBusyTabId,
@@ -786,7 +804,7 @@ export default function App() {
                     isActive={activeView === "terminal"}
                     isAutoLogging={false}
                     isManualLogging={false}
-                    isLoggingPaused={false}
+                    isManualLoggingPaused={false}
                     onOpenConnection={openConnection}
                     onTerminalData={() => {}}
                     encoding="utf-8"
@@ -811,7 +829,7 @@ export default function App() {
                       isActive={activeView === "terminal" && tab.id === activeTabId}
                       isAutoLogging={Boolean(tab.isAutoLogging)}
                       isManualLogging={Boolean(tab.isManualLogging)}
-                      isLoggingPaused={Boolean(tab.isLoggingPaused)}
+                      isManualLoggingPaused={Boolean(tab.isManualLoggingPaused)}
                       onOpenConnection={openConnection}
                       onTerminalData={(data) => {
                         handleTerminalData(tab.id, data);
@@ -884,7 +902,7 @@ export default function App() {
             }
             onStartManualLog={handleStartManualLog}
             onStopManualLog={handleStopManualLog}
-            onSetLoggingPaused={handleSetLoggingPaused}
+            onSetManualLoggingPaused={handleSetManualLoggingPaused}
             manualLogBusy={Boolean(activeTab && manualLogBusyTabId === activeTab.id)}
             logStatusMessage={logStatusMessage}
           />

@@ -33,7 +33,7 @@ fn model_with_tab() -> WorkspaceModel {
             is_connected: true,
             is_auto_logging: false,
             is_manual_logging: false,
-            is_logging_paused: false,
+            is_manual_logging_paused: false,
             manual_log_file_path: None,
         },
     );
@@ -168,7 +168,7 @@ async fn workspace_revision_increases_only_when_model_changes() {
                 is_connected: None,
                 is_auto_logging: None,
                 is_manual_logging: None,
-                is_logging_paused: None,
+                is_manual_logging_paused: None,
                 manual_log_file_path: None,
             },
         )
@@ -679,7 +679,7 @@ async fn rehome_preserves_log_metadata() {
                 is_connected: None,
                 is_auto_logging: Some(true),
                 is_manual_logging: Some(true),
-                is_logging_paused: Some(true),
+                is_manual_logging_paused: Some(true),
                 manual_log_file_path: Some("C:\\logs\\s1.log".into()),
             },
         )
@@ -692,11 +692,57 @@ async fn rehome_preserves_log_metadata() {
 
     assert!(main.tabs[0].is_auto_logging);
     assert!(main.tabs[0].is_manual_logging);
-    assert!(main.tabs[0].is_logging_paused);
+    assert!(main.tabs[0].is_manual_logging_paused);
     assert_eq!(
         main.tabs[0].manual_log_file_path.as_deref(),
         Some("C:\\logs\\s1.log")
     );
+}
+
+#[tokio::test]
+async fn stopping_manual_logging_clears_pause_while_auto_logging_stays_active() {
+    let state = WorkspaceState::new();
+    state
+        .register_window("main".into(), "main".into(), true)
+        .await;
+    state.register_tab(input("s1", Some("main"))).await;
+    state
+        .update_tab_metadata(
+            "s1".into(),
+            WorkspaceTabMetadataPatch {
+                title: None,
+                encoding: None,
+                terminal_mode: None,
+                is_connected: None,
+                is_auto_logging: Some(true),
+                is_manual_logging: Some(true),
+                is_manual_logging_paused: Some(true),
+                manual_log_file_path: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    let snapshot = state
+        .update_tab_metadata(
+            "s1".into(),
+            WorkspaceTabMetadataPatch {
+                title: None,
+                encoding: None,
+                terminal_mode: None,
+                is_connected: None,
+                is_auto_logging: None,
+                is_manual_logging: Some(false),
+                is_manual_logging_paused: None,
+                manual_log_file_path: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(snapshot.tabs[0].is_auto_logging);
+    assert!(!snapshot.tabs[0].is_manual_logging);
+    assert!(!snapshot.tabs[0].is_manual_logging_paused);
 }
 
 #[tokio::test]

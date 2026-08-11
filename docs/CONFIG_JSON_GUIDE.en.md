@@ -245,8 +245,8 @@ Each shortcut is either an object with `key`, `ctrl`, `alt`, and `shift` fields 
 | `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | Opens the save dialog and starts a new manual log or overwrites the selected file. |
 | `shortcuts.terminal_log_start_append`    | Unassigned       | Opens the save dialog and appends to the selected manual log file.                 |
 | `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | Flushes pending displayed output and stops the active manual log.                  |
-| `shortcuts.terminal_log_pause`           | Unassigned       | Pauses active automatic and manual logging for the terminal session.               |
-| `shortcuts.terminal_log_resume`          | Unassigned       | Resumes paused automatic and manual logging for the terminal session.              |
+| `shortcuts.terminal_log_pause`           | Unassigned       | Pauses active manual logging for the terminal session.                             |
+| `shortcuts.terminal_log_resume`          | Unassigned       | Resumes paused manual logging for the terminal session.                            |
 
 Letter keys are stored in lowercase, `Space` uses the literal string `"Space"`, and function keys use uppercase names such as `"F2"`. Modifier matching is exact. For example, `Ctrl+Shift+N` does not also match `Ctrl+N`.
 

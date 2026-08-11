@@ -19,7 +19,7 @@ export interface WorkspaceTabMetadataPatch {
   isConnected?: boolean;
   isAutoLogging?: boolean;
   isManualLogging?: boolean;
-  isLoggingPaused?: boolean;
+  isManualLoggingPaused?: boolean;
   manualLogFilePath?: string;
 }
 

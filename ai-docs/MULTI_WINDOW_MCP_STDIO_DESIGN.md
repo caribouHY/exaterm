@@ -96,7 +96,7 @@ struct WorkspaceTab {
     is_connected: bool,
     is_auto_logging: bool,
     is_manual_logging: bool,
-    is_logging_paused: bool,
+    is_manual_logging_paused: bool,
     manual_log_file_path: Option<String>,
 }
 ```

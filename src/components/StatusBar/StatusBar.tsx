@@ -3,6 +3,10 @@ import { useTranslation } from "react-i18next";
 import { CircleDot, FilePlus, FileText, Pause, Play } from "lucide-react";
 import packageJson from "../../../package.json";
 import type { TabInfo, Encoding, TerminalMode, ManualLogWriteMode } from "../../types";
+import {
+  canPauseManualLog,
+  canResumeManualLog,
+} from "../../features/terminal-logging/terminalLoggingModel";
 import { getTerminalModeOptions } from "../../utils/terminalModes";
 import "./StatusBar.css";
 
@@ -13,7 +17,7 @@ interface StatusBarProps {
   onTerminalModeChange: (terminalMode: TerminalMode) => void;
   onStartManualLog: (writeMode: ManualLogWriteMode) => void;
   onStopManualLog: () => void;
-  onSetLoggingPaused: (paused: boolean) => void;
+  onSetManualLoggingPaused: (paused: boolean) => void;
   manualLogBusy: boolean;
   logStatusMessage: string;
 }
@@ -25,7 +29,7 @@ export default function StatusBar({
   onTerminalModeChange,
   onStartManualLog,
   onStopManualLog,
-  onSetLoggingPaused,
+  onSetManualLoggingPaused,
   manualLogBusy,
   logStatusMessage,
 }: StatusBarProps) {
@@ -66,7 +70,7 @@ export default function StatusBar({
   const getLogLabel = () => {
     if (logStatusMessage) return t(logStatusMessage);
     if (!activeTab?.isConnected) return t("statusbar.log_unavailable");
-    if (activeTab.isLoggingPaused && (activeTab.isAutoLogging || activeTab.isManualLogging)) {
+    if (activeTab.isManualLogging && activeTab.isManualLoggingPaused) {
       return t("statusbar.log_paused");
     }
     if (activeTab.isAutoLogging && activeTab.isManualLogging) {
@@ -77,8 +81,7 @@ export default function StatusBar({
     return t("statusbar.log_start");
   };
 
-  const isLoggingActive = Boolean(activeTab?.isAutoLogging || activeTab?.isManualLogging);
-  const logTitle = activeTab?.isLoggingPaused
+  const logTitle = activeTab?.isManualLoggingPaused
     ? t("statusbar.log_resume")
     : t("statusbar.log_menu_title");
 
@@ -109,14 +112,14 @@ export default function StatusBar({
             <button
               className={`statusbar__item statusbar__item--clickable statusbar__log ${
                 activeTab.isManualLogging ? "statusbar__log--manual" : ""
-              } ${activeTab.isLoggingPaused ? "statusbar__log--paused" : ""}`}
+              } ${activeTab.isManualLoggingPaused ? "statusbar__log--paused" : ""}`}
               onClick={() => {
                 setOpenMenu(openMenu === "log" ? null : "log");
               }}
               disabled={!activeTab.isConnected || manualLogBusy}
               title={logTitle}
             >
-              {activeTab.isLoggingPaused ? (
+              {activeTab.isManualLoggingPaused ? (
                 <Pause size={12} />
               ) : activeTab.isManualLogging ? (
                 <CircleDot size={12} />
@@ -162,9 +165,15 @@ export default function StatusBar({
                 </button>
                 <button
                   className="statusbar__menu-item"
-                  disabled={!isLoggingActive || activeTab.isLoggingPaused}
+                  disabled={
+                    !activeTab.isConnected ||
+                    !canPauseManualLog(
+                      Boolean(activeTab.isManualLogging),
+                      Boolean(activeTab.isManualLoggingPaused)
+                    )
+                  }
                   onClick={() => {
-                    onSetLoggingPaused(true);
+                    onSetManualLoggingPaused(true);
                     setOpenMenu(null);
                   }}
                 >
@@ -173,9 +182,15 @@ export default function StatusBar({
                 </button>
                 <button
                   className="statusbar__menu-item"
-                  disabled={!isLoggingActive || !activeTab.isLoggingPaused}
+                  disabled={
+                    !activeTab.isConnected ||
+                    !canResumeManualLog(
+                      Boolean(activeTab.isManualLogging),
+                      Boolean(activeTab.isManualLoggingPaused)
+                    )
+                  }
                   onClick={() => {
-                    onSetLoggingPaused(false);
+                    onSetManualLoggingPaused(false);
                     setOpenMenu(null);
                   }}
                 >
