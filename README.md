@@ -12,7 +12,7 @@ ExaTerm is a terminal app for SSH, Telnet, and serial communication with AI agen
 - A CLI tool and Agent Skill for AI agents
 - Built-in terminal AI chat
 - Session logging with manual and automatic modes
-- Network-device color highlighting with Cisco IOS, Arista EOS, VyOS, Fujitsu Si-R, and Allied Telesis AW+ support
+- Network-device color highlighting with Cisco IOS, Arista EOS, VyOS, Fujitsu Si-R, Allied Telesis AW+, and Furukawa FITELnet support
 
 ## Supported OS
 

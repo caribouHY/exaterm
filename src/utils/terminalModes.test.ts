@@ -23,6 +23,10 @@ describe("terminal modes", () => {
       labelKey: "terminal_mode.allied_telesis_awplus",
       value: "allied_telesis_awplus",
     });
+    expect(TERMINAL_MODE_OPTIONS).toContainEqual({
+      labelKey: "terminal_mode.furukawa_fitelnet",
+      value: "furukawa_fitelnet",
+    });
   });
 
   it("normalizes device modes and preserves the existing fallback", () => {
@@ -30,6 +34,7 @@ describe("terminal modes", () => {
     expect(normalizeTerminalMode("vyos")).toBe("vyos");
     expect(normalizeTerminalMode("fujitsu_sir")).toBe("fujitsu_sir");
     expect(normalizeTerminalMode("allied_telesis_awplus")).toBe("allied_telesis_awplus");
+    expect(normalizeTerminalMode("furukawa_fitelnet")).toBe("furukawa_fitelnet");
     expect(normalizeTerminalMode("unknown")).toBe(DEFAULT_TERMINAL_MODE);
   });
 });

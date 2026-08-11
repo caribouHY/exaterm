@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createTerminalDecorationController } from "./terminalDecorationController";
 import {
   FUJITSU_SIR_DECORATION_PROFILE,
+  FURUKAWA_FITELNET_DECORATION_PROFILE,
   VYOS_DECORATION_PROFILE,
 } from "./terminalDecorationProfiles";
 import { TERMINAL_DECORATION_COLORS } from "./terminalDecorationTheme";
@@ -177,5 +178,27 @@ describe("createTerminalDecorationController", () => {
     const foregroundColors = decorations.map((decoration) => decoration.foregroundColor);
     expect(foregroundColors).toContain(TERMINAL_DECORATION_COLORS.error);
     expect(foregroundColors).toContain(TERMINAL_DECORATION_COLORS.warning);
+  });
+
+  it("uses distinct error and warning colors for Furukawa FITELnet messages", () => {
+    const { terminal, decorations } = createTerminal(
+      [
+        "F221-Router# commit",
+        "<ERROR> Invalid input detected at '^' marker.",
+        "<WARNING> Configuration is unsaved",
+        "% saving working-config",
+      ],
+      3
+    );
+    const controller = createTerminalDecorationController({
+      onPinnedCommandChange: () => undefined,
+    });
+
+    controller.setProfile(FURUKAWA_FITELNET_DECORATION_PROFILE, terminal);
+
+    const foregroundColors = decorations.map((decoration) => decoration.foregroundColor);
+    expect(foregroundColors).toContain(TERMINAL_DECORATION_COLORS.error);
+    expect(foregroundColors).toContain(TERMINAL_DECORATION_COLORS.warning);
+    expect(decorations).toHaveLength(4);
   });
 });

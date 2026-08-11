@@ -127,7 +127,13 @@ fn normalize_input(
     }
     if !matches!(
         input.terminal_mode.as_str(),
-        "general" | "cisco_ios" | "arista_eos" | "vyos" | "fujitsu_sir" | "allied_telesis_awplus"
+        "general"
+            | "cisco_ios"
+            | "arista_eos"
+            | "vyos"
+            | "fujitsu_sir"
+            | "allied_telesis_awplus"
+            | "furukawa_fitelnet"
     ) {
         return Err("Invalid connection history terminal mode".into());
     }
@@ -441,9 +447,15 @@ mod tests {
 
         assert_eq!(history.entries[0].terminal_mode, "allied_telesis_awplus");
 
+        let mut fitelnet_input = ssh_input("fitelnet.example", "operator");
+        fitelnet_input.terminal_mode = "furukawa_fitelnet".into();
+        upsert_history(&mut history, fitelnet_input, at(5)).unwrap();
+
+        assert_eq!(history.entries[0].terminal_mode, "furukawa_fitelnet");
+
         let mut unknown_input = ssh_input("router.example", "admin");
         unknown_input.terminal_mode = "unknown".into();
-        assert!(upsert_history(&mut history, unknown_input, at(4)).is_err());
+        assert!(upsert_history(&mut history, unknown_input, at(6)).is_err());
     }
 
     #[test]
