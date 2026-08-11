@@ -25,6 +25,7 @@ export interface TerminalDecorationProfile {
   parsePrompt: (line: string) => TerminalParsedPrompt | null;
   parseContextLine?: (line: string) => TerminalParsedContext | null;
   isErrorLine: (line: string) => boolean;
+  isWarningLine?: (line: string) => boolean;
 }
 
 export interface TerminalBufferLineLike {

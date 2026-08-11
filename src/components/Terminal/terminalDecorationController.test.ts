@@ -1,7 +1,11 @@
 import type { Terminal } from "@xterm/xterm";
 import { describe, expect, it } from "vitest";
 import { createTerminalDecorationController } from "./terminalDecorationController";
-import { VYOS_DECORATION_PROFILE } from "./terminalDecorationProfiles";
+import {
+  FUJITSU_SIR_DECORATION_PROFILE,
+  VYOS_DECORATION_PROFILE,
+} from "./terminalDecorationProfiles";
+import { TERMINAL_DECORATION_COLORS } from "./terminalDecorationTheme";
 import type { TerminalDecorationProfile, TerminalPinnedCommand } from "./terminalDecorationTypes";
 
 class FakeMarker {
@@ -17,6 +21,8 @@ class FakeMarker {
 class FakeDecoration {
   isDisposed = false;
   private readonly disposeListeners: Array<() => void> = [];
+
+  constructor(readonly foregroundColor?: string) {}
 
   onDispose(listener: () => void) {
     this.disposeListeners.push(listener);
@@ -76,8 +82,8 @@ function createTerminal(lines: string[], viewportY: number) {
       markers.push(marker);
       return marker;
     },
-    registerDecoration: () => {
-      const decoration = new FakeDecoration();
+    registerDecoration: ({ foregroundColor }: { foregroundColor?: string }) => {
+      const decoration = new FakeDecoration(foregroundColor);
       decorations.push(decoration);
       return decoration;
     },
@@ -150,5 +156,26 @@ describe("createTerminalDecorationController", () => {
 
     staleController.setProfile(VYOS_DECORATION_PROFILE, stale.terminal);
     expect(stale.decorations).toHaveLength(2);
+  });
+
+  it("uses distinct error and warning colors for Fujitsu Si-R messages", () => {
+    const { terminal, decorations } = createTerminal(
+      [
+        "Si-R G121# show system information",
+        "<ERROR> Authentication failed.",
+        "<WARNING> weak password",
+        "output",
+      ],
+      3
+    );
+    const controller = createTerminalDecorationController({
+      onPinnedCommandChange: () => undefined,
+    });
+
+    controller.setProfile(FUJITSU_SIR_DECORATION_PROFILE, terminal);
+
+    const foregroundColors = decorations.map((decoration) => decoration.foregroundColor);
+    expect(foregroundColors).toContain(TERMINAL_DECORATION_COLORS.error);
+    expect(foregroundColors).toContain(TERMINAL_DECORATION_COLORS.warning);
   });
 });

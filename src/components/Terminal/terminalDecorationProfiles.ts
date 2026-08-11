@@ -289,6 +289,7 @@ export const FUJITSU_SIR_DECORATION_PROFILE: TerminalDecorationProfile = {
   pinnedCommand: true,
   parsePrompt: parseFujitsuSirPrompt,
   isErrorLine: (line) => line.startsWith("<ERROR>"),
+  isWarningLine: (line) => line.startsWith("<WARNING>"),
 };
 
 const TERMINAL_DECORATION_PROFILES = new Map<TerminalMode, TerminalDecorationProfile>([

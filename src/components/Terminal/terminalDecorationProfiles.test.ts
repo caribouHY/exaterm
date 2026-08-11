@@ -202,6 +202,17 @@ describe("terminal decoration profile registry", () => {
     expect(FUJITSU_SIR_DECORATION_PROFILE.decorationLookback).toBe(80);
     expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine("<ERROR> Authentication failed.")).toBe(true);
     expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine("<WARNING> weak password")).toBe(false);
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.("<WARNING> weak password")).toBe(true);
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.("<ERROR> Authentication failed.")).toBe(
+      false
+    );
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.(" <WARNING> indented output")).toBe(
+      false
+    );
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.("<warning> lowercase output")).toBe(
+      false
+    );
+    expect(FUJITSU_SIR_DECORATION_PROFILE.isWarningLine?.("syslog warning count: 0")).toBe(false);
     expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine("syslog error count: 0")).toBe(false);
     expect(FUJITSU_SIR_DECORATION_PROFILE.isErrorLine(" <ERROR> indented output")).toBe(false);
   });
@@ -211,6 +222,7 @@ describe("terminal decoration profile registry", () => {
       prompt: "#7dd3fc",
       configurationPrompt: "#facc15",
       command: "#6ee7b7",
+      warning: "#fb923c",
       error: "#f87171",
     });
   });
