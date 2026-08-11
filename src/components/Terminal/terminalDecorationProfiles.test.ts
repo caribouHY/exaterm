@@ -319,6 +319,25 @@ describe("terminal decoration profile registry", () => {
     );
   });
 
+  it("matches case-insensitive documented errors with display padding", () => {
+    expect(
+      ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE.isErrorLine("   % iNCOMPLETE COMMAND.   ")
+    ).toBe(true);
+    expect(ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE.isErrorLine("   LOGIN INCORRECT   ")).toBe(
+      true
+    );
+  });
+
+  it("handles long compatibility prefixes without broad regular expressions", () => {
+    const displayPadding = " ".repeat(4096);
+    expect(
+      ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE.isErrorLine(`${displayPadding}% Ambiguous command.`)
+    ).toBe(true);
+    expect(
+      ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE.isErrorLine(`${displayPadding}Ambiguous commandX`)
+    ).toBe(false);
+  });
+
   it("does not color warnings, informational output, or partial error-like text", () => {
     const normalOutput = [
       ...ALLIED_TELESIS_AWPLUS_DOCUMENTED_WARNING_FIXTURES,
@@ -330,6 +349,9 @@ describe("terminal decoration profile registry", () => {
       "%foooverlaps withbar",
       "% Error-free status",
       "% Default password needs to be changed.",
+      "% route not found!",
+      "'x' returned error code: 7",
+      "% ACL Error:",
     ];
 
     normalOutput.forEach((line) =>
