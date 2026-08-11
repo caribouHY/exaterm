@@ -17,6 +17,39 @@
   animation: slideInUp 0.2s ease;
 }
 
+.connection-progress-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(400px, calc(100vw - 32px));
+  max-height: 80vh;
+  animation: slideInUp 0.16s ease;
+}
+
+.connection-progress-dialog__body {
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.connection-progress-dialog__target {
+  overflow-wrap: anywhere;
+}
+
+.connection-progress-dialog__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.connection-progress-dialog__role {
+  flex: none;
+  padding-right: 8px;
+  border-right: 1px solid var(--border-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .connection-dialog__header {
   padding: 14px 18px;
 }
@@ -62,6 +95,16 @@
 .connection-dialog__body {
   gap: 14px;
   overflow-y: auto;
+}
+
+.connection-dialog__error-banner {
+  margin: 12px 18px 0;
+  outline: none;
+}
+
+.connection-dialog__error-banner:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: var(--focus-ring);
 }
 
 .connection-dialog__row {

@@ -67,7 +67,12 @@ export function CredentialPromptModal({
       >
         <ModalHeader className="connection-credential-modal__header">
           <ModalTitle className="connection-dialog__title">{credentialTitle}</ModalTitle>
-          <button className="btn-icon" onClick={onClose} disabled={connecting}>
+          <button
+            className="btn-icon"
+            onClick={onClose}
+            disabled={connecting}
+            aria-label={t("connection.cancel")}
+          >
             <X size={16} />
           </button>
         </ModalHeader>
@@ -84,6 +89,8 @@ export function CredentialPromptModal({
               className="input"
               type="password"
               autoFocus
+              autoComplete="off"
+              disabled={connecting}
               value={credentialPrompt.value}
               onChange={(event) => {
                 onValueChange(event.target.value);

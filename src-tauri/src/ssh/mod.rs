@@ -1,6 +1,7 @@
 mod auth;
 mod authentication_prompt;
 mod client_config;
+mod connect_attempt;
 mod connection;
 mod diagnostics;
 mod host_key;
@@ -56,6 +57,22 @@ pub async fn ssh_connect(
     logger: LoggerCommandState<'_>,
     options: SshConnectOptions,
 ) -> Result<SshConnectResult, crate::command_error::BackendCommandError> {
+    let request_id = options
+        .request_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            crate::command_error::BackendCommandError::new(
+                "ssh.connect_request_id_required",
+                "An SSH connection request ID is required",
+            )
+        })?
+        .to_string();
+    let attempt = state
+        .connect_attempts
+        .register(request_id)
+        .map_err(crate::command_error::BackendCommandError::from)?;
     command_result(
         connection::connect(
             &app,
@@ -66,9 +83,29 @@ pub async fn ssh_connect(
             window.label().to_string(),
             HostKeyHandling::Prompt,
             options,
+            Some(attempt),
         )
         .await,
     )
+}
+
+#[tauri::command]
+pub async fn ssh_connect_cancel(
+    state: SshCommandState<'_>,
+    request_id: String,
+) -> Result<bool, crate::command_error::BackendCommandError> {
+    let cancelled = state.connect_attempts.cancel(&request_id);
+    if cancelled {
+        state
+            .authentication_prompts
+            .cancel_connect_attempt(&request_id)
+            .await;
+        state
+            .host_key_prompts
+            .cancel_connect_attempt(&request_id)
+            .await;
+    }
+    Ok(cancelled)
 }
 
 #[tauri::command]

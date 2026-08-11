@@ -38,6 +38,7 @@ struct SshHostKeyPromptDismissedPayload {
 
 struct PendingHostKeyPrompt {
     window_id: String,
+    connect_request_id: Option<String>,
     sender: oneshot::Sender<bool>,
 }
 
@@ -51,14 +52,21 @@ pub(super) struct SshHostKeyPrompter {
     app: AppHandle,
     state: SshHostKeyPromptState,
     window_id: String,
+    connect_request_id: Option<String>,
 }
 
 impl SshHostKeyPrompter {
-    pub(super) fn new(app: &AppHandle, state: SshHostKeyPromptState, window_id: String) -> Self {
+    pub(super) fn new(
+        app: &AppHandle,
+        state: SshHostKeyPromptState,
+        window_id: String,
+        connect_request_id: Option<String>,
+    ) -> Self {
         Self {
             app: app.clone(),
             state,
             window_id,
+            connect_request_id,
         }
     }
 
@@ -75,6 +83,7 @@ impl SshHostKeyPrompter {
             request_id.clone(),
             PendingHostKeyPrompt {
                 window_id: self.window_id.clone(),
+                connect_request_id: self.connect_request_id.clone(),
                 sender,
             },
         );
@@ -96,7 +105,8 @@ impl SshHostKeyPrompter {
             .state
             .wait_for_response(&request_id, receiver, HOST_KEY_PROMPT_TIMEOUT)
             .await;
-        if matches!(&accepted, Err(error) if error == HOST_KEY_PROMPT_TIMEOUT_ERROR) {
+        if matches!(&accepted, Err(error) if error == HOST_KEY_PROMPT_TIMEOUT_ERROR || error == HOST_KEY_PROMPT_CANCELLED)
+        {
             let _ = self.app.emit_to(
                 &self.window_id,
                 HOST_KEY_PROMPT_DISMISSED_EVENT,
@@ -126,6 +136,22 @@ fn trust_prompted_host_key(
 }
 
 impl SshHostKeyPromptState {
+    pub async fn cancel_connect_attempt(&self, connect_request_id: &str) {
+        let mut pending = self.pending.lock().await;
+        let request_ids = pending
+            .iter()
+            .filter_map(|(request_id, prompt)| {
+                (prompt.connect_request_id.as_deref() == Some(connect_request_id))
+                    .then(|| request_id.clone())
+            })
+            .collect::<Vec<_>>();
+        for request_id in request_ids {
+            if let Some(prompt) = pending.remove(&request_id) {
+                let _ = prompt.sender.send(false);
+            }
+        }
+    }
+
     async fn wait_for_response(
         &self,
         request_id: &str,
@@ -237,6 +263,7 @@ mod tests {
             request_id.to_string(),
             PendingHostKeyPrompt {
                 window_id: window_id.to_string(),
+                connect_request_id: None,
                 sender,
             },
         );
@@ -282,6 +309,36 @@ mod tests {
         assert_eq!(state.pending_count().await, 1);
         state.submit("second".to_string(), true).await.unwrap();
         assert!(second.await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn cancelling_connect_attempt_only_clears_its_prompts() {
+        let state = SshHostKeyPromptState::default();
+        let (matching_sender, matching_receiver) = oneshot::channel();
+        let (other_sender, _other_receiver) = oneshot::channel();
+        let mut pending = state.pending.lock().await;
+        pending.insert(
+            "matching".to_string(),
+            PendingHostKeyPrompt {
+                window_id: "main".to_string(),
+                connect_request_id: Some("connect-1".to_string()),
+                sender: matching_sender,
+            },
+        );
+        pending.insert(
+            "other".to_string(),
+            PendingHostKeyPrompt {
+                window_id: "main".to_string(),
+                connect_request_id: Some("connect-2".to_string()),
+                sender: other_sender,
+            },
+        );
+        drop(pending);
+
+        state.cancel_connect_attempt("connect-1").await;
+
+        assert!(!matching_receiver.await.unwrap());
+        assert_eq!(state.pending_count().await, 1);
     }
 
     #[tokio::test]

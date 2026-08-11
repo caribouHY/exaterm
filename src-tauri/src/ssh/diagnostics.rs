@@ -8,6 +8,7 @@ use crate::ssh_known_hosts::{HostKeyCheckResult, HostKeyCheckStatus};
 pub(super) struct SshDiagnostic {
     app: AppHandle,
     request_id: Option<String>,
+    window_id: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -16,12 +17,23 @@ struct SshDiagnosticEvent {
     message: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+struct SshConnectionProgressEvent {
+    phase: &'static str,
+    target: &'static str,
+}
+
 pub(super) fn ssh_diagnostic_event_name(request_id: &str) -> String {
     format!("ssh://connect-diagnostic/{request_id}")
 }
 
+pub(super) fn ssh_progress_event_name(request_id: &str) -> String {
+    format!("ssh://connect-progress/{request_id}")
+}
+
 fn emit_ssh_diagnostic(
     app: &AppHandle,
+    window_id: &str,
     request_id: Option<&str>,
     level: &'static str,
     message: impl Into<String>,
@@ -30,7 +42,8 @@ fn emit_ssh_diagnostic(
         return;
     };
 
-    let _ = app.emit(
+    let _ = app.emit_to(
+        window_id,
         &ssh_diagnostic_event_name(request_id),
         SshDiagnosticEvent {
             level,
@@ -40,19 +53,43 @@ fn emit_ssh_diagnostic(
 }
 
 impl SshDiagnostic {
-    pub(super) fn new(app: &AppHandle, request_id: Option<String>) -> Self {
+    pub(super) fn new(app: &AppHandle, request_id: Option<String>, window_id: String) -> Self {
         Self {
             app: app.clone(),
             request_id,
+            window_id,
         }
     }
 
     pub(super) fn info(&self, message: impl Into<String>) {
-        emit_ssh_diagnostic(&self.app, self.request_id.as_deref(), "info", message);
+        emit_ssh_diagnostic(
+            &self.app,
+            &self.window_id,
+            self.request_id.as_deref(),
+            "info",
+            message,
+        );
     }
 
     pub(super) fn error(&self, message: impl Into<String>) {
-        emit_ssh_diagnostic(&self.app, self.request_id.as_deref(), "error", message);
+        emit_ssh_diagnostic(
+            &self.app,
+            &self.window_id,
+            self.request_id.as_deref(),
+            "error",
+            message,
+        );
+    }
+
+    pub(super) fn progress(&self, target: &'static str, phase: &'static str) {
+        let Some(request_id) = self.request_id.as_deref() else {
+            return;
+        };
+        let _ = self.app.emit_to(
+            &self.window_id,
+            &ssh_progress_event_name(request_id),
+            SshConnectionProgressEvent { phase, target },
+        );
     }
 }
 
@@ -102,5 +139,22 @@ pub(super) fn emit_host_key_diagnostic_for_role(
         HostKeyCheckStatus::Trusted => diagnostic.info(format!("{role}: host key trusted")),
         HostKeyCheckStatus::Unknown => diagnostic.info(format!("{role}: host key unknown")),
         HostKeyCheckStatus::Mismatch => diagnostic.info(format!("{role}: host key mismatch")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progress_payload_uses_the_public_event_values() {
+        let payload = serde_json::to_value(SshConnectionProgressEvent {
+            phase: "verifying_host_key",
+            target: "jump",
+        })
+        .unwrap();
+
+        assert_eq!(payload["phase"], "verifying_host_key");
+        assert_eq!(payload["target"], "jump");
     }
 }

@@ -1,4 +1,10 @@
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import {
+  useCallback,
+  useRef,
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppConfig,
@@ -13,6 +19,12 @@ import type {
 import { connectionHistoryClient } from "../../features/connection-history/connectionHistoryClient";
 import type { SshCredentialPrompt } from "./connectionDialogTypes";
 import { getConnectionErrorMessage, normalizeSshAuthMethod } from "./connectionProfileUtils";
+import {
+  consumeSshCredential,
+  isCurrentSshConnectionAttempt,
+  isSshConnectionCancellation,
+  type SshConnectionAttemptAction,
+} from "./sshConnectionAttemptModel";
 
 interface UseConnectionActionsParams {
   tab: ConnectionType;
@@ -21,6 +33,7 @@ interface UseConnectionActionsParams {
   setError: (value: string) => void;
   credentialPrompt: SshCredentialPrompt | null;
   setCredentialPrompt: Dispatch<SetStateAction<SshCredentialPrompt | null>>;
+  sshAttemptDispatch: Dispatch<SshConnectionAttemptAction>;
   sshProfiles: SavedConnection[];
   ssh: {
     host: string;
@@ -29,8 +42,6 @@ interface UseConnectionActionsParams {
     authMethod: SshAuthMethod;
     privateKeyPath: string;
     jumpProfileId: string;
-    jumpCredential: string;
-    setJumpCredential: (value: string) => void;
     encoding: Encoding;
     terminalMode: TerminalMode;
   };
@@ -95,6 +106,7 @@ export const useConnectionActions = ({
   setError,
   credentialPrompt,
   setCredentialPrompt,
+  sshAttemptDispatch,
   sshProfiles,
   ssh,
   telnet,
@@ -103,6 +115,9 @@ export const useConnectionActions = ({
   onConnect,
   t,
 }: UseConnectionActionsParams) => {
+  const jumpCredentialRef = useRef("");
+  const sshConnectInvokedRef = useRef(false);
+  const cancellingRequestIdRef = useRef<string | null>(null);
   const setBusy = useCallback(
     (value: boolean) => {
       connectingRef.current = value;
@@ -132,8 +147,9 @@ export const useConnectionActions = ({
         value: "",
         error: "",
       });
+      sshAttemptDispatch({ type: "credential" });
     },
-    [setCredentialPrompt]
+    [setCredentialPrompt, sshAttemptDispatch]
   );
 
   const performSshConnect = useCallback(
@@ -142,10 +158,12 @@ export const useConnectionActions = ({
       sshPort: number,
       credential: string,
       promptAuthMethod: SshAuthMethod,
-      currentJumpCredential: string
+      currentJumpCredential: string,
+      requestId: string
     ) => {
       const jumpProfile = sshProfiles.find((profile) => profile.id === ssh.jumpProfileId);
       const jumpAuthMethod = normalizeSshAuthMethod(jumpProfile?.auth_method);
+      sshConnectInvokedRef.current = true;
       const result = await invoke<{ session_id: string }>("ssh_connect", {
         options: {
           host: ssh.host,
@@ -161,7 +179,7 @@ export const useConnectionActions = ({
           cols: 120,
           rows: 30,
           encoding: ssh.encoding,
-          requestId: diagnostics.currentRequestId(),
+          requestId,
         },
       });
       if (autoLog) {
@@ -195,20 +213,27 @@ export const useConnectionActions = ({
         terminal_mode: ssh.terminalMode,
       });
     },
-    [diagnostics, onConnect, ssh, sshProfiles]
+    [onConnect, ssh, sshProfiles]
   );
 
   const continueSshConnect = useCallback(
-    async (sshPort: number, currentJumpCredential = ssh.jumpCredential) => {
+    async (
+      sshPort: number,
+      requestId: string,
+      currentJumpCredential = jumpCredentialRef.current
+    ) => {
       if (ssh.authMethod === "password") {
         const autoLog = await getAutoLogPreference();
-        await performSshConnect(autoLog, sshPort, "", "password", currentJumpCredential);
+        if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+        jumpCredentialRef.current = "";
+        await performSshConnect(autoLog, sshPort, "", "password", currentJumpCredential, requestId);
         return;
       }
 
       const requiresPassphrase = await invoke<boolean>("ssh_private_key_requires_passphrase", {
         privateKeyPath: ssh.privateKeyPath,
       });
+      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
       if (requiresPassphrase) {
         openCredentialPrompt(
           "target",
@@ -223,16 +248,18 @@ export const useConnectionActions = ({
       }
 
       const autoLog = await getAutoLogPreference();
-      await performSshConnect(autoLog, sshPort, "", "public_key", currentJumpCredential);
+      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+      jumpCredentialRef.current = "";
+      await performSshConnect(autoLog, sshPort, "", "public_key", currentJumpCredential, requestId);
     },
-    [openCredentialPrompt, performSshConnect, setBusy, ssh]
+    [diagnostics, openCredentialPrompt, performSshConnect, setBusy, ssh]
   );
 
   const prepareJumpCredentialAndConnect = useCallback(
-    async (sshPort: number) => {
+    async (sshPort: number, requestId: string) => {
       const jumpProfile = sshProfiles.find((profile) => profile.id === ssh.jumpProfileId);
       if (!ssh.jumpProfileId || !jumpProfile) {
-        await continueSshConnect(sshPort, "");
+        await continueSshConnect(sshPort, requestId, "");
         return;
       }
 
@@ -258,66 +285,87 @@ export const useConnectionActions = ({
       };
 
       if (jumpAuthMethod === "password") {
-        ssh.setJumpCredential("");
-        await continueSshConnect(sshPort, "");
+        await continueSshConnect(sshPort, requestId, "");
         return;
       }
 
       const requiresPassphrase = await invoke<boolean>("ssh_private_key_requires_passphrase", {
         privateKeyPath: jumpPrivateKeyPath,
       });
+      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
       if (requiresPassphrase) {
         promptForJumpCredential();
         return;
       }
 
-      ssh.setJumpCredential("");
-      await continueSshConnect(sshPort, "");
+      await continueSshConnect(sshPort, requestId, "");
     },
-    [continueSshConnect, openCredentialPrompt, setBusy, ssh, sshProfiles, t]
+    [continueSshConnect, diagnostics, openCredentialPrompt, setBusy, ssh, sshProfiles, t]
   );
+
+  const finishSshAttempt = useCallback(() => {
+    jumpCredentialRef.current = "";
+    sshConnectInvokedRef.current = false;
+    cancellingRequestIdRef.current = null;
+    setCredentialPrompt(null);
+    diagnostics.stop();
+    sshAttemptDispatch({ type: "finish" });
+    setBusy(false);
+  }, [diagnostics, setBusy, setCredentialPrompt, sshAttemptDispatch]);
 
   const handleCredentialSubmit = useCallback(async () => {
     if (!credentialPrompt || connectingRef.current) return;
+    const requestId = diagnostics.currentRequestId();
+    if (!requestId) {
+      finishSshAttempt();
+      return;
+    }
 
-    setCredentialPrompt({ ...credentialPrompt, error: "" });
+    const credential = consumeSshCredential(credentialPrompt.value, () => {
+      setCredentialPrompt(null);
+    });
+    sshAttemptDispatch({ type: "resume" });
     setBusy(true);
     try {
       if (credentialPrompt.phase === "jump") {
-        setCredentialPrompt(null);
-        ssh.setJumpCredential(credentialPrompt.value);
+        jumpCredentialRef.current = credential;
         await continueSshConnect(
           credentialPrompt.targetPort ?? credentialPrompt.port,
-          credentialPrompt.value
+          requestId,
+          credential
         );
         return;
       }
 
       const autoLog = await getAutoLogPreference();
+      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+      const jumpCredential = jumpCredentialRef.current;
+      jumpCredentialRef.current = "";
       await performSshConnect(
         autoLog,
         credentialPrompt.port,
-        credentialPrompt.value,
+        credential,
         credentialPrompt.authMethod,
-        ssh.jumpCredential
+        jumpCredential,
+        requestId
       );
-      setCredentialPrompt(null);
     } catch (error: unknown) {
-      setCredentialPrompt({
-        ...credentialPrompt,
-        value: "",
-        error: getConnectionErrorMessage(error, t, t("connection.error")),
-      });
-      setBusy(false);
+      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+      const message = getConnectionErrorMessage(error, t, t("connection.error"));
+      finishSshAttempt();
+      if (!isSshConnectionCancellation(error)) setError(message);
     }
   }, [
     connectingRef,
     credentialPrompt,
     continueSshConnect,
+    diagnostics,
     performSshConnect,
+    finishSshAttempt,
     setBusy,
     setCredentialPrompt,
-    ssh,
+    setError,
+    sshAttemptDispatch,
     t,
   ]);
 
@@ -326,13 +374,21 @@ export const useConnectionActions = ({
 
     setError("");
     setBusy(true);
+    let sshRequestId: string | null = null;
     try {
       if (tab === "ssh") {
-        await diagnostics.start();
+        sshConnectInvokedRef.current = false;
+        cancellingRequestIdRef.current = null;
+        jumpCredentialRef.current = "";
+        sshAttemptDispatch({ type: "begin" });
+        const diagnosticsStart = diagnostics.start();
+        sshRequestId = diagnostics.currentRequestId();
+        const requestId = await diagnosticsStart;
+        if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+        sshAttemptDispatch({ type: "started", requestId });
         const sshPort = parsePort(ssh.port, t("connection.error"));
-        ssh.setJumpCredential("");
 
-        await prepareJumpCredentialAndConnect(sshPort);
+        await prepareJumpCredentialAndConnect(sshPort, requestId);
         return;
       }
 
@@ -404,26 +460,74 @@ export const useConnectionActions = ({
         serial.terminalMode
       );
     } catch (error: unknown) {
-      setError(getConnectionErrorMessage(error, t, t("connection.error")));
-      setBusy(false);
+      const staleSshAttempt =
+        tab === "ssh" &&
+        sshRequestId !== null &&
+        !isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), sshRequestId);
+      if (staleSshAttempt) return;
+      const cancelled = isSshConnectionCancellation(error);
+      const message = getConnectionErrorMessage(error, t, t("connection.error"));
+      if (tab === "ssh") finishSshAttempt();
+      else setBusy(false);
+      if (!cancelled) setError(message);
     }
   }, [
     connectingRef,
     diagnostics,
+    finishSshAttempt,
     onConnect,
     prepareJumpCredentialAndConnect,
     serial,
     setBusy,
     setError,
     ssh,
+    sshAttemptDispatch,
     sshProfiles,
     tab,
     telnet,
     t,
   ]);
 
+  const handleCredentialCancel = useCallback(() => {
+    if (connectingRef.current) return;
+    finishSshAttempt();
+  }, [connectingRef, finishSshAttempt]);
+
+  const handleCancelSshConnect = useCallback(async () => {
+    const requestId = diagnostics.currentRequestId();
+    if (!requestId) {
+      finishSshAttempt();
+      return;
+    }
+    if (cancellingRequestIdRef.current === requestId) return;
+    if (!sshConnectInvokedRef.current) {
+      finishSshAttempt();
+      return;
+    }
+
+    cancellingRequestIdRef.current = requestId;
+    sshAttemptDispatch({ type: "cancel" });
+    try {
+      const accepted = await invoke<boolean>("ssh_connect_cancel", { requestId });
+      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+      if (!accepted) {
+        cancellingRequestIdRef.current = null;
+        sshAttemptDispatch({ type: "resume" });
+      }
+    } catch (error: unknown) {
+      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+      cancellingRequestIdRef.current = null;
+      sshAttemptDispatch({
+        type: "cancel_failed",
+        error: getConnectionErrorMessage(error, t, t("connection.ssh_cancel_failed")),
+      });
+    }
+  }, [diagnostics, finishSshAttempt, sshAttemptDispatch, t]);
+
   return {
     handleConnect,
     handleCredentialSubmit,
+    handleCredentialCancel,
+    handleCancelSshConnect,
   };
 };

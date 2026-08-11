@@ -82,12 +82,14 @@ export function useSshPrompts() {
     async (accept: boolean) => {
       if (activePrompt === null || activePrompt.value.submitting) return;
       const requestId = activePrompt.value.requestId;
+      const authenticationResponses =
+        activePrompt.kind === "authentication" ? [...activePrompt.value.responses] : null;
       updateActivePrompt((prompt) => setSshPromptSubmission(prompt, true));
       try {
         if (activePrompt.kind === "authentication") {
           await invoke("ssh_authentication_respond", {
             requestId,
-            responses: accept ? activePrompt.value.responses : null,
+            responses: accept ? authenticationResponses : null,
           });
         } else {
           await invoke("ssh_host_key_respond", { requestId, accept });

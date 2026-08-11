@@ -38,6 +38,8 @@ const errorKeys: Record<string, string> = {
   "telnet.connect_failed": "backend_errors.telnet_connect_failed",
   "telnet.resize_failed": "backend_errors.telnet_resize_failed",
   "ssh.host_key_mismatch": "backend_errors.ssh_host_key_mismatch",
+  "ssh.connect_cancelled": "backend_errors.ssh_connect_cancelled",
+  "ssh.connect_request_id_required": "backend_errors.ssh_connect_request_id_required",
   "ssh.invalid_auth_method": "backend_errors.ssh_invalid_auth_method",
   "ssh.auth_prompt_cancelled": "backend_errors.ssh_auth_prompt_cancelled",
   "ssh.auth_prompt_timed_out": "backend_errors.ssh_auth_prompt_timed_out",

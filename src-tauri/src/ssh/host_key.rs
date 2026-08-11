@@ -121,6 +121,9 @@ pub(super) async fn verify_server_key(
     diagnostic: Option<SshDiagnostic>,
     server_public_key: PublicKey,
 ) -> Result<bool, russh::Error> {
+    if let Some(diagnostic) = &diagnostic {
+        diagnostic.progress(phase, "verifying_host_key");
+    }
     let result = verifier.inspect_key(&server_public_key)?;
     if let Some(diagnostic) = &diagnostic {
         emit_host_key_diagnostic_for_role(diagnostic, phase, &result);

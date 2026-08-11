@@ -48,6 +48,7 @@ struct SshAuthenticationPromptDismissedPayload {
 
 struct PendingAuthenticationPrompt {
     window_id: String,
+    connect_request_id: Option<String>,
     expected_responses: usize,
     sender: oneshot::Sender<Option<Vec<String>>>,
 }
@@ -62,6 +63,7 @@ pub(super) struct SshAuthenticationPrompter {
     app: AppHandle,
     state: SshAuthenticationPromptState,
     window_id: String,
+    connect_request_id: Option<String>,
 }
 
 pub(super) struct SshAuthenticationContext<'a> {
@@ -77,11 +79,13 @@ impl SshAuthenticationPrompter {
         app: &AppHandle,
         state: SshAuthenticationPromptState,
         window_id: String,
+        connect_request_id: Option<String>,
     ) -> Self {
         Self {
             app: app.clone(),
             state,
             window_id,
+            connect_request_id,
         }
     }
 
@@ -116,6 +120,7 @@ impl SshAuthenticationPrompter {
             request_id.clone(),
             PendingAuthenticationPrompt {
                 window_id: self.window_id.clone(),
+                connect_request_id: self.connect_request_id.clone(),
                 expected_responses,
                 sender,
             },
@@ -136,7 +141,8 @@ impl SshAuthenticationPrompter {
             .state
             .wait_for_response(&request_id, receiver, AUTHENTICATION_PROMPT_TIMEOUT)
             .await;
-        if matches!(&result, Err(error) if error == AUTHENTICATION_PROMPT_TIMEOUT_ERROR) {
+        if matches!(&result, Err(error) if error == AUTHENTICATION_PROMPT_TIMEOUT_ERROR || error == AUTHENTICATION_PROMPT_CANCELLED)
+        {
             let _ = self.app.emit_to(
                 &self.window_id,
                 AUTHENTICATION_PROMPT_DISMISSED_EVENT,
@@ -180,6 +186,7 @@ mod tests {
             request_id.to_string(),
             PendingAuthenticationPrompt {
                 window_id: window_id.to_string(),
+                connect_request_id: None,
                 expected_responses,
                 sender,
             },
@@ -228,6 +235,38 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(second.await.unwrap(), Some(vec!["answer".to_string()]));
+    }
+
+    #[tokio::test]
+    async fn cancelling_connect_attempt_only_clears_its_prompts() {
+        let state = SshAuthenticationPromptState::default();
+        let (matching_sender, matching_receiver) = oneshot::channel();
+        let (other_sender, _other_receiver) = oneshot::channel();
+        let mut pending = state.pending.lock().await;
+        pending.insert(
+            "matching".to_string(),
+            PendingAuthenticationPrompt {
+                window_id: "main".to_string(),
+                connect_request_id: Some("connect-1".to_string()),
+                expected_responses: 1,
+                sender: matching_sender,
+            },
+        );
+        pending.insert(
+            "other".to_string(),
+            PendingAuthenticationPrompt {
+                window_id: "main".to_string(),
+                connect_request_id: Some("connect-2".to_string()),
+                expected_responses: 1,
+                sender: other_sender,
+            },
+        );
+        drop(pending);
+
+        state.cancel_connect_attempt("connect-1").await;
+
+        assert_eq!(matching_receiver.await.unwrap(), None);
+        assert_eq!(state.pending_count().await, 1);
     }
 
     #[tokio::test]
@@ -349,6 +388,22 @@ impl SshAuthenticationContext<'_> {
 }
 
 impl SshAuthenticationPromptState {
+    pub async fn cancel_connect_attempt(&self, connect_request_id: &str) {
+        let mut pending = self.pending.lock().await;
+        let request_ids = pending
+            .iter()
+            .filter_map(|(request_id, prompt)| {
+                (prompt.connect_request_id.as_deref() == Some(connect_request_id))
+                    .then(|| request_id.clone())
+            })
+            .collect::<Vec<_>>();
+        for request_id in request_ids {
+            if let Some(prompt) = pending.remove(&request_id) {
+                let _ = prompt.sender.send(None);
+            }
+        }
+    }
+
     async fn wait_for_response(
         &self,
         request_id: &str,

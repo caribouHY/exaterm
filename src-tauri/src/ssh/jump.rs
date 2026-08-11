@@ -5,6 +5,7 @@ use russh::Disconnect;
 
 use crate::ssh::auth::{authenticate_ssh, build_auth_request};
 use crate::ssh::authentication_prompt::SshAuthenticationPrompter;
+use crate::ssh::connect_attempt::{run_with_attempt, SshConnectAttempt};
 use crate::ssh::diagnostics::{map_connect_error, SshDiagnostic};
 use crate::ssh::host_key::{HostKeyVerifier, SshHostKeyHandler};
 use crate::ssh::host_key_prompt::SshHostKeyPrompter;
@@ -25,6 +26,7 @@ pub(super) async fn connect_jump_profile(
     authentication_prompter: &SshAuthenticationPrompter,
     host_key_prompter: Option<&SshHostKeyPrompter>,
     connect_timeout: Duration,
+    attempt: Option<&SshConnectAttempt>,
 ) -> Result<
     (
         russh::client::Handle<SshHostKeyHandler>,
@@ -39,13 +41,16 @@ pub(super) async fn connect_jump_profile(
         jump_key_passphrase,
     )?;
     let jump_verifier = HostKeyVerifier::new(jump_profile.host.clone(), jump_profile.port);
-    let mut handle = connect_jump_ssh(
-        config,
-        &jump_profile,
-        &jump_verifier,
-        diagnostic,
-        host_key_prompter,
-        connect_timeout,
+    let mut handle = run_with_attempt(
+        attempt,
+        connect_jump_ssh(
+            config,
+            &jump_profile,
+            &jump_verifier,
+            diagnostic,
+            host_key_prompter,
+            connect_timeout,
+        ),
     )
     .await?;
     let auth_context = authentication_prompter.context(
@@ -54,15 +59,37 @@ pub(super) async fn connect_jump_profile(
         jump_profile.port,
         &jump_profile.username,
     );
-    authenticate_jump(
-        &mut handle,
-        &jump_profile.username,
-        auth,
-        diagnostic,
-        &auth_context,
+    if let Err(error) = run_with_attempt(
+        attempt,
+        authenticate_jump(
+            &mut handle,
+            &jump_profile.username,
+            auth,
+            diagnostic,
+            &auth_context,
+        ),
     )
-    .await?;
-    let channel = open_jump_direct_tcpip(&mut handle, target_host, target_port, diagnostic).await?;
+    .await
+    {
+        let _ = handle
+            .disconnect(Disconnect::ByApplication, "Jump authentication ended", "en")
+            .await;
+        return Err(error);
+    }
+    let channel = match run_with_attempt(
+        attempt,
+        open_jump_direct_tcpip(&mut handle, target_host, target_port, diagnostic),
+    )
+    .await
+    {
+        Ok(channel) => channel,
+        Err(error) => {
+            let _ = handle
+                .disconnect(Disconnect::ByApplication, "Jump channel open ended", "en")
+                .await;
+            return Err(error);
+        }
+    };
     Ok((handle, channel))
 }
 
@@ -81,6 +108,7 @@ async fn connect_jump_ssh(
         diagnostic: diagnostic.cloned(),
     };
     if let Some(diagnostic) = diagnostic {
+        diagnostic.progress("jump", "connecting");
         diagnostic.info("jump: connecting");
     }
     run_ssh_operation_with_timeout(connect_timeout, SSH_CONNECT_TIMEOUT_ERROR, async {
@@ -112,6 +140,7 @@ async fn authenticate_jump(
     context: &crate::ssh::authentication_prompt::SshAuthenticationContext<'_>,
 ) -> Result<(), String> {
     if let Some(diagnostic) = diagnostic {
+        diagnostic.progress("jump", "authenticating");
         diagnostic.info("jump: host key accepted");
         diagnostic.info("jump: authentication started");
     }

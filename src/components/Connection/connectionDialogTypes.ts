@@ -9,6 +9,7 @@ import type {
   TerminalMode,
   WorkspaceConnectionInfo,
 } from "../../types";
+import type { SshConnectionProgressEvent } from "./sshConnectionAttemptModel";
 
 export interface ConnectionDialogInitialValues {
   connectionInfo: WorkspaceConnectionInfo;
@@ -47,6 +48,11 @@ export interface SshCredentialPrompt {
 export interface SshDiagnosticEvent {
   level: "info" | "error";
   message: string;
+}
+
+export interface SshConnectionProgressUpdate {
+  requestId: string;
+  progress: SshConnectionProgressEvent;
 }
 
 export type SshDiagnosticEntry = SshDiagnosticEvent & {
