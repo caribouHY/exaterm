@@ -1,4 +1,5 @@
 const GENERAL_TERMINAL_MODE_DEFINITION = {
+  cliValue: "general",
   labelKey: "terminal_mode.general",
   sortName: "General",
   value: "general",
@@ -6,27 +7,32 @@ const GENERAL_TERMINAL_MODE_DEFINITION = {
 
 const DEVICE_TERMINAL_MODE_DEFINITIONS = [
   {
+    cliValue: "cisco-ios",
     labelKey: "terminal_mode.cisco_ios",
     sortName: "Cisco IOS",
     value: "cisco_ios",
   },
   {
+    cliValue: "arista-eos",
     labelKey: "terminal_mode.arista_eos",
     sortName: "Arista EOS",
     value: "arista_eos",
   },
-  { labelKey: "terminal_mode.vyos", sortName: "VyOS", value: "vyos" },
+  { cliValue: "vyos", labelKey: "terminal_mode.vyos", sortName: "VyOS", value: "vyos" },
   {
+    cliValue: "fujitsu-sir",
     labelKey: "terminal_mode.fujitsu_sir",
     sortName: "Fujitsu Si-R",
     value: "fujitsu_sir",
   },
   {
+    cliValue: "allied-telesis-awplus",
     labelKey: "terminal_mode.allied_telesis_awplus",
     sortName: "Allied Telesis AW+",
     value: "allied_telesis_awplus",
   },
   {
+    cliValue: "furukawa-fitelnet",
     labelKey: "terminal_mode.furukawa_fitelnet",
     sortName: "Furukawa FITELnet",
     value: "furukawa_fitelnet",
@@ -42,6 +48,7 @@ export type TerminalMode = (typeof TERMINAL_MODE_CATALOG)[number]["value"];
 export type TerminalModeLabelKey = (typeof TERMINAL_MODE_CATALOG)[number]["labelKey"];
 
 export interface TerminalModeOption {
+  cliValue: string;
   label: string;
   value: TerminalMode;
 }
@@ -65,10 +72,12 @@ export function getTerminalModeOptions(
   translate: (labelKey: TerminalModeLabelKey) => string
 ): TerminalModeOption[] {
   const generalOption = {
+    cliValue: GENERAL_TERMINAL_MODE_DEFINITION.cliValue,
     label: translate(GENERAL_TERMINAL_MODE_DEFINITION.labelKey),
     value: GENERAL_TERMINAL_MODE_DEFINITION.value,
   };
   const deviceOptions = DEVICE_TERMINAL_MODE_DEFINITIONS.map((definition) => ({
+    cliValue: definition.cliValue,
     label: translate(definition.labelKey),
     sortName: definition.sortName,
     value: definition.value,
@@ -80,7 +89,8 @@ export function getTerminalModeOptions(
 
   return [
     generalOption,
-    ...deviceOptions.map(({ label, value }) => ({
+    ...deviceOptions.map(({ cliValue, label, value }) => ({
+      cliValue,
       label,
       value,
     })),

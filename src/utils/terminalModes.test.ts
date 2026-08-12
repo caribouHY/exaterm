@@ -14,13 +14,21 @@ describe("terminal modes", () => {
     );
 
     expect(getTerminalModeOptions((labelKey) => labelsByKey.get(labelKey) ?? labelKey)).toEqual([
-      { label: "General", value: "general" },
-      { label: "Allied Telesis AW+", value: "allied_telesis_awplus" },
-      { label: "Arista EOS", value: "arista_eos" },
-      { label: "Cisco IOS", value: "cisco_ios" },
-      { label: "Fujitsu Si-R", value: "fujitsu_sir" },
-      { label: "Furukawa FITELnet", value: "furukawa_fitelnet" },
-      { label: "VyOS", value: "vyos" },
+      { cliValue: "general", label: "General", value: "general" },
+      {
+        cliValue: "allied-telesis-awplus",
+        label: "Allied Telesis AW+",
+        value: "allied_telesis_awplus",
+      },
+      { cliValue: "arista-eos", label: "Arista EOS", value: "arista_eos" },
+      { cliValue: "cisco-ios", label: "Cisco IOS", value: "cisco_ios" },
+      { cliValue: "fujitsu-sir", label: "Fujitsu Si-R", value: "fujitsu_sir" },
+      {
+        cliValue: "furukawa-fitelnet",
+        label: "Furukawa FITELnet",
+        value: "furukawa_fitelnet",
+      },
+      { cliValue: "vyos", label: "VyOS", value: "vyos" },
     ]);
   });
 

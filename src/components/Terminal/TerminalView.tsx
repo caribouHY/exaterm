@@ -57,6 +57,8 @@ interface TerminalViewProps {
 }
 
 export interface TerminalViewHandle {
+  focus: () => void;
+  isFocused: () => boolean;
   insertText: (text: string) => void;
   selectAll: () => void;
   copySelection: () => void;
@@ -242,6 +244,13 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   useImperativeHandle(
     ref,
     () => ({
+      focus: () => {
+        termRef.current?.focus();
+      },
+      isFocused: () => {
+        const container = containerRef.current;
+        return Boolean(container && container.contains(document.activeElement));
+      },
       insertText: (text: string) => {
         if (!sessionId || !isConnectedRef.current) return;
         const data = text.replace(/\r?\n+$/g, "");

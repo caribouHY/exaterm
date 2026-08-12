@@ -4,6 +4,9 @@ import TerminalTabs from "./components/Terminal/TerminalTabs";
 import TerminalView from "./components/Terminal/TerminalView";
 import type { TerminalViewHandle } from "./components/Terminal/TerminalView";
 import StatusBar from "./components/StatusBar/StatusBar";
+import StatusBarPalette from "./components/StatusBar/StatusBarPalette";
+import type { StatusBarPaletteCloseReason } from "./components/StatusBar/StatusBarPalette";
+import type { StatusBarMenuKind } from "./components/StatusBar/statusBarMenuModel";
 import type {
   TabInfo,
   ViewMode,
@@ -123,6 +126,7 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [manualLogBusyTabId, setManualLogBusyTabId] = useState<string | null>(null);
   const [logStatusMessage, setLogStatusMessage] = useState("");
+  const [openStatusBarMenu, setOpenStatusBarMenu] = useState<StatusBarMenuKind | null>(null);
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiSelectedProvider, setAiSelectedProvider] = useState("");
   const [aiSelectedModel, setAiSelectedModel] = useState("");
@@ -134,6 +138,8 @@ export default function App() {
   const activeTerminalBuffer = useRef("");
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
+  const statusBarMenuTriggerRefs = useRef(new Map<StatusBarMenuKind, HTMLButtonElement>());
+  const restoreTerminalFocusAfterPaletteRef = useRef(false);
   const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
   const shortcuts = config?.shortcuts ?? DEFAULT_SHORTCUT_CONFIG;
   const appUpdate = useAppUpdate({
@@ -141,6 +147,79 @@ export default function App() {
     checkOnStartup: config ? config.updates.check_on_startup : null,
   });
   const appExit = useAppExit();
+
+  const handleStatusBarMenuToggle = useCallback(
+    (kind: StatusBarMenuKind, pointerActivated: boolean) => {
+      if (!pointerActivated) {
+        restoreTerminalFocusAfterPaletteRef.current = false;
+      }
+      setOpenStatusBarMenu((current) => {
+        if (current === kind) {
+          restoreTerminalFocusAfterPaletteRef.current = false;
+          return null;
+        }
+        return kind;
+      });
+    },
+    []
+  );
+
+  const handleStatusBarMenuTriggerPointerDown = useCallback(() => {
+    restoreTerminalFocusAfterPaletteRef.current = Boolean(
+      activeTabId && terminalViewRefs.current.get(activeTabId)?.isFocused()
+    );
+  }, [activeTabId]);
+
+  const handleStatusBarMenuTriggerRef = useCallback(
+    (kind: StatusBarMenuKind, element: HTMLButtonElement | null) => {
+      if (element) {
+        statusBarMenuTriggerRefs.current.set(kind, element);
+      } else {
+        statusBarMenuTriggerRefs.current.delete(kind);
+      }
+    },
+    []
+  );
+
+  const handleStatusBarPaletteClose = useCallback(
+    (reason: StatusBarPaletteCloseReason) => {
+      const menuToRestore = openStatusBarMenu;
+      const shouldRestoreTerminalFocus = restoreTerminalFocusAfterPaletteRef.current;
+      restoreTerminalFocusAfterPaletteRef.current = false;
+      if (reason === "tab" && menuToRestore) {
+        statusBarMenuTriggerRefs.current.get(menuToRestore)?.focus();
+      }
+      setOpenStatusBarMenu(null);
+      if (reason === "confirm" || reason === "escape") {
+        window.requestAnimationFrame(() => {
+          if (shouldRestoreTerminalFocus && activeTabId) {
+            terminalViewRefs.current.get(activeTabId)?.focus();
+          } else if (menuToRestore) {
+            statusBarMenuTriggerRefs.current.get(menuToRestore)?.focus();
+          }
+        });
+      } else if (reason === "action" && menuToRestore) {
+        window.requestAnimationFrame(() => {
+          statusBarMenuTriggerRefs.current.get(menuToRestore)?.focus();
+        });
+      }
+    },
+    [activeTabId, openStatusBarMenu]
+  );
+
+  useEffect(() => {
+    restoreTerminalFocusAfterPaletteRef.current = false;
+    setOpenStatusBarMenu(null);
+  }, [activeTabId, activeView]);
+
+  useEffect(() => {
+    if (
+      openStatusBarMenu === "log" &&
+      (!activeTab?.isConnected || manualLogBusyTabId === activeTab.id)
+    ) {
+      setOpenStatusBarMenu(null);
+    }
+  }, [activeTab, manualLogBusyTabId, openStatusBarMenu]);
 
   const removeTerminalFromState = useCallback(
     (tabId: string) => {
@@ -796,6 +875,27 @@ export default function App() {
               <div
                 className={`app__terminal-area ${activeView !== "terminal" ? "app__hidden" : ""}`}
               >
+                {openStatusBarMenu && activeTab && (
+                  <StatusBarPalette
+                    key={openStatusBarMenu}
+                    kind={openStatusBarMenu}
+                    activeTab={activeTab}
+                    onEncodingChange={(encoding) => {
+                      handleEncodingChange(activeTab.id, encoding);
+                    }}
+                    onTerminalModeChange={(terminalMode) => {
+                      handleTerminalModeChange(activeTab.id, terminalMode);
+                    }}
+                    onStartManualLog={(writeMode) => {
+                      void handleStartManualLog(writeMode);
+                    }}
+                    onStopManualLog={() => {
+                      void handleStopManualLog();
+                    }}
+                    onSetManualLoggingPaused={handleSetManualLoggingPaused}
+                    onClose={handleStatusBarPaletteClose}
+                  />
+                )}
                 {tabs.length === 0 ? (
                   <TerminalView
                     sessionId={null}
@@ -894,15 +994,10 @@ export default function App() {
           <StatusBar
             activeTab={activeTab}
             showConnectionStatus={activeView === "terminal"}
-            onEncodingChange={(encoding) =>
-              activeTab && handleEncodingChange(activeTab.id, encoding)
-            }
-            onTerminalModeChange={(terminalMode) =>
-              activeTab && handleTerminalModeChange(activeTab.id, terminalMode)
-            }
-            onStartManualLog={handleStartManualLog}
-            onStopManualLog={handleStopManualLog}
-            onSetManualLoggingPaused={handleSetManualLoggingPaused}
+            openMenu={openStatusBarMenu}
+            onMenuToggle={handleStatusBarMenuToggle}
+            onMenuTriggerPointerDown={handleStatusBarMenuTriggerPointerDown}
+            onMenuTriggerRef={handleStatusBarMenuTriggerRef}
             manualLogBusy={Boolean(activeTab && manualLogBusyTabId === activeTab.id)}
             logStatusMessage={logStatusMessage}
           />
