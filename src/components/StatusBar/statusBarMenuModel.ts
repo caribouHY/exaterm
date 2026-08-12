@@ -186,14 +186,13 @@ export function resolveStatusBarPaletteSelection(
   items: StatusBarPaletteItem[],
   preferredKey: string | null
 ): string | null {
-  const enabledItems = items.filter((item) => !item.disabled);
-  const [firstEnabledItem] = enabledItems;
+  const firstEnabledItem = items.find((item) => !item.disabled);
   if (!firstEnabledItem) return null;
-  if (preferredKey && enabledItems.some((item) => item.key === preferredKey)) {
+  if (preferredKey && items.some((item) => !item.disabled && item.key === preferredKey)) {
     return preferredKey;
   }
 
-  return enabledItems.find((item) => item.active)?.key ?? firstEnabledItem.key;
+  return items.find((item) => !item.disabled && item.active)?.key ?? firstEnabledItem.key;
 }
 
 export function moveStatusBarPaletteSelection(

@@ -113,6 +113,11 @@ describe("resolveStatusBarPaletteSelection", () => {
     const items = [item("disabled", "Disabled", { disabled: true }), item("enabled", "Enabled")];
     expect(resolveStatusBarPaletteSelection(items, null)).toBe("enabled");
   });
+
+  it("returns null when no item is enabled", () => {
+    const items = [item("disabled", "Disabled", { disabled: true })];
+    expect(resolveStatusBarPaletteSelection(items, null)).toBeNull();
+  });
 });
 
 describe("moveStatusBarPaletteSelection", () => {
