@@ -39,7 +39,6 @@ export default function StatusBarPalette({
   const { t } = useTranslation();
   const paletteRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const itemRefs = useRef(new Map<string, HTMLButtonElement>());
   const [query, setQuery] = useState("");
   const terminalModes = useMemo(() => getTerminalModeOptions(t), [t]);
   const items = useMemo(
@@ -113,7 +112,9 @@ export default function StatusBarPalette({
 
   useEffect(() => {
     if (!highlightedKey) return;
-    itemRefs.current.get(highlightedKey)?.scrollIntoView({ block: "nearest" });
+    document
+      .getElementById(`statusbar-palette-option-${highlightedKey}`)
+      ?.scrollIntoView({ block: "nearest" });
   }, [highlightedKey]);
 
   useEffect(() => {
@@ -210,13 +211,6 @@ export default function StatusBarPalette({
               <button
                 id={`statusbar-palette-option-${item.key}`}
                 key={item.key}
-                ref={(element) => {
-                  if (element) {
-                    itemRefs.current.set(item.key, element);
-                  } else {
-                    itemRefs.current.delete(item.key);
-                  }
-                }}
                 className={`statusbar-palette__item ${
                   isHighlighted ? "statusbar-palette__item--highlighted" : ""
                 }`}

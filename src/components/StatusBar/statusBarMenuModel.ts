@@ -187,12 +187,13 @@ export function resolveStatusBarPaletteSelection(
   preferredKey: string | null
 ): string | null {
   const enabledItems = items.filter((item) => !item.disabled);
-  if (enabledItems.length === 0) return null;
+  const [firstEnabledItem] = enabledItems;
+  if (!firstEnabledItem) return null;
   if (preferredKey && enabledItems.some((item) => item.key === preferredKey)) {
     return preferredKey;
   }
 
-  return enabledItems.find((item) => item.active)?.key ?? enabledItems[0]?.key ?? null;
+  return enabledItems.find((item) => item.active)?.key ?? firstEnabledItem.key;
 }
 
 export function moveStatusBarPaletteSelection(
@@ -205,12 +206,11 @@ export function moveStatusBarPaletteSelection(
 
   const currentIndex = enabledItems.findIndex((item) => item.key === currentKey);
   if (currentIndex < 0) {
-    return direction === "next"
-      ? (enabledItems[0]?.key ?? null)
-      : (enabledItems[enabledItems.length - 1]?.key ?? null);
+    const boundaryIndex = direction === "next" ? 0 : enabledItems.length - 1;
+    return enabledItems.find((_item, index) => index === boundaryIndex)?.key ?? null;
   }
 
   const offset = direction === "next" ? 1 : -1;
   const nextIndex = (currentIndex + offset + enabledItems.length) % enabledItems.length;
-  return enabledItems[nextIndex]?.key ?? null;
+  return enabledItems.find((_item, index) => index === nextIndex)?.key ?? null;
 }

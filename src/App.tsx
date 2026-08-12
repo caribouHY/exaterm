@@ -138,7 +138,6 @@ export default function App() {
   const activeTerminalBuffer = useRef("");
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
-  const statusBarMenuTriggerRefs = useRef(new Map<StatusBarMenuKind, HTMLButtonElement>());
   const restoreTerminalFocusAfterPaletteRef = useRef(false);
   const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
   const shortcuts = config?.shortcuts ?? DEFAULT_SHORTCUT_CONFIG;
@@ -170,24 +169,13 @@ export default function App() {
     );
   }, [activeTabId]);
 
-  const handleStatusBarMenuTriggerRef = useCallback(
-    (kind: StatusBarMenuKind, element: HTMLButtonElement | null) => {
-      if (element) {
-        statusBarMenuTriggerRefs.current.set(kind, element);
-      } else {
-        statusBarMenuTriggerRefs.current.delete(kind);
-      }
-    },
-    []
-  );
-
   const handleStatusBarPaletteClose = useCallback(
     (reason: StatusBarPaletteCloseReason) => {
       const menuToRestore = openStatusBarMenu;
       const shouldRestoreTerminalFocus = restoreTerminalFocusAfterPaletteRef.current;
       restoreTerminalFocusAfterPaletteRef.current = false;
       if (reason === "tab" && menuToRestore) {
-        statusBarMenuTriggerRefs.current.get(menuToRestore)?.focus();
+        document.getElementById(`statusbar-menu-trigger-${menuToRestore}`)?.focus();
       }
       setOpenStatusBarMenu(null);
       if (reason === "confirm" || reason === "escape") {
@@ -195,12 +183,12 @@ export default function App() {
           if (shouldRestoreTerminalFocus && activeTabId) {
             terminalViewRefs.current.get(activeTabId)?.focus();
           } else if (menuToRestore) {
-            statusBarMenuTriggerRefs.current.get(menuToRestore)?.focus();
+            document.getElementById(`statusbar-menu-trigger-${menuToRestore}`)?.focus();
           }
         });
       } else if (reason === "action" && menuToRestore) {
         window.requestAnimationFrame(() => {
-          statusBarMenuTriggerRefs.current.get(menuToRestore)?.focus();
+          document.getElementById(`statusbar-menu-trigger-${menuToRestore}`)?.focus();
         });
       }
     },
@@ -997,7 +985,6 @@ export default function App() {
             openMenu={openStatusBarMenu}
             onMenuToggle={handleStatusBarMenuToggle}
             onMenuTriggerPointerDown={handleStatusBarMenuTriggerPointerDown}
-            onMenuTriggerRef={handleStatusBarMenuTriggerRef}
             manualLogBusy={Boolean(activeTab && manualLogBusyTabId === activeTab.id)}
             logStatusMessage={logStatusMessage}
           />

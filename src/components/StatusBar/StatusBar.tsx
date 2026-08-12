@@ -12,7 +12,6 @@ interface StatusBarProps {
   openMenu: StatusBarMenuKind | null;
   onMenuToggle: (kind: StatusBarMenuKind, pointerActivated: boolean) => void;
   onMenuTriggerPointerDown: () => void;
-  onMenuTriggerRef: (kind: StatusBarMenuKind, element: HTMLButtonElement | null) => void;
   manualLogBusy: boolean;
   logStatusMessage: string;
 }
@@ -23,7 +22,6 @@ export default function StatusBar({
   openMenu,
   onMenuToggle,
   onMenuTriggerPointerDown,
-  onMenuTriggerRef,
   manualLogBusy,
   logStatusMessage,
 }: StatusBarProps) {
@@ -74,9 +72,7 @@ export default function StatusBar({
         {activeTab && (
           <div className="statusbar__menu-container">
             <button
-              ref={(element) => {
-                onMenuTriggerRef("log", element);
-              }}
+              id="statusbar-menu-trigger-log"
               className={`statusbar__item statusbar__item--clickable statusbar__log ${
                 activeTab.isManualLogging ? "statusbar__log--manual" : ""
               } ${activeTab.isManualLoggingPaused ? "statusbar__log--paused" : ""}`}
@@ -106,9 +102,7 @@ export default function StatusBar({
         {activeTab && (
           <div className="statusbar__menu-container">
             <button
-              ref={(element) => {
-                onMenuTriggerRef("terminalMode", element);
-              }}
+              id="statusbar-menu-trigger-terminalMode"
               className="statusbar__item statusbar__item--clickable"
               onPointerDown={onMenuTriggerPointerDown}
               onClick={(event) => {
@@ -129,9 +123,7 @@ export default function StatusBar({
         {activeTab && (
           <div className="statusbar__menu-container">
             <button
-              ref={(element) => {
-                onMenuTriggerRef("encoding", element);
-              }}
+              id="statusbar-menu-trigger-encoding"
               className="statusbar__item statusbar__item--clickable"
               onPointerDown={onMenuTriggerPointerDown}
               onClick={(event) => {
