@@ -143,7 +143,7 @@ impl WorkspaceState {
             is_connected: true,
             is_auto_logging: input.is_auto_logging,
             is_manual_logging: false,
-            is_logging_paused: false,
+            is_manual_logging_paused: false,
             manual_log_file_path: None,
         };
         model.tabs.insert(tab_id.clone(), tab);
@@ -377,8 +377,8 @@ impl WorkspaceState {
             .find(|tab| tab.session_id == session_id)
             .map(|tab| {
                 tab.is_connected = false;
-                if !tab.is_auto_logging && !tab.is_manual_logging {
-                    tab.is_logging_paused = false;
+                if !tab.is_manual_logging {
+                    tab.is_manual_logging_paused = false;
                 }
                 tab.owner_window_id.clone()
             })?;

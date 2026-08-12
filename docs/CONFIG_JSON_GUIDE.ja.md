@@ -245,8 +245,8 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 | `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | 保存ダイアログを開き、新しい手動ログを開始するか選択したファイルを上書きします。 |
 | `shortcuts.terminal_log_start_append`    | 未割り当て       | 保存ダイアログを開き、選択した手動ログファイルへ追記します。                     |
 | `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | 保留中の画面表示をflushして、実行中の手動ログを停止します。                      |
-| `shortcuts.terminal_log_pause`           | 未割り当て       | ターミナルセッションで実行中の自動ログと手動ログを一時停止します。               |
-| `shortcuts.terminal_log_resume`          | 未割り当て       | 一時停止中の自動ログと手動ログを再開します。                                     |
+| `shortcuts.terminal_log_pause`           | 未割り当て       | ターミナルセッションで実行中の手動ログを一時停止します。                         |
+| `shortcuts.terminal_log_resume`          | 未割り当て       | 一時停止中の手動ログを再開します。                                               |
 
 英字キーは小文字、空白キーは `"Space"`、ファンクションキーは `"F2"` のような大文字表記で保存されます。修飾キーは完全一致で判定するため、たとえば `Ctrl+Shift+N` は `Ctrl+N` としては実行されません。
 

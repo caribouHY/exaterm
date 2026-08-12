@@ -21,6 +21,10 @@ import {
   formatShortcut,
   type TerminalLogShortcutAction,
 } from "../../features/shortcuts/shortcutModel";
+import {
+  shouldAppendAutoLog,
+  shouldAppendManualLog,
+} from "../../features/terminal-logging/terminalLoggingModel";
 import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
 import {
   createTerminalDecorationController,
@@ -42,7 +46,7 @@ interface TerminalViewProps {
   encoding: Encoding;
   isAutoLogging: boolean;
   isManualLogging: boolean;
-  isLoggingPaused: boolean;
+  isManualLoggingPaused: boolean;
   terminalConfig?: TerminalConfig;
   shortcuts: ShortcutConfig;
   terminalMode: TerminalMode;
@@ -101,7 +105,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     encoding,
     isAutoLogging,
     isManualLogging,
-    isLoggingPaused,
+    isManualLoggingPaused,
     terminalConfig,
     shortcuts,
     terminalMode,
@@ -122,7 +126,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const isActiveRef = useRef(isActive);
   const isAutoLoggingRef = useRef(isAutoLogging);
   const isManualLoggingRef = useRef(isManualLogging);
-  const isLoggingPausedRef = useRef(isLoggingPaused);
+  const isManualLoggingPausedRef = useRef(isManualLoggingPaused);
   const shortcutsRef = useRef(shortcuts);
   const onTerminalLogShortcutRef = useRef(onTerminalLogShortcut);
   const onTerminalSelectionChangeRef = useRef(onTerminalSelectionChange);
@@ -219,26 +223,21 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   }, [isManualLogging]);
 
   useEffect(() => {
-    if (isLoggingPaused && !isLoggingPausedRef.current && sessionId) {
-      if (isAutoLoggingRef.current) {
-        const logText = autoLogSanitizerRef.current.flush();
-        if (logText) {
-          invoke("logger_append_to_mode", { sessionId, logMode: "auto", data: logText }).catch(
-            () => {}
-          );
-        }
-      }
-      if (isManualLoggingRef.current) {
-        const logText = manualLogSanitizerRef.current.flush();
-        if (logText) {
-          invoke("logger_append_to_mode", { sessionId, logMode: "manual", data: logText }).catch(
-            () => {}
-          );
-        }
+    if (
+      isManualLoggingPaused &&
+      !isManualLoggingPausedRef.current &&
+      sessionId &&
+      isManualLoggingRef.current
+    ) {
+      const logText = manualLogSanitizerRef.current.flush();
+      if (logText) {
+        invoke("logger_append_to_mode", { sessionId, logMode: "manual", data: logText }).catch(
+          () => {}
+        );
       }
     }
-    isLoggingPausedRef.current = isLoggingPaused;
-  }, [isLoggingPaused, sessionId]);
+    isManualLoggingPausedRef.current = isManualLoggingPaused;
+  }, [isManualLoggingPaused, sessionId]);
 
   useImperativeHandle(
     ref,
@@ -276,7 +275,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       flushLogBuffersForMove: async () => {
         if (!sessionId) return;
         const appendTasks: Promise<unknown>[] = [];
-        if (isAutoLoggingRef.current) {
+        if (shouldAppendAutoLog(isAutoLoggingRef.current)) {
           const logText = autoLogSanitizerRef.current.flush();
           if (logText) {
             appendTasks.push(
@@ -531,7 +530,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         decorationController.schedule(term);
       });
       if (onTerminalData) onTerminalData(text);
-      if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
+      if (shouldAppendAutoLog(isAutoLoggingRef.current)) {
         const logText = autoLogSanitizerRef.current.push(text);
         if (logText) {
           invoke("logger_append_to_mode", { sessionId, logMode: "auto", data: logText }).catch(
@@ -539,7 +538,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           );
         }
       }
-      if (isManualLoggingRef.current && !isLoggingPausedRef.current) {
+      if (shouldAppendManualLog(isManualLoggingRef.current, isManualLoggingPausedRef.current)) {
         const logText = manualLogSanitizerRef.current.push(text);
         if (logText) {
           invoke("logger_append_to_mode", { sessionId, logMode: "manual", data: logText }).catch(
@@ -640,7 +639,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       void unlistenError?.then((fn) => {
         fn();
       });
-      if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
+      if (shouldAppendAutoLog(isAutoLoggingRef.current)) {
         const logText = autoLogSanitizerRef.current.flush();
         if (logText) {
           invoke("logger_append_to_mode", { sessionId, logMode: "auto", data: logText }).catch(
@@ -648,7 +647,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           );
         }
       }
-      if (isManualLoggingRef.current && !isLoggingPausedRef.current) {
+      if (isManualLoggingRef.current) {
         const logText = manualLogSanitizerRef.current.flush();
         if (logText) {
           invoke("logger_append_to_mode", { sessionId, logMode: "manual", data: logText }).catch(

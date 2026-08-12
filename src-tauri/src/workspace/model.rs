@@ -83,7 +83,7 @@ pub struct WorkspaceTab {
     pub is_connected: bool,
     pub is_auto_logging: bool,
     pub is_manual_logging: bool,
-    pub is_logging_paused: bool,
+    pub is_manual_logging_paused: bool,
     pub manual_log_file_path: Option<String>,
 }
 
@@ -113,7 +113,7 @@ pub struct WorkspaceTabMetadataPatch {
     pub is_connected: Option<bool>,
     pub is_auto_logging: Option<bool>,
     pub is_manual_logging: Option<bool>,
-    pub is_logging_paused: Option<bool>,
+    pub is_manual_logging_paused: Option<bool>,
     pub manual_log_file_path: Option<String>,
 }
 
@@ -276,8 +276,11 @@ pub(super) fn apply_metadata_patch(tab: &mut WorkspaceTab, patch: WorkspaceTabMe
     if let Some(is_manual_logging) = patch.is_manual_logging {
         tab.is_manual_logging = is_manual_logging;
     }
-    if let Some(is_logging_paused) = patch.is_logging_paused {
-        tab.is_logging_paused = is_logging_paused;
+    if let Some(is_manual_logging_paused) = patch.is_manual_logging_paused {
+        tab.is_manual_logging_paused = is_manual_logging_paused;
+    }
+    if !tab.is_manual_logging {
+        tab.is_manual_logging_paused = false;
     }
     if let Some(manual_log_file_path) = patch.manual_log_file_path {
         tab.manual_log_file_path = Some(manual_log_file_path);

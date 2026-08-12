@@ -270,7 +270,7 @@ export interface TabInfo {
   connectionInfo?: WorkspaceConnectionInfo;
   isAutoLogging?: boolean;
   isManualLogging?: boolean;
-  isLoggingPaused?: boolean;
+  isManualLoggingPaused?: boolean;
   manualLogFilePath?: string;
 }
 
@@ -286,7 +286,7 @@ export interface WorkspaceTabInfo {
   is_connected: boolean;
   is_auto_logging: boolean;
   is_manual_logging: boolean;
-  is_logging_paused: boolean;
+  is_manual_logging_paused: boolean;
   manual_log_file_path?: string | null;
 }
 
