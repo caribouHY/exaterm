@@ -15,6 +15,7 @@
 
 ### Changed
 
+- Moved status-bar menus into searchable command palettes at the top of the terminal workspace.
 - Limited log pause and resume controls to manual logging so automatic session logging continues uninterrupted.
 - Split the title bar menu into File and Edit menus, with the application icon, session-log navigation, and terminal selection, clipboard, and clear actions.
 - Added connection progress views with safe cancellation and visible error recovery for SSH, Telnet, and Serial connections, while immediately clearing SSH credentials.

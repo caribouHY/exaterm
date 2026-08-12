@@ -46,6 +46,11 @@
   opacity: 1;
 }
 
+.statusbar__item--clickable:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -1px;
+}
+
 .statusbar__item--clickable:disabled {
   cursor: default;
   opacity: 0.55;
@@ -78,75 +83,9 @@
 }
 
 .statusbar__menu-container {
-  position: relative;
   height: 100%;
   display: flex;
   align-items: center;
-}
-
-.statusbar__menu {
-  position: absolute;
-  bottom: 100%;
-  right: 0;
-  background: var(--bg-menu);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-menu);
-  display: flex;
-  flex-direction: column;
-  min-width: 120px;
-  z-index: 1000;
-  margin-bottom: 4px;
-  overflow: hidden;
-}
-
-.statusbar__menu--log {
-  min-width: 220px;
-}
-
-.statusbar__menu--terminal-mode {
-  width: max-content;
-}
-
-.statusbar__menu--terminal-mode .statusbar__menu-item {
-  white-space: nowrap;
-}
-
-.statusbar__menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  text-align: left;
-  background: transparent;
-  border: none;
-  color: var(--text-primary);
-  font-size: 12px;
-  cursor: pointer;
-  transition:
-    background var(--transition-fast),
-    color var(--transition-fast),
-    opacity var(--transition-fast);
-}
-
-.statusbar__menu-item:hover {
-  background: var(--bg-active);
-  color: var(--text-on-accent);
-}
-
-.statusbar__menu-item:disabled {
-  cursor: default;
-  opacity: 0.45;
-}
-
-.statusbar__menu-item:disabled:hover {
-  background: transparent;
-  color: var(--text-primary);
-}
-
-.statusbar__menu-item--active {
-  color: var(--accent-blue);
-  font-weight: 600;
 }
 
 .statusbar__dot {
