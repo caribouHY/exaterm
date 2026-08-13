@@ -2,26 +2,22 @@
 
 ## Unreleased
 
+## v0.9.0
+
 ### Added
 
 - Added automatic SSH authentication with an optional default private key and fallback through keyboard-interactive and password methods.
-- Added local recent-connection history for successful SSH and Telnet connections, with reusable form values, individual removal, and Settings controls to disable or clear history.
-- Added menu actions and configurable shortcuts for clearing the local terminal display or scrollback buffer without ending the session.
-- Added a pinned command line in Cisco IOS terminals so long command output remains identifiable while scrolling.
-- Added an Arista EOS terminal mode with prompt, command, error, and pinned-command highlighting.
-- Added a VyOS terminal mode with operational and configuration prompt, command, error, edit-context, and pinned-command highlighting.
-- Added a Fujitsu Si-R G terminal mode with config1/config2 prompt, command, error, warning, and pinned-command highlighting.
-- Added an Allied Telesis AW+ terminal mode with operational and configuration prompt, command, documented error, and pinned-command highlighting.
-- Added a Furukawa FITELnet terminal mode with prompt, command, documented error, warning, and pinned-command highlighting.
+- Added a local history for successful manually configured SSH and Telnet connections, with reusable form values and Settings controls to disable or clear it.
+- Added menu actions and configurable shortcuts to clear the local terminal display or scrollback without ending the session.
+- Added a pinned Cisco IOS command context and built-in terminal highlighting modes for Arista EOS, VyOS, Fujitsu Si-R G, Allied Telesis AW+, and Furukawa FITELnet.
 
 ### Changed
 
-- Moved status-bar menus into searchable command palettes at the top of the terminal workspace.
-- Unified automatic and manual session logging so the connection setting starts the same pausable and stoppable log used by the status bar, CLI, and MCP controls.
-- Split the title bar menu into File and Edit menus, with the application icon, session-log navigation, and terminal selection, clipboard, and clear actions.
-- Added connection progress views with safe cancellation and visible error recovery for SSH, Telnet, and Serial connections, while immediately clearing SSH credentials.
+- Replaced status-bar menus with searchable command palettes at the top of the terminal workspace.
+- Reorganized the title bar into File and Edit menus for session logs, terminal selection, clipboard, and clearing actions.
+- Added connection progress, cancellation, and error recovery for SSH, Telnet, and Serial connections; SSH credentials are cleared as soon as they are no longer needed.
 - Prevented SSH, Telnet, and Serial connections from starting until required connection fields contain valid values.
-- Refactored terminal color decoration into a shared palette and reusable profiles for future network operating systems while preserving Cisco IOS behavior.
+- Unified connection-started and user-started session logs so automatic connection logging can be paused, resumed, or stopped consistently from the status bar, CLI, and MCP controls.
 
 ### Removed
 
@@ -29,10 +25,8 @@
 
 ### Fixed
 
-- Preferred fixed-group `diffie-hellman-group14-sha1` over the slower group-exchange variant when both SSH compatibility algorithms are enabled.
-- Added an explicit SSH keyboard-interactive authentication method with multi-step prompts and jump-host support, while keeping password authentication separate.
-- Kept the display and backend language synchronized at startup and across all open windows after settings changes.
-- Moved GUI backend-error translation to React while preserving stable English errors for CLI, MCP, and external control clients.
+- Improved SSH compatibility for keyboard-interactive authentication, jump hosts, and legacy key-exchange preferences.
+- Kept the desktop app language and localized backend error messages synchronized across open windows while preserving stable English CLI, MCP, and external-control errors.
 
 ## v0.8.2
 
