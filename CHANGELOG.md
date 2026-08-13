@@ -28,7 +28,7 @@
 ### Fixed
 
 - Preferred fixed-group `diffie-hellman-group14-sha1` over the slower group-exchange variant when both SSH compatibility algorithms are enabled.
-- Enabled SSH password profiles to connect to servers that require keyboard-interactive authentication, including multi-step prompts and jump hosts.
+- Added an explicit SSH keyboard-interactive authentication method with multi-step prompts and jump-host support, while keeping password authentication separate.
 - Kept the display and backend language synchronized at startup and across all open windows after settings changes.
 - Moved GUI backend-error translation to React while preserving stable English errors for CLI, MCP, and external control clients.
 

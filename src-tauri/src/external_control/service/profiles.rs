@@ -102,6 +102,7 @@ mod terminal_mode_tests {
 pub(crate) fn normalize_profile_auth_method(value: Option<&str>) -> Result<String, String> {
     match value.map(str::trim).filter(|value| !value.is_empty()) {
         None | Some("password") => Ok("password".into()),
+        Some("keyboard_interactive") => Ok("keyboard_interactive".into()),
         Some("public_key") => Ok("public_key".into()),
         Some(_) => Err("The SSH authentication method is invalid".into()),
     }
@@ -113,6 +114,7 @@ pub(crate) fn ssh_credential_required(
 ) -> Result<bool, String> {
     match auth_method {
         "password" => Ok(false),
+        "keyboard_interactive" => Ok(false),
         "public_key" => {
             let private_key_path = private_key_path
                 .map(str::trim)

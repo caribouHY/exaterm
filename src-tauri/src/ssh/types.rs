@@ -39,6 +39,7 @@ pub(super) enum SshAuthRequest {
     Password {
         password: String,
     },
+    KeyboardInteractive,
     PublicKey {
         private_key_path: String,
         key_passphrase: Option<String>,

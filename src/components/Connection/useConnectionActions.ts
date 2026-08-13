@@ -21,7 +21,11 @@ import { startConnectionLog } from "../../features/terminal-logging/connectionLo
 import type { ConnectionLogState } from "../../features/terminal-logging/connectionLogModel";
 import type { ProfileSelectionState, SshCredentialPrompt } from "./connectionDialogTypes";
 import { shouldRecordConnectionHistory } from "./connectionHistoryModel";
-import { getConnectionErrorMessage, normalizeSshAuthMethod } from "./connectionProfileUtils";
+import {
+  getConnectionErrorMessage,
+  normalizeSshAuthMethod,
+  usesPrivateKeyAuthentication,
+} from "./connectionProfileUtils";
 import {
   createConnectionRequestId,
   isConnectionCancellation,
@@ -256,7 +260,7 @@ export const useConnectionActions = ({
       requestId: string,
       currentJumpCredential = jumpCredentialRef.current
     ) => {
-      if (ssh.authMethod === "password") {
+      if (!usesPrivateKeyAuthentication(ssh.authMethod)) {
         const startLogOnConnection = await getStartLogOnConnectionPreference();
         if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
         jumpCredentialRef.current = "";
@@ -264,7 +268,7 @@ export const useConnectionActions = ({
           startLogOnConnection,
           sshPort,
           "",
-          "password",
+          ssh.authMethod,
           currentJumpCredential,
           requestId
         );
@@ -332,7 +336,7 @@ export const useConnectionActions = ({
         setBusy(false);
       };
 
-      if (jumpAuthMethod === "password") {
+      if (!usesPrivateKeyAuthentication(jumpAuthMethod)) {
         await continueSshConnect(sshPort, requestId, "");
         return;
       }

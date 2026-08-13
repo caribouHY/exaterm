@@ -11,6 +11,7 @@ pub(super) fn normalize_profile_string(value: Option<&str>) -> Option<String> {
 pub(super) fn normalize_profile_auth_method(value: Option<&str>) -> Result<String, String> {
     match value.map(str::trim).filter(|value| !value.is_empty()) {
         None | Some("password") => Ok("password".into()),
+        Some("keyboard_interactive") => Ok("keyboard_interactive".into()),
         Some("public_key") => Ok("public_key".into()),
         Some(_) => Err("The SSH authentication method is invalid".into()),
     }

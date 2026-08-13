@@ -133,6 +133,7 @@
   "connection.username": "ユーザー名",
   "connection.auth_method": "認証方式",
   "connection.auth_password": "パスワード",
+  "connection.auth_keyboard_interactive": "キーボードインタラクティブ",
   "connection.auth_public_key": "公開鍵",
   "connection.password": "パスワード",
   "connection.private_key_path": "秘密鍵",

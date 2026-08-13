@@ -28,6 +28,7 @@ pub(super) fn build_auth_request(
 
     match method {
         "password" => Ok(SshAuthRequest::Password { password }),
+        "keyboard_interactive" => Ok(SshAuthRequest::KeyboardInteractive),
         "public_key" => {
             let private_key_path = private_key_path.unwrap_or_default().trim().to_string();
             if private_key_path.is_empty() {
@@ -201,7 +202,21 @@ pub(super) async fn authenticate_ssh(
 ) -> Result<(), String> {
     match auth {
         SshAuthRequest::Password { password } => {
-            authenticate_password_compatible(handle, username, password, context).await
+            let password = if password.is_empty() {
+                context.request_password().await?
+            } else {
+                password
+            };
+            match authenticate_password(handle, username, password).await? {
+                AuthResult::Success => Ok(()),
+                AuthResult::Failure { .. } => Err(password_failure()),
+            }
+        }
+        SshAuthRequest::KeyboardInteractive => {
+            match authenticate_keyboard_interactive(handle, username, context).await? {
+                AuthResult::Success => Ok(()),
+                AuthResult::Failure { .. } => Err(keyboard_interactive_failure()),
+            }
         }
         SshAuthRequest::PublicKey {
             private_key_path,
@@ -235,85 +250,6 @@ pub(super) async fn authenticate_ssh(
             }
         }
     }
-}
-
-async fn authenticate_password_compatible(
-    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
-    username: &str,
-    initial_password: String,
-    context: &SshAuthenticationContext<'_>,
-) -> Result<(), String> {
-    let mut next_method = MethodKind::KeyboardInteractive;
-    let mut password = (!initial_password.is_empty()).then_some(initial_password);
-    let mut password_attempted = false;
-
-    for _stage in 0..MAX_AUTHENTICATION_STAGES {
-        let (result, attempted_method) = match next_method {
-            MethodKind::KeyboardInteractive => (
-                authenticate_keyboard_interactive(handle, username, context).await?,
-                MethodKind::KeyboardInteractive,
-            ),
-            MethodKind::Password => {
-                let password = match password.take() {
-                    Some(password) => password,
-                    None => context.request_password().await?,
-                };
-                password_attempted = true;
-                (
-                    authenticate_password(handle, username, password).await?,
-                    MethodKind::Password,
-                )
-            }
-            _ => return Err(password_failure()),
-        };
-
-        match result {
-            AuthResult::Success => return Ok(()),
-            AuthResult::Failure {
-                remaining_methods,
-                partial_success,
-            } => {
-                next_method = choose_next_password_method(
-                    attempted_method,
-                    &remaining_methods,
-                    partial_success,
-                    password_attempted,
-                )
-                .ok_or_else(password_failure)?;
-            }
-        }
-    }
-
-    Err("SSH authentication failed: too many authentication stages".to_string())
-}
-
-fn choose_next_password_method(
-    attempted_method: MethodKind,
-    remaining_methods: &MethodSet,
-    partial_success: bool,
-    password_attempted: bool,
-) -> Option<MethodKind> {
-    if partial_success {
-        if attempted_method == MethodKind::KeyboardInteractive
-            && supports(remaining_methods, MethodKind::Password)
-        {
-            return Some(MethodKind::Password);
-        }
-        if attempted_method == MethodKind::Password
-            && supports(remaining_methods, MethodKind::KeyboardInteractive)
-        {
-            return Some(MethodKind::KeyboardInteractive);
-        }
-        return None;
-    }
-
-    if attempted_method == MethodKind::KeyboardInteractive
-        && !password_attempted
-        && supports(remaining_methods, MethodKind::Password)
-    {
-        return Some(MethodKind::Password);
-    }
-    None
 }
 
 fn should_continue_public_key(remaining_methods: &MethodSet, partial_success: bool) -> bool {
@@ -396,6 +332,10 @@ fn password_failure() -> String {
     "SSH authentication failed: the username or password is incorrect".to_string()
 }
 
+fn keyboard_interactive_failure() -> String {
+    "SSH keyboard-interactive authentication failed".to_string()
+}
+
 fn public_key_failure() -> String {
     "SSH public key authentication failed: check the username, private key, public key registration, passphrase, or required additional authentication.".to_string()
 }
@@ -409,45 +349,6 @@ mod authentication_flow_tests {
     }
 
     #[test]
-    fn keyboard_interactive_falls_back_to_password_when_available() {
-        assert_eq!(
-            choose_next_password_method(
-                MethodKind::KeyboardInteractive,
-                &methods(&[MethodKind::Password]),
-                false,
-                false,
-            ),
-            Some(MethodKind::Password)
-        );
-    }
-
-    #[test]
-    fn partial_keyboard_interactive_continues_with_password() {
-        assert_eq!(
-            choose_next_password_method(
-                MethodKind::KeyboardInteractive,
-                &methods(&[MethodKind::Password]),
-                true,
-                false,
-            ),
-            Some(MethodKind::Password)
-        );
-    }
-
-    #[test]
-    fn partial_password_continues_with_keyboard_interactive() {
-        assert_eq!(
-            choose_next_password_method(
-                MethodKind::Password,
-                &methods(&[MethodKind::KeyboardInteractive]),
-                true,
-                true,
-            ),
-            Some(MethodKind::KeyboardInteractive)
-        );
-    }
-
-    #[test]
     fn public_key_only_continues_after_partial_success() {
         let keyboard_interactive = methods(&[MethodKind::KeyboardInteractive]);
         assert!(should_continue_public_key(&keyboard_interactive, true));
@@ -456,27 +357,5 @@ mod authentication_flow_tests {
             &methods(&[MethodKind::Password]),
             true
         ));
-    }
-
-    #[test]
-    fn authentication_method_is_not_retried_without_partial_success() {
-        assert_eq!(
-            choose_next_password_method(
-                MethodKind::Password,
-                &methods(&[MethodKind::KeyboardInteractive]),
-                false,
-                true,
-            ),
-            None
-        );
-        assert_eq!(
-            choose_next_password_method(
-                MethodKind::KeyboardInteractive,
-                &methods(&[MethodKind::KeyboardInteractive]),
-                false,
-                false,
-            ),
-            None
-        );
     }
 }
