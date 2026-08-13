@@ -17,6 +17,8 @@ import type {
   WorkspaceConnectionInfo,
 } from "../../types";
 import { connectionHistoryClient } from "../../features/connection-history/connectionHistoryClient";
+import { startConnectionLog } from "../../features/terminal-logging/connectionLogModel";
+import type { ConnectionLogState } from "../../features/terminal-logging/connectionLogModel";
 import type { ProfileSelectionState, SshCredentialPrompt } from "./connectionDialogTypes";
 import { shouldRecordConnectionHistory } from "./connectionHistoryModel";
 import { getConnectionErrorMessage, normalizeSshAuthMethod } from "./connectionProfileUtils";
@@ -78,7 +80,7 @@ interface UseConnectionActionsParams {
     type: ConnectionType,
     sessionId: string,
     title: string,
-    isAutoLogging: boolean,
+    logState: ConnectionLogState,
     encoding?: Encoding,
     terminalMode?: TerminalMode,
     connectionInfo?: WorkspaceConnectionInfo
@@ -94,13 +96,26 @@ const parsePort = (value: string, errorMessage: string) => {
   return parsed;
 };
 
-const getAutoLogPreference = async () => {
+const getStartLogOnConnectionPreference = async () => {
   try {
     const cfg = await invoke<AppConfig>("config_load");
     return cfg.terminal.auto_session_log;
   } catch {
     return false;
   }
+};
+
+const startConfiguredConnectionLog = async (
+  enabled: boolean,
+  sessionId: string,
+  connectionType: ConnectionType,
+  target: string
+): Promise<ConnectionLogState> => {
+  const state = await startConnectionLog(enabled, () =>
+    invoke<string>("logger_start_on_connection", { sessionId, connectionType, target })
+  );
+  if (state.startFailed) console.error("Failed to start the connection log.");
+  return state;
 };
 
 const recordConnectionHistory = (input: ConnectionHistoryRecordInput) => {
@@ -172,7 +187,7 @@ export const useConnectionActions = ({
 
   const performSshConnect = useCallback(
     async (
-      autoLog: boolean,
+      startLogOnConnection: boolean,
       sshPort: number,
       credential: string,
       promptAuthMethod: SshAuthMethod,
@@ -200,13 +215,12 @@ export const useConnectionActions = ({
           requestId,
         },
       });
-      if (autoLog) {
-        await invoke("logger_start_auto", {
-          sessionId: result.session_id,
-          connectionType: "ssh",
-          target: `${ssh.username}@${ssh.host}:${sshPort}`,
-        });
-      }
+      const logState = await startConfiguredConnectionLog(
+        startLogOnConnection,
+        result.session_id,
+        "ssh",
+        `${ssh.username}@${ssh.host}:${sshPort}`
+      );
       const connectionInfo: WorkspaceConnectionInfo = {
         kind: "ssh",
         host: ssh.host,
@@ -220,7 +234,7 @@ export const useConnectionActions = ({
         "ssh",
         result.session_id,
         `${ssh.username}@${ssh.host}`,
-        autoLog,
+        logState,
         ssh.encoding,
         ssh.terminalMode,
         connectionInfo
@@ -243,10 +257,17 @@ export const useConnectionActions = ({
       currentJumpCredential = jumpCredentialRef.current
     ) => {
       if (ssh.authMethod === "password") {
-        const autoLog = await getAutoLogPreference();
+        const startLogOnConnection = await getStartLogOnConnectionPreference();
         if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
         jumpCredentialRef.current = "";
-        await performSshConnect(autoLog, sshPort, "", "password", currentJumpCredential, requestId);
+        await performSshConnect(
+          startLogOnConnection,
+          sshPort,
+          "",
+          "password",
+          currentJumpCredential,
+          requestId
+        );
         return;
       }
 
@@ -267,10 +288,17 @@ export const useConnectionActions = ({
         return;
       }
 
-      const autoLog = await getAutoLogPreference();
+      const startLogOnConnection = await getStartLogOnConnectionPreference();
       if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
       jumpCredentialRef.current = "";
-      await performSshConnect(autoLog, sshPort, "", "public_key", currentJumpCredential, requestId);
+      await performSshConnect(
+        startLogOnConnection,
+        sshPort,
+        "",
+        "public_key",
+        currentJumpCredential,
+        requestId
+      );
     },
     [diagnostics, openCredentialPrompt, performSshConnect, setBusy, ssh]
   );
@@ -367,12 +395,12 @@ export const useConnectionActions = ({
         return;
       }
 
-      const autoLog = await getAutoLogPreference();
+      const startLogOnConnection = await getStartLogOnConnectionPreference();
       if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
       const jumpCredential = jumpCredentialRef.current;
       jumpCredentialRef.current = "";
       await performSshConnect(
-        autoLog,
+        startLogOnConnection,
         credentialPrompt.port,
         credential,
         credentialPrompt.authMethod,
@@ -437,7 +465,7 @@ export const useConnectionActions = ({
         connectionType,
         requestId: connectionRequestId,
       });
-      const autoLog = await getAutoLogPreference();
+      const startLogOnConnection = await getStartLogOnConnectionPreference();
       if (!isCurrentConnectionAttempt(connectionAttemptRef.current, connectionRequestId)) return;
 
       if (tab === "telnet") {
@@ -451,13 +479,12 @@ export const useConnectionActions = ({
           encoding: telnet.encoding,
           requestId: connectionRequestId,
         });
-        if (autoLog) {
-          await invoke("logger_start_auto", {
-            sessionId,
-            connectionType: "telnet",
-            target: `${telnet.host}:${parsedTelnetPort}`,
-          });
-        }
+        const logState = await startConfiguredConnectionLog(
+          startLogOnConnection,
+          sessionId,
+          "telnet",
+          `${telnet.host}:${parsedTelnetPort}`
+        );
         const connectionInfo: WorkspaceConnectionInfo = {
           kind: "telnet",
           host: telnet.host,
@@ -467,7 +494,7 @@ export const useConnectionActions = ({
           "telnet",
           sessionId,
           `${telnet.host}:${parsedTelnetPort}`,
-          autoLog,
+          logState,
           telnet.encoding,
           telnet.terminalMode,
           connectionInfo
@@ -496,18 +523,17 @@ export const useConnectionActions = ({
         encoding: "utf-8",
         requestId: connectionRequestId,
       });
-      if (autoLog) {
-        await invoke("logger_start_auto", {
-          sessionId,
-          connectionType: "serial",
-          target: serial.selectedPort,
-        });
-      }
+      const logState = await startConfiguredConnectionLog(
+        startLogOnConnection,
+        sessionId,
+        "serial",
+        serial.selectedPort
+      );
       await onConnect(
         "serial",
         sessionId,
         serial.selectedPort,
-        autoLog,
+        logState,
         "utf-8",
         serial.terminalMode
       );

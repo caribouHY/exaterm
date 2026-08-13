@@ -16,7 +16,7 @@
 ### Changed
 
 - Moved status-bar menus into searchable command palettes at the top of the terminal workspace.
-- Limited log pause and resume controls to manual logging so automatic session logging continues uninterrupted.
+- Unified automatic and manual session logging so the connection setting starts the same pausable and stoppable log used by the status bar, CLI, and MCP controls.
 - Split the title bar menu into File and Edit menus, with the application icon, session-log navigation, and terminal selection, clipboard, and clear actions.
 - Added connection progress views with safe cancellation and visible error recovery for SSH, Telnet, and Serial connections, while immediately clearing SSH credentials.
 - Refactored terminal color decoration into a shared palette and reusable profiles for future network operating systems while preserving Cisco IOS behavior.

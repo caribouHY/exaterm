@@ -12,7 +12,7 @@ const action = () => {};
 function item(
   key: string,
   label: string,
-  options: Pick<StatusBarPaletteItem, "active" | "disabled" | "searchLabel"> = {}
+  options: Pick<StatusBarPaletteItem, "active" | "disabled" | "searchLabel" | "shortcut"> = {}
 ): StatusBarPaletteItem {
   return { key, label, action, ...options };
 }
@@ -42,8 +42,8 @@ describe("filterStatusBarPaletteItems", () => {
 
   it("filters bilingual log actions by their English search label only", () => {
     const logActions = [
-      item("start", "手動ログを開始", { searchLabel: "Start manual log" }),
-      item("stop", "手動ログを停止", { searchLabel: "Stop manual log" }),
+      item("start", "ログを開始", { searchLabel: "Start log" }),
+      item("stop", "ログを停止", { searchLabel: "Stop log" }),
     ];
 
     expect(filterStatusBarPaletteItems(logActions, "start").map((entry) => entry.key)).toEqual([
@@ -59,6 +59,11 @@ describe("filterStatusBarPaletteItems", () => {
   it("does not include the current-state marker in search", () => {
     const itemsWithCurrent = [item("general", "General", { active: true })];
     expect(filterStatusBarPaletteItems(itemsWithCurrent, "current")).toEqual([]);
+  });
+
+  it("does not include the displayed shortcut in search", () => {
+    const itemsWithShortcut = [item("start", "Start log", { shortcut: "Ctrl+Shift+F9" })];
+    expect(filterStatusBarPaletteItems(itemsWithShortcut, "f9")).toEqual([]);
   });
 });
 
@@ -78,8 +83,8 @@ describe("getStatusBarPaletteLabelSegments", () => {
   });
 
   it("marks matches in Japanese labels", () => {
-    expect(getStatusBarPaletteLabelSegments("手動ログ操作を開始", "ログ")).toEqual([
-      { text: "手動", matched: false },
+    expect(getStatusBarPaletteLabelSegments("セッションログ操作を開始", "ログ")).toEqual([
+      { text: "セッション", matched: false },
       { text: "ログ", matched: true },
       { text: "操作を開始", matched: false },
     ]);

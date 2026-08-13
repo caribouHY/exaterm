@@ -94,7 +94,6 @@ struct WorkspaceTab {
     encoding: String,
     terminal_mode: String,
     is_connected: bool,
-    is_auto_logging: bool,
     is_manual_logging: bool,
     is_manual_logging_paused: bool,
     manual_log_file_path: Option<String>,
@@ -175,8 +174,8 @@ Flow:
 1. Source window starts dragging a terminal tab.
 2. Backend records drag metadata and tab identity.
 3. Destination window tab bar reports hover/drop target.
-4. Before committing the move, the source `TerminalView` flushes auto and manual log
-   sanitizers and waits for the append requests to complete.
+4. Before committing the move, the source `TerminalView` flushes the active log sanitizer
+   and waits for the append request to complete.
 5. On drop, frontend calls `workspace_tab_move`.
 6. Backend validates single ownership and updates both window orders.
 7. Backend emits `workspace://updated` to affected windows.
@@ -202,10 +201,9 @@ If a restored snapshot returns `truncated=true`, the UI can show or store that s
 v1 does not reconstruct content that has already been trimmed from
 `TerminalControlState`.
 
-Before a tab moves, the source `TerminalView` must flush both automatic and manual log
-sanitizers. If this flush fails, the move still proceeds and the error is logged as a
-warning. Manual log stop keeps the stricter existing behavior: it must wait for flush before
-stopping the log.
+Before a tab moves, the source `TerminalView` must flush the active log sanitizer. If this
+flush fails, the move still proceeds and the error is logged as a warning. Log stop keeps the
+stricter existing behavior: it must wait for flush before stopping the log.
 
 ### Drag-First Interaction
 
@@ -525,7 +523,7 @@ Frontend tests or manual verification:
 - outside drop creates a new window and moves the tab
 - moved tab restores recent output through snapshot and continues receiving new output
 - input after a move goes only to the destination window
-- automatic and manual log buffers flush before a move, and log state and pause state remain
+- the active log buffer flushes before a move, and log state and pause state remain
   visible after a move
 - MCP-created tab appears in the last focused window
 - credential prompt appears in the GUI started by stdio proxy

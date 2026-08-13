@@ -81,7 +81,6 @@ pub struct WorkspaceTab {
     pub terminal_mode: String,
     pub connection_info: Option<WorkspaceConnectionInfo>,
     pub is_connected: bool,
-    pub is_auto_logging: bool,
     pub is_manual_logging: bool,
     pub is_manual_logging_paused: bool,
     pub manual_log_file_path: Option<String>,
@@ -111,7 +110,6 @@ pub struct WorkspaceTabMetadataPatch {
     pub encoding: Option<String>,
     pub terminal_mode: Option<String>,
     pub is_connected: Option<bool>,
-    pub is_auto_logging: Option<bool>,
     pub is_manual_logging: Option<bool>,
     pub is_manual_logging_paused: Option<bool>,
     pub manual_log_file_path: Option<String>,
@@ -254,7 +252,8 @@ pub struct WorkspaceTabRegisterInput {
     pub encoding: String,
     pub terminal_mode: String,
     pub connection_info: Option<WorkspaceConnectionInfo>,
-    pub is_auto_logging: bool,
+    pub is_manual_logging: bool,
+    pub manual_log_file_path: Option<String>,
 }
 
 pub(super) fn apply_metadata_patch(tab: &mut WorkspaceTab, patch: WorkspaceTabMetadataPatch) {
@@ -270,20 +269,18 @@ pub(super) fn apply_metadata_patch(tab: &mut WorkspaceTab, patch: WorkspaceTabMe
     if let Some(is_connected) = patch.is_connected {
         tab.is_connected = is_connected;
     }
-    if let Some(is_auto_logging) = patch.is_auto_logging {
-        tab.is_auto_logging = is_auto_logging;
-    }
     if let Some(is_manual_logging) = patch.is_manual_logging {
         tab.is_manual_logging = is_manual_logging;
     }
     if let Some(is_manual_logging_paused) = patch.is_manual_logging_paused {
         tab.is_manual_logging_paused = is_manual_logging_paused;
     }
-    if !tab.is_manual_logging {
-        tab.is_manual_logging_paused = false;
-    }
     if let Some(manual_log_file_path) = patch.manual_log_file_path {
         tab.manual_log_file_path = Some(manual_log_file_path);
+    }
+    if !tab.is_manual_logging {
+        tab.is_manual_logging_paused = false;
+        tab.manual_log_file_path = None;
     }
 }
 

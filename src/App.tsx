@@ -20,6 +20,7 @@ import type {
   WorkspaceConnectionInfo,
 } from "./types";
 import type { ConnectionDialogInitialValues } from "./components/Connection/connectionDialogTypes";
+import type { ConnectionLogState } from "./features/terminal-logging/connectionLogModel";
 import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -126,6 +127,12 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [manualLogBusyTabId, setManualLogBusyTabId] = useState<string | null>(null);
   const [logStatusMessage, setLogStatusMessage] = useState("");
+  const showTemporaryLogStatus = useCallback((message: string) => {
+    setLogStatusMessage(message);
+    window.setTimeout(() => {
+      setLogStatusMessage("");
+    }, 3000);
+  }, []);
   const [openStatusBarMenu, setOpenStatusBarMenu] = useState<StatusBarMenuKind | null>(null);
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiSelectedProvider, setAiSelectedProvider] = useState("");
@@ -281,7 +288,7 @@ export default function App() {
       type: ConnectionType,
       sessionId: string,
       title: string,
-      isAutoLogging: boolean,
+      logState: ConnectionLogState,
       encoding: Encoding = "utf-8",
       terminalMode: TerminalMode = DEFAULT_TERMINAL_MODE,
       connectionInfo?: WorkspaceConnectionInfo
@@ -290,15 +297,19 @@ export default function App() {
         connectionType: type,
         sessionId,
         title,
-        isAutoLogging,
+        isManualLogging: logState.isLogging,
+        manualLogFilePath: logState.filePath,
         encoding,
         terminalMode,
         connectionInfo,
       });
       setConnectionInitialValues(null);
       setShowConnection(false);
+      if (logState.startFailed) {
+        showTemporaryLogStatus("statusbar.log_start_failed");
+      }
     },
-    [terminalTabLifecycle]
+    [showTemporaryLogStatus, terminalTabLifecycle]
   );
 
   const handleViewChange = useCallback(
@@ -406,7 +417,7 @@ export default function App() {
           await waitForUiUpdate();
           await submitLogControl(payload.request_id, filePath, null);
         } catch (error) {
-          console.error("Failed to start MCP manual log:", error);
+          console.error("Failed to start the MCP log:", error);
           await submitLogControl(
             payload.request_id,
             null,
@@ -442,7 +453,7 @@ export default function App() {
           await waitForUiUpdate();
           await submitLogControl(payload.request_id, null, null);
         } catch (error) {
-          console.error("Failed to stop MCP manual log:", error);
+          console.error("Failed to stop the MCP log:", error);
           await submitLogControl(
             payload.request_id,
             null,
@@ -539,13 +550,6 @@ export default function App() {
     return `exaterm_${stamp}_${sessionPrefix}.log`;
   }, []);
 
-  const showTemporaryLogStatus = useCallback((message: string) => {
-    setLogStatusMessage(message);
-    window.setTimeout(() => {
-      setLogStatusMessage("");
-    }, 3000);
-  }, []);
-
   const handleStartManualLog = useCallback(
     async (writeMode: ManualLogWriteMode) => {
       if (!activeTab?.sessionId || !activeTab.isConnected || activeTab.isManualLogging) return;
@@ -572,7 +576,7 @@ export default function App() {
           manualLogFilePath: filePath,
         });
       } catch (error) {
-        console.error("Failed to start manual log:", error);
+        console.error("Failed to start the log:", error);
         showTemporaryLogStatus("statusbar.log_start_failed");
       } finally {
         setManualLogBusyTabId(null);
@@ -593,7 +597,7 @@ export default function App() {
         isManualLoggingPaused: false,
       });
     } catch (error) {
-      console.error("Failed to stop manual log:", error);
+      console.error("Failed to stop the log:", error);
       showTemporaryLogStatus("statusbar.log_stop_failed");
     } finally {
       setManualLogBusyTabId(null);
@@ -868,6 +872,7 @@ export default function App() {
                     key={openStatusBarMenu}
                     kind={openStatusBarMenu}
                     activeTab={activeTab}
+                    shortcuts={shortcuts}
                     onEncodingChange={(encoding) => {
                       handleEncodingChange(activeTab.id, encoding);
                     }}
@@ -890,7 +895,6 @@ export default function App() {
                     connectionType="ssh"
                     isConnected={false}
                     isActive={activeView === "terminal"}
-                    isAutoLogging={false}
                     isManualLogging={false}
                     isManualLoggingPaused={false}
                     onOpenConnection={openConnection}
@@ -915,7 +919,6 @@ export default function App() {
                       connectionType={tab.connectionType}
                       isConnected={tab.isConnected}
                       isActive={activeView === "terminal" && tab.id === activeTabId}
-                      isAutoLogging={Boolean(tab.isAutoLogging)}
                       isManualLogging={Boolean(tab.isManualLogging)}
                       isManualLoggingPaused={Boolean(tab.isManualLoggingPaused)}
                       onOpenConnection={openConnection}

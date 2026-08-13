@@ -18,17 +18,11 @@ pub struct LogSession {
     pub log_mode: String,
 }
 
-#[derive(Debug, Clone, Default)]
-struct ActiveLogTargets {
-    auto: Option<LogSession>,
-    manual: Option<LogSession>,
-}
-
 #[derive(Clone)]
 pub struct LoggerState {
     log_dir: PathBuf,
     index_path: PathBuf,
-    sessions: Arc<Mutex<HashMap<String, ActiveLogTargets>>>,
+    sessions: Arc<Mutex<HashMap<String, LogSession>>>,
 }
 
 impl LoggerState {
@@ -142,25 +136,15 @@ fn is_session_active(session: &LogSession, active_keys: &HashSet<ActiveLogKey>) 
     })
 }
 
-fn active_log_keys(targets: &HashMap<String, ActiveLogTargets>) -> HashSet<ActiveLogKey> {
-    let mut active = HashSet::new();
-    for (session_id, targets) in targets {
-        if let Some(session) = &targets.auto {
-            active.insert(ActiveLogKey {
-                session_id: session_id.clone(),
-                log_mode: "auto".into(),
-                file_path: session.file_path.clone(),
-            });
-        }
-        if let Some(session) = &targets.manual {
-            active.insert(ActiveLogKey {
-                session_id: session_id.clone(),
-                log_mode: "manual".into(),
-                file_path: session.file_path.clone(),
-            });
-        }
-    }
-    active
+fn active_log_keys(sessions: &HashMap<String, LogSession>) -> HashSet<ActiveLogKey> {
+    sessions
+        .iter()
+        .map(|(session_id, session)| ActiveLogKey {
+            session_id: session_id.clone(),
+            log_mode: session.log_mode.clone(),
+            file_path: session.file_path.clone(),
+        })
+        .collect()
 }
 
 fn delete_auto_log_file(
@@ -326,7 +310,12 @@ fn create_log_session(
     let now = Local::now();
     let started_at = now.format("%Y-%m-%d %H:%M:%S").to_string();
     let session_prefix = session_id.chars().take(8).collect::<String>();
-    let filename = format!("{}_{}.log", now.format("%Y%m%d_%H%M%S"), session_prefix);
+    let filename = format!(
+        "{}_{:09}_{}.log",
+        now.format("%Y%m%d_%H%M%S"),
+        now.timestamp_subsec_nanos(),
+        session_prefix
+    );
     let file_path = file_path
         .map(PathBuf::from)
         .unwrap_or_else(|| log_dir.join(&filename));
@@ -366,64 +355,38 @@ fn append_to_log_sessions(sessions: &[LogSession], data: &str) -> Result<(), Str
     Ok(())
 }
 
-fn log_sessions_for_mode(
-    targets: Option<&ActiveLogTargets>,
-    log_mode: &str,
-) -> Result<Vec<LogSession>, String> {
-    match log_mode {
-        "auto" => Ok(targets
-            .and_then(|targets| targets.auto.as_ref())
-            .cloned()
-            .into_iter()
-            .collect()),
-        "manual" => Ok(targets
-            .and_then(|targets| targets.manual.as_ref())
-            .cloned()
-            .into_iter()
-            .collect()),
-        _ => Err(format!("Unknown log mode: {}", log_mode)),
-    }
-}
-
 fn command_result<T>(
     result: Result<T, String>,
 ) -> Result<T, crate::command_error::BackendCommandError> {
     result.map_err(Into::into)
 }
 
-#[tauri::command]
-pub async fn logger_start_auto(
-    state: tauri::State<'_, LoggerState>,
-    session_id: String,
-    connection_type: String,
-    target: String,
-) -> Result<String, crate::command_error::BackendCommandError> {
-    command_result(start_auto_log(&state, session_id, connection_type, target).await)
-}
-
-pub async fn start_auto_log(
+pub async fn start_log_on_connection(
     state: &LoggerState,
     session_id: String,
     connection_type: String,
     target: String,
 ) -> Result<String, String> {
-    let include_header = crate::config::config_read()
-        .map(|cfg| cfg.terminal.include_log_header)
-        .unwrap_or(true);
-    let session = create_log_session(
-        &state.log_dir,
-        session_id.clone(),
+    start_log(
+        state,
+        session_id,
         connection_type,
         target,
         None,
         "auto",
-        include_header,
         LogWriteMode::Overwrite,
-    )?;
-    let mut sessions = state.sessions.lock().await;
-    sessions.entry(session_id).or_default().auto = Some(session.clone());
-    upsert_log_session(&state.index_path, session.clone())?;
-    Ok(session.file_path)
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn logger_start_on_connection(
+    state: tauri::State<'_, LoggerState>,
+    session_id: String,
+    connection_type: String,
+    target: String,
+) -> Result<String, crate::command_error::BackendCommandError> {
+    command_result(start_log_on_connection(&state, session_id, connection_type, target).await)
 }
 
 #[tauri::command]
@@ -456,34 +419,45 @@ pub async fn start_manual_log(
     file_path: Option<String>,
     write_mode: Option<String>,
 ) -> Result<String, String> {
+    let write_mode = LogWriteMode::from_optional_str(write_mode.as_deref())?;
+    start_log(
+        state,
+        session_id,
+        connection_type,
+        target,
+        file_path,
+        "manual",
+        write_mode,
+    )
+    .await
+}
+
+async fn start_log(
+    state: &LoggerState,
+    session_id: String,
+    connection_type: String,
+    target: String,
+    file_path: Option<String>,
+    start_method: &str,
+    write_mode: LogWriteMode,
+) -> Result<String, String> {
     let include_header = crate::config::config_read()
         .map(|cfg| cfg.terminal.include_log_header)
         .unwrap_or(true);
-    let write_mode = LogWriteMode::from_optional_str(write_mode.as_deref())?;
     let session = create_log_session(
         &state.log_dir,
         session_id.clone(),
         connection_type,
         target,
         file_path,
-        "manual",
+        start_method,
         include_header,
         write_mode,
     )?;
     let mut sessions = state.sessions.lock().await;
-    sessions.entry(session_id).or_default().manual = Some(session.clone());
+    sessions.insert(session_id, session.clone());
     upsert_log_session(&state.index_path, session.clone())?;
     Ok(session.file_path)
-}
-
-#[tauri::command]
-pub async fn logger_start(
-    state: tauri::State<'_, LoggerState>,
-    session_id: String,
-    connection_type: String,
-    target: String,
-) -> Result<String, crate::command_error::BackendCommandError> {
-    logger_start_auto(state, session_id, connection_type, target).await
 }
 
 #[tauri::command]
@@ -495,13 +469,7 @@ pub async fn logger_stop_manual(
 }
 
 pub async fn stop_manual_log(state: &LoggerState, session_id: &str) -> Result<(), String> {
-    let mut sessions = state.sessions.lock().await;
-    if let Some(targets) = sessions.get_mut(session_id) {
-        targets.manual = None;
-        if targets.auto.is_none() {
-            sessions.remove(session_id);
-        }
-    }
+    state.sessions.lock().await.remove(session_id);
     Ok(())
 }
 
@@ -510,11 +478,7 @@ pub async fn clear_session_logs(state: &LoggerState, session_id: &str) {
 }
 
 pub async fn manual_log_session(state: &LoggerState, session_id: &str) -> Option<LogSession> {
-    let sessions = state.sessions.lock().await;
-    sessions
-        .get(session_id)
-        .and_then(|targets| targets.manual.as_ref())
-        .cloned()
+    state.sessions.lock().await.get(session_id).cloned()
 }
 
 #[tauri::command]
@@ -535,29 +499,9 @@ pub async fn logger_append(
         let sessions = state.sessions.lock().await;
         sessions
             .get(&session_id)
-            .map(|targets| {
-                targets
-                    .auto
-                    .iter()
-                    .chain(targets.manual.iter())
-                    .cloned()
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default()
-    };
-    command_result(append_to_log_sessions(&active_sessions, &data))
-}
-
-#[tauri::command]
-pub async fn logger_append_to_mode(
-    state: tauri::State<'_, LoggerState>,
-    session_id: String,
-    log_mode: String,
-    data: String,
-) -> Result<(), crate::command_error::BackendCommandError> {
-    let active_sessions = {
-        let sessions = state.sessions.lock().await;
-        command_result(log_sessions_for_mode(sessions.get(&session_id), &log_mode))?
+            .cloned()
+            .into_iter()
+            .collect::<Vec<_>>()
     };
     command_result(append_to_log_sessions(&active_sessions, &data))
 }
@@ -713,68 +657,20 @@ mod tests {
     }
 
     #[test]
-    fn append_to_log_sessions_writes_to_all_targets() {
+    fn append_to_log_sessions_writes_to_active_target() {
         let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).expect("temp dir should be created");
-        let auto_path = dir.join("auto.log");
-        let manual_path = dir.join("manual.log");
-        fs::write(&auto_path, "auto\n").expect("auto file should be created");
-        fs::write(&manual_path, "manual\n").expect("manual file should be created");
+        let log_path = dir.join("session.log");
+        fs::write(&log_path, "log\n").expect("log file should be created");
+        let sessions = vec![LogSession {
+            file_path: log_path.to_string_lossy().to_string(),
+            ..sample_session("session-1", "2026-04-25T10:00:00+09:00", "host")
+        }];
 
-        let sessions = vec![
-            LogSession {
-                file_path: auto_path.to_string_lossy().to_string(),
-                ..sample_session("session-1", "2026-04-25T10:00:00+09:00", "host")
-            },
-            LogSession {
-                file_path: manual_path.to_string_lossy().to_string(),
-                log_mode: "manual".into(),
-                ..sample_session("session-1", "2026-04-25T10:00:00+09:00", "host")
-            },
-        ];
+        append_to_log_sessions(&sessions, "data\n").expect("append should write the log");
 
-        append_to_log_sessions(&sessions, "data\n").expect("append should write both logs");
-
-        assert_eq!(fs::read_to_string(&auto_path).unwrap(), "auto\ndata\n");
-        assert_eq!(fs::read_to_string(&manual_path).unwrap(), "manual\ndata\n");
+        assert_eq!(fs::read_to_string(&log_path).unwrap(), "log\ndata\n");
         let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn log_sessions_for_mode_selects_only_requested_target() {
-        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
-        fs::create_dir_all(&dir).expect("temp dir should be created");
-        let auto_path = dir.join("auto.log");
-        let manual_path = dir.join("manual.log");
-        fs::write(&auto_path, "auto\n").expect("auto file should be created");
-        fs::write(&manual_path, "manual\n").expect("manual file should be created");
-
-        let targets = ActiveLogTargets {
-            auto: Some(LogSession {
-                file_path: auto_path.to_string_lossy().to_string(),
-                ..sample_session("session-1", "2026-04-25T10:00:00+09:00", "host")
-            }),
-            manual: Some(LogSession {
-                file_path: manual_path.to_string_lossy().to_string(),
-                log_mode: "manual".into(),
-                ..sample_session("session-1", "2026-04-25T10:00:00+09:00", "host")
-            }),
-        };
-
-        let sessions =
-            log_sessions_for_mode(Some(&targets), "manual").expect("manual mode should select");
-        append_to_log_sessions(&sessions, "data\n").expect("manual append should write");
-
-        assert_eq!(fs::read_to_string(&auto_path).unwrap(), "auto\n");
-        assert_eq!(fs::read_to_string(&manual_path).unwrap(), "manual\ndata\n");
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn log_sessions_for_mode_rejects_unknown_mode() {
-        let error = log_sessions_for_mode(None, "unknown").expect_err("unknown mode should fail");
-
-        assert!(error.contains("Unknown log mode"));
     }
 
     #[test]
@@ -854,19 +750,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn clear_session_logs_removes_active_auto_and_manual_targets() {
+    async fn connection_and_manual_starts_share_one_active_target() {
         let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
         let index_path = dir.join("index.json");
         let state = LoggerState::with_paths(dir.clone(), index_path.clone());
 
-        start_auto_log(
+        start_log_on_connection(
             &state,
             "session-1".into(),
             "ssh".into(),
             "user@host:22".into(),
         )
         .await
-        .expect("auto log should start");
+        .expect("connection log should start");
+        let auto_session = manual_log_session(&state, "session-1")
+            .await
+            .expect("connection log should be active");
+        assert_eq!(auto_session.log_mode, "auto");
         start_manual_log(
             &state,
             "session-1".into(),
@@ -877,6 +777,12 @@ mod tests {
         )
         .await
         .expect("manual log should start");
+        let manual_session = manual_log_session(&state, "session-1")
+            .await
+            .expect("manual log should replace the active target");
+        assert_eq!(manual_session.log_mode, "manual");
+        assert_ne!(manual_session.file_path, auto_session.file_path);
+        assert_eq!(state.sessions.lock().await.len(), 1);
 
         clear_session_logs(&state, "session-1").await;
         let active_keys = {

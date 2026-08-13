@@ -71,7 +71,7 @@ Preserve the opt-in logging model unless the task explicitly changes it.
 
 - Frontend calls Rust through `@tauri-apps/api/core` `invoke`.
 - SSH, Serial, and Telnet connection dialogs start backend sessions, then the frontend workspace-tab lifecycle registers tabs from returned session IDs.
-- Terminal input writes to the matching backend command (`ssh_write`, `serial_write`, or `telnet_write`); terminal output is rendered by xterm.js and may be appended to logs only when auto session logging is enabled.
+- Terminal input writes to the matching backend command (`ssh_write`, `serial_write`, or `telnet_write`); terminal output is rendered by xterm.js and is appended to the session's single active log when logging is running. The auto-session setting starts that same controllable log when a connection is created.
 - Settings are loaded through `config_load` and saved through `config_save`.
 - AI chat loads configured provider/model preferences, checks secret status for cloud providers, and calls `ai_chat`.
 - GUI SSH connections verify and, when needed, confirm host keys inside the active handshake so authentication continues on the same TCP connection. External-control connections require an already trusted key without opening a separate probe connection.

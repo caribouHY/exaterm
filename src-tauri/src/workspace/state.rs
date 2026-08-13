@@ -141,10 +141,13 @@ impl WorkspaceState {
             terminal_mode: input.terminal_mode,
             connection_info: input.connection_info,
             is_connected: true,
-            is_auto_logging: input.is_auto_logging,
-            is_manual_logging: false,
+            is_manual_logging: input.is_manual_logging,
             is_manual_logging_paused: false,
-            manual_log_file_path: None,
+            manual_log_file_path: if input.is_manual_logging {
+                input.manual_log_file_path
+            } else {
+                None
+            },
         };
         model.tabs.insert(tab_id.clone(), tab);
 

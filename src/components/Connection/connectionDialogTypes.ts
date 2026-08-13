@@ -10,6 +10,7 @@ import type {
   WorkspaceConnectionInfo,
 } from "../../types";
 import type { SshConnectionProgressEvent } from "./sshConnectionAttemptModel";
+import type { ConnectionLogState } from "../../features/terminal-logging/connectionLogModel";
 
 export interface ConnectionDialogInitialValues {
   connectionInfo: WorkspaceConnectionInfo;
@@ -26,7 +27,7 @@ export interface ConnectionDialogProps {
     type: ConnectionType,
     sessionId: string,
     title: string,
-    isAutoLogging: boolean,
+    logState: ConnectionLogState,
     encoding?: Encoding,
     terminalMode?: TerminalMode,
     connectionInfo?: WorkspaceConnectionInfo

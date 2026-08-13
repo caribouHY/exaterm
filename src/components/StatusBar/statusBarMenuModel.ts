@@ -1,4 +1,11 @@
-import type { Encoding, ManualLogWriteMode, TabInfo, TerminalMode } from "../../types";
+import type {
+  Encoding,
+  ManualLogWriteMode,
+  ShortcutConfig,
+  TabInfo,
+  TerminalMode,
+} from "../../types";
+import { formatShortcut } from "../../features/shortcuts/shortcutModel";
 import {
   canPauseManualLog,
   canResumeManualLog,
@@ -11,6 +18,7 @@ export interface StatusBarPaletteItem {
   key: string;
   label: string;
   searchLabel?: string;
+  shortcut?: string;
   active?: boolean;
   disabled?: boolean;
   action: () => void;
@@ -51,6 +59,7 @@ interface StatusBarPaletteActions {
 interface CreateStatusBarPaletteItemsOptions {
   kind: StatusBarMenuKind;
   activeTab: TabInfo;
+  shortcuts: ShortcutConfig;
   terminalModes: TerminalModeOption[];
   labels: StatusBarPaletteLabels;
   actions: StatusBarPaletteActions;
@@ -66,6 +75,7 @@ function createLogPaletteLabels({
 export function createStatusBarPaletteItems({
   kind,
   activeTab,
+  shortcuts,
   terminalModes,
   labels,
   actions,
@@ -94,11 +104,14 @@ export function createStatusBarPaletteItems({
 
   const isManualLogging = Boolean(activeTab.isManualLogging);
   const isManualLoggingPaused = Boolean(activeTab.isManualLoggingPaused);
+  const shortcut = (binding: ShortcutConfig[keyof ShortcutConfig]) =>
+    formatShortcut(binding) || undefined;
 
   return [
     {
       key: "log_start_overwrite",
       ...createLogPaletteLabels(labels.logStartOverwrite),
+      shortcut: shortcut(shortcuts.terminal_log_start_overwrite),
       disabled: !activeTab.isConnected || isManualLogging,
       action: () => {
         actions.onStartManualLog("overwrite");
@@ -107,6 +120,7 @@ export function createStatusBarPaletteItems({
     {
       key: "log_start_append",
       ...createLogPaletteLabels(labels.logStartAppend),
+      shortcut: shortcut(shortcuts.terminal_log_start_append),
       disabled: !activeTab.isConnected || isManualLogging,
       action: () => {
         actions.onStartManualLog("append");
@@ -115,12 +129,14 @@ export function createStatusBarPaletteItems({
     {
       key: "log_stop",
       ...createLogPaletteLabels(labels.logStop),
+      shortcut: shortcut(shortcuts.terminal_log_stop),
       disabled: !isManualLogging,
       action: actions.onStopManualLog,
     },
     {
       key: "log_pause",
       ...createLogPaletteLabels(labels.logPause),
+      shortcut: shortcut(shortcuts.terminal_log_pause),
       disabled:
         !activeTab.isConnected || !canPauseManualLog(isManualLogging, isManualLoggingPaused),
       action: () => {
@@ -130,6 +146,7 @@ export function createStatusBarPaletteItems({
     {
       key: "log_resume",
       ...createLogPaletteLabels(labels.logResume),
+      shortcut: shortcut(shortcuts.terminal_log_resume),
       disabled:
         !activeTab.isConnected || !canResumeManualLog(isManualLogging, isManualLoggingPaused),
       action: () => {

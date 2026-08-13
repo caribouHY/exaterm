@@ -376,32 +376,33 @@ async fn finish_created_session(
     terminal_mode: String,
     connection_info: Option<WorkspaceConnectionInfo>,
 ) -> Result<Value, ExternalControlError> {
-    let auto_logging = if config.terminal.auto_session_log {
+    let auto_log_file_path = if config.terminal.auto_session_log {
         match &runtime.logger {
-            Some(logger_state) => logger::start_auto_log(
+            Some(logger_state) => logger::start_log_on_connection(
                 logger_state,
                 session_id.clone(),
                 connection_type.clone(),
                 target.clone(),
             )
             .await
-            .map(|_| true)
+            .map(Some)
             .unwrap_or_else(|error| {
                 log::warn!(
-                    "External control auto log start failed for session {session_id}: {error}"
+                    "External control connection log start failed for session {session_id}: {error}"
                 );
-                false
+                None
             }),
             None => {
                 log::warn!(
-                    "External control auto log start skipped because logger state is unavailable"
+                    "External control connection log start skipped because logger state is unavailable"
                 );
-                false
+                None
             }
         }
     } else {
-        false
+        None
     };
+    let auto_logging = auto_log_file_path.is_some();
 
     let protocol = terminal_protocol_from_log_type(&connection_type).map_err(invalid_params)?;
     let payload = ExternalControlConnectionCreatedPayload {
@@ -425,7 +426,8 @@ async fn finish_created_session(
             encoding,
             terminal_mode,
             connection_info,
-            is_auto_logging: auto_logging,
+            is_manual_logging: auto_logging,
+            manual_log_file_path: auto_log_file_path,
         })
         .await;
     #[cfg(not(test))]

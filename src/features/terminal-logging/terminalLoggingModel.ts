@@ -1,7 +1,3 @@
-export function shouldAppendAutoLog(isAutoLogging: boolean): boolean {
-  return isAutoLogging;
-}
-
 export function shouldAppendManualLog(
   isManualLogging: boolean,
   isManualLoggingPaused: boolean

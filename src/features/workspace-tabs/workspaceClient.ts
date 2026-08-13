@@ -17,7 +17,6 @@ export interface WorkspaceTabMetadataPatch {
   encoding?: Encoding;
   terminalMode?: TerminalMode;
   isConnected?: boolean;
-  isAutoLogging?: boolean;
   isManualLogging?: boolean;
   isManualLoggingPaused?: boolean;
   manualLogFilePath?: string;
@@ -31,7 +30,8 @@ export interface RegisterWorkspaceTabInput {
   encoding: Encoding;
   terminalMode: TerminalMode;
   connectionInfo?: WorkspaceConnectionInfo;
-  isAutoLogging: boolean;
+  isManualLogging: boolean;
+  manualLogFilePath: string | null;
 }
 
 export const workspaceClient = {
@@ -60,7 +60,8 @@ export const workspaceClient = {
       encoding: input.encoding,
       terminalMode: input.terminalMode,
       connectionInfo: input.connectionInfo,
-      isAutoLogging: input.isAutoLogging,
+      isManualLogging: input.isManualLogging,
+      manualLogFilePath: input.manualLogFilePath,
     });
   },
 

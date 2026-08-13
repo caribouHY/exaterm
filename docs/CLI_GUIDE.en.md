@@ -159,8 +159,8 @@ appear as normal ExaTerm tabs, and required SSH credentials are entered in the G
 
 Terminal output, commands, prompts, profile memos, hostnames, usernames, and log paths can
 be sensitive. Enable CLI access only for trusted local programs. The CLI does not expose
-saved credentials, API keys, private key contents, or log file contents. Manual logs are
-plaintext files and remain opt-in.
+saved credentials, API keys, private key contents, or log file contents. Session logs are
+plaintext files and are created only when connection logging is enabled or logging is explicitly started.
 
 ## Troubleshooting
 

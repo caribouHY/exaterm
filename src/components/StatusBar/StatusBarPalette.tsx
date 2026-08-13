@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { TabInfo, Encoding, TerminalMode, ManualLogWriteMode } from "../../types";
+import type {
+  TabInfo,
+  Encoding,
+  TerminalMode,
+  ManualLogWriteMode,
+  ShortcutConfig,
+} from "../../types";
 import { getTerminalModeOptions } from "../../utils/terminalModes";
 import {
   createStatusBarPaletteItems,
@@ -18,6 +24,7 @@ export type StatusBarPaletteCloseReason = "action" | "confirm" | "escape" | "out
 interface StatusBarPaletteProps {
   kind: StatusBarMenuKind;
   activeTab: TabInfo;
+  shortcuts: ShortcutConfig;
   onEncodingChange: (encoding: Encoding) => void;
   onTerminalModeChange: (terminalMode: TerminalMode) => void;
   onStartManualLog: (writeMode: ManualLogWriteMode) => void;
@@ -29,6 +36,7 @@ interface StatusBarPaletteProps {
 export default function StatusBarPalette({
   kind,
   activeTab,
+  shortcuts,
   onEncodingChange,
   onTerminalModeChange,
   onStartManualLog,
@@ -46,6 +54,7 @@ export default function StatusBarPalette({
       createStatusBarPaletteItems({
         kind,
         activeTab,
+        shortcuts,
         terminalModes,
         labels: {
           logStartOverwrite: {
@@ -85,6 +94,7 @@ export default function StatusBarPalette({
       onStartManualLog,
       onStopManualLog,
       onTerminalModeChange,
+      shortcuts,
       t,
       terminalModes,
     ]
@@ -259,6 +269,11 @@ export default function StatusBarPalette({
                   ) : null}
                   {item.active ? <span>{` (${t("statusbar.palette.current")})`}</span> : null}
                 </span>
+                {item.shortcut ? (
+                  <span className="statusbar-palette__shortcut" aria-hidden="true">
+                    {item.shortcut}
+                  </span>
+                ) : null}
               </button>
             );
           })
