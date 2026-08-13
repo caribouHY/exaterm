@@ -20,7 +20,7 @@ export interface SshConnectParams {
   rows: number;
 }
 
-export type SshAuthMethod = "password" | "public_key";
+export type SshAuthMethod = "password" | "keyboard_interactive" | "public_key";
 
 export type HostKeyCheckStatus = "trusted" | "unknown" | "mismatch";
 

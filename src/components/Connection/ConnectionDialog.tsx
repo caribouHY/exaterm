@@ -8,6 +8,7 @@ import type {
   ConnectionType,
   PortInfo,
   SavedConnection,
+  SshAuthMethod,
 } from "../../types";
 import { DEFAULT_TERMINAL_MODE, normalizeTerminalMode } from "../../utils/terminalModes";
 import { ConnectionDialogView } from "./ConnectionDialogView";
@@ -78,7 +79,7 @@ export default function ConnectionDialog({
   const [host, setHost] = useState("192.168.1.1");
   const [port, setPort] = useState("22");
   const [username, setUsername] = useState("admin");
-  const [authMethod, setAuthMethod] = useState<"password" | "public_key">("password");
+  const [authMethod, setAuthMethod] = useState<SshAuthMethod>("password");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [jumpProfileId, setJumpProfileId] = useState("");
   const [missingInitialJumpProfileId, setMissingInitialJumpProfileId] = useState("");

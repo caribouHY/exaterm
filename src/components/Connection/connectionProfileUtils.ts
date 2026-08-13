@@ -18,6 +18,7 @@ export const SSH_ENCODINGS: { label: string; value: Encoding }[] = [
 
 export const SSH_AUTH_METHODS: { labelKey: string; value: SshAuthMethod }[] = [
   { labelKey: "connection.auth_password", value: "password" },
+  { labelKey: "connection.auth_keyboard_interactive", value: "keyboard_interactive" },
   { labelKey: "connection.auth_public_key", value: "public_key" },
 ];
 
@@ -28,8 +29,13 @@ export const normalizeEncoding = (encoding: string | null | undefined): Encoding
 };
 
 export const normalizeSshAuthMethod = (authMethod: string | null | undefined): SshAuthMethod => {
-  return authMethod === "public_key" ? "public_key" : "password";
+  return SSH_AUTH_METHODS.some((entry) => entry.value === authMethod)
+    ? (authMethod as SshAuthMethod)
+    : "password";
 };
+
+export const usesPrivateKeyAuthentication = (authMethod: SshAuthMethod): boolean =>
+  authMethod === "public_key";
 
 export const normalizeProfileMemo = (memo: string): string | null => {
   const trimmed = memo.trim();
@@ -73,7 +79,9 @@ export const createSshProfile = (draft: SshProfileDraft): SavedConnection => ({
   port: Number.parseInt(draft.port, 10),
   username: draft.username.trim(),
   auth_method: draft.authMethod,
-  private_key_path: draft.authMethod === "public_key" ? draft.privateKeyPath.trim() : null,
+  private_key_path: usesPrivateKeyAuthentication(draft.authMethod)
+    ? draft.privateKeyPath.trim()
+    : null,
   jump_profile_id: draft.jumpProfileId || null,
   encoding: draft.encoding,
   terminal_mode: draft.terminalMode,

@@ -16,6 +16,7 @@ import type {
   ChatMessage,
   TerminalMode,
   StartupCliRequest,
+  SshAuthMethod,
   ManualLogWriteMode,
   WorkspaceConnectionInfo,
 } from "./types";
@@ -84,7 +85,7 @@ interface McpCredentialRequestPayload {
   host: string;
   port: number;
   username: string;
-  auth_method: "password" | "public_key";
+  auth_method: SshAuthMethod;
   target: string;
   title: string;
 }

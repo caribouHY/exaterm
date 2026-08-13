@@ -1070,7 +1070,12 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
 
 #[test]
 fn ssh_credential_required_defers_password_prompt_and_rejects_missing_key() {
+    assert_eq!(
+        normalize_profile_auth_method(Some("keyboard_interactive")).unwrap(),
+        "keyboard_interactive"
+    );
     assert!(!ssh_credential_required("password", None).unwrap());
+    assert!(!ssh_credential_required("keyboard_interactive", None).unwrap());
 
     let error = ssh_credential_required("public_key", None).unwrap_err();
     assert!(error.contains("private key"));

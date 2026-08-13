@@ -152,7 +152,10 @@ fn normalize_input(
             if host.is_empty() || username.is_empty() {
                 return Err("SSH connection history requires a host and username".into());
             }
-            if !matches!(auth_method.as_str(), "password" | "public_key") {
+            if !matches!(
+                auth_method.as_str(),
+                "password" | "keyboard_interactive" | "public_key"
+            ) {
                 return Err("Invalid SSH connection history authentication method".into());
             }
             *private_key_path = private_key_path
@@ -358,6 +361,27 @@ mod tests {
             encoding: "utf-8".into(),
             terminal_mode: "general".into(),
         }
+    }
+
+    #[test]
+    fn keyboard_interactive_ssh_history_is_valid() {
+        let mut input = ssh_input("router.example", "operator");
+        if let WorkspaceConnectionInfo::Ssh {
+            auth_method,
+            private_key_path,
+            ..
+        } = &mut input.connection_info
+        {
+            *auth_method = "keyboard_interactive".into();
+            *private_key_path = None;
+        }
+
+        let normalized = normalize_input(input).unwrap();
+        assert!(matches!(
+            normalized.connection_info,
+            WorkspaceConnectionInfo::Ssh { auth_method, .. }
+                if auth_method == "keyboard_interactive"
+        ));
     }
 
     fn telnet_input(host: &str, port: u16) -> ConnectionHistoryRecordInput {

@@ -20,6 +20,7 @@ use super::io::{
     SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS, SSH_WRITE_ERROR, SSH_WRITE_TIMEOUT_ERROR,
 };
 use super::private_key_requires_passphrase;
+use super::profiles::normalize_profile_auth_method;
 use super::types::SshAuthRequest;
 use crate::config::{SshAlgorithmSelection, SshConfig};
 use crate::ssh_known_hosts::HostKeyCheckStatus;
@@ -399,6 +400,27 @@ fn auth_request_defaults_to_password() {
         SshAuthRequest::Password {
             password: "secret".to_string()
         }
+    );
+}
+
+#[test]
+fn keyboard_interactive_auth_builds_explicit_request() {
+    let request = build_auth_request(
+        Some("keyboard_interactive".to_string()),
+        String::new(),
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(request, SshAuthRequest::KeyboardInteractive);
+}
+
+#[test]
+fn profile_auth_method_accepts_keyboard_interactive() {
+    assert_eq!(
+        normalize_profile_auth_method(Some("keyboard_interactive")).unwrap(),
+        "keyboard_interactive"
     );
 }
 

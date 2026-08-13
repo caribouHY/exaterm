@@ -133,6 +133,7 @@
   "connection.username": "Username",
   "connection.auth_method": "Authentication",
   "connection.auth_password": "Password",
+  "connection.auth_keyboard_interactive": "Keyboard-interactive",
   "connection.auth_public_key": "Public Key",
   "connection.password": "Password",
   "connection.private_key_path": "Private Key",
