@@ -189,8 +189,8 @@ When MCP is enabled, external clients can call these tools:
   - `wait`: waits for new output or for the optional `contains` substring. When `cursor` is omitted, waiting starts at the current output position.
 - `send_terminal_input`: sends text to a connected session.
 - `run_terminal_command`: sends a command to a connected session, waits for output, and returns the output delta.
-- `start_terminal_log`: starts a manual plaintext log for a connected session. The log is saved under `%AppData%\ExaTerm\logs`, and the result returns the created file path.
-- `stop_terminal_log`: stops a manual plaintext log for a session after ExaTerm flushes pending displayed output to the log.
+- `start_terminal_log`: explicitly starts a plaintext log for a connected session. The log is saved under `%AppData%\ExaTerm\logs`, and the result returns the created file path.
+- `stop_terminal_log`: stops the active plaintext log for a session after ExaTerm flushes pending displayed output to the log.
 
 Example output reads:
 
@@ -231,22 +231,22 @@ The MCP compatibility adapter and CLI do not read saved credentials, expose API 
 
 Each shortcut is either an object with `key`, `ctrl`, `alt`, and `shift` fields or `null` for an unassigned action. Printable keys and `Space` require `ctrl` or `alt`; `F1` through `F12` can be assigned without a modifier. Assignments must be unique, and `Alt+F4` is reserved by Windows.
 
-| Parameter                                | Default          | Action                                                                             |
-| ---------------------------------------- | ---------------- | ---------------------------------------------------------------------------------- |
-| `shortcuts.new_connection`               | `Ctrl+N`         | Opens the new connection dialog.                                                   |
-| `shortcuts.new_window`                   | `Ctrl+Shift+N`   | Opens a new ExaTerm window.                                                        |
-| `shortcuts.open_settings`                | `Ctrl+,`         | Opens the Shortcuts and other application settings.                                |
-| `shortcuts.exit`                         | Unassigned       | Exits ExaTerm, asking for confirmation if terminal sessions are connected.         |
-| `shortcuts.terminal_select_all`          | `Ctrl+Shift+A`   | Selects the terminal screen and scrollback buffer.                                 |
-| `shortcuts.terminal_copy`                | `Ctrl+Shift+C`   | Copies the selected terminal text.                                                 |
-| `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | Pastes clipboard text into a connected terminal.                                   |
-| `shortcuts.terminal_clear_viewport`      | Unassigned       | Clears the visible terminal display locally without sending input to the session.  |
-| `shortcuts.terminal_clear_buffer`        | Unassigned       | Clears the local terminal scrollback buffer without ending the session.            |
-| `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | Opens the save dialog and starts a new manual log or overwrites the selected file. |
-| `shortcuts.terminal_log_start_append`    | Unassigned       | Opens the save dialog and appends to the selected manual log file.                 |
-| `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | Flushes pending displayed output and stops the active manual log.                  |
-| `shortcuts.terminal_log_pause`           | Unassigned       | Pauses active manual logging for the terminal session.                             |
-| `shortcuts.terminal_log_resume`          | Unassigned       | Resumes paused manual logging for the terminal session.                            |
+| Parameter                                | Default          | Action                                                                            |
+| ---------------------------------------- | ---------------- | --------------------------------------------------------------------------------- |
+| `shortcuts.new_connection`               | `Ctrl+N`         | Opens the new connection dialog.                                                  |
+| `shortcuts.new_window`                   | `Ctrl+Shift+N`   | Opens a new ExaTerm window.                                                       |
+| `shortcuts.open_settings`                | `Ctrl+,`         | Opens the Shortcuts and other application settings.                               |
+| `shortcuts.exit`                         | Unassigned       | Exits ExaTerm, asking for confirmation if terminal sessions are connected.        |
+| `shortcuts.terminal_select_all`          | `Ctrl+Shift+A`   | Selects the terminal screen and scrollback buffer.                                |
+| `shortcuts.terminal_copy`                | `Ctrl+Shift+C`   | Copies the selected terminal text.                                                |
+| `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | Pastes clipboard text into a connected terminal.                                  |
+| `shortcuts.terminal_clear_viewport`      | Unassigned       | Clears the visible terminal display locally without sending input to the session. |
+| `shortcuts.terminal_clear_buffer`        | Unassigned       | Clears the local terminal scrollback buffer without ending the session.           |
+| `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | Opens the save dialog and starts a new log or overwrites the selected file.       |
+| `shortcuts.terminal_log_start_append`    | Unassigned       | Opens the save dialog and starts a log by appending to the selected file.         |
+| `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | Flushes pending displayed output and stops the active log.                        |
+| `shortcuts.terminal_log_pause`           | Unassigned       | Pauses active logging for the terminal session.                                   |
+| `shortcuts.terminal_log_resume`          | Unassigned       | Resumes paused logging for the terminal session.                                  |
 
 Letter keys are stored in lowercase, `Space` uses the literal string `"Space"`, and function keys use uppercase names such as `"F2"`. Modifier matching is exact. For example, `Ctrl+Shift+N` does not also match `Ctrl+N`.
 
@@ -262,13 +262,13 @@ Clearing the terminal display or buffer affects only the local xterm view. It do
 | `terminal.font_family`        | string  | `"Consolas, 'Courier New', monospace"` | Terminal font family. Use the same format as CSS `font-family`.                                                                                              |
 | `terminal.cursor_style`       | string  | `"block"`                              | Terminal cursor shape. The default is a block cursor. When editing manually, use a value accepted by xterm.js, such as `"block"`, `"underline"`, or `"bar"`. |
 | `terminal.scrollback`         | number  | `10000`                                | Number of terminal scrollback lines. Larger values keep more history but may increase memory usage.                                                          |
-| `terminal.auto_session_log`   | boolean | `false`                                | When set to `true`, SSH, serial, and Telnet terminal input/output is saved as plaintext logs.                                                                |
+| `terminal.auto_session_log`   | boolean | `false`                                | When set to `true`, a plaintext log starts automatically for each new SSH, serial, or Telnet connection.                                                     |
 | `terminal.log_format`         | string  | `"display"`                            | Session log formatting mode. `"display"` saves text closer to the terminal screen; `"strip_controls"` removes control sequences.                             |
 | `terminal.include_log_header` | boolean | `false`                                | When set to `true`, new session log files start with an ExaTerm header containing the connection type, target, log mode, and start time.                     |
 
 ### Session Log Notice
 
-When `terminal.auto_session_log` is set to `true`, text displayed in the terminal and typed into the terminal is saved to log files. Logs may contain sensitive information such as:
+When `terminal.auto_session_log` is set to `true`, ExaTerm starts the same controllable log used by the status bar for every new connection. Automatically started logs can be paused, resumed, or stopped. Stopping one does not restart it during the same session; the setting is evaluated again for the next connection. Logs may contain sensitive information such as:
 
 - Commands and command output
 - Hostnames, usernames, and prompts
@@ -285,7 +285,7 @@ In sensitive environments, enable session logging only when necessary.
 
 When `terminal.log_format` is `"display"`, common line edits such as Backspace, cursor-left, and erase-to-end-of-line are applied before text is saved. When it is `"strip_controls"`, control sequences are removed, but partially edited text may remain.
 
-When `terminal.include_log_header` is `false`, new auto and manual session logs start directly with terminal content instead of the ExaTerm header. Existing log files are not changed.
+When `terminal.include_log_header` is `false`, new session logs start directly with terminal content instead of the ExaTerm header. Existing log files are not changed. The session log history shows `Auto` or `Manual` as the log mode.
 
 ## ssh
 

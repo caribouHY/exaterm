@@ -457,7 +457,7 @@ pub async fn serial_disconnect(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logger::{manual_log_session, start_auto_log, start_manual_log, LoggerState};
+    use crate::logger::{manual_log_session, start_log_on_connection, LoggerState};
     use crate::terminal_control::{TerminalControlState, TerminalStatus};
 
     async fn register_fake_session(
@@ -530,19 +530,9 @@ mod tests {
             std::env::temp_dir().join(format!("exaterm_serial_logger_test_{}", Uuid::new_v4()));
         let logger = LoggerState::with_paths(dir.clone(), dir.join("index.json"));
 
-        start_auto_log(&logger, session_id.clone(), "serial".into(), "COM1".into())
+        start_log_on_connection(&logger, session_id.clone(), "serial".into(), "COM1".into())
             .await
-            .expect("auto log should start");
-        start_manual_log(
-            &logger,
-            session_id.clone(),
-            "serial".into(),
-            "COM1".into(),
-            None,
-            None,
-        )
-        .await
-        .expect("manual log should start");
+            .expect("connection log should start");
 
         assert!(manual_log_session(&logger, &session_id).await.is_some());
         let removed =

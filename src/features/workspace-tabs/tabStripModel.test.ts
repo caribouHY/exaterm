@@ -47,7 +47,6 @@ function workspaceTab(id: string): WorkspaceTabInfo {
     encoding: "utf-8",
     terminal_mode: "general",
     is_connected: true,
-    is_auto_logging: false,
     is_manual_logging: false,
     is_manual_logging_paused: false,
   };
@@ -281,7 +280,6 @@ describe("workspaceTabToTabInfo", () => {
       encoding: "utf-8",
       terminalMode: "general",
       connectionInfo: { kind: "telnet", host: "example.invalid", port: 23 },
-      isAutoLogging: false,
       isManualLogging: true,
       isManualLoggingPaused: true,
       manualLogFilePath: undefined,

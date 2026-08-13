@@ -35,11 +35,7 @@ export default function StatusBar({
     if (activeTab.isManualLogging && activeTab.isManualLoggingPaused) {
       return t("statusbar.log_paused");
     }
-    if (activeTab.isAutoLogging && activeTab.isManualLogging) {
-      return t("statusbar.log_auto_manual");
-    }
     if (activeTab.isManualLogging) return t("statusbar.log_manual");
-    if (activeTab.isAutoLogging) return t("statusbar.log_auto");
     return t("statusbar.log_start");
   };
 

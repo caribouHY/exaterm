@@ -268,7 +268,6 @@ export interface TabInfo {
   encoding: Encoding;
   terminalMode: TerminalMode;
   connectionInfo?: WorkspaceConnectionInfo;
-  isAutoLogging?: boolean;
   isManualLogging?: boolean;
   isManualLoggingPaused?: boolean;
   manualLogFilePath?: string;
@@ -284,7 +283,6 @@ export interface WorkspaceTabInfo {
   terminal_mode: TerminalMode;
   connection_info?: WorkspaceConnectionInfo | null;
   is_connected: boolean;
-  is_auto_logging: boolean;
   is_manual_logging: boolean;
   is_manual_logging_paused: boolean;
   manual_log_file_path?: string | null;

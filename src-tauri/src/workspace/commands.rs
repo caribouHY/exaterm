@@ -295,7 +295,8 @@ pub async fn workspace_tab_register(
     encoding: String,
     terminal_mode: String,
     connection_info: Option<WorkspaceConnectionInfo>,
-    is_auto_logging: bool,
+    is_manual_logging: bool,
+    manual_log_file_path: Option<String>,
 ) -> Result<WorkspaceSnapshot, String> {
     let snapshot = state
         .register_tab(WorkspaceTabRegisterInput {
@@ -307,7 +308,8 @@ pub async fn workspace_tab_register(
             encoding,
             terminal_mode,
             connection_info,
-            is_auto_logging,
+            is_manual_logging,
+            manual_log_file_path,
         })
         .await;
     emit_workspace_updated(&app, &snapshot);

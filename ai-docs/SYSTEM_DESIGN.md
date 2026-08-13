@@ -70,7 +70,7 @@ Backend state is managed through Tauri `State` values created in `src-tauri/src/
 
 - `SshState`, `SerialState`, and `TelnetState` own active protocol sessions.
 - `TerminalControlState` stores a readable decoded output buffer and status per session.
-- `LoggerState` owns automatic and manual plaintext session log state.
+- `LoggerState` owns at most one active plaintext log per terminal session and records whether it was started automatically or manually.
 - `WorkspaceState` owns terminal-tab placement, ordering, active terminal tabs, window focus history, and cross-window drag state.
 - `ExternalControlCredentialState` and `ExternalControlLogControlState` bridge external requests that need UI action.
 - `StartupCliState` carries one startup CLI request into the frontend.
@@ -104,7 +104,7 @@ Current MCP tools include:
 - session listing and terminal output reads
 - output delta and wait operations
 - terminal input and command execution helpers
-- manual log start and stop
+- session log start and stop
 - optional saved-profile and serial-console connection creation when
   `external_control.connect_enabled` is true
 
@@ -146,9 +146,8 @@ credential prompts remain owned by the GUI.
 
 ### Logging
 
-- Automatic logging is opt-in through terminal config and starts at connection creation.
-- Manual logging can be started from UI or MCP, but UI flush is required to ensure rendered
-  output has reached the log buffer.
+- Connection-time logging is opt-in through terminal config and starts the same active log used by UI, CLI, and MCP controls.
+- Each session has at most one active log. It can be paused, resumed, or stopped regardless of how it started, and UI flush is required to ensure rendered output has reached the log buffer.
 - Plaintext logs stay under `%AppData%/ExaTerm/logs`.
 - Log contents may include secrets and must not be exposed through MCP.
 

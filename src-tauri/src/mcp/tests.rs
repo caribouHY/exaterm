@@ -17,7 +17,7 @@ use crate::external_control::service::*;
 use crate::external_control::{
     ExternalControlLogControlState, ExternalControlRuntime, ExternalControlService,
 };
-use crate::logger::LoggerState;
+use crate::logger::{manual_log_session, LoggerState};
 use crate::serial::{self, SerialState};
 use crate::ssh::SshState;
 use crate::telnet::TelnetState;
@@ -766,6 +766,7 @@ async fn backend_requires_saved_profile_connection_type() {
 #[tokio::test]
 async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
     let mut app_config = AppConfig::default();
+    app_config.terminal.auto_session_log = true;
     app_config.saved_connections = vec![
         SavedConnection {
             id: "bastion".into(),
@@ -809,7 +810,7 @@ async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
     assert_eq!(result["title"], "admin@192.0.2.10");
     assert_eq!(result["encoding"], "shift-jis");
     assert_eq!(result["terminal_mode"], "cisco_ios");
-    assert_eq!(result["auto_logging"], false);
+    assert_eq!(result["auto_logging"], true);
 
     let session = runtime.terminals.session_info(session_id).await.unwrap();
     assert_eq!(session.protocol, TerminalProtocol::Ssh);
@@ -822,6 +823,9 @@ async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
     assert_eq!(snapshot.tabs[0].title, "admin@192.0.2.10");
     assert_eq!(snapshot.tabs[0].encoding, "shift-jis");
     assert_eq!(snapshot.tabs[0].terminal_mode, "cisco_ios");
+    assert!(snapshot.tabs[0].is_manual_logging);
+    assert!(!snapshot.tabs[0].is_manual_logging_paused);
+    assert!(snapshot.tabs[0].manual_log_file_path.is_some());
     assert_eq!(
         snapshot.tabs[0].connection_info,
         Some(WorkspaceConnectionInfo::Ssh {
@@ -832,6 +836,14 @@ async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
             private_key_path: None,
             jump_profile_id: Some("bastion".into()),
         })
+    );
+    let log_session = manual_log_session(runtime.logger.as_ref().unwrap(), session_id)
+        .await
+        .expect("connection log should be active");
+    assert_eq!(log_session.log_mode, "auto");
+    assert_eq!(
+        snapshot.tabs[0].manual_log_file_path.as_deref(),
+        Some(log_session.file_path.as_str())
     );
 }
 

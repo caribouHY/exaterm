@@ -189,8 +189,8 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
   - `wait`: 新しい出力、または任意の `contains` 文字列が現れるまで待機します。`cursor` を省略した場合は現在の出力位置から待機します。
 - `send_terminal_input`: 接続中のセッションへテキストを送信します。
 - `run_terminal_command`: 接続中のセッションへコマンドを送信し、出力待機後に差分出力を返します。
-- `start_terminal_log`: 接続中セッションの手動平文ログを開始します。ログは `%AppData%\ExaTerm\logs` 配下に保存され、返却値には作成されたファイルパスが含まれます。
-- `stop_terminal_log`: ExaTerm が表示済み出力をログへ flush した後、セッションの手動平文ログを停止します。
+- `start_terminal_log`: 接続中セッションの平文ログを明示的に開始します。ログは `%AppData%\ExaTerm\logs` 配下に保存され、返却値には作成されたファイルパスが含まれます。
+- `stop_terminal_log`: ExaTerm が表示済み出力をログへ flush した後、セッションで実行中の平文ログを停止します。
 
 出力読み取りの例:
 
@@ -231,22 +231,22 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 
 各ショートカットは `key`、`ctrl`、`alt`、`shift` を持つオブジェクトです。未割り当てにする場合は `null` を指定します。通常キーと `Space` には `ctrl` または `alt` が必要です。`F1`～`F12` は修飾キーなしでも割り当てられます。割り当ての重複は許可されず、Windows が使用する `Alt+F4` は予約されています。
 
-| パラメータ                               | 既定値           | 操作                                                                             |
-| ---------------------------------------- | ---------------- | -------------------------------------------------------------------------------- |
-| `shortcuts.new_connection`               | `Ctrl+N`         | 新規接続ダイアログを開きます。                                                   |
-| `shortcuts.new_window`                   | `Ctrl+Shift+N`   | 新しい ExaTerm ウィンドウを開きます。                                            |
-| `shortcuts.open_settings`                | `Ctrl+,`         | ショートカットなどのアプリ設定を開きます。                                       |
-| `shortcuts.exit`                         | 未割り当て       | ExaTerm を終了します。接続中のターミナルセッションがある場合は確認します。       |
-| `shortcuts.terminal_select_all`          | `Ctrl+Shift+A`   | ターミナルの画面とスクロールバック全体を選択します。                             |
-| `shortcuts.terminal_copy`                | `Ctrl+Shift+C`   | ターミナルで選択した文字をコピーします。                                         |
-| `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | 接続中のターミナルへクリップボードの文字をペーストします。                       |
-| `shortcuts.terminal_clear_viewport`      | 未割り当て       | 接続先へ入力を送信せず、ローカルのターミナル表示領域をクリアします。             |
-| `shortcuts.terminal_clear_buffer`        | 未割り当て       | セッションを終了せず、ローカルのスクロールバックバッファーをクリアします。       |
-| `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | 保存ダイアログを開き、新しい手動ログを開始するか選択したファイルを上書きします。 |
-| `shortcuts.terminal_log_start_append`    | 未割り当て       | 保存ダイアログを開き、選択した手動ログファイルへ追記します。                     |
-| `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | 保留中の画面表示をflushして、実行中の手動ログを停止します。                      |
-| `shortcuts.terminal_log_pause`           | 未割り当て       | ターミナルセッションで実行中の手動ログを一時停止します。                         |
-| `shortcuts.terminal_log_resume`          | 未割り当て       | 一時停止中の手動ログを再開します。                                               |
+| パラメータ                               | 既定値           | 操作                                                                         |
+| ---------------------------------------- | ---------------- | ---------------------------------------------------------------------------- |
+| `shortcuts.new_connection`               | `Ctrl+N`         | 新規接続ダイアログを開きます。                                               |
+| `shortcuts.new_window`                   | `Ctrl+Shift+N`   | 新しい ExaTerm ウィンドウを開きます。                                        |
+| `shortcuts.open_settings`                | `Ctrl+,`         | ショートカットなどのアプリ設定を開きます。                                   |
+| `shortcuts.exit`                         | 未割り当て       | ExaTerm を終了します。接続中のターミナルセッションがある場合は確認します。   |
+| `shortcuts.terminal_select_all`          | `Ctrl+Shift+A`   | ターミナルの画面とスクロールバック全体を選択します。                         |
+| `shortcuts.terminal_copy`                | `Ctrl+Shift+C`   | ターミナルで選択した文字をコピーします。                                     |
+| `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | 接続中のターミナルへクリップボードの文字をペーストします。                   |
+| `shortcuts.terminal_clear_viewport`      | 未割り当て       | 接続先へ入力を送信せず、ローカルのターミナル表示領域をクリアします。         |
+| `shortcuts.terminal_clear_buffer`        | 未割り当て       | セッションを終了せず、ローカルのスクロールバックバッファーをクリアします。   |
+| `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | 保存ダイアログを開き、新しいログを開始するか選択したファイルを上書きします。 |
+| `shortcuts.terminal_log_start_append`    | 未割り当て       | 保存ダイアログを開き、選択したログファイルへの追記でログを開始します。       |
+| `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | 保留中の画面表示をflushして、実行中のログを停止します。                      |
+| `shortcuts.terminal_log_pause`           | 未割り当て       | ターミナルセッションで実行中のログを一時停止します。                         |
+| `shortcuts.terminal_log_resume`          | 未割り当て       | 一時停止中のログを再開します。                                               |
 
 英字キーは小文字、空白キーは `"Space"`、ファンクションキーは `"F2"` のような大文字表記で保存されます。修飾キーは完全一致で判定するため、たとえば `Ctrl+Shift+N` は `Ctrl+N` としては実行されません。
 
@@ -262,13 +262,13 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 | `terminal.font_family`        | string  | `"Consolas, 'Courier New', monospace"` | ターミナルのフォントファミリーです。CSS の `font-family` と同じ形式で指定します。                                                                               |
 | `terminal.cursor_style`       | string  | `"block"`                              | ターミナルのカーソル形状です。現在の既定値はブロックカーソルです。手動編集時は xterm.js が受け付ける値を指定してください。例: `"block"`, `"underline"`, `"bar"` |
 | `terminal.scrollback`         | number  | `10000`                                | ターミナルのスクロールバック行数です。値を大きくすると過去ログを多く保持できますが、メモリ使用量が増える可能性があります。                                      |
-| `terminal.auto_session_log`   | boolean | `false`                                | `true` にすると、SSH/シリアル/Telnet 接続のターミナル入出力を平文ログとして保存します。                                                                         |
+| `terminal.auto_session_log`   | boolean | `false`                                | `true` にすると、新しいSSH/シリアル/Telnet接続ごとに平文ログを自動的に開始します。                                                                              |
 | `terminal.log_format`         | string  | `"display"`                            | セッションログの整形方式です。`"display"` は画面表示に近い内容、`"strip_controls"` は制御文字を除去した内容を保存します。                                       |
 | `terminal.include_log_header` | boolean | `false`                                | `true` にすると、新しいセッションログの先頭に ExaTerm ヘッダとして種別、接続先、ログモード、開始時刻を記録します。                                              |
 
 ### セッションログの注意
 
-`terminal.auto_session_log` を `true` にすると、ターミナルに表示された内容や入力内容がログファイルに保存されます。ログには次のような機密情報が含まれる可能性があります。
+`terminal.auto_session_log` を `true` にすると、新しい接続ごとにステータスバーから操作するものと同じログが開始されます。自動開始されたログも一時停止、再開、停止が可能です。停止後は同じセッション内で自動再開せず、次の接続時に設定が再評価されます。ログには次のような機密情報が含まれる可能性があります。
 
 - コマンドと実行結果
 - ホスト名、ユーザー名、プロンプト
@@ -285,7 +285,7 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 
 `terminal.log_format` が `"display"` の場合、Backspace、カーソル左移動、行末消去などの一般的な行編集を反映してからログへ保存します。`"strip_controls"` の場合は制御シーケンスを除去しますが、編集途中の文字が残る場合があります。
 
-`terminal.include_log_header` が `false` の場合、新しい自動ログと手動ログは ExaTerm ヘッダを書かず、ターミナル内容から直接始まります。既存のログファイルは変更されません。
+`terminal.include_log_header` が `false` の場合、新しいセッションログは ExaTerm ヘッダを書かず、ターミナル内容から直接始まります。既存のログファイルは変更されません。セッションログ履歴では、ログモードを「自動」または「手動」として確認できます。
 
 ## ssh
 
