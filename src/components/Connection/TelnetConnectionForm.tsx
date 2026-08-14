@@ -6,7 +6,7 @@ import type {
 } from "./connectionDialogTypes";
 import {
   ConnectionFieldError,
-  ConnectionFieldLabel,
+  ConnectionFieldLabelHtml,
   EncodingSelect,
   ProfileMetadataFields,
   ProfileNameField,
@@ -44,9 +44,9 @@ export function TelnetConnectionForm({
       <ProfileNameField value={formState.profileName} onChange={formActions.onProfileNameChange} />
       <div className="connection-dialog__row">
         <div>
-          <ConnectionFieldLabel htmlFor="connection-telnet-host" required>
+          <ConnectionFieldLabelHtml htmlFor="connection-telnet-host" required>
             {t("connection.host")}
-          </ConnectionFieldLabel>
+          </ConnectionFieldLabelHtml>
           <input
             id="connection-telnet-host"
             className="input"
@@ -62,9 +62,9 @@ export function TelnetConnectionForm({
           <ConnectionFieldError id="connection-telnet-host-error" error={errors.host} />
         </div>
         <div style={{ maxWidth: 100 }}>
-          <ConnectionFieldLabel htmlFor="connection-telnet-port" required>
+          <ConnectionFieldLabelHtml htmlFor="connection-telnet-port" required>
             {t("connection.port")}
-          </ConnectionFieldLabel>
+          </ConnectionFieldLabelHtml>
           <input
             id="connection-telnet-port"
             className="input"

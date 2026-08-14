@@ -6,17 +6,17 @@ import { encodeConnectionSource } from "./connectionHistoryModel";
 import { normalizeEncoding, SSH_ENCODINGS } from "./connectionProfileUtils";
 import type { ConnectionValidationError } from "./connectionFormValidation";
 
-interface ConnectionFieldLabelProps {
+interface ConnectionFieldLabelHtmlProps {
   children: ReactNode;
   htmlFor: string;
   required?: boolean;
 }
 
-export function ConnectionFieldLabel({
+export function ConnectionFieldLabelHtml({
   children,
   htmlFor,
   required = false,
-}: ConnectionFieldLabelProps) {
+}: ConnectionFieldLabelHtmlProps) {
   return (
     <label className="label" htmlFor={htmlFor}>
       {children}

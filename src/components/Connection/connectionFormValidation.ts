@@ -97,4 +97,13 @@ export const validateSerialConnectionForm = ({
 export const isActiveConnectionFormValid = (
   connectionType: ConnectionType,
   validation: ConnectionFormValidationState
-): boolean => validation[connectionType].isValid;
+): boolean => {
+  switch (connectionType) {
+    case "ssh":
+      return validation.ssh.isValid;
+    case "telnet":
+      return validation.telnet.isValid;
+    case "serial":
+      return validation.serial.isValid;
+  }
+};

@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import type { SerialFormActions, SerialFormState } from "./connectionDialogTypes";
 import {
   ConnectionFieldError,
-  ConnectionFieldLabel,
+  ConnectionFieldLabelHtml,
   TerminalModeSelect,
 } from "./ConnectionFormFields";
 
@@ -20,9 +20,9 @@ export function SerialConnectionForm({ formState, formActions }: SerialConnectio
   return (
     <>
       <div>
-        <ConnectionFieldLabel htmlFor="connection-serial-port" required>
+        <ConnectionFieldLabelHtml htmlFor="connection-serial-port" required>
           {t("connection.port")}
-        </ConnectionFieldLabel>
+        </ConnectionFieldLabelHtml>
         <select
           id="connection-serial-port"
           className="select"

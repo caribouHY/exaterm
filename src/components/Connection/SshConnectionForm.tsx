@@ -9,7 +9,7 @@ import {
 import type { SshFormActions, SshFormState, SshProfileOptions } from "./connectionDialogTypes";
 import {
   ConnectionFieldError,
-  ConnectionFieldLabel,
+  ConnectionFieldLabelHtml,
   EncodingSelect,
   ProfileMetadataFields,
   ProfileNameField,
@@ -47,9 +47,9 @@ export function SshConnectionForm({
       <ProfileNameField value={formState.profileName} onChange={formActions.onProfileNameChange} />
       <div className="connection-dialog__row">
         <div>
-          <ConnectionFieldLabel htmlFor="connection-ssh-host" required>
+          <ConnectionFieldLabelHtml htmlFor="connection-ssh-host" required>
             {t("connection.host")}
-          </ConnectionFieldLabel>
+          </ConnectionFieldLabelHtml>
           <input
             id="connection-ssh-host"
             className="input"
@@ -65,9 +65,9 @@ export function SshConnectionForm({
           <ConnectionFieldError id="connection-ssh-host-error" error={errors.host} />
         </div>
         <div style={{ maxWidth: 100 }}>
-          <ConnectionFieldLabel htmlFor="connection-ssh-port" required>
+          <ConnectionFieldLabelHtml htmlFor="connection-ssh-port" required>
             {t("connection.port")}
-          </ConnectionFieldLabel>
+          </ConnectionFieldLabelHtml>
           <input
             id="connection-ssh-port"
             className="input"
@@ -87,9 +87,9 @@ export function SshConnectionForm({
         </div>
       </div>
       <div>
-        <ConnectionFieldLabel htmlFor="connection-ssh-username" required>
+        <ConnectionFieldLabelHtml htmlFor="connection-ssh-username" required>
           {t("connection.username")}
-        </ConnectionFieldLabel>
+        </ConnectionFieldLabelHtml>
         <input
           id="connection-ssh-username"
           className="input"
@@ -122,12 +122,12 @@ export function SshConnectionForm({
       </div>
       {usesPrivateKeyAuthentication(formState.authMethod) && (
         <div>
-          <ConnectionFieldLabel
+          <ConnectionFieldLabelHtml
             htmlFor="connection-ssh-private-key"
             required={formState.authMethod === "public_key"}
           >
             {t("connection.private_key_path")}
-          </ConnectionFieldLabel>
+          </ConnectionFieldLabelHtml>
           <div className="connection-dialog__file-row">
             <input
               id="connection-ssh-private-key"
