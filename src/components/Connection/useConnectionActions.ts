@@ -40,9 +40,11 @@ import {
   isSshConnectionCancellation,
   type SshConnectionAttemptAction,
 } from "./sshConnectionAttemptModel";
+import { parseConnectionPort } from "./connectionFormValidation";
 
 interface UseConnectionActionsParams {
   tab: ConnectionType;
+  canConnect: boolean;
   connectingRef: MutableRefObject<boolean>;
   setConnecting: (value: boolean) => void;
   setError: (value: string) => void;
@@ -94,14 +96,6 @@ interface UseConnectionActionsParams {
   t: (key: string, options?: Record<string, unknown>) => string;
 }
 
-const parsePort = (value: string, errorMessage: string) => {
-  const parsed = Number.parseInt(value, 10);
-  if (Number.isNaN(parsed)) {
-    throw new Error(errorMessage);
-  }
-  return parsed;
-};
-
 const getStartLogOnConnectionPreference = async () => {
   try {
     const cfg = await invoke<AppConfig>("config_load");
@@ -132,6 +126,7 @@ const recordConnectionHistory = (input: ConnectionHistoryRecordInput) => {
 
 export const useConnectionActions = ({
   tab,
+  canConnect,
   connectingRef,
   setConnecting,
   setError,
@@ -480,7 +475,11 @@ export const useConnectionActions = ({
   ]);
 
   const handleConnect = useCallback(async () => {
-    if (connectingRef.current) return;
+    if (connectingRef.current || !canConnect) return;
+
+    const validatedSshPort = tab === "ssh" ? parseConnectionPort(ssh.port) : 22;
+    const validatedTelnetPort = tab === "telnet" ? parseConnectionPort(telnet.port) : 23;
+    if (validatedSshPort === null || validatedTelnetPort === null) return;
 
     setError("");
     setBusy(true);
@@ -497,7 +496,7 @@ export const useConnectionActions = ({
         const requestId = await diagnosticsStart;
         if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
         sshAttemptDispatch({ type: "started", requestId });
-        const sshPort = parsePort(ssh.port, t("connection.error"));
+        const sshPort = validatedSshPort;
 
         await prepareJumpCredentialAndConnect(sshPort, requestId);
         return;
@@ -521,7 +520,7 @@ export const useConnectionActions = ({
       if (!isCurrentConnectionAttempt(connectionAttemptRef.current, connectionRequestId)) return;
 
       if (tab === "telnet") {
-        const parsedTelnetPort = parsePort(telnet.port, t("connection.error"));
+        const parsedTelnetPort = validatedTelnetPort;
         connectionAttemptRef.current.connectInvoked = true;
         const sessionId = await invoke<string>("telnet_connect", {
           host: telnet.host,
@@ -610,6 +609,7 @@ export const useConnectionActions = ({
       if (!cancelled) setError(message);
     }
   }, [
+    canConnect,
     connectingRef,
     connectionAttemptDispatch,
     diagnostics,

@@ -1,8 +1,49 @@
 import { useTranslation } from "react-i18next";
+import type { ReactNode } from "react";
 import type { ConnectionHistoryEntry, Encoding, SavedConnection, TerminalMode } from "../../types";
 import { getTerminalModeOptions, normalizeTerminalMode } from "../../utils/terminalModes";
 import { encodeConnectionSource } from "./connectionHistoryModel";
 import { normalizeEncoding, SSH_ENCODINGS } from "./connectionProfileUtils";
+import type { ConnectionValidationError } from "./connectionFormValidation";
+
+interface ConnectionFieldLabelProps {
+  children: ReactNode;
+  htmlFor: string;
+  required?: boolean;
+}
+
+export function ConnectionFieldLabel({
+  children,
+  htmlFor,
+  required = false,
+}: ConnectionFieldLabelProps) {
+  return (
+    <label className="label" htmlFor={htmlFor}>
+      {children}
+      {required && (
+        <span className="connection-dialog__required-mark" aria-hidden="true">
+          *
+        </span>
+      )}
+    </label>
+  );
+}
+
+interface ConnectionFieldErrorProps {
+  error?: ConnectionValidationError;
+  id: string;
+}
+
+export function ConnectionFieldError({ error, id }: ConnectionFieldErrorProps) {
+  const { t } = useTranslation();
+  if (!error) return null;
+
+  return (
+    <p className="connection-dialog__field-error" id={id}>
+      {t(`connection.validation_${error}`)}
+    </p>
+  );
+}
 
 interface ProfileSelectorProps {
   selectedProfileId: string;

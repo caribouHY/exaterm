@@ -116,6 +116,27 @@
   flex: 1;
 }
 
+.connection-dialog__required-mark {
+  margin-left: 3px;
+  color: var(--status-error);
+}
+
+.connection-dialog__field-error {
+  margin: 4px 0 0;
+  color: var(--status-error);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.connection-dialog :is(.input, .select)[aria-invalid="true"] {
+  border-color: var(--status-error);
+}
+
+.connection-dialog :is(.input, .select)[aria-invalid="true"]:focus {
+  border-color: var(--status-error);
+  outline: var(--focus-ring);
+}
+
 .connection-dialog__profile {
   display: flex;
   flex-direction: column;

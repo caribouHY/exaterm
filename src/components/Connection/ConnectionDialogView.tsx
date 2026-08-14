@@ -29,6 +29,7 @@ interface ConnectionDialogViewProps {
   tab: ConnectionType;
   setTab: (value: ConnectionType) => void;
   connecting: boolean;
+  canConnect: boolean;
   error: string;
   historyError: string;
   shortcutText: string;
@@ -69,6 +70,7 @@ export function ConnectionDialogView({
   tab,
   setTab,
   connecting,
+  canConnect,
   error,
   historyError,
   shortcutText,
@@ -203,6 +205,7 @@ export function ConnectionDialogView({
               </button>
               <button
                 className="btn btn-primary"
+                disabled={!canConnect}
                 onClick={() => {
                   void connectionActions.handleConnect();
                 }}

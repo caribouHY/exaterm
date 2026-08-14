@@ -20,6 +20,7 @@
 - Unified automatic and manual session logging so the connection setting starts the same pausable and stoppable log used by the status bar, CLI, and MCP controls.
 - Split the title bar menu into File and Edit menus, with the application icon, session-log navigation, and terminal selection, clipboard, and clear actions.
 - Added connection progress views with safe cancellation and visible error recovery for SSH, Telnet, and Serial connections, while immediately clearing SSH credentials.
+- Prevented SSH, Telnet, and Serial connections from starting until required connection fields contain valid values.
 - Refactored terminal color decoration into a shared palette and reusable profiles for future network operating systems while preserving Cisco IOS behavior.
 
 ### Removed
