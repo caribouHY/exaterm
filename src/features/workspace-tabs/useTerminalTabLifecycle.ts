@@ -14,7 +14,8 @@ interface ConnectedTerminalInput {
   connectionType: ConnectionType;
   sessionId: string;
   title: string;
-  isAutoLogging: boolean;
+  isManualLogging: boolean;
+  manualLogFilePath: string | null;
   encoding: Encoding;
   terminalMode: TerminalMode;
   connectionInfo?: WorkspaceConnectionInfo;
@@ -47,7 +48,8 @@ export function useTerminalTabLifecycle({
         encoding: input.encoding,
         terminalMode: input.terminalMode,
         connectionInfo: input.connectionInfo,
-        isAutoLogging: input.isAutoLogging,
+        isManualLogging: input.isManualLogging,
+        manualLogFilePath: input.manualLogFilePath,
       });
       tabs.applyWorkspaceSnapshot(snapshot);
     },

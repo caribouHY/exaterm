@@ -24,18 +24,6 @@ pub struct SshConnectOptions {
     pub request_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SshProbeHostKeyOptions {
-    pub host: String,
-    pub port: u16,
-    pub jump_profile_id: Option<String>,
-    pub jump_password: Option<String>,
-    pub jump_key_passphrase: Option<String>,
-    pub request_id: Option<String>,
-    pub diagnostic_role: Option<String>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SshJumpProfile {
     pub id: String,
@@ -48,9 +36,14 @@ pub struct SshJumpProfile {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum SshAuthRequest {
+    Auto {
+        private_key_path: Option<String>,
+        key_passphrase: Option<String>,
+    },
     Password {
         password: String,
     },
+    KeyboardInteractive,
     PublicKey {
         private_key_path: String,
         key_passphrase: Option<String>,

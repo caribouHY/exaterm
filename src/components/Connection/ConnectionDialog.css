@@ -17,6 +17,39 @@
   animation: slideInUp 0.2s ease;
 }
 
+.connection-progress-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(400px, calc(100vw - 32px));
+  max-height: 80vh;
+  animation: slideInUp 0.16s ease;
+}
+
+.connection-progress-dialog__body {
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.connection-progress-dialog__target {
+  overflow-wrap: anywhere;
+}
+
+.connection-progress-dialog__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.connection-progress-dialog__role {
+  flex: none;
+  padding-right: 8px;
+  border-right: 1px solid var(--border-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .connection-dialog__header {
   padding: 14px 18px;
 }
@@ -64,6 +97,16 @@
   overflow-y: auto;
 }
 
+.connection-dialog__error-banner {
+  margin: 12px 18px 0;
+  outline: none;
+}
+
+.connection-dialog__error-banner:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: var(--focus-ring);
+}
+
 .connection-dialog__row {
   display: flex;
   gap: 12px;
@@ -71,6 +114,27 @@
 
 .connection-dialog__row > * {
   flex: 1;
+}
+
+.connection-dialog__required-mark {
+  margin-left: 3px;
+  color: var(--status-error);
+}
+
+.connection-dialog__field-error {
+  margin: 4px 0 0;
+  color: var(--status-error);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.connection-dialog :is(.input, .select)[aria-invalid="true"] {
+  border-color: var(--status-error);
+}
+
+.connection-dialog :is(.input, .select)[aria-invalid="true"]:focus {
+  border-color: var(--status-error);
+  outline: var(--focus-ring);
 }
 
 .connection-dialog__profile {
@@ -218,48 +282,6 @@
   color: var(--text-secondary);
   opacity: 0.75;
   white-space: nowrap;
-}
-
-.connection-dialog__host-key {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.connection-dialog__host-key-message {
-  color: var(--text-primary);
-  line-height: 1.5;
-}
-
-.connection-dialog__host-key-grid {
-  display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
-  gap: 8px 12px;
-  padding: 12px;
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
-}
-
-.connection-dialog__host-key-label {
-  color: var(--text-secondary);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.connection-dialog__host-key-value {
-  color: var(--text-primary);
-  font-size: 12px;
-  line-height: 1.5;
-  word-break: break-word;
-}
-
-.connection-dialog__host-key-value--mono {
-  font-family: var(--font-mono);
-}
-
-.connection-dialog__host-key-warning {
-  line-height: 1.5;
 }
 
 .connection-credential-modal {

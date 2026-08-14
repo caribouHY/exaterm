@@ -17,7 +17,7 @@ use crate::external_control::service::*;
 use crate::external_control::{
     ExternalControlLogControlState, ExternalControlRuntime, ExternalControlService,
 };
-use crate::logger::LoggerState;
+use crate::logger::{manual_log_session, LoggerState};
 use crate::serial::{self, SerialState};
 use crate::ssh::SshState;
 use crate::telnet::TelnetState;
@@ -351,6 +351,25 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
     assert!(read_schema.contains("\"recent\""));
     assert!(read_schema.contains("\"delta\""));
     assert!(read_schema.contains("\"wait\""));
+
+    let serial_connect_tool = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "connect_serial_console")
+        .unwrap();
+    assert!(serial_connect_tool["inputSchema"]
+        .to_string()
+        .contains("\"vyos\""));
+    assert!(serial_connect_tool["inputSchema"]
+        .to_string()
+        .contains("\"fujitsu_sir\""));
+    assert!(serial_connect_tool["inputSchema"]
+        .to_string()
+        .contains("\"allied_telesis_awplus\""));
+    assert!(serial_connect_tool["inputSchema"]
+        .to_string()
+        .contains("\"furukawa_fitelnet\""));
 }
 
 async fn write_json_line_for_test<W>(writer: &mut W, value: Value)
@@ -449,6 +468,7 @@ fn list_connection_profiles_filters_by_connection_type() {
 
     assert_eq!(ssh_profiles.len(), 1);
     assert_eq!(ssh_profiles[0].id, "ssh-profile");
+    assert_eq!(ssh_profiles[0].auth_method.as_deref(), Some("auto"));
     assert_eq!(telnet_profiles.len(), 1);
     assert_eq!(telnet_profiles[0].id, "telnet-profile");
 }
@@ -646,6 +666,35 @@ fn prepare_saved_profile_allows_profiles_without_explicit_mcp_flag() {
 }
 
 #[test]
+fn prepare_saved_profile_defaults_missing_auth_method_to_auto() {
+    let mut config = AppConfig::default();
+    config.saved_connections = vec![SavedConnection {
+        id: "legacy-auto".into(),
+        connection_type: "ssh".into(),
+        host: Some("192.0.2.10".into()),
+        username: Some("admin".into()),
+        auth_method: None,
+        ..SavedConnection::default()
+    }];
+
+    let prepared = prepare_saved_profile_connection(
+        &config,
+        ConnectSavedProfileArgs {
+            profile_id: "legacy-auto".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
+            cols: None,
+            rows: None,
+        },
+    )
+    .unwrap();
+
+    assert!(matches!(
+        prepared.kind,
+        PreparedConnectionKind::Ssh { auth_method, .. } if auth_method == "auto"
+    ));
+}
+
+#[test]
 fn prepare_saved_profile_builds_connection_metadata() {
     let mut config = AppConfig::default();
     config.saved_connections = vec![SavedConnection {
@@ -656,7 +705,7 @@ fn prepare_saved_profile_builds_connection_metadata() {
         username: Some("admin".into()),
         auth_method: Some("password".into()),
         encoding: Some("shift-jis".into()),
-        terminal_mode: Some("cisco_ios".into()),
+        terminal_mode: Some("arista_eos".into()),
         ..SavedConnection::default()
     }];
 
@@ -676,7 +725,7 @@ fn prepare_saved_profile_builds_connection_metadata() {
     assert_eq!(prepared.target, "admin@192.0.2.10:2222");
     assert_eq!(prepared.title, "admin@192.0.2.10");
     assert_eq!(prepared.encoding, "shift-jis");
-    assert_eq!(prepared.terminal_mode, "cisco_ios");
+    assert_eq!(prepared.terminal_mode, "arista_eos");
     assert_eq!(prepared.cols, 80);
     assert_eq!(prepared.rows, 24);
 }
@@ -747,6 +796,7 @@ async fn backend_requires_saved_profile_connection_type() {
 #[tokio::test]
 async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
     let mut app_config = AppConfig::default();
+    app_config.terminal.auto_session_log = true;
     app_config.saved_connections = vec![
         SavedConnection {
             id: "bastion".into(),
@@ -790,7 +840,7 @@ async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
     assert_eq!(result["title"], "admin@192.0.2.10");
     assert_eq!(result["encoding"], "shift-jis");
     assert_eq!(result["terminal_mode"], "cisco_ios");
-    assert_eq!(result["auto_logging"], false);
+    assert_eq!(result["auto_logging"], true);
 
     let session = runtime.terminals.session_info(session_id).await.unwrap();
     assert_eq!(session.protocol, TerminalProtocol::Ssh);
@@ -803,6 +853,9 @@ async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
     assert_eq!(snapshot.tabs[0].title, "admin@192.0.2.10");
     assert_eq!(snapshot.tabs[0].encoding, "shift-jis");
     assert_eq!(snapshot.tabs[0].terminal_mode, "cisco_ios");
+    assert!(snapshot.tabs[0].is_manual_logging);
+    assert!(!snapshot.tabs[0].is_manual_logging_paused);
+    assert!(snapshot.tabs[0].manual_log_file_path.is_some());
     assert_eq!(
         snapshot.tabs[0].connection_info,
         Some(WorkspaceConnectionInfo::Ssh {
@@ -813,6 +866,14 @@ async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
             private_key_path: None,
             jump_profile_id: Some("bastion".into()),
         })
+    );
+    let log_session = manual_log_session(runtime.logger.as_ref().unwrap(), session_id)
+        .await
+        .expect("connection log should be active");
+    assert_eq!(log_session.log_mode, "auto");
+    assert_eq!(
+        snapshot.tabs[0].manual_log_file_path.as_deref(),
+        Some(log_session.file_path.as_str())
     );
 }
 
@@ -1038,10 +1099,17 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
 }
 
 #[test]
-fn ssh_credential_required_keeps_password_prompt_and_rejects_missing_key() {
-    assert!(ssh_credential_required("password", None).unwrap());
+fn ssh_credential_required_defers_password_prompt_and_rejects_missing_key() {
+    assert_eq!(normalize_profile_auth_method(None).unwrap(), "auto");
+    assert_eq!(
+        normalize_profile_auth_method(Some("keyboard_interactive")).unwrap(),
+        "keyboard_interactive"
+    );
+    assert!(!ssh_credential_required("password", None, None).unwrap());
+    assert!(!ssh_credential_required("keyboard_interactive", None, None).unwrap());
+    assert!(!ssh_credential_required("auto", None, None).unwrap());
 
-    let error = ssh_credential_required("public_key", None).unwrap_err();
+    let error = ssh_credential_required("public_key", None, None).unwrap_err();
     assert!(error.contains("private key"));
 }
 
@@ -1060,7 +1128,7 @@ fn prepare_serial_console_uses_defaults_and_line_settings() {
             parity: Some(McpSerialParity::Even),
             stop_bits: Some(2),
             flow_control: Some(McpSerialFlowControl::Hardware),
-            terminal_mode: Some(McpTerminalMode::CiscoIos),
+            terminal_mode: Some(McpTerminalMode::FujitsuSir),
             cols: Some(80),
             rows: Some(24),
         },
@@ -1077,7 +1145,43 @@ fn prepare_serial_console_uses_defaults_and_line_settings() {
     assert_eq!(prepared.target, "COM3");
     assert_eq!(prepared.title, "COM3");
     assert_eq!(prepared.encoding, "utf-8");
-    assert_eq!(prepared.terminal_mode, "cisco_ios");
+    assert_eq!(prepared.terminal_mode, "fujitsu_sir");
+
+    let awplus = prepare_serial_console_connection(
+        ConnectSerialConsoleArgs {
+            port: "COM3".into(),
+            baud_rate: None,
+            data_bits: None,
+            parity: None,
+            stop_bits: None,
+            flow_control: None,
+            terminal_mode: Some(McpTerminalMode::AlliedTelesisAwplus),
+            cols: None,
+            rows: None,
+        },
+        &ports,
+    )
+    .unwrap();
+
+    assert_eq!(awplus.terminal_mode, "allied_telesis_awplus");
+
+    let fitelnet = prepare_serial_console_connection(
+        ConnectSerialConsoleArgs {
+            port: "COM3".into(),
+            baud_rate: None,
+            data_bits: None,
+            parity: None,
+            stop_bits: None,
+            flow_control: None,
+            terminal_mode: Some(McpTerminalMode::FurukawaFitelnet),
+            cols: None,
+            rows: None,
+        },
+        &ports,
+    )
+    .unwrap();
+
+    assert_eq!(fitelnet.terminal_mode, "furukawa_fitelnet");
 
     let defaulted = prepare_serial_console_connection(
         ConnectSerialConsoleArgs {
@@ -1174,7 +1278,7 @@ async fn service_connects_serial_console_and_registers_workspace_metadata() {
             parity: Some(McpSerialParity::Even),
             stop_bits: Some(2),
             flow_control: Some(McpSerialFlowControl::Hardware),
-            terminal_mode: Some(McpTerminalMode::CiscoIos),
+            terminal_mode: Some(McpTerminalMode::AristaEos),
             cols: Some(90),
             rows: Some(30),
         })
@@ -1186,7 +1290,7 @@ async fn service_connects_serial_console_and_registers_workspace_metadata() {
     assert_eq!(result["target"], "COM3");
     assert_eq!(result["title"], "COM3");
     assert_eq!(result["encoding"], "utf-8");
-    assert_eq!(result["terminal_mode"], "cisco_ios");
+    assert_eq!(result["terminal_mode"], "arista_eos");
 
     let session = runtime.terminals.session_info(session_id).await.unwrap();
     assert_eq!(session.protocol, TerminalProtocol::Serial);
@@ -1196,7 +1300,7 @@ async fn service_connects_serial_console_and_registers_workspace_metadata() {
     assert_eq!(snapshot.tabs.len(), 1);
     assert_eq!(snapshot.tabs[0].session_id, session_id);
     assert_eq!(snapshot.tabs[0].title, "COM3");
-    assert_eq!(snapshot.tabs[0].terminal_mode, "cisco_ios");
+    assert_eq!(snapshot.tabs[0].terminal_mode, "arista_eos");
     assert_eq!(snapshot.tabs[0].connection_info, None);
 }
 

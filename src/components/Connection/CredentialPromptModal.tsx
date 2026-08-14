@@ -39,18 +39,17 @@ export function CredentialPromptModal({
   onValueChange,
 }: CredentialPromptModalProps) {
   const { t } = useTranslation();
-  const credentialTitle =
-    credentialPrompt.authMethod === "public_key"
-      ? t("connection.key_passphrase_prompt_title")
-      : t("connection.password_prompt_title");
-  const credentialLabel =
-    credentialPrompt.authMethod === "public_key"
-      ? t("connection.key_passphrase")
-      : t("connection.password");
-  const credentialDescription =
-    credentialPrompt.authMethod === "public_key"
-      ? t("connection.key_passphrase_prompt_desc")
-      : t("connection.password_prompt_desc");
+  const promptsForKeyPassphrase =
+    credentialPrompt.authMethod === "auto" || credentialPrompt.authMethod === "public_key";
+  const credentialTitle = promptsForKeyPassphrase
+    ? t("connection.key_passphrase_prompt_title")
+    : t("connection.password_prompt_title");
+  const credentialLabel = promptsForKeyPassphrase
+    ? t("connection.key_passphrase")
+    : t("connection.password");
+  const credentialDescription = promptsForKeyPassphrase
+    ? t("connection.key_passphrase_prompt_desc")
+    : t("connection.password_prompt_desc");
 
   return (
     <div
@@ -67,7 +66,12 @@ export function CredentialPromptModal({
       >
         <ModalHeader className="connection-credential-modal__header">
           <ModalTitle className="connection-dialog__title">{credentialTitle}</ModalTitle>
-          <button className="btn-icon" onClick={onClose} disabled={connecting}>
+          <button
+            className="btn-icon"
+            onClick={onClose}
+            disabled={connecting}
+            aria-label={t("connection.cancel")}
+          >
             <X size={16} />
           </button>
         </ModalHeader>
@@ -84,6 +88,8 @@ export function CredentialPromptModal({
               className="input"
               type="password"
               autoFocus
+              autoComplete="off"
+              disabled={connecting}
               value={credentialPrompt.value}
               onChange={(event) => {
                 onValueChange(event.target.value);

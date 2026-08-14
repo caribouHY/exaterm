@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { translateBackendCommandError } from "../../features/backend-errors/backendCommandError";
 import { ClipboardPaste, Send, Terminal, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -316,7 +317,7 @@ export default function AIChatPanel({
         },
       ]);
     } catch (e: unknown) {
-      const detail = typeof e === "string" ? e : e instanceof Error ? e.message : "Unknown error";
+      const detail = translateBackendCommandError(e, t, t("ai.error_unknown"));
       setMessages((prev) => [
         ...prev,
         {

@@ -1,48 +1,115 @@
 import { useTranslation } from "react-i18next";
-import type { Encoding, SavedConnection, TerminalMode } from "../../types";
-import { normalizeTerminalMode, TERMINAL_MODE_OPTIONS } from "../../utils/terminalModes";
+import type { ReactNode } from "react";
+import type { ConnectionHistoryEntry, Encoding, SavedConnection, TerminalMode } from "../../types";
+import { getTerminalModeOptions, normalizeTerminalMode } from "../../utils/terminalModes";
+import { encodeConnectionSource } from "./connectionHistoryModel";
 import { normalizeEncoding, SSH_ENCODINGS } from "./connectionProfileUtils";
+import type { ConnectionValidationError } from "./connectionFormValidation";
+
+interface ConnectionFieldLabelHtmlProps {
+  children: ReactNode;
+  htmlFor: string;
+  required?: boolean;
+}
+
+export function ConnectionFieldLabelHtml({
+  children,
+  htmlFor,
+  required = false,
+}: ConnectionFieldLabelHtmlProps) {
+  return (
+    <label className="label" htmlFor={htmlFor}>
+      {children}
+      {required && (
+        <span className="connection-dialog__required-mark" aria-hidden="true">
+          *
+        </span>
+      )}
+    </label>
+  );
+}
+
+interface ConnectionFieldErrorProps {
+  error?: ConnectionValidationError;
+  id: string;
+}
+
+export function ConnectionFieldError({ error, id }: ConnectionFieldErrorProps) {
+  const { t } = useTranslation();
+  if (!error) return null;
+
+  return (
+    <p className="connection-dialog__field-error" id={id}>
+      {t(`connection.validation_${error}`)}
+    </p>
+  );
+}
 
 interface ProfileSelectorProps {
   selectedProfileId: string;
+  selectedHistoryId: string;
   profiles: SavedConnection[];
+  historyEntries: ConnectionHistoryEntry[];
   getDisplayName: (profile: SavedConnection) => string;
-  onSelectProfile: (id: string) => void;
+  getHistoryDisplayName: (entry: ConnectionHistoryEntry) => string;
+  onSelectSource: (value: string) => void;
   onDeleteProfile: () => void;
+  onDeleteHistory: () => void;
 }
 
 export function ProfileSelector({
   selectedProfileId,
+  selectedHistoryId,
   profiles,
+  historyEntries,
   getDisplayName,
-  onSelectProfile,
+  getHistoryDisplayName,
+  onSelectSource,
   onDeleteProfile,
+  onDeleteHistory,
 }: ProfileSelectorProps) {
   const { t } = useTranslation();
 
   return (
     <div className="connection-dialog__profile">
-      <label className="label">{t("connection.profile")}</label>
+      <label className="label">{t("connection.source")}</label>
       <div className="connection-dialog__profile-row">
         <select
           className="select"
-          value={selectedProfileId}
+          value={encodeConnectionSource(selectedProfileId, selectedHistoryId)}
           onChange={(event) => {
-            onSelectProfile(event.target.value);
+            onSelectSource(event.target.value);
           }}
         >
           <option value="">{t("connection.profile_manual")}</option>
-          {profiles.map((profile) => (
-            <option key={profile.id} value={profile.id}>
-              {getDisplayName(profile)}
-            </option>
-          ))}
+          {historyEntries.length > 0 && (
+            <optgroup label={t("connection.history_recent")}>
+              {historyEntries.map((entry) => (
+                <option key={entry.id} value={`history:${entry.id}`}>
+                  {getHistoryDisplayName(entry)}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {profiles.length > 0 && (
+            <optgroup label={t("connection.profile_saved")}>
+              {profiles.map((profile) => (
+                <option key={profile.id} value={`profile:${profile.id}`}>
+                  {getDisplayName(profile)}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
-        {selectedProfileId && (
+        {selectedHistoryId ? (
+          <button className="btn btn-danger btn-sm" onClick={onDeleteHistory}>
+            {t("connection.history_delete")}
+          </button>
+        ) : selectedProfileId ? (
           <button className="btn btn-danger btn-sm" onClick={onDeleteProfile}>
             {t("connection.profile_delete")}
           </button>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -107,6 +174,7 @@ interface TerminalModeSelectProps {
 
 export function TerminalModeSelect({ value, onChange }: TerminalModeSelectProps) {
   const { t } = useTranslation();
+  const terminalModeOptions = getTerminalModeOptions(t);
 
   return (
     <div>
@@ -119,9 +187,9 @@ export function TerminalModeSelect({ value, onChange }: TerminalModeSelectProps)
           onChange(normalizeTerminalMode(event.target.value));
         }}
       >
-        {TERMINAL_MODE_OPTIONS.map((entry) => (
+        {terminalModeOptions.map((entry) => (
           <option key={entry.value} value={entry.value}>
-            {t(entry.labelKey)}
+            {entry.label}
           </option>
         ))}
       </select>

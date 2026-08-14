@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import type { ConnectionType, SavedConnection } from "../../types";
+import type { ConnectionHistoryEntry, ConnectionType, SavedConnection } from "../../types";
 import {
   FeedbackMessage,
   ModalBody,
@@ -10,7 +11,6 @@ import {
   ModalHeader,
   ModalTitle,
 } from "../Common";
-import { HostKeyConfirmation } from "./HostKeyConfirmation";
 import { SerialConnectionForm } from "./SerialConnectionForm";
 import { SshConnectionForm } from "./SshConnectionForm";
 import { SshDiagnosticsPanel } from "./SshDiagnosticsPanel";
@@ -19,7 +19,6 @@ import type {
   SerialFormState,
   SshFormActions,
   SshFormState,
-  SshHostKeyCheck,
   TelnetFormActions,
   TelnetFormState,
 } from "./connectionDialogTypes";
@@ -30,15 +29,17 @@ interface ConnectionDialogViewProps {
   tab: ConnectionType;
   setTab: (value: ConnectionType) => void;
   connecting: boolean;
+  canConnect: boolean;
   error: string;
-  hostKeyCheck: SshHostKeyCheck | null;
-  setHostKeyCheck: (value: SshHostKeyCheck | null) => void;
+  historyError: string;
   shortcutText: string;
-  hostKeyTitle: string;
   sshProfiles: SavedConnection[];
+  sshHistoryEntries: ConnectionHistoryEntry[];
   jumpProfileOptions: SavedConnection[];
   telnetProfiles: SavedConnection[];
+  telnetHistoryEntries: ConnectionHistoryEntry[];
   getProfileDisplayName: (profile: SavedConnection) => string;
+  getHistoryDisplayName: (entry: ConnectionHistoryEntry) => string;
   sshFormState: SshFormState;
   sshFormActions: SshFormActions;
   telnetFormState: TelnetFormState;
@@ -69,15 +70,17 @@ export function ConnectionDialogView({
   tab,
   setTab,
   connecting,
+  canConnect,
   error,
-  hostKeyCheck,
-  setHostKeyCheck,
+  historyError,
   shortcutText,
-  hostKeyTitle,
   sshProfiles,
+  sshHistoryEntries,
   jumpProfileOptions,
   telnetProfiles,
+  telnetHistoryEntries,
   getProfileDisplayName,
+  getHistoryDisplayName,
   sshFormState,
   sshFormActions,
   telnetFormState,
@@ -91,64 +94,81 @@ export function ConnectionDialogView({
   onOverlayClick,
 }: ConnectionDialogViewProps) {
   const { t } = useTranslation();
+  const errorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
 
   return (
     <div className="connection-overlay" onMouseDown={onOverlayMouseDown} onClick={onOverlayClick}>
       <ModalFrame
         className="connection-dialog"
+        role="dialog"
+        ariaModal
+        ariaLabelledBy="connection-dialog-title"
         onClick={(event) => {
           event.stopPropagation();
         }}
       >
         <ModalHeader className="connection-dialog__header">
-          <ModalTitle className="connection-dialog__title">
-            {hostKeyCheck ? hostKeyTitle : t("connection.new")}
+          <ModalTitle className="connection-dialog__title" id="connection-dialog-title">
+            {t("connection.new")}
           </ModalTitle>
-          <button className="btn-icon" onClick={onClose}>
+          <button className="btn-icon" onClick={onClose} aria-label={t("connection.cancel")}>
             <X size={16} />
           </button>
         </ModalHeader>
 
-        {!hostKeyCheck && (
-          <div className="connection-dialog__tabs">
-            <button
-              className={`connection-dialog__tab ${tab === "ssh" ? "connection-dialog__tab--active" : ""}`}
-              onClick={() => {
-                setTab("ssh");
-              }}
-            >
-              {t("connection.ssh")}
-            </button>
-            <button
-              className={`connection-dialog__tab ${tab === "telnet" ? "connection-dialog__tab--active" : ""}`}
-              onClick={() => {
-                setTab("telnet");
-              }}
-            >
-              {t("connection.telnet")}
-            </button>
-            <button
-              className={`connection-dialog__tab ${tab === "serial" ? "connection-dialog__tab--active" : ""}`}
-              onClick={() => {
-                setTab("serial");
-              }}
-            >
-              {t("connection.serial")}
-            </button>
+        <div className="connection-dialog__tabs">
+          <button
+            className={`connection-dialog__tab ${tab === "ssh" ? "connection-dialog__tab--active" : ""}`}
+            onClick={() => {
+              setTab("ssh");
+            }}
+          >
+            {t("connection.ssh")}
+          </button>
+          <button
+            className={`connection-dialog__tab ${tab === "telnet" ? "connection-dialog__tab--active" : ""}`}
+            onClick={() => {
+              setTab("telnet");
+            }}
+          >
+            {t("connection.telnet")}
+          </button>
+          <button
+            className={`connection-dialog__tab ${tab === "serial" ? "connection-dialog__tab--active" : ""}`}
+            onClick={() => {
+              setTab("serial");
+            }}
+          >
+            {t("connection.serial")}
+          </button>
+        </div>
+
+        {error && (
+          <div
+            ref={errorRef}
+            className="connection-dialog__error-banner"
+            role="alert"
+            tabIndex={-1}
+          >
+            <FeedbackMessage tone="error">{error}</FeedbackMessage>
           </div>
         )}
 
         <ModalBody className="connection-dialog__body">
-          {hostKeyCheck ? (
-            <HostKeyConfirmation hostKeyCheck={hostKeyCheck} />
-          ) : tab === "ssh" ? (
+          {tab === "ssh" ? (
             <SshConnectionForm
               formState={sshFormState}
               formActions={sshFormActions}
               profileOptions={{
                 profiles: sshProfiles,
+                historyEntries: sshHistoryEntries,
                 jumpProfiles: jumpProfileOptions,
                 getDisplayName: getProfileDisplayName,
+                getHistoryDisplayName,
               }}
             />
           ) : tab === "telnet" ? (
@@ -157,15 +177,17 @@ export function ConnectionDialogView({
               formActions={telnetFormActions}
               profileOptions={{
                 profiles: telnetProfiles,
+                historyEntries: telnetHistoryEntries,
                 getDisplayName: getProfileDisplayName,
+                getHistoryDisplayName,
               }}
             />
           ) : (
             <SerialConnectionForm formState={serialFormState} formActions={serialActions} />
           )}
-          {error && (
+          {tab !== "serial" && historyError && (
             <FeedbackMessage tone="error" className="connection-dialog__error">
-              {error}
+              {historyError}
             </FeedbackMessage>
           )}
           {tab === "ssh" && <SshDiagnosticsPanel {...diagnosticsPanelProps} />}
@@ -176,28 +198,6 @@ export function ConnectionDialogView({
             <ModalBusy className="connection-dialog__connecting">
               {t("connection.connecting")}
             </ModalBusy>
-          ) : hostKeyCheck ? (
-            <>
-              <button
-                className="btn btn-ghost"
-                onClick={() => {
-                  setHostKeyCheck(null);
-                }}
-              >
-                {t("connection.cancel")}
-              </button>
-              <button
-                className={`btn ${hostKeyCheck.status === "mismatch" ? "btn-danger" : "btn-primary"}`}
-                onClick={() =>
-                  void connectionActions.handleTrustAndConnect(hostKeyCheck.status === "mismatch")
-                }
-              >
-                {hostKeyCheck.status === "mismatch"
-                  ? t("connection.host_key_replace_connect")
-                  : t("connection.host_key_trust_connect")}{" "}
-                <span className="connection-dialog__shortcut">{shortcutText}</span>
-              </button>
-            </>
           ) : (
             <>
               <button className="btn btn-ghost" onClick={onClose}>
@@ -205,6 +205,7 @@ export function ConnectionDialogView({
               </button>
               <button
                 className="btn btn-primary"
+                disabled={!canConnect}
                 onClick={() => {
                   void connectionActions.handleConnect();
                 }}

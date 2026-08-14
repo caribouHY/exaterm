@@ -47,9 +47,8 @@ function workspaceTab(id: string): WorkspaceTabInfo {
     encoding: "utf-8",
     terminal_mode: "general",
     is_connected: true,
-    is_auto_logging: false,
     is_manual_logging: false,
-    is_logging_paused: false,
+    is_manual_logging_paused: false,
   };
 }
 
@@ -266,6 +265,8 @@ describe("workspaceTabToTabInfo", () => {
       ...workspaceTab("a"),
       connection_type: "telnet",
       connection_info: { kind: "telnet", host: "example.invalid", port: 23 },
+      is_manual_logging: true,
+      is_manual_logging_paused: true,
       manual_log_file_path: null,
     };
 
@@ -279,9 +280,8 @@ describe("workspaceTabToTabInfo", () => {
       encoding: "utf-8",
       terminalMode: "general",
       connectionInfo: { kind: "telnet", host: "example.invalid", port: 23 },
-      isAutoLogging: false,
-      isManualLogging: false,
-      isLoggingPaused: false,
+      isManualLogging: true,
+      isManualLoggingPaused: true,
       manualLogFilePath: undefined,
     });
   });

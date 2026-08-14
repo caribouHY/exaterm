@@ -1,6 +1,10 @@
 import { useTranslation } from "react-i18next";
 import type { SerialFormActions, SerialFormState } from "./connectionDialogTypes";
-import { TerminalModeSelect } from "./ConnectionFormFields";
+import {
+  ConnectionFieldError,
+  ConnectionFieldLabelHtml,
+  TerminalModeSelect,
+} from "./ConnectionFormFields";
 
 interface SerialConnectionFormProps {
   formState: SerialFormState;
@@ -11,18 +15,25 @@ const BAUD_RATES = ["300", "1200", "2400", "4800", "9600", "19200", "38400", "57
 
 export function SerialConnectionForm({ formState, formActions }: SerialConnectionFormProps) {
   const { t } = useTranslation();
+  const portError = formState.validationErrors.selectedPort;
 
   return (
     <>
       <div>
-        <label className="label">{t("connection.port")}</label>
+        <ConnectionFieldLabelHtml htmlFor="connection-serial-port" required>
+          {t("connection.port")}
+        </ConnectionFieldLabelHtml>
         <select
+          id="connection-serial-port"
           className="select"
           style={{ width: "100%" }}
           value={formState.selectedPort}
           onChange={(event) => {
             formActions.onSelectedPortChange(event.target.value);
           }}
+          required
+          aria-invalid={Boolean(portError)}
+          aria-describedby={portError ? "connection-serial-port-error" : undefined}
         >
           {formState.ports.length === 0 && <option value="">{t("connection.no_ports")}</option>}
           {formState.ports.map((p) => (
@@ -31,6 +42,7 @@ export function SerialConnectionForm({ formState, formActions }: SerialConnectio
             </option>
           ))}
         </select>
+        <ConnectionFieldError id="connection-serial-port-error" error={portError} />
       </div>
       <div className="connection-dialog__row">
         <div>

@@ -1,6 +1,18 @@
-# ExaTerm
+<p align="center">
+  <img src="src-tauri/icons/128x128.png" width="128" height="128" alt="ExaTerm icon">
+</p>
 
-ExaTerm is a Windows terminal app for SSH, Telnet, and serial communication with AI assistant and MCP integration.
+<h1 align="center">ExaTerm</h1>
+
+<p align="center">
+  <a href="https://github.com/caribouHY/exaterm/releases"><img src="https://img.shields.io/github/v/release/caribouHY/exaterm?display_name=tag&label=release" alt="Latest release"></a>
+  <a href="#supported-os"><img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Windows"></a>
+  <a href="https://app.codacy.com/gh/caribouHY/exaterm/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade"><img src="https://app.codacy.com/project/badge/Grade/ea195c48da78487a872c769c4e5815f5" alt="Codacy Badge"></a>
+  <a href="https://github.com/caribouHY/exaterm/releases"><img src="https://img.shields.io/github/downloads/caribouHY/exaterm/total?label=downloads" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/caribouHY/exaterm?label=license" alt="License"></a>
+</p>
+
+ExaTerm is a terminal app for SSH, Telnet, and serial communication with AI agent integration and built-in AI chat.
 
 [日本語版 README](README.ja.md)
 
@@ -9,10 +21,10 @@ ExaTerm is a Windows terminal app for SSH, Telnet, and serial communication with
 ## Features
 
 - SSH, Telnet, and serial communication
-- MCP server feature for external AI client integration
-- AI assistant support for OpenAI, Gemini, Anthropic, OpenRouter, Ollama, and Azure OpenAI
+- A CLI tool and Agent Skill for AI agents
+- Built-in terminal AI chat
 - Session logging with manual and automatic modes
-- Network-device color highlighting with Cisco IOS support
+- Network-device color highlighting with Cisco IOS, Arista EOS, VyOS, Fujitsu Si-R, Allied Telesis AW+, and Furukawa FITELnet support
 
 ## Supported OS
 
@@ -22,51 +34,55 @@ macOS and Linux are not supported release targets at this time.
 
 ## Installation
 
-1. Open the ExaTerm Releases page.
-2. Download the exe installer for the version you want to install.
-3. Run the exe installer.
-4. Launch ExaTerm from the Start menu or the installed application shortcut.
+Install ExaTerm with winget:
 
-ExaTerm checks for new stable releases when it starts and asks before downloading or installing an update. You can also choose **Check for Updates...** from the app menu. Installing an update closes ExaTerm and ends active terminal connections.
-
-The first release that adds automatic updates must still be installed manually from the Releases page. Later stable releases can be installed from within ExaTerm.
-
-## First Launch
-
-On first launch, ExaTerm creates its settings directory under:
-
-```text
-%AppData%\ExaTerm
+```powershell
+winget install caribouhy.ExaTerm
 ```
 
-The default configuration does not create terminal session logs. Session logging starts only after you enable Auto Session Log in Settings.
+Alternatively, download an installer from this repository's [Releases page](https://github.com/caribouHY/exaterm/releases).
 
-## Privacy and Local Storage
+## Command-Line Startup
 
-ExaTerm stores user data locally on Windows:
+Pass arguments to `exaterm.exe` to start ExaTerm and open an SSH or Telnet connection. The target can be a hostname, an IP address, or a saved profile name.
 
-| Data                  | Location                          |
-| --------------------- | --------------------------------- |
-| Settings              | `%AppData%\ExaTerm\config.json`   |
-| Optional session logs | `%AppData%\ExaTerm\logs`          |
-| SSH known hosts       | `%AppData%\ExaTerm\known_hosts`   |
-| Cloud AI API keys     | Operating system credential store |
-
-API keys for cloud AI providers are not stored in `config.json`. They are saved in the operating system credential store.
-
-## Session Logs
-
-Session logging is off by default. New installs do not create terminal session logs unless you explicitly enable Auto Session Log in Settings.
-
-When Auto Session Log is enabled, ExaTerm records SSH, Telnet, and serial terminal input and output as plaintext log files. These logs can include commands, command output, prompts, hostnames, usernames, device output, and other sensitive terminal content.
-
-Logs are stored under:
-
-```text
-%AppData%\ExaTerm\logs
+```powershell
+exaterm.exe ssh <user@hostname-or-ip-address|profile-name>
+exaterm.exe telnet <hostname-or-ip-address|profile-name>
+exaterm.exe help
 ```
 
-The same location is shown in the Logs view. To remove saved logs, close ExaTerm and delete the files in that folder.
+## AI Agent Integration
+
+The bundled `exaterm-cli` tool and dedicated Agent Skill let AI agents such as Claude and Codex control ExaTerm. To use `exaterm-cli`, enable **Enable External Control** and **Enable Terminal CLI** in Settings. See the [Terminal CLI guide](docs/CLI_GUIDE.en.md) for usage.
+
+To start a new SSH or Telnet connection through external control, enable **Allow External New Connections** and create a saved connection profile that allows external control.
+
+### Agent Skill
+
+Install the `exaterm-cli` Skill from this repository for use with supported AI agents:
+
+```powershell
+npx skills add caribouHY/exaterm --skill exaterm-cli
+```
+
+Use the `-a` option to target a specific agent:
+
+```powershell
+npx skills add caribouHY/exaterm --skill exaterm-cli -a codex
+npx skills add caribouHY/exaterm --skill exaterm-cli -a claude-code
+npx skills add caribouHY/exaterm --skill exaterm-cli -a github-copilot
+```
+
+The Skill does not include ExaTerm itself. Install ExaTerm separately, then enable **Enable External Control** and **Enable Terminal CLI** in Settings.
+
+### MCP Integration
+
+ExaTerm supports a stdio MCP compatibility adapter through `exaterm-mcp.exe`. To use it, enable **Enable External Control** and **Enable MCP Compatibility Adapter** in Settings.
+
+To start a new SSH or Telnet connection through external control, enable **Allow External New Connections** and create a saved connection profile that allows external control.
+
+External control can read terminal output and send input or commands. Terminal content may contain sensitive information, so enable it only for trusted local clients.
 
 ## AI Assistant
 
@@ -76,59 +92,20 @@ OpenAI, Azure OpenAI, Anthropic, Gemini, and OpenRouter require provider API key
 
 Ollama usually does not require an API key, but it does require a running Ollama server that ExaTerm can reach.
 
-## MCP Integration
+## Data Storage Locations
 
-ExaTerm can run an opt-in local MCP server for external AI clients. MCP access is disabled unless you enable it in Settings.
+Configuration files, logs, and related data are stored in the following locations:
 
-When enabled, MCP clients can interact with visible ExaTerm terminal sessions, including reading recent output, sending input, waiting for output, and running commands with captured results. MCP clients can also open saved SSH/Telnet profiles or serial consoles as visible ExaTerm tabs. SSH credentials are entered only in the ExaTerm UI.
-
-Only enable MCP access for clients you trust. Terminal output, commands, prompts, hostnames, usernames, and device output can be sensitive.
-
-## Terminal CLI
-
-`exaterm-cli.exe` provides JSON-based terminal control for local scripts and AI agents
-without requiring an MCP client. See the [Terminal CLI guide](docs/CLI_GUIDE.en.md).
-
-### Agent Skill
-
-Install the `exaterm-cli` Agent Skill from this repository for use with supported coding
-agents:
-
-```powershell
-npx skills add caribouHY/exaterm --skill exaterm-cli
-```
-
-Target a specific agent with `-a codex`, `-a claude-code`, or `-a github-copilot`:
-
-```powershell
-npx skills add caribouHY/exaterm --skill exaterm-cli -a codex
-npx skills add caribouHY/exaterm --skill exaterm-cli -a claude-code
-npx skills add caribouHY/exaterm --skill exaterm-cli -a github-copilot
-```
-
-The Skill provides agent instructions only. Install ExaTerm separately, ensure
-`exaterm-cli.exe` is available, and enable both `mcp.enabled` and `mcp.cli_enabled`.
-
-## Common Recovery Steps
-
-If ExaTerm does not launch, reinstall it with the latest exe installer and try launching it again.
-
-If settings appear broken, close ExaTerm and inspect:
-
-```text
-%AppData%\ExaTerm\config.json
-```
-
-You can rename or remove `config.json` to let ExaTerm recreate default settings on the next launch.
-
-If AI requests fail, check that the selected provider is available, the API key is saved in Settings, and your network can reach the provider. For Ollama, confirm that the Ollama server is running and that the configured base URL is correct.
-
-If session logs are missing, confirm that Auto Session Log is enabled before starting a new SSH, Telnet, or serial session. ExaTerm does not retroactively create logs for sessions that started while logging was disabled.
-
-For manual configuration details, see:
+| Data                  | Location                          |
+| --------------------- | --------------------------------- |
+| Settings              | `%AppData%\ExaTerm\config.json`   |
+| Optional session logs | `%AppData%\ExaTerm\logs`          |
+| SSH known hosts       | `%AppData%\ExaTerm\known_hosts`   |
+| AI service API keys   | Operating system credential store |
 
 - [Config guide](docs/CONFIG_JSON_GUIDE.en.md)
 - [Terminal CLI guide](docs/CLI_GUIDE.en.md)
+- [Documentation index](docs/README.en.md)
 
 ## Developer Setup
 

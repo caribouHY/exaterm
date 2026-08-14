@@ -1,14 +1,21 @@
 import type {
   AppConfig,
+  ConnectionHistoryEntry,
   ConnectionType,
   Encoding,
-  HostKeyCheckResult,
   PortInfo,
   SavedConnection,
   SshAuthMethod,
   TerminalMode,
   WorkspaceConnectionInfo,
 } from "../../types";
+import type { SshConnectionProgressEvent } from "./sshConnectionAttemptModel";
+import type { ConnectionLogState } from "../../features/terminal-logging/connectionLogModel";
+import type {
+  SerialConnectionValidationErrors,
+  SshConnectionValidationErrors,
+  TelnetConnectionValidationErrors,
+} from "./connectionFormValidation";
 
 export interface ConnectionDialogInitialValues {
   connectionInfo: WorkspaceConnectionInfo;
@@ -25,7 +32,7 @@ export interface ConnectionDialogProps {
     type: ConnectionType,
     sessionId: string,
     title: string,
-    isAutoLogging: boolean,
+    logState: ConnectionLogState,
     encoding?: Encoding,
     terminalMode?: TerminalMode,
     connectionInfo?: WorkspaceConnectionInfo
@@ -44,13 +51,14 @@ export interface SshCredentialPrompt {
   error: string;
 }
 
-export type SshHostKeyCheck = HostKeyCheckResult & {
-  phase: "jump" | "target";
-};
-
 export interface SshDiagnosticEvent {
   level: "info" | "error";
   message: string;
+}
+
+export interface SshConnectionProgressUpdate {
+  requestId: string;
+  progress: SshConnectionProgressEvent;
 }
 
 export type SshDiagnosticEntry = SshDiagnosticEvent & {
@@ -65,6 +73,7 @@ export interface ProfileSelectionState {
 
 export interface SshFormState {
   selectedProfileId: string;
+  selectedHistoryId: string;
   profileName: string;
   host: string;
   port: string;
@@ -76,11 +85,13 @@ export interface SshFormState {
   terminalMode: TerminalMode;
   memo: string;
   externalControlEnabled: boolean;
+  validationErrors: SshConnectionValidationErrors;
 }
 
 export interface SshFormActions {
-  onSelectProfile: (id: string) => void;
+  onSelectSource: (value: string) => void;
   onDeleteProfile: () => void;
+  onDeleteHistory: () => void;
   onProfileNameChange: (value: string) => void;
   onHostChange: (value: string) => void;
   onPortChange: (value: string) => void;
@@ -98,12 +109,15 @@ export interface SshFormActions {
 
 export interface SshProfileOptions {
   profiles: SavedConnection[];
+  historyEntries: ConnectionHistoryEntry[];
   jumpProfiles: SavedConnection[];
   getDisplayName: (profile: SavedConnection) => string;
+  getHistoryDisplayName: (entry: ConnectionHistoryEntry) => string;
 }
 
 export interface TelnetFormState {
   selectedProfileId: string;
+  selectedHistoryId: string;
   profileName: string;
   host: string;
   port: string;
@@ -111,11 +125,13 @@ export interface TelnetFormState {
   terminalMode: TerminalMode;
   memo: string;
   externalControlEnabled: boolean;
+  validationErrors: TelnetConnectionValidationErrors;
 }
 
 export interface TelnetFormActions {
-  onSelectProfile: (id: string) => void;
+  onSelectSource: (value: string) => void;
   onDeleteProfile: () => void;
+  onDeleteHistory: () => void;
   onProfileNameChange: (value: string) => void;
   onHostChange: (value: string) => void;
   onPortChange: (value: string) => void;
@@ -129,7 +145,9 @@ export interface TelnetFormActions {
 
 export interface TelnetProfileOptions {
   profiles: SavedConnection[];
+  historyEntries: ConnectionHistoryEntry[];
   getDisplayName: (profile: SavedConnection) => string;
+  getHistoryDisplayName: (entry: ConnectionHistoryEntry) => string;
 }
 
 export interface SerialFormState {
@@ -140,6 +158,7 @@ export interface SerialFormState {
   parity: string;
   stopBits: string;
   terminalMode: TerminalMode;
+  validationErrors: SerialConnectionValidationErrors;
 }
 
 export interface SerialFormActions {

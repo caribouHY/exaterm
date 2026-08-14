@@ -21,7 +21,6 @@ interface UseConnectionProfileSelectionParams {
     setAuthMethod: (value: SshAuthMethod) => void;
     setPrivateKeyPath: (value: string) => void;
     setJumpProfileId: (value: string) => void;
-    setJumpCredential: (value: string) => void;
     setEncoding: (value: Encoding) => void;
     setTerminalMode: (value: TerminalMode) => void;
     setMemo: (value: string) => void;
@@ -56,7 +55,6 @@ export const useConnectionProfileSelection = ({
       sshSetters.setAuthMethod(normalizeSshAuthMethod(profile.auth_method));
       sshSetters.setPrivateKeyPath(profile.private_key_path ?? "");
       sshSetters.setJumpProfileId(profile.jump_profile_id ?? "");
-      sshSetters.setJumpCredential("");
       sshSetters.setEncoding(normalizeEncoding(profile.encoding));
       sshSetters.setTerminalMode(normalizeTerminalMode(profile.terminal_mode));
       sshSetters.setMemo(profile.memo ?? "");
@@ -85,10 +83,9 @@ export const useConnectionProfileSelection = ({
 
   const resetSshProfileFields = useCallback(() => {
     sshSetters.setProfileName("");
-    sshSetters.setAuthMethod("password");
+    sshSetters.setAuthMethod("auto");
     sshSetters.setPrivateKeyPath("");
     sshSetters.setJumpProfileId("");
-    sshSetters.setJumpCredential("");
     sshSetters.setEncoding("utf-8");
     sshSetters.setTerminalMode(DEFAULT_TERMINAL_MODE);
     sshSetters.setMemo("");

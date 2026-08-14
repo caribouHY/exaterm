@@ -2,6 +2,8 @@
    ExaTerm — Types
    ============================================ */
 
+import type { TerminalMode as CatalogTerminalMode } from "../utils/terminalModes";
+
 export interface SshConnectParams {
   host: string;
   port: number;
@@ -18,7 +20,7 @@ export interface SshConnectParams {
   rows: number;
 }
 
-export type SshAuthMethod = "password" | "public_key";
+export type SshAuthMethod = "auto" | "password" | "keyboard_interactive" | "public_key";
 
 export type HostKeyCheckStatus = "trusted" | "unknown" | "mismatch";
 
@@ -90,6 +92,7 @@ export interface AppConfig {
   config_version: number;
   language: "system" | "en" | "ja" | (string & {});
   updates: UpdateConfig;
+  connection_history: ConnectionHistoryConfig;
   ai: AiConfig;
   external_control: ExternalControlConfig;
   shortcuts: ShortcutConfig;
@@ -100,6 +103,10 @@ export interface AppConfig {
 
 export interface UpdateConfig {
   check_on_startup: boolean;
+}
+
+export interface ConnectionHistoryConfig {
+  enabled: boolean;
 }
 
 export interface ShortcutBinding {
@@ -117,6 +124,8 @@ export interface ShortcutConfig {
   terminal_select_all: ShortcutBinding | null;
   terminal_copy: ShortcutBinding | null;
   terminal_paste: ShortcutBinding | null;
+  terminal_clear_viewport: ShortcutBinding | null;
+  terminal_clear_buffer: ShortcutBinding | null;
   terminal_log_start_overwrite: ShortcutBinding | null;
   terminal_log_start_append: ShortcutBinding | null;
   terminal_log_stop: ShortcutBinding | null;
@@ -157,6 +166,7 @@ export type LogFormat = "display" | "strip_controls";
 export interface SshConfig {
   algorithm_mode: SshAlgorithmMode;
   algorithms: SshAlgorithmSelection;
+  default_private_key_path: string;
 }
 
 export type SshAlgorithmMode = "default" | "custom";
@@ -178,7 +188,7 @@ export interface SshAlgorithmCatalogItem {
 
 export type SshAlgorithmCatalog = Record<SshAlgorithmGroup, SshAlgorithmCatalogItem[]>;
 
-export type TerminalMode = "general" | "cisco_ios";
+export type TerminalMode = CatalogTerminalMode;
 
 export interface SavedConnection {
   id: string;
@@ -216,6 +226,20 @@ export type WorkspaceConnectionInfo =
       port: number;
     };
 
+export interface ConnectionHistoryEntry {
+  id: string;
+  connection_info: WorkspaceConnectionInfo;
+  encoding: Encoding;
+  terminal_mode: TerminalMode;
+  last_connected_at: string;
+}
+
+export interface ConnectionHistoryRecordInput {
+  connection_info: WorkspaceConnectionInfo;
+  encoding: Encoding;
+  terminal_mode: TerminalMode;
+}
+
 export type StartupSshTargetKind = "direct" | "profile";
 
 export interface StartupSshRequest {
@@ -245,9 +269,8 @@ export interface TabInfo {
   encoding: Encoding;
   terminalMode: TerminalMode;
   connectionInfo?: WorkspaceConnectionInfo;
-  isAutoLogging?: boolean;
   isManualLogging?: boolean;
-  isLoggingPaused?: boolean;
+  isManualLoggingPaused?: boolean;
   manualLogFilePath?: string;
 }
 
@@ -261,9 +284,8 @@ export interface WorkspaceTabInfo {
   terminal_mode: TerminalMode;
   connection_info?: WorkspaceConnectionInfo | null;
   is_connected: boolean;
-  is_auto_logging: boolean;
   is_manual_logging: boolean;
-  is_logging_paused: boolean;
+  is_manual_logging_paused: boolean;
   manual_log_file_path?: string | null;
 }
 

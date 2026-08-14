@@ -12,14 +12,15 @@ use super::auth::{
     private_key_format_hint, SUPPORTED_PRIVATE_KEY_LABELS,
 };
 use super::client_config::{algorithm_catalog, build_client_config, validate_algorithm_config};
-use super::diagnostics::{normalize_diagnostic_role, ssh_diagnostic_event_name};
-use super::host_key::{HostKeyVerificationMode, HostKeyVerifier};
+use super::diagnostics::{ssh_diagnostic_event_name, ssh_progress_event_name};
+use super::host_key::{HostKeyHandling, HostKeyVerifier};
 use super::io::{
     record_ssh_read_drop, run_ssh_channel_operation_with_timeout, run_ssh_operation_with_timeout,
     ssh_read_overflow_event_name, SshReadDropNotice, SshReadDropState, SSH_CONNECT_TIMEOUT_ERROR,
     SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS, SSH_WRITE_ERROR, SSH_WRITE_TIMEOUT_ERROR,
 };
 use super::private_key_requires_passphrase;
+use super::profiles::normalize_profile_auth_method;
 use super::types::SshAuthRequest;
 use crate::config::{SshAlgorithmSelection, SshConfig};
 use crate::ssh_known_hosts::HostKeyCheckStatus;
@@ -52,6 +53,19 @@ fn diagnostic_event_name_scopes_to_request_id() {
         ssh_diagnostic_event_name("request-1"),
         "ssh://connect-diagnostic/request-1"
     );
+}
+
+#[test]
+fn progress_event_name_scopes_to_request_id() {
+    assert_eq!(
+        ssh_progress_event_name("request-1"),
+        "ssh://connect-progress/request-1"
+    );
+}
+
+#[test]
+fn gui_and_external_control_use_distinct_host_key_handling() {
+    assert_ne!(HostKeyHandling::Prompt, HostKeyHandling::RequireTrusted);
 }
 
 #[test]
@@ -162,17 +176,6 @@ async fn ssh_operation_timeout_preserves_success_value() {
     assert_eq!(value, "connected");
 }
 
-#[test]
-fn diagnostic_role_only_allows_known_roles() {
-    assert_eq!(normalize_diagnostic_role(Some("jump".into())), "jump");
-    assert_eq!(normalize_diagnostic_role(Some("target".into())), "target");
-    assert_eq!(
-        normalize_diagnostic_role(Some("host.example.com".into())),
-        "target"
-    );
-    assert_eq!(normalize_diagnostic_role(None), "target");
-}
-
 fn generate_temp_private_key(passphrase: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("exaterm-ssh-keygen-{}", Uuid::new_v4()));
     fs::create_dir_all(&dir).unwrap();
@@ -188,13 +191,9 @@ fn generate_temp_private_key(passphrase: &str) -> PathBuf {
 }
 
 #[test]
-fn verifier_rejects_unknown_keys_in_enforce_mode() {
-    let verifier = HostKeyVerifier::with_path(
-        "example.com".to_string(),
-        22,
-        HostKeyVerificationMode::Enforce,
-        temp_known_hosts_path(),
-    );
+fn verifier_rejects_unknown_keys() {
+    let verifier =
+        HostKeyVerifier::with_path("example.com".to_string(), 22, temp_known_hosts_path());
     let key = read_test_key("AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ");
 
     let allowed = verifier.check_key(&key).unwrap();
@@ -206,7 +205,7 @@ fn verifier_rejects_unknown_keys_in_enforce_mode() {
 }
 
 #[test]
-fn verifier_rejects_mismatched_keys_in_enforce_mode() {
+fn verifier_rejects_mismatched_keys() {
     let known_hosts_path = temp_known_hosts_path();
     let stored_key =
         read_test_key("AAAAC3NzaC1lZDI1NTE5AAAAILIG2T/B0l0gaqj3puu510tu9N1OkQ4znY3LYuEm5zCF");
@@ -219,12 +218,8 @@ fn verifier_rejects_mismatched_keys_in_enforce_mode() {
     )
     .unwrap();
 
-    let verifier = HostKeyVerifier::with_path(
-        "example.com".to_string(),
-        22,
-        HostKeyVerificationMode::Enforce,
-        known_hosts_path.clone(),
-    );
+    let verifier =
+        HostKeyVerifier::with_path("example.com".to_string(), 22, known_hosts_path.clone());
     let new_key =
         read_test_key("AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ");
 
@@ -235,6 +230,29 @@ fn verifier_rejects_mismatched_keys_in_enforce_mode() {
         HostKeyCheckStatus::Mismatch
     );
 
+    let _ = fs::remove_file(known_hosts_path);
+}
+
+#[test]
+fn verifier_accepts_trusted_key_without_prompt() {
+    let known_hosts_path = temp_known_hosts_path();
+    let key = read_test_key("AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ");
+    crate::ssh_known_hosts::write_trusted_host_with_path(
+        "example.com",
+        22,
+        &key,
+        false,
+        &known_hosts_path,
+    )
+    .unwrap();
+    let verifier =
+        HostKeyVerifier::with_path("example.com".to_string(), 22, known_hosts_path.clone());
+
+    assert!(verifier.check_key(&key).unwrap());
+    assert_eq!(
+        verifier.last_result().unwrap().status,
+        HostKeyCheckStatus::Trusted
+    );
     let _ = fs::remove_file(known_hosts_path);
 }
 
@@ -266,6 +284,7 @@ fn legacy_client_config_appends_legacy_algorithms() {
     let config = build_client_config(&SshConfig {
         algorithm_mode: "custom".into(),
         algorithms: crate::ssh::legacy_algorithm_selection(),
+        default_private_key_path: String::new(),
     })
     .unwrap();
 
@@ -313,6 +332,7 @@ fn minimal_custom_config() -> SshConfig {
             mac: vec!["hmac-sha2-256".into()],
             compression: vec!["none".into()],
         },
+        default_private_key_path: String::new(),
     }
 }
 
@@ -328,6 +348,28 @@ fn custom_client_config_uses_catalog_order_and_keeps_kex_extensions() {
     assert_eq!(ciphers, vec!["aes256-ctr", "aes128-ctr"]);
     assert!(kex.contains(&"ext-info-c"));
     assert!(kex.contains(&"kex-strict-c-v00@openssh.com"));
+}
+
+#[test]
+fn custom_client_config_prefers_group14_sha1_over_group_exchange_sha1() {
+    let mut ssh_config = minimal_custom_config();
+    ssh_config.algorithms.kex = vec![
+        "diffie-hellman-group-exchange-sha1".into(),
+        "diffie-hellman-group14-sha1".into(),
+    ];
+
+    let config = build_client_config(&ssh_config).unwrap();
+    let kex = preferred_names(config.preferred.kex.as_ref());
+    let group14_position = kex
+        .iter()
+        .position(|name| *name == "diffie-hellman-group14-sha1")
+        .unwrap();
+    let group_exchange_position = kex
+        .iter()
+        .position(|name| *name == "diffie-hellman-group-exchange-sha1")
+        .unwrap();
+
+    assert!(group14_position < group_exchange_position);
 }
 
 #[test]
@@ -352,14 +394,39 @@ fn custom_algorithm_validation_rejects_empty_unknown_and_duplicate_values() {
 }
 
 #[test]
-fn auth_request_defaults_to_password() {
-    let request = build_auth_request(None, "secret".to_string(), None, None).unwrap();
+fn auth_request_defaults_to_automatic() {
+    let request = build_auth_request(None, "secret".to_string(), None, None, None).unwrap();
 
     assert_eq!(
         request,
-        SshAuthRequest::Password {
-            password: "secret".to_string()
+        SshAuthRequest::Auto {
+            private_key_path: None,
+            key_passphrase: None,
         }
+    );
+}
+
+#[test]
+fn keyboard_interactive_auth_builds_explicit_request() {
+    let request = build_auth_request(
+        Some("keyboard_interactive".to_string()),
+        String::new(),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(request, SshAuthRequest::KeyboardInteractive);
+}
+
+#[test]
+fn profile_auth_method_accepts_keyboard_interactive() {
+    assert_eq!(normalize_profile_auth_method(None).unwrap(), "auto");
+    assert_eq!(normalize_profile_auth_method(Some("auto")).unwrap(), "auto");
+    assert_eq!(
+        normalize_profile_auth_method(Some("keyboard_interactive")).unwrap(),
+        "keyboard_interactive"
     );
 }
 
@@ -369,6 +436,7 @@ fn public_key_auth_requires_private_key_path() {
         Some("public_key".to_string()),
         String::new(),
         Some("  ".to_string()),
+        None,
         None,
     )
     .unwrap_err();
@@ -383,6 +451,7 @@ fn public_key_auth_trims_path_and_empty_passphrase() {
         String::new(),
         Some(" C:\\Users\\me\\.ssh\\id_ed25519 ".to_string()),
         Some("  ".to_string()),
+        None,
     )
     .unwrap();
 
@@ -390,6 +459,62 @@ fn public_key_auth_trims_path_and_empty_passphrase() {
         request,
         SshAuthRequest::PublicKey {
             private_key_path: "C:\\Users\\me\\.ssh\\id_ed25519".to_string(),
+            key_passphrase: None,
+        }
+    );
+}
+
+#[test]
+fn automatic_auth_prefers_connection_key_then_default_key() {
+    let request = build_auth_request(
+        Some("auto".to_string()),
+        String::new(),
+        Some(" connection-key ".to_string()),
+        Some(" passphrase ".to_string()),
+        Some(" default-key ".to_string()),
+    )
+    .unwrap();
+
+    assert_eq!(
+        request,
+        SshAuthRequest::Auto {
+            private_key_path: Some("connection-key".to_string()),
+            key_passphrase: Some("passphrase".to_string()),
+        }
+    );
+
+    let request = build_auth_request(
+        Some("auto".to_string()),
+        String::new(),
+        None,
+        None,
+        Some(" default-key ".to_string()),
+    )
+    .unwrap();
+    assert_eq!(
+        request,
+        SshAuthRequest::Auto {
+            private_key_path: Some("default-key".to_string()),
+            key_passphrase: None,
+        }
+    );
+}
+
+#[test]
+fn automatic_auth_skips_public_key_when_no_key_is_configured() {
+    let request = build_auth_request(
+        Some("auto".to_string()),
+        String::new(),
+        Some("  ".to_string()),
+        None,
+        Some("  ".to_string()),
+    )
+    .unwrap();
+
+    assert_eq!(
+        request,
+        SshAuthRequest::Auto {
+            private_key_path: None,
             key_passphrase: None,
         }
     );

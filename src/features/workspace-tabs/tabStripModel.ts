@@ -226,9 +226,8 @@ export function workspaceTabToTabInfo(tab: WorkspaceTabInfo): TabInfo {
     encoding: tab.encoding,
     terminalMode: tab.terminal_mode,
     connectionInfo: tab.connection_info ?? undefined,
-    isAutoLogging: tab.is_auto_logging,
     isManualLogging: tab.is_manual_logging,
-    isLoggingPaused: tab.is_logging_paused,
+    isManualLoggingPaused: tab.is_manual_logging_paused,
     manualLogFilePath: tab.manual_log_file_path ?? undefined,
   };
 }

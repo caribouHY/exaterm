@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { translateBackendCommandError } from "../../features/backend-errors/backendCommandError";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import type { AiSecretStatus, AppConfig, SshAlgorithmCatalog } from "../../types";
-import { resolveAppLanguage } from "../../i18n";
 import { AiSettings } from "./AiSettings";
 import { ExternalControlSettings } from "./ExternalControlSettings";
 import { GeneralSettings } from "./GeneralSettings";
@@ -35,7 +35,7 @@ interface SettingsPanelProps {
 }
 
 export default function SettingsPanel({ onSave }: SettingsPanelProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [initialConfigSnapshot, setInitialConfigSnapshot] = useState<AppConfig | null>(null);
   const [saved, setSaved] = useState(false);
@@ -145,9 +145,6 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       setInitialConfigSnapshot(normalizedConfig);
       await refreshSecretStatus();
 
-      const resolvedLanguage = resolveAppLanguage(normalizedConfig.language);
-      await invoke("backend_language_set", { language: resolvedLanguage });
-      if (resolvedLanguage !== i18n.language) void i18n.changeLanguage(resolvedLanguage);
       setSaved(true);
       onSave?.();
       savedTimeoutRef.current = setTimeout(() => {
@@ -156,7 +153,7 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       }, 2000);
     } catch (saveError) {
       console.error(saveError);
-      setError(typeof saveError === "string" ? saveError : "Failed to save settings.");
+      setError(translateBackendCommandError(saveError, t, t("settings.save_failed")));
     } finally {
       setIsSaving(false);
     }
@@ -192,6 +189,14 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
     setConfig((previous) =>
       previous
         ? { ...previous, external_control: { ...previous.external_control, ...patch } }
+        : previous
+    );
+  };
+
+  const updateConnectionHistoryConfig = (patch: Partial<AppConfig["connection_history"]>) => {
+    setConfig((previous) =>
+      previous
+        ? { ...previous, connection_history: { ...previous.connection_history, ...patch } }
         : previous
     );
   };
@@ -256,12 +261,14 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
           <GeneralSettings
             language={config.language}
             updateConfig={config.updates}
+            connectionHistoryConfig={config.connection_history}
             terminalConfig={config.terminal}
             sshConfig={config.ssh}
             sshAlgorithmCatalog={sshAlgorithmCatalog}
             sshAlgorithmCatalogLoadFailed={sshAlgorithmCatalogLoadFailed}
             onLanguageChange={updateLanguage}
             onUpdateChange={updateUpdateConfig}
+            onConnectionHistoryChange={updateConnectionHistoryConfig}
             onTerminalChange={updateTerminalConfig}
             onSshChange={updateSshConfig}
             onReloadSshAlgorithmCatalog={() => void loadSshAlgorithmCatalog()}

@@ -326,32 +326,28 @@ fn chars_from(input: &str, start: usize) -> String {
     input.chars().skip(start).collect()
 }
 
-fn localize<T>(
-    language: &tauri::State<'_, crate::i18n::BackendLanguageState>,
+fn command_result<T>(
     result: Result<T, String>,
-) -> Result<T, String> {
-    result.map_err(|error| crate::i18n::translate_gui_error(language.inner(), &error))
+) -> Result<T, crate::command_error::BackendCommandError> {
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
 pub async fn terminal_encoding_set(
     state: tauri::State<'_, TerminalControlState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     encoding: String,
-) -> Result<(), String> {
-    localize(&language, state.set_encoding(&session_id, &encoding).await)
+) -> Result<(), crate::command_error::BackendCommandError> {
+    command_result(state.set_encoding(&session_id, &encoding).await)
 }
 
 #[tauri::command]
 pub async fn terminal_output_snapshot_get(
     state: tauri::State<'_, TerminalControlState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     max_chars: Option<usize>,
-) -> Result<TerminalOutputSnapshot, String> {
-    localize(
-        &language,
+) -> Result<TerminalOutputSnapshot, crate::command_error::BackendCommandError> {
+    command_result(
         state
             .read_output(
                 &session_id,
@@ -364,13 +360,11 @@ pub async fn terminal_output_snapshot_get(
 #[tauri::command]
 pub async fn terminal_output_delta_get(
     state: tauri::State<'_, TerminalControlState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     cursor: usize,
     max_chars: Option<usize>,
-) -> Result<TerminalOutputSnapshot, String> {
-    localize(
-        &language,
+) -> Result<TerminalOutputSnapshot, crate::command_error::BackendCommandError> {
+    command_result(
         state
             .read_output_delta(
                 &session_id,

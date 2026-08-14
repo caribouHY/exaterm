@@ -7,13 +7,14 @@ use tauri::{AppHandle, Emitter};
 use crate::ai::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
 use crate::terminal_control::TerminalControlState;
 
-const CURRENT_CONFIG_VERSION: u32 = 5;
+const CURRENT_CONFIG_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppConfig {
     pub config_version: u32,
     pub language: String,
     pub updates: UpdateConfig,
+    pub connection_history: ConnectionHistoryConfig,
     pub ai: AiConfig,
     pub external_control: ExternalControlConfig,
     pub shortcuts: ShortcutConfig,
@@ -40,6 +41,24 @@ impl Default for UpdateConfig {
     fn default() -> Self {
         Self {
             check_on_startup: default_check_on_startup(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ConnectionHistoryConfig {
+    #[serde(default = "default_connection_history_enabled")]
+    pub enabled: bool,
+}
+
+fn default_connection_history_enabled() -> bool {
+    true
+}
+
+impl Default for ConnectionHistoryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_connection_history_enabled(),
         }
     }
 }
@@ -72,6 +91,10 @@ pub struct ShortcutConfig {
     pub terminal_copy: Option<ShortcutBinding>,
     #[serde(default = "default_terminal_paste_shortcut")]
     pub terminal_paste: Option<ShortcutBinding>,
+    #[serde(default)]
+    pub terminal_clear_viewport: Option<ShortcutBinding>,
+    #[serde(default)]
+    pub terminal_clear_buffer: Option<ShortcutBinding>,
     #[serde(default = "default_terminal_log_start_overwrite_shortcut")]
     pub terminal_log_start_overwrite: Option<ShortcutBinding>,
     #[serde(default)]
@@ -135,6 +158,8 @@ impl Default for ShortcutConfig {
             terminal_select_all: default_terminal_select_all_shortcut(),
             terminal_copy: default_terminal_copy_shortcut(),
             terminal_paste: default_terminal_paste_shortcut(),
+            terminal_clear_viewport: None,
+            terminal_clear_buffer: None,
             terminal_log_start_overwrite: default_terminal_log_start_overwrite_shortcut(),
             terminal_log_start_append: None,
             terminal_log_stop: default_terminal_log_stop_shortcut(),
@@ -166,6 +191,8 @@ impl ShortcutConfig {
             &mut self.terminal_select_all,
             &mut self.terminal_copy,
             &mut self.terminal_paste,
+            &mut self.terminal_clear_viewport,
+            &mut self.terminal_clear_buffer,
             &mut self.terminal_log_start_overwrite,
             &mut self.terminal_log_start_append,
             &mut self.terminal_log_stop,
@@ -198,6 +225,11 @@ fn validate_shortcut_config(shortcuts: &ShortcutConfig) -> Result<(), String> {
         ("terminal_select_all", &shortcuts.terminal_select_all),
         ("terminal_copy", &shortcuts.terminal_copy),
         ("terminal_paste", &shortcuts.terminal_paste),
+        (
+            "terminal_clear_viewport",
+            &shortcuts.terminal_clear_viewport,
+        ),
+        ("terminal_clear_buffer", &shortcuts.terminal_clear_buffer),
         (
             "terminal_log_start_overwrite",
             &shortcuts.terminal_log_start_overwrite,
@@ -362,12 +394,14 @@ struct SshConfigInput {
     algorithm_mode: Option<String>,
     algorithms: Option<SshAlgorithmSelection>,
     allow_legacy_algorithms: Option<bool>,
+    default_private_key_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SshConfig {
     pub algorithm_mode: String,
     pub algorithms: SshAlgorithmSelection,
+    pub default_private_key_path: String,
 }
 
 impl Default for SshConfig {
@@ -375,6 +409,7 @@ impl Default for SshConfig {
         Self {
             algorithm_mode: default_ssh_algorithm_mode(),
             algorithms: SshAlgorithmSelection::default(),
+            default_private_key_path: String::new(),
         }
     }
 }
@@ -385,10 +420,12 @@ impl<'de> Deserialize<'de> for SshConfig {
         D: Deserializer<'de>,
     {
         let input = SshConfigInput::deserialize(deserializer)?;
+        let default_private_key_path = input.default_private_key_path.unwrap_or_default();
         if let Some(algorithm_mode) = input.algorithm_mode {
             return Ok(Self {
                 algorithm_mode,
                 algorithms: input.algorithms.unwrap_or_default(),
+                default_private_key_path,
             });
         }
 
@@ -396,10 +433,14 @@ impl<'de> Deserialize<'de> for SshConfig {
             return Ok(Self {
                 algorithm_mode: "custom".into(),
                 algorithms: crate::ssh::legacy_algorithm_selection(),
+                default_private_key_path,
             });
         }
 
-        Ok(Self::default())
+        Ok(Self {
+            default_private_key_path,
+            ..Self::default()
+        })
     }
 }
 
@@ -547,6 +588,7 @@ struct AppConfigInput {
     config_version: Option<u32>,
     language: Option<String>,
     updates: Option<UpdateConfig>,
+    connection_history: Option<ConnectionHistoryConfig>,
     ai: Option<AiConfig>,
     external_control: Option<ExternalControlConfigInput>,
     #[serde(rename = "mcp")]
@@ -563,6 +605,7 @@ impl Default for AppConfig {
             config_version: CURRENT_CONFIG_VERSION,
             language: default_language(),
             updates: UpdateConfig::default(),
+            connection_history: ConnectionHistoryConfig::default(),
             ai: AiConfig::default(),
             external_control: ExternalControlConfig::default(),
             shortcuts: ShortcutConfig::default(),
@@ -587,6 +630,9 @@ impl<'de> Deserialize<'de> for AppConfig {
             config_version: input.config_version.unwrap_or(0),
             language: input.language.unwrap_or_else(default_language),
             updates: input.updates.unwrap_or(defaults.updates),
+            connection_history: input
+                .connection_history
+                .unwrap_or(defaults.connection_history),
             ai: input.ai.unwrap_or(defaults.ai),
             external_control: ExternalControlConfig {
                 enabled: external_control.enabled.unwrap_or(legacy_mcp.enabled),
@@ -626,9 +672,9 @@ fn config_path() -> PathBuf {
 }
 
 #[tauri::command]
-pub fn config_load() -> Result<AppConfig, String> {
-    let cfg = config_read()?;
-    config_write(&cfg)?;
+pub fn config_load() -> Result<AppConfig, crate::command_error::BackendCommandError> {
+    let cfg = config_read().map_err(crate::command_error::BackendCommandError::from)?;
+    config_write(&cfg).map_err(crate::command_error::BackendCommandError::from)?;
     Ok(cfg)
 }
 
@@ -651,11 +697,13 @@ pub fn config_save(
     app: AppHandle,
     terminals: tauri::State<'_, TerminalControlState>,
     config: AppConfig,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     let config = config.migrate();
-    crate::ssh::validate_algorithm_config(&config.ssh)?;
-    validate_shortcut_config(&config.shortcuts)?;
-    config_write(&config)?;
+    crate::ssh::validate_algorithm_config(&config.ssh)
+        .map_err(crate::command_error::BackendCommandError::from)?;
+    validate_shortcut_config(&config.shortcuts)
+        .map_err(crate::command_error::BackendCommandError::from)?;
+    config_write(&config).map_err(crate::command_error::BackendCommandError::from)?;
     terminals.set_output_limit_from_scrollback(config.terminal.scrollback);
     if let Err(error) = app.emit("config://updated", ()) {
         eprintln!("Failed to emit config update: {error}");
@@ -685,6 +733,7 @@ mod tests {
         assert_eq!(cfg.config_version, CURRENT_CONFIG_VERSION);
         assert_eq!(cfg.language, "ja");
         assert!(cfg.updates.check_on_startup);
+        assert!(cfg.connection_history.enabled);
         assert_eq!(cfg.ai.default_provider, DEFAULT_AI_PROVIDER);
         assert_eq!(cfg.ai.default_model, DEFAULT_AI_MODEL);
         assert!(!cfg.ai.debug_log_enabled);
@@ -703,6 +752,7 @@ mod tests {
         assert!(!cfg.terminal.include_log_header);
         assert_eq!(cfg.ssh.algorithm_mode, "default");
         assert_eq!(cfg.ssh.algorithms, SshAlgorithmSelection::default());
+        assert_eq!(cfg.ssh.default_private_key_path, "");
         assert!(cfg.saved_connections.is_empty());
     }
 
@@ -721,6 +771,45 @@ mod tests {
         assert!(!cfg.updates.check_on_startup);
         let value = serde_json::to_value(cfg).unwrap();
         assert_eq!(value["updates"]["check_on_startup"], false);
+    }
+
+    #[test]
+    fn connection_history_preference_round_trips_when_disabled() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "config_version": 6,
+                "connection_history": { "enabled": false }
+            }"#,
+        )
+        .unwrap();
+
+        assert!(!cfg.connection_history.enabled);
+        let value = serde_json::to_value(&cfg).unwrap();
+        assert_eq!(value["connection_history"]["enabled"], false);
+    }
+
+    #[test]
+    fn ssh_default_private_key_path_round_trips() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "config_version": 7,
+                "ssh": {
+                    "algorithm_mode": "default",
+                    "default_private_key_path": "C:\\Users\\me\\.ssh\\id_ed25519"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.ssh.default_private_key_path,
+            "C:\\Users\\me\\.ssh\\id_ed25519"
+        );
+        let value = serde_json::to_value(cfg).unwrap();
+        assert_eq!(
+            value["ssh"]["default_private_key_path"],
+            "C:\\Users\\me\\.ssh\\id_ed25519"
+        );
     }
 
     #[test]
@@ -842,6 +931,26 @@ mod tests {
                     "id": "ios-router",
                     "connection_type": "ssh",
                     "terminal_mode": "cisco_ios"
+                }, {
+                    "id": "eos-switch",
+                    "connection_type": "ssh",
+                    "terminal_mode": "arista_eos"
+                }, {
+                    "id": "vyos-router",
+                    "connection_type": "ssh",
+                    "terminal_mode": "vyos"
+                }, {
+                    "id": "sir-router",
+                    "connection_type": "ssh",
+                    "terminal_mode": "fujitsu_sir"
+                }, {
+                    "id": "awplus-switch",
+                    "connection_type": "ssh",
+                    "terminal_mode": "allied_telesis_awplus"
+                }, {
+                    "id": "fitelnet-router",
+                    "connection_type": "ssh",
+                    "terminal_mode": "furukawa_fitelnet"
                 }]
             }"#,
         )
@@ -850,6 +959,26 @@ mod tests {
         assert_eq!(
             cfg.saved_connections[0].terminal_mode.as_deref(),
             Some("cisco_ios")
+        );
+        assert_eq!(
+            cfg.saved_connections[1].terminal_mode.as_deref(),
+            Some("arista_eos")
+        );
+        assert_eq!(
+            cfg.saved_connections[2].terminal_mode.as_deref(),
+            Some("vyos")
+        );
+        assert_eq!(
+            cfg.saved_connections[3].terminal_mode.as_deref(),
+            Some("fujitsu_sir")
+        );
+        assert_eq!(
+            cfg.saved_connections[4].terminal_mode.as_deref(),
+            Some("allied_telesis_awplus")
+        );
+        assert_eq!(
+            cfg.saved_connections[5].terminal_mode.as_deref(),
+            Some("furukawa_fitelnet")
         );
     }
 
@@ -1066,6 +1195,8 @@ mod tests {
             cfg.shortcuts.terminal_paste,
             default_terminal_paste_shortcut()
         );
+        assert_eq!(cfg.shortcuts.terminal_clear_viewport, None);
+        assert_eq!(cfg.shortcuts.terminal_clear_buffer, None);
         assert_eq!(
             cfg.shortcuts.terminal_log_start_overwrite,
             default_terminal_log_start_overwrite_shortcut()
@@ -1091,6 +1222,7 @@ mod tests {
                     "open_settings": null,
                     "exit": {"key": "Q", "ctrl": true, "shift": true},
                     "terminal_select_all": {"key": "A", "ctrl": true, "shift": true},
+                    "terminal_clear_viewport": {"key": "K", "ctrl": true, "shift": true},
                     "terminal_log_stop": {"key": "f10", "ctrl": true, "shift": true}
                 }
             }"#,
@@ -1102,6 +1234,10 @@ mod tests {
         assert_eq!(cfg.shortcuts.new_window.as_ref().unwrap().key, "F2");
         assert_eq!(cfg.shortcuts.exit.as_ref().unwrap().key, "q");
         assert_eq!(cfg.shortcuts.terminal_select_all.as_ref().unwrap().key, "a");
+        assert_eq!(
+            cfg.shortcuts.terminal_clear_viewport.as_ref().unwrap().key,
+            "k"
+        );
         assert_eq!(cfg.shortcuts.terminal_log_stop.as_ref().unwrap().key, "F10");
         assert!(validate_shortcut_config(&cfg.shortcuts).is_ok());
     }
@@ -1112,6 +1248,20 @@ mod tests {
 
         assert_eq!(cfg.shortcuts.exit, None);
         assert!(serde_json::to_value(cfg).unwrap()["shortcuts"]["exit"].is_null());
+    }
+
+    #[test]
+    fn shortcut_config_preserves_explicit_null_terminal_clear_actions() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{"shortcuts":{"terminal_clear_viewport":null,"terminal_clear_buffer":null}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(cfg.shortcuts.terminal_clear_viewport, None);
+        assert_eq!(cfg.shortcuts.terminal_clear_buffer, None);
+        let value = serde_json::to_value(cfg).unwrap();
+        assert!(value["shortcuts"]["terminal_clear_viewport"].is_null());
+        assert!(value["shortcuts"]["terminal_clear_buffer"].is_null());
     }
 
     #[test]
@@ -1128,8 +1278,10 @@ mod tests {
             open_settings: None,
             exit: None,
             terminal_select_all: None,
-            terminal_copy: duplicate,
+            terminal_copy: None,
             terminal_paste: None,
+            terminal_clear_viewport: None,
+            terminal_clear_buffer: duplicate,
             terminal_log_start_overwrite: None,
             terminal_log_start_append: None,
             terminal_log_stop: None,
@@ -1158,6 +1310,8 @@ mod tests {
             terminal_select_all: None,
             terminal_copy: None,
             terminal_paste: None,
+            terminal_clear_viewport: None,
+            terminal_clear_buffer: None,
             terminal_log_start_overwrite: None,
             terminal_log_start_append: None,
             terminal_log_stop: None,

@@ -31,25 +31,6 @@
   color: var(--text-primary);
 }
 
-.app-update-dialog__notes {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.app-update-dialog__notes-content {
-  max-height: 180px;
-  overflow: auto;
-  padding: 10px;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  background: var(--bg-input);
-  color: var(--text-secondary);
-  line-height: 1.5;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 .app-update-dialog__progress {
   display: flex;
   flex-direction: column;

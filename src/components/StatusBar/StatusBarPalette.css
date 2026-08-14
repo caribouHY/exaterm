@@ -1,0 +1,133 @@
+.statusbar-palette {
+  position: absolute;
+  z-index: 20;
+  top: 8px;
+  left: 50%;
+  display: flex;
+  width: min(600px, calc(100% - 24px));
+  max-height: calc(100% - 16px);
+  flex-direction: column;
+  padding: var(--space-xs);
+  transform: translateX(-50%);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  animation: statusbar-palette-enter var(--transition-fast);
+}
+
+.statusbar-palette__input {
+  width: 100%;
+  height: 34px;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.statusbar-palette__input:focus {
+  border-color: var(--border-focus);
+  outline: var(--focus-ring);
+  outline-offset: -1px;
+}
+
+.statusbar-palette__input::placeholder {
+  color: var(--text-muted);
+}
+
+.statusbar-palette__list {
+  min-height: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-top: var(--space-xs);
+}
+
+.statusbar-palette__item {
+  display: grid;
+  width: 100%;
+  height: 32px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0 9px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  text-align: left;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.statusbar-palette__item:hover,
+.statusbar-palette__item--highlighted {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.statusbar-palette__item:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.statusbar-palette__item:disabled:hover {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.statusbar-palette__item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusbar-palette__match {
+  background: transparent;
+  color: var(--accent-blue);
+}
+
+.statusbar-palette__search-label {
+  color: var(--text-muted);
+}
+
+.statusbar-palette__shortcut {
+  color: var(--text-shortcut);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.statusbar-palette__empty {
+  padding: var(--space-md) 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+@keyframes statusbar-palette-enter {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .statusbar-palette {
+    animation: none;
+  }
+}

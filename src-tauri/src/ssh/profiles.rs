@@ -10,7 +10,9 @@ pub(super) fn normalize_profile_string(value: Option<&str>) -> Option<String> {
 
 pub(super) fn normalize_profile_auth_method(value: Option<&str>) -> Result<String, String> {
     match value.map(str::trim).filter(|value| !value.is_empty()) {
-        None | Some("password") => Ok("password".into()),
+        None | Some("auto") => Ok("auto".into()),
+        Some("password") => Ok("password".into()),
+        Some("keyboard_interactive") => Ok("keyboard_interactive".into()),
         Some("public_key") => Ok("public_key".into()),
         Some(_) => Err("The SSH authentication method is invalid".into()),
     }
@@ -31,7 +33,10 @@ pub fn resolve_jump_profile(
     reject_self_referencing_jump(&jump_profile_id, target_profile_id)?;
     let profile = find_saved_jump_profile(config, &jump_profile_id)?;
     validate_jump_profile(profile)?;
-    Ok(Some(build_jump_profile(profile)?))
+    Ok(Some(build_jump_profile(
+        profile,
+        &config.ssh.default_private_key_path,
+    )?))
 }
 
 fn reject_self_referencing_jump(
@@ -65,15 +70,21 @@ fn validate_jump_profile(profile: &SavedConnection) -> Result<(), String> {
     Ok(())
 }
 
-fn build_jump_profile(profile: &SavedConnection) -> Result<SshJumpProfile, String> {
+fn build_jump_profile(
+    profile: &SavedConnection,
+    default_private_key_path: &str,
+) -> Result<SshJumpProfile, String> {
     let host = normalize_profile_string(profile.host.as_deref())
         .ok_or_else(|| "The SSH jump profile does not have a host configured".to_string())?;
     let username = normalize_profile_string(profile.username.as_deref())
         .ok_or_else(|| "The SSH jump profile does not have a username configured".to_string())?;
     let auth_method = normalize_profile_auth_method(profile.auth_method.as_deref())?;
-    let private_key_path = normalize_profile_string(profile.private_key_path.as_deref());
+    let mut private_key_path = normalize_profile_string(profile.private_key_path.as_deref());
     if auth_method == "public_key" && private_key_path.is_none() {
         return Err("The SSH jump profile does not have a private key file configured".to_string());
+    }
+    if auth_method == "auto" && private_key_path.is_none() {
+        private_key_path = normalize_profile_string(Some(default_private_key_path));
     }
     Ok(SshJumpProfile {
         id: profile.id.clone(),

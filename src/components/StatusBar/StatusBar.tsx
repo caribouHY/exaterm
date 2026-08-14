@@ -1,19 +1,17 @@
-import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { CircleDot, FilePlus, FileText, Pause, Play } from "lucide-react";
+import { CircleDot, FileText, Pause } from "lucide-react";
 import packageJson from "../../../package.json";
-import type { TabInfo, Encoding, TerminalMode, ManualLogWriteMode } from "../../types";
-import { TERMINAL_MODE_OPTIONS } from "../../utils/terminalModes";
+import type { TabInfo } from "../../types";
+import { getTerminalModeOptions } from "../../utils/terminalModes";
+import { STATUS_BAR_ENCODINGS, type StatusBarMenuKind } from "./statusBarMenuModel";
 import "./StatusBar.css";
 
 interface StatusBarProps {
   activeTab: TabInfo | null;
   showConnectionStatus: boolean;
-  onEncodingChange: (encoding: Encoding) => void;
-  onTerminalModeChange: (terminalMode: TerminalMode) => void;
-  onStartManualLog: (writeMode: ManualLogWriteMode) => void;
-  onStopManualLog: () => void;
-  onSetLoggingPaused: (paused: boolean) => void;
+  openMenu: StatusBarMenuKind | null;
+  onMenuToggle: (kind: StatusBarMenuKind, pointerActivated: boolean) => void;
+  onMenuTriggerPointerDown: () => void;
   manualLogBusy: boolean;
   logStatusMessage: string;
 }
@@ -21,67 +19,27 @@ interface StatusBarProps {
 export default function StatusBar({
   activeTab,
   showConnectionStatus,
-  onEncodingChange,
-  onTerminalModeChange,
-  onStartManualLog,
-  onStopManualLog,
-  onSetLoggingPaused,
+  openMenu,
+  onMenuToggle,
+  onMenuTriggerPointerDown,
   manualLogBusy,
   logStatusMessage,
 }: StatusBarProps) {
   const { t } = useTranslation();
-  const [openMenu, setOpenMenu] = useState<"encoding" | "terminalMode" | "log" | null>(null);
-  const encodingMenuRef = useRef<HTMLDivElement>(null);
-  const terminalModeMenuRef = useRef<HTMLDivElement>(null);
-  const logMenuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        encodingMenuRef.current?.contains(target) ||
-        terminalModeMenuRef.current?.contains(target) ||
-        logMenuRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setOpenMenu(null);
-    };
-    if (openMenu) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [openMenu]);
-
-  const encodings: { label: string; value: Encoding }[] = [
-    { label: "UTF-8", value: "utf-8" },
-    { label: "Shift-JIS", value: "shift-jis" },
-    { label: "EUC-JP", value: "euc-jp" },
-  ];
-
-  const terminalModes = TERMINAL_MODE_OPTIONS.map((mode) => ({
-    label: t(mode.labelKey),
-    value: mode.value,
-  }));
+  const terminalModes = getTerminalModeOptions(t);
 
   const getLogLabel = () => {
     if (logStatusMessage) return t(logStatusMessage);
     if (!activeTab?.isConnected) return t("statusbar.log_unavailable");
-    if (activeTab.isLoggingPaused && (activeTab.isAutoLogging || activeTab.isManualLogging)) {
+    if (activeTab.isManualLogging && activeTab.isManualLoggingPaused) {
       return t("statusbar.log_paused");
     }
-    if (activeTab.isAutoLogging && activeTab.isManualLogging) {
-      return t("statusbar.log_auto_manual");
-    }
     if (activeTab.isManualLogging) return t("statusbar.log_manual");
-    if (activeTab.isAutoLogging) return t("statusbar.log_auto");
     return t("statusbar.log_start");
   };
 
-  const isLoggingActive = Boolean(activeTab?.isAutoLogging || activeTab?.isManualLogging);
-  const logTitle = activeTab?.isLoggingPaused
+  const logTitle = activeTab?.isManualLoggingPaused
     ? t("statusbar.log_resume")
     : t("statusbar.log_menu_title");
 
@@ -108,18 +66,25 @@ export default function StatusBar({
       </div>
       <div className="statusbar__right">
         {activeTab && (
-          <div className="statusbar__menu-container" ref={logMenuRef}>
+          <div className="statusbar__menu-container">
             <button
+              id="statusbar-menu-trigger-log"
               className={`statusbar__item statusbar__item--clickable statusbar__log ${
                 activeTab.isManualLogging ? "statusbar__log--manual" : ""
-              } ${activeTab.isLoggingPaused ? "statusbar__log--paused" : ""}`}
-              onClick={() => {
-                setOpenMenu(openMenu === "log" ? null : "log");
+              } ${activeTab.isManualLoggingPaused ? "statusbar__log--paused" : ""}`}
+              onPointerDown={onMenuTriggerPointerDown}
+              onClick={(event) => {
+                onMenuToggle("log", event.detail > 0);
               }}
               disabled={!activeTab.isConnected || manualLogBusy}
               title={logTitle}
+              type="button"
+              data-statusbar-menu-trigger
+              aria-haspopup="dialog"
+              aria-expanded={openMenu === "log"}
+              aria-controls={openMenu === "log" ? "statusbar-command-palette" : undefined}
             >
-              {activeTab.isLoggingPaused ? (
+              {activeTab.isManualLoggingPaused ? (
                 <Pause size={12} />
               ) : activeTab.isManualLogging ? (
                 <CircleDot size={12} />
@@ -128,126 +93,47 @@ export default function StatusBar({
               )}
               <span>{manualLogBusy ? t("statusbar.log_busy") : getLogLabel()}</span>
             </button>
-            {openMenu === "log" && (
-              <div className="statusbar__menu statusbar__menu--log">
-                <button
-                  className="statusbar__menu-item"
-                  disabled={!activeTab.isConnected || activeTab.isManualLogging}
-                  onClick={() => {
-                    onStartManualLog("overwrite");
-                    setOpenMenu(null);
-                  }}
-                >
-                  <FileText size={12} />
-                  <span>{t("statusbar.log_start_manual_overwrite")}</span>
-                </button>
-                <button
-                  className="statusbar__menu-item"
-                  disabled={!activeTab.isConnected || activeTab.isManualLogging}
-                  onClick={() => {
-                    onStartManualLog("append");
-                    setOpenMenu(null);
-                  }}
-                >
-                  <FilePlus size={12} />
-                  <span>{t("statusbar.log_start_manual_append")}</span>
-                </button>
-                <button
-                  className="statusbar__menu-item"
-                  disabled={!activeTab.isManualLogging}
-                  onClick={() => {
-                    onStopManualLog();
-                    setOpenMenu(null);
-                  }}
-                >
-                  <CircleDot size={12} />
-                  <span>{t("statusbar.log_stop_manual")}</span>
-                </button>
-                <button
-                  className="statusbar__menu-item"
-                  disabled={!isLoggingActive || activeTab.isLoggingPaused}
-                  onClick={() => {
-                    onSetLoggingPaused(true);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <Pause size={12} />
-                  <span>{t("statusbar.log_pause")}</span>
-                </button>
-                <button
-                  className="statusbar__menu-item"
-                  disabled={!isLoggingActive || !activeTab.isLoggingPaused}
-                  onClick={() => {
-                    onSetLoggingPaused(false);
-                    setOpenMenu(null);
-                  }}
-                >
-                  <Play size={12} />
-                  <span>{t("statusbar.log_resume")}</span>
-                </button>
-              </div>
-            )}
           </div>
         )}
         {activeTab && (
-          <div className="statusbar__menu-container" ref={terminalModeMenuRef}>
+          <div className="statusbar__menu-container">
             <button
+              id="statusbar-menu-trigger-terminalMode"
               className="statusbar__item statusbar__item--clickable"
-              onClick={() => {
-                setOpenMenu(openMenu === "terminalMode" ? null : "terminalMode");
+              onPointerDown={onMenuTriggerPointerDown}
+              onClick={(event) => {
+                onMenuToggle("terminalMode", event.detail > 0);
               }}
               title={t("connection.terminal_mode")}
+              type="button"
+              data-statusbar-menu-trigger
+              aria-haspopup="dialog"
+              aria-expanded={openMenu === "terminalMode"}
+              aria-controls={openMenu === "terminalMode" ? "statusbar-command-palette" : undefined}
             >
               {terminalModes.find((mode) => mode.value === activeTab.terminalMode)?.label ||
                 activeTab.terminalMode}
             </button>
-            {openMenu === "terminalMode" && (
-              <div className="statusbar__menu">
-                {terminalModes.map((mode) => (
-                  <button
-                    key={mode.value}
-                    className={`statusbar__menu-item ${
-                      activeTab.terminalMode === mode.value ? "statusbar__menu-item--active" : ""
-                    }`}
-                    onClick={() => {
-                      onTerminalModeChange(mode.value);
-                      setOpenMenu(null);
-                    }}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         )}
         {activeTab && (
-          <div className="statusbar__menu-container" ref={encodingMenuRef}>
+          <div className="statusbar__menu-container">
             <button
+              id="statusbar-menu-trigger-encoding"
               className="statusbar__item statusbar__item--clickable"
-              onClick={() => {
-                setOpenMenu(openMenu === "encoding" ? null : "encoding");
+              onPointerDown={onMenuTriggerPointerDown}
+              onClick={(event) => {
+                onMenuToggle("encoding", event.detail > 0);
               }}
+              type="button"
+              data-statusbar-menu-trigger
+              aria-haspopup="dialog"
+              aria-expanded={openMenu === "encoding"}
+              aria-controls={openMenu === "encoding" ? "statusbar-command-palette" : undefined}
             >
-              {encodings.find((e) => e.value === activeTab.encoding)?.label ||
-                activeTab.encoding.toUpperCase()}
+              {STATUS_BAR_ENCODINGS.find((encoding) => encoding.value === activeTab.encoding)
+                ?.label || activeTab.encoding.toUpperCase()}
             </button>
-            {openMenu === "encoding" && (
-              <div className="statusbar__menu">
-                {encodings.map((e) => (
-                  <button
-                    key={e.value}
-                    className={`statusbar__menu-item ${activeTab.encoding === e.value ? "statusbar__menu-item--active" : ""}`}
-                    onClick={() => {
-                      onEncodingChange(e.value);
-                      setOpenMenu(null);
-                    }}
-                  >
-                    {e.label}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         )}
         <div className="statusbar__item">ExaTerm v{packageJson.version}</div>

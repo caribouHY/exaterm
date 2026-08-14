@@ -2,26 +2,40 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use russh::client::{AuthResult, KeyboardInteractiveAuthResponse};
 use russh::keys::decode_secret_key;
 use russh::keys::key::PrivateKeyWithHashAlg;
 use russh::keys::PrivateKey;
+use russh::{MethodKind, MethodSet};
 
+use crate::ssh::authentication_prompt::SshAuthenticationContext;
+use crate::ssh::diagnostics::SshDiagnostic;
+use crate::ssh::io::{run_ssh_operation_with_timeout, SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR};
 use crate::ssh::types::SshAuthRequest;
+
+const MAX_AUTHENTICATION_STAGES: usize = 8;
 
 pub(super) fn build_auth_request(
     auth_method: Option<String>,
     password: String,
     private_key_path: Option<String>,
     key_passphrase: Option<String>,
+    default_private_key_path: Option<String>,
 ) -> Result<SshAuthRequest, String> {
     let method = auth_method
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or("password");
+        .unwrap_or("auto");
 
     match method {
+        "auto" => Ok(SshAuthRequest::Auto {
+            private_key_path: normalize_optional_string(private_key_path)
+                .or_else(|| normalize_optional_string(default_private_key_path)),
+            key_passphrase: normalize_optional_string(key_passphrase),
+        }),
         "password" => Ok(SshAuthRequest::Password { password }),
+        "keyboard_interactive" => Ok(SshAuthRequest::KeyboardInteractive),
         "public_key" => {
             let private_key_path = private_key_path.unwrap_or_default().trim().to_string();
             if private_key_path.is_empty() {
@@ -30,9 +44,7 @@ pub(super) fn build_auth_request(
                 );
             }
 
-            let key_passphrase = key_passphrase
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty());
+            let key_passphrase = normalize_optional_string(key_passphrase);
 
             Ok(SshAuthRequest::PublicKey {
                 private_key_path,
@@ -41,6 +53,12 @@ pub(super) fn build_auth_request(
         }
         _ => Err("The SSH authentication method is invalid".to_string()),
     }
+}
+
+fn normalize_optional_string(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn expand_percent_env_vars(path: &str) -> String {
@@ -191,38 +209,284 @@ pub(super) async fn authenticate_ssh(
     handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
     username: &str,
     auth: SshAuthRequest,
+    context: &SshAuthenticationContext<'_>,
+    diagnostic: Option<&SshDiagnostic>,
 ) -> Result<(), String> {
-    let (auth_result, failure_message) = match auth {
-        SshAuthRequest::Password { password } => (
-            handle
-                .authenticate_password(username, &password)
-                .await
-                .map_err(|e| format!("SSH authentication error: {}", e))?,
-            "SSH authentication failed: the username or password is incorrect",
-        ),
+    match auth {
+        SshAuthRequest::Auto {
+            private_key_path,
+            key_passphrase,
+        } => {
+            authenticate_auto(
+                handle,
+                username,
+                private_key_path,
+                key_passphrase,
+                context,
+                diagnostic,
+            )
+            .await
+        }
+        SshAuthRequest::Password { password } => {
+            let password = if password.is_empty() {
+                context.request_password().await?
+            } else {
+                password
+            };
+            match authenticate_password(handle, username, password).await? {
+                AuthResult::Success => Ok(()),
+                AuthResult::Failure { .. } => Err(password_failure()),
+            }
+        }
+        SshAuthRequest::KeyboardInteractive => {
+            match authenticate_keyboard_interactive(handle, username, context).await? {
+                AuthResult::Success => Ok(()),
+                AuthResult::Failure { .. } => Err(keyboard_interactive_failure()),
+            }
+        }
         SshAuthRequest::PublicKey {
             private_key_path,
             key_passphrase,
         } => {
             let key = load_private_key_for_auth(&private_key_path, key_passphrase.as_deref())
                 .map_err(|e| format!("SSH public key authentication error: {}", e))?;
-
-            (
-                handle
-                    .authenticate_publickey(
-                        username,
-                        PrivateKeyWithHashAlg::new(Arc::new(key), None),
-                    )
-                    .await
-                    .map_err(|e| format!("SSH public key authentication error: {}", e))?,
-                "SSH public key authentication failed: check the username, private key, public key registration, or passphrase.",
-            )
+            let result = authenticate_public_key(handle, username, key).await?;
+            match result {
+                AuthResult::Success => Ok(()),
+                AuthResult::Failure {
+                    remaining_methods,
+                    partial_success,
+                } if should_continue_public_key(&remaining_methods, partial_success) => {
+                    match authenticate_keyboard_interactive(handle, username, context).await? {
+                        AuthResult::Success => Ok(()),
+                        AuthResult::Failure { .. } => Err(public_key_failure()),
+                    }
+                }
+                AuthResult::Failure { .. } => Err(public_key_failure()),
+            }
         }
+    }
+}
+
+async fn authenticate_auto(
+    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    username: &str,
+    private_key_path: Option<String>,
+    key_passphrase: Option<String>,
+    context: &SshAuthenticationContext<'_>,
+    diagnostic: Option<&SshDiagnostic>,
+) -> Result<(), String> {
+    let initial = authenticate_none(handle, username).await?;
+    let mut remaining_methods = match initial {
+        AuthResult::Success => return Ok(()),
+        AuthResult::Failure {
+            remaining_methods, ..
+        } => remaining_methods,
     };
 
-    if !auth_result.success() {
-        return Err(failure_message.to_string());
+    if let Some(private_key_path) = private_key_path {
+        if supports(&remaining_methods, MethodKind::PublicKey) {
+            match load_private_key_for_auth(&private_key_path, key_passphrase.as_deref()) {
+                Ok(key) => match authenticate_public_key(handle, username, key).await? {
+                    AuthResult::Success => return Ok(()),
+                    AuthResult::Failure {
+                        remaining_methods: next_methods,
+                        partial_success,
+                    } => {
+                        automatic_auth_diagnostic(
+                            diagnostic,
+                            context.phase,
+                            if partial_success {
+                                "public-key authentication succeeded; additional authentication is required"
+                            } else {
+                                "public-key authentication was not accepted; trying the next method"
+                            },
+                        );
+                        remaining_methods = next_methods;
+                    }
+                },
+                Err(_) => automatic_auth_diagnostic(
+                    diagnostic,
+                    context.phase,
+                    "the configured private key could not be loaded; trying the next method",
+                ),
+            }
+        }
+    } else {
+        automatic_auth_diagnostic(
+            diagnostic,
+            context.phase,
+            "public-key authentication skipped because no private key is configured",
+        );
     }
 
-    Ok(())
+    if supports(&remaining_methods, MethodKind::KeyboardInteractive) {
+        match authenticate_keyboard_interactive(handle, username, context).await? {
+            AuthResult::Success => return Ok(()),
+            AuthResult::Failure {
+                remaining_methods: next_methods,
+                ..
+            } => {
+                automatic_auth_diagnostic(
+                    diagnostic,
+                    context.phase,
+                    "keyboard-interactive authentication was not accepted; trying the next method",
+                );
+                remaining_methods = next_methods;
+            }
+        }
+    }
+
+    if supports(&remaining_methods, MethodKind::Password) {
+        let password = context.request_password().await?;
+        if matches!(
+            authenticate_password(handle, username, password).await?,
+            AuthResult::Success
+        ) {
+            return Ok(());
+        }
+    }
+
+    Err("SSH automatic authentication failed".to_string())
+}
+
+fn automatic_auth_diagnostic(diagnostic: Option<&SshDiagnostic>, phase: &str, message: &str) {
+    if let Some(diagnostic) = diagnostic {
+        diagnostic.info(format!("{phase}: automatic authentication: {message}"));
+    }
+}
+
+async fn authenticate_none(
+    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    username: &str,
+) -> Result<AuthResult, String> {
+    run_ssh_operation_with_timeout(SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR, async {
+        handle
+            .authenticate_none(username)
+            .await
+            .map_err(|error| format!("SSH authentication error: {error}"))
+    })
+    .await
+}
+
+async fn authenticate_public_key(
+    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    username: &str,
+    key: PrivateKey,
+) -> Result<AuthResult, String> {
+    run_ssh_operation_with_timeout(SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR, async {
+        handle
+            .authenticate_publickey(username, PrivateKeyWithHashAlg::new(Arc::new(key), None))
+            .await
+            .map_err(|error| format!("SSH public key authentication error: {error}"))
+    })
+    .await
+}
+
+fn should_continue_public_key(remaining_methods: &MethodSet, partial_success: bool) -> bool {
+    partial_success && supports(remaining_methods, MethodKind::KeyboardInteractive)
+}
+
+async fn authenticate_password(
+    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    username: &str,
+    password: String,
+) -> Result<AuthResult, String> {
+    run_ssh_operation_with_timeout(SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR, async {
+        handle
+            .authenticate_password(username, password)
+            .await
+            .map_err(|error| format!("SSH authentication error: {error}"))
+    })
+    .await
+}
+
+async fn authenticate_keyboard_interactive(
+    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    username: &str,
+    context: &SshAuthenticationContext<'_>,
+) -> Result<AuthResult, String> {
+    let mut response =
+        run_ssh_operation_with_timeout(SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR, async {
+            handle
+                .authenticate_keyboard_interactive_start(username, None::<String>)
+                .await
+                .map_err(|error| format!("SSH keyboard-interactive authentication error: {error}"))
+        })
+        .await?;
+
+    for _round in 0..MAX_AUTHENTICATION_STAGES {
+        match response {
+            KeyboardInteractiveAuthResponse::Success => return Ok(AuthResult::Success),
+            KeyboardInteractiveAuthResponse::Failure {
+                remaining_methods,
+                partial_success,
+            } => {
+                return Ok(AuthResult::Failure {
+                    remaining_methods,
+                    partial_success,
+                });
+            }
+            KeyboardInteractiveAuthResponse::InfoRequest {
+                name,
+                instructions,
+                prompts,
+            } => {
+                let responses = context
+                    .request_keyboard_interactive(name, instructions, prompts)
+                    .await?;
+                response = run_ssh_operation_with_timeout(
+                    SSH_AUTH_TIMEOUT,
+                    SSH_AUTH_TIMEOUT_ERROR,
+                    async {
+                        handle
+                            .authenticate_keyboard_interactive_respond(responses)
+                            .await
+                            .map_err(|error| {
+                                format!("SSH keyboard-interactive authentication error: {error}")
+                            })
+                    },
+                )
+                .await?;
+            }
+        }
+    }
+
+    Err("SSH authentication failed: too many keyboard-interactive rounds".to_string())
+}
+
+fn supports(methods: &MethodSet, method: MethodKind) -> bool {
+    methods.contains(&method)
+}
+
+fn password_failure() -> String {
+    "SSH authentication failed: the username or password is incorrect".to_string()
+}
+
+fn keyboard_interactive_failure() -> String {
+    "SSH keyboard-interactive authentication failed".to_string()
+}
+
+fn public_key_failure() -> String {
+    "SSH public key authentication failed: check the username, private key, public key registration, passphrase, or required additional authentication.".to_string()
+}
+
+#[cfg(test)]
+mod authentication_flow_tests {
+    use super::*;
+
+    fn methods(methods: &[MethodKind]) -> MethodSet {
+        MethodSet::from(methods)
+    }
+
+    #[test]
+    fn public_key_only_continues_after_partial_success() {
+        let keyboard_interactive = methods(&[MethodKind::KeyboardInteractive]);
+        assert!(should_continue_public_key(&keyboard_interactive, true));
+        assert!(!should_continue_public_key(&keyboard_interactive, false));
+        assert!(!should_continue_public_key(
+            &methods(&[MethodKind::Password]),
+            true
+        ));
+    }
 }

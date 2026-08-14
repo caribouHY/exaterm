@@ -1,4 +1,6 @@
 .settings-panel {
+  --settings-scrollbar-gap: 12px;
+
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -86,6 +88,7 @@
   min-height: 0;
   overflow-y: auto;
   padding-bottom: var(--space-xl);
+  padding-right: var(--settings-scrollbar-gap);
 }
 
 .settings-content .settings-section {
@@ -399,6 +402,33 @@
   line-height: 1.5;
 }
 
+.settings-connection-history {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.settings-connection-history__count {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.settings-connection-history .settings-help {
+  margin: 4px 0 0;
+}
+
+.settings-connection-history .btn {
+  align-self: flex-end;
+  flex-shrink: 0;
+}
+
+.settings-connection-history__feedback {
+  margin-bottom: var(--space-lg);
+}
+
 .settings-ssh__catalog-error,
 .settings-ssh__custom-header {
   display: flex;
@@ -414,6 +444,20 @@
 
 .settings-ssh__mode {
   max-width: 380px;
+}
+
+.settings-ssh__file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.settings-ssh__file-row .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  white-space: nowrap;
 }
 
 .settings-ssh__custom {
@@ -591,6 +635,7 @@
   .settings-layout {
     display: block;
     overflow-y: auto;
+    padding-right: var(--settings-scrollbar-gap);
   }
 
   .settings-category-nav {
@@ -599,6 +644,14 @@
 
   .settings-category-select {
     display: block;
+  }
+
+  .settings-connection-history {
+    flex-direction: column;
+  }
+
+  .settings-connection-history .btn {
+    align-self: flex-start;
   }
 
   .settings-actions {
@@ -612,6 +665,7 @@
 
   .settings-content {
     overflow-y: visible;
+    padding-right: 0;
   }
 
   .settings-actions__status,

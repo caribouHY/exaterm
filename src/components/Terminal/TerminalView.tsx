@@ -1,6 +1,5 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
-import type { IDecoration, IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
@@ -22,8 +21,16 @@ import {
   formatShortcut,
   type TerminalLogShortcutAction,
 } from "../../features/shortcuts/shortcutModel";
+import { shouldAppendManualLog } from "../../features/terminal-logging/terminalLoggingModel";
 import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
-import { DEFAULT_TERMINAL_MODE } from "../../utils/terminalModes";
+import {
+  createTerminalDecorationController,
+  type TerminalDecorationController,
+} from "./terminalDecorationController";
+import { getTerminalDecorationProfile } from "./terminalDecorationProfiles";
+import { getTerminalPromptColor, TERMINAL_DECORATION_COLORS } from "./terminalDecorationTheme";
+import type { TerminalPinnedCommand } from "./terminalDecorationTypes";
+import { clearTerminalBuffer, clearTerminalViewport } from "./terminalClearActions";
 import appIcon from "../../../src-tauri/icons/icon.png";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
@@ -34,52 +41,28 @@ interface TerminalViewProps {
   isConnected: boolean;
   isActive: boolean;
   encoding: Encoding;
-  isAutoLogging: boolean;
   isManualLogging: boolean;
-  isLoggingPaused: boolean;
+  isManualLoggingPaused: boolean;
   terminalConfig?: TerminalConfig;
   shortcuts: ShortcutConfig;
   terminalMode: TerminalMode;
   onOpenConnection: () => void;
   onTerminalData?: (data: string) => void;
   onTerminalLogShortcut?: (action: TerminalLogShortcutAction) => void;
+  onTerminalSelectionChange?: (hasSelection: boolean) => void;
 }
 
 export interface TerminalViewHandle {
+  focus: () => void;
+  isFocused: () => boolean;
   insertText: (text: string) => void;
+  selectAll: () => void;
+  copySelection: () => void;
+  paste: () => void;
+  clearViewport: () => void;
+  clearBuffer: () => void;
   flushManualLogBuffer: () => Promise<void>;
   flushLogBuffersForMove: () => Promise<void>;
-}
-
-interface PromptDecorationSet {
-  promptSignature: string;
-  commandSignature: string;
-  marker: IMarker;
-  promptDecoration: IDecoration;
-  commandDecorations: CommandDecoration[];
-}
-
-interface LineDecorationSet {
-  signature: string;
-  marker: IMarker;
-  decoration: IDecoration;
-}
-
-interface CommandDecoration {
-  decoration: IDecoration;
-  marker?: IMarker;
-}
-
-interface CommandDecorationSegment {
-  lineIndex: number;
-  x: number;
-  width: number;
-  text: string;
-}
-
-interface LineRange {
-  firstLineIndex: number;
-  lastLineIndex: number;
 }
 
 interface TerminalOutputSnapshot {
@@ -90,6 +73,18 @@ interface TerminalOutputSnapshot {
   start_cursor: number;
   cursor: number;
 }
+
+interface TerminalEditActions {
+  selectAll: () => void;
+  copySelection: () => void;
+  paste: () => void;
+}
+
+const EMPTY_TERMINAL_EDIT_ACTIONS: TerminalEditActions = {
+  selectAll: () => {},
+  copySelection: () => {},
+  paste: () => {},
+};
 
 function normalizeCursorStyle(cursorStyle: string | undefined): "block" | "bar" | "underline" {
   if (cursorStyle === "bar" || cursorStyle === "underline") {
@@ -106,39 +101,63 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     isConnected,
     isActive,
     encoding,
-    isAutoLogging,
     isManualLogging,
-    isLoggingPaused,
+    isManualLoggingPaused,
     terminalConfig,
     shortcuts,
     terminalMode,
     onOpenConnection,
     onTerminalData,
     onTerminalLogShortcut,
+    onTerminalSelectionChange,
   },
   ref
 ) {
   const { t } = useTranslation();
+  const [pinnedCommand, setPinnedCommand] = useState<TerminalPinnedCommand | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const decoderRef = useRef(new TextDecoder(encoding));
   const isConnectedRef = useRef(isConnected);
   const isActiveRef = useRef(isActive);
-  const isAutoLoggingRef = useRef(isAutoLogging);
   const isManualLoggingRef = useRef(isManualLogging);
-  const isLoggingPausedRef = useRef(isLoggingPaused);
-  const terminalModeRef = useRef(terminalMode);
+  const isManualLoggingPausedRef = useRef(isManualLoggingPaused);
   const shortcutsRef = useRef(shortcuts);
   const onTerminalLogShortcutRef = useRef(onTerminalLogShortcut);
-  const decorationFrameRef = useRef<number | null>(null);
-  const decorationRebuildRef = useRef(false);
+  const onTerminalSelectionChangeRef = useRef(onTerminalSelectionChange);
   const clipboardActionInProgressRef = useRef(false);
-  const promptDecorationsRef = useRef<Map<number, PromptDecorationSet>>(new Map());
-  const errorDecorationsRef = useRef<Map<number, LineDecorationSet>>(new Map());
-  const autoLogSanitizerRef = useRef(
-    createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
+  const terminalEditActionsRef = useRef<TerminalEditActions>(EMPTY_TERMINAL_EDIT_ACTIONS);
+  const decorationControllerRef = useRef<TerminalDecorationController | null>(null);
+  const decorationController =
+    decorationControllerRef.current ??
+    (decorationControllerRef.current = createTerminalDecorationController({
+      onPinnedCommandChange: setPinnedCommand,
+    }));
+  const decorationProfile = getTerminalDecorationProfile(terminalMode);
+  const refreshDecorationsAfterClear = useCallback(
+    (terminal: Terminal) => {
+      decorationController.clear();
+      decorationController.schedule(terminal, true);
+    },
+    [decorationController]
   );
+
+  const clearViewport = useCallback(() => {
+    const terminal = termRef.current;
+    if (!terminal) return;
+    clearTerminalViewport(terminal, () => {
+      refreshDecorationsAfterClear(terminal);
+    });
+  }, [refreshDecorationsAfterClear]);
+
+  const clearBuffer = useCallback(() => {
+    const terminal = termRef.current;
+    if (!terminal) return;
+    clearTerminalBuffer(terminal, () => {
+      refreshDecorationsAfterClear(terminal);
+    });
+  }, [refreshDecorationsAfterClear]);
 
   useEffect(() => {
     shortcutsRef.current = shortcuts;
@@ -151,71 +170,13 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   useEffect(() => {
     onTerminalLogShortcutRef.current = onTerminalLogShortcut;
   }, [onTerminalLogShortcut]);
+
+  useEffect(() => {
+    onTerminalSelectionChangeRef.current = onTerminalSelectionChange;
+  }, [onTerminalSelectionChange]);
   const manualLogSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
-
-  const ciscoIosPromptPattern = /^([\w+\-.:/\[\]]+)((?:\([^)]+\)){0,3})([>#]) ?(.*)$/;
-  const ciscoIosConfigPromptPattern = /^.+\(config(-.*)?\)#$/;
-  const ciscoIosDecorationLookback = 80;
-  const ciscoIosErrorPatterns = [
-    /ERROR:/i,
-    /% ?Bad secret/,
-    /(?:^|%) Bad passwords/,
-    /invalid input/i,
-    /(?:incomplete|ambiguous) command/i,
-    /connection timed out/i,
-    /[^\r\n]+ not found/,
-    /'[^']+' +returned error code: ?\d+/,
-    /Bad mask/i,
-    /% ?\S+ ?overlaps with ?\S+/i,
-    /% ?\S+ ?Error: ?\s+/i,
-    /% ?\S+ ?Informational: ?\s+/i,
-    /Command authorization failed/,
-    /Command Rejected(\s*\([^)]*\))?\s*: ?\s+/i,
-    /% General session commands not allowed under the address family/i,
-    /% BGP: Error initializing topology/i,
-    /%SNMP agent not enabled/i,
-    /% Invalid/i,
-    /%You must disable VTPv1 and VTPv2 or switch to VTPv3 before configuring a VLAN name longer than 32 characters/i,
-  ];
-  const canDecorateTerminalMode = (mode: TerminalMode) => {
-    return mode === "cisco_ios";
-  };
-
-  const decorateTerminalMode = (term: Terminal, mode: TerminalMode) => {
-    switch (mode) {
-      case "cisco_ios":
-        decorateCiscoIosTerminal(term);
-        return true;
-      case DEFAULT_TERMINAL_MODE:
-        return false;
-      default:
-        return false;
-    }
-  };
-
-  const cancelScheduledDecoration = () => {
-    decorationRebuildRef.current = false;
-    if (decorationFrameRef.current === null) return;
-    window.cancelAnimationFrame(decorationFrameRef.current);
-    decorationFrameRef.current = null;
-  };
-
-  const scheduleTerminalModeDecoration = (term: Terminal, rebuild = false) => {
-    if (!canDecorateTerminalMode(terminalModeRef.current)) return;
-    decorationRebuildRef.current = decorationRebuildRef.current || rebuild;
-    if (decorationFrameRef.current !== null) return;
-
-    decorationFrameRef.current = window.requestAnimationFrame(() => {
-      decorationFrameRef.current = null;
-      if (decorationRebuildRef.current) {
-        clearModeDecorations();
-        decorationRebuildRef.current = false;
-      }
-      decorateTerminalMode(term, terminalModeRef.current);
-    });
-  };
 
   const connectionCommands: Record<
     ConnectionType,
@@ -246,365 +207,34 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   }, [isConnected]);
 
   useEffect(() => {
-    isAutoLoggingRef.current = isAutoLogging;
-  }, [isAutoLogging]);
-
-  useEffect(() => {
     isManualLoggingRef.current = isManualLogging;
   }, [isManualLogging]);
 
   useEffect(() => {
-    if (isLoggingPaused && !isLoggingPausedRef.current && sessionId) {
-      if (isAutoLoggingRef.current) {
-        const logText = autoLogSanitizerRef.current.flush();
-        if (logText) {
-          invoke("logger_append_to_mode", { sessionId, logMode: "auto", data: logText }).catch(
-            () => {}
-          );
-        }
-      }
-      if (isManualLoggingRef.current) {
-        const logText = manualLogSanitizerRef.current.flush();
-        if (logText) {
-          invoke("logger_append_to_mode", { sessionId, logMode: "manual", data: logText }).catch(
-            () => {}
-          );
-        }
+    if (
+      isManualLoggingPaused &&
+      !isManualLoggingPausedRef.current &&
+      sessionId &&
+      isManualLoggingRef.current
+    ) {
+      const logText = manualLogSanitizerRef.current.flush();
+      if (logText) {
+        invoke("logger_append", { sessionId, data: logText }).catch(() => {});
       }
     }
-    isLoggingPausedRef.current = isLoggingPaused;
-  }, [isLoggingPaused, sessionId]);
-
-  const disposeCommandDecoration = ({ decoration, marker }: CommandDecoration) => {
-    decoration.dispose();
-    marker?.dispose();
-  };
-
-  const disposePromptDecorationSet = ({
-    commandDecorations,
-    promptDecoration,
-    marker,
-  }: PromptDecorationSet) => {
-    commandDecorations.forEach(disposeCommandDecoration);
-    promptDecoration.dispose();
-    marker.dispose();
-  };
-
-  const disposeLineDecorationSet = ({ decoration, marker }: LineDecorationSet) => {
-    decoration.dispose();
-    marker.dispose();
-  };
-
-  const clearModeDecorations = () => {
-    promptDecorationsRef.current.forEach(disposePromptDecorationSet);
-    promptDecorationsRef.current.clear();
-    errorDecorationsRef.current.forEach(disposeLineDecorationSet);
-    errorDecorationsRef.current.clear();
-  };
-
-  const decorateCiscoIosTerminal = (term: Terminal) => {
-    decorateCiscoIosPrompt(term);
-    decorateCiscoIosErrors(term);
-  };
-
-  const getCiscoIosDecorationRanges = (term: Terminal): LineRange[] => {
-    const buffer = term.buffer.active;
-    if (buffer.type === "alternate") return [];
-
-    const lastBufferLineIndex = Math.max(0, buffer.length - 1);
-    const cursorLineIndex = Math.min(lastBufferLineIndex, buffer.baseY + buffer.cursorY);
-    const viewportLastLineIndex = Math.min(lastBufferLineIndex, buffer.viewportY + term.rows - 1);
-    const ranges: LineRange[] = [];
-
-    const addRange = (firstLineIndex: number, lastLineIndex: number) => {
-      const nextRange = {
-        firstLineIndex: Math.max(0, firstLineIndex),
-        lastLineIndex: Math.min(lastBufferLineIndex, lastLineIndex),
-      };
-      if (nextRange.lastLineIndex < nextRange.firstLineIndex) return;
-      ranges.push(nextRange);
-    };
-
-    addRange(cursorLineIndex - ciscoIosDecorationLookback, cursorLineIndex);
-    addRange(buffer.viewportY - ciscoIosDecorationLookback, viewportLastLineIndex);
-
-    return ranges
-      .sort((a, b) => a.firstLineIndex - b.firstLineIndex)
-      .reduce<LineRange[]>((mergedRanges, range) => {
-        const previousRange = mergedRanges[mergedRanges.length - 1];
-        if (!previousRange || range.firstLineIndex > previousRange.lastLineIndex + 1) {
-          mergedRanges.push({ ...range });
-          return mergedRanges;
-        }
-
-        previousRange.lastLineIndex = Math.max(previousRange.lastLineIndex, range.lastLineIndex);
-        return mergedRanges;
-      }, []);
-  };
-
-  const isLineInRanges = (lineIndex: number, ranges: LineRange[]) =>
-    ranges.some((range) => lineIndex >= range.firstLineIndex && lineIndex <= range.lastLineIndex);
-
-  const decorateCiscoIosErrors = (term: Terminal) => {
-    const buffer = term.buffer.active;
-    if (buffer.type === "alternate") return;
-
-    const cursorLineIndex = buffer.baseY + buffer.cursorY;
-    const decorationRanges = getCiscoIosDecorationRanges(term);
-    const visitedErrorLineIndexes = new Set<number>();
-
-    decorationRanges.forEach(({ firstLineIndex, lastLineIndex }) => {
-      for (let lineIndex = firstLineIndex; lineIndex <= lastLineIndex; lineIndex += 1) {
-        const line = buffer.getLine(lineIndex)?.translateToString(true) ?? "";
-        const trimmedLine = line.trimEnd();
-        if (!trimmedLine || ciscoIosPromptPattern.test(trimmedLine)) continue;
-        if (!ciscoIosErrorPatterns.some((pattern) => pattern.test(trimmedLine))) continue;
-
-        const decorationStart = Math.max(0, trimmedLine.search(/\S/));
-        const decorationWidth = trimmedLine.length - decorationStart;
-        if (decorationWidth <= 0) continue;
-
-        const signature = `${decorationStart}:${decorationWidth}:${trimmedLine}`;
-        const existingDecorationSet = errorDecorationsRef.current.get(lineIndex);
-        visitedErrorLineIndexes.add(lineIndex);
-        if (existingDecorationSet?.signature === signature) continue;
-        if (existingDecorationSet) {
-          disposeLineDecorationSet(existingDecorationSet);
-          errorDecorationsRef.current.delete(lineIndex);
-        }
-
-        const marker = term.registerMarker(lineIndex - cursorLineIndex);
-        if (!marker) continue;
-
-        const decoration = term.registerDecoration({
-          marker,
-          x: decorationStart,
-          width: decorationWidth,
-          foregroundColor: "#f87171",
-          layer: "top",
-        });
-
-        if (!decoration) {
-          marker.dispose();
-          continue;
-        }
-
-        decoration.onDispose(() => errorDecorationsRef.current.delete(lineIndex));
-        errorDecorationsRef.current.set(lineIndex, { signature, marker, decoration });
-      }
-    });
-
-    errorDecorationsRef.current.forEach((decorationSet, decoratedLineIndex) => {
-      if (
-        !isLineInRanges(decoratedLineIndex, decorationRanges) ||
-        visitedErrorLineIndexes.has(decoratedLineIndex)
-      ) {
-        return;
-      }
-
-      disposeLineDecorationSet(decorationSet);
-      errorDecorationsRef.current.delete(decoratedLineIndex);
-    });
-  };
-
-  const decorateCiscoIosPrompt = (term: Terminal) => {
-    const buffer = term.buffer.active;
-    if (buffer.type === "alternate") return;
-
-    const cursorLineIndex = buffer.baseY + buffer.cursorY;
-    const decorationRanges = getCiscoIosDecorationRanges(term);
-    const visitedPromptLineIndexes = new Set<number>();
-
-    decorationRanges.forEach(({ firstLineIndex, lastLineIndex }) => {
-      for (let lineIndex = firstLineIndex; lineIndex <= lastLineIndex; lineIndex += 1) {
-        const bufferLine = buffer.getLine(lineIndex);
-        if (!bufferLine || bufferLine.isWrapped) continue;
-
-        const trimmedLine = bufferLine.translateToString(true).trimEnd();
-        const promptMatch = ciscoIosPromptPattern.exec(trimmedLine);
-        if (!promptMatch) continue;
-
-        const hostname = promptMatch[1];
-        const configMode = promptMatch[2];
-        const terminator = promptMatch[3];
-        const commandText = promptMatch[4].trimEnd();
-        const promptText = `${hostname}${configMode}${terminator}`;
-        const isConfigPrompt = ciscoIosConfigPromptPattern.test(promptText);
-        const hostnameStart = trimmedLine.indexOf(hostname);
-        if (hostnameStart < 0 || hostname.length === 0) continue;
-        const promptWidth = promptText.length;
-        if (promptWidth === 0) continue;
-        const commandStart = hostnameStart + promptMatch[0].length - promptMatch[4].length;
-        const commandSegments = collectCiscoIosCommandSegments(
-          buffer,
-          lineIndex,
-          commandStart,
-          commandText,
-          lastLineIndex
-        );
-        const promptSignature = `${hostnameStart}:${promptWidth}:${promptText}:${isConfigPrompt}`;
-        const commandSignature = commandSegments
-          .map(
-            (segment) =>
-              `${segment.lineIndex - lineIndex}:${segment.x}:${segment.width}:${segment.text}`
-          )
-          .join("\n");
-        const existingDecorationSet = promptDecorationsRef.current.get(lineIndex);
-        visitedPromptLineIndexes.add(lineIndex);
-
-        if (existingDecorationSet?.promptSignature === promptSignature) {
-          if (existingDecorationSet.commandSignature === commandSignature) continue;
-
-          existingDecorationSet.commandDecorations.forEach(disposeCommandDecoration);
-          existingDecorationSet.commandDecorations = registerCiscoIosCommandDecorations(
-            term,
-            existingDecorationSet.marker,
-            lineIndex,
-            commandSegments,
-            cursorLineIndex
-          );
-          existingDecorationSet.commandSignature = commandSignature;
-          continue;
-        }
-
-        if (existingDecorationSet) {
-          disposePromptDecorationSet(existingDecorationSet);
-          promptDecorationsRef.current.delete(lineIndex);
-        }
-
-        const marker = term.registerMarker(lineIndex - cursorLineIndex);
-        if (!marker) continue;
-
-        const promptDecoration = term.registerDecoration({
-          marker,
-          x: hostnameStart,
-          width: promptWidth,
-          foregroundColor: isConfigPrompt ? "#facc15" : "#7dd3fc",
-          backgroundColor: isConfigPrompt ? "#3a2f0a" : "#0f2f3f",
-          layer: "top",
-        });
-
-        if (!promptDecoration) {
-          marker.dispose();
-          continue;
-        }
-
-        promptDecoration.onRender((element) => {
-          element.classList.add("terminal-view__cisco-hostname");
-          if (isConfigPrompt) {
-            element.classList.add("terminal-view__cisco-hostname--config");
-          }
-        });
-
-        const commandDecorations = registerCiscoIosCommandDecorations(
-          term,
-          marker,
-          lineIndex,
-          commandSegments,
-          cursorLineIndex
-        );
-
-        promptDecoration.onDispose(() => promptDecorationsRef.current.delete(lineIndex));
-        promptDecorationsRef.current.set(lineIndex, {
-          promptSignature,
-          commandSignature,
-          marker,
-          promptDecoration,
-          commandDecorations,
-        });
-      }
-    });
-
-    promptDecorationsRef.current.forEach((decorationSet, decoratedLineIndex) => {
-      if (
-        !isLineInRanges(decoratedLineIndex, decorationRanges) ||
-        visitedPromptLineIndexes.has(decoratedLineIndex)
-      ) {
-        return;
-      }
-
-      disposePromptDecorationSet(decorationSet);
-      promptDecorationsRef.current.delete(decoratedLineIndex);
-    });
-  };
-
-  const collectCiscoIosCommandSegments = (
-    buffer: Terminal["buffer"]["active"],
-    promptLineIndex: number,
-    commandStart: number,
-    commandText: string,
-    lastLineIndex: number
-  ): CommandDecorationSegment[] => {
-    if (buffer.type === "alternate") return [];
-
-    const segments: CommandDecorationSegment[] = [];
-    if (commandText.length > 0) {
-      segments.push({
-        lineIndex: promptLineIndex,
-        x: commandStart,
-        width: commandText.length,
-        text: commandText,
-      });
-    }
-
-    for (let lineIndex = promptLineIndex + 1; lineIndex <= lastLineIndex; lineIndex += 1) {
-      const wrappedLine = buffer.getLine(lineIndex);
-      if (!wrappedLine?.isWrapped) break;
-
-      const wrappedText = wrappedLine.translateToString(true).trimEnd();
-      if (wrappedText.length > 0) {
-        segments.push({
-          lineIndex,
-          x: 0,
-          width: wrappedText.length,
-          text: wrappedText,
-        });
-      }
-    }
-
-    return segments;
-  };
-  const registerCiscoIosCommandDecorations = (
-    term: Terminal,
-    promptMarker: IMarker,
-    promptLineIndex: number,
-    segments: CommandDecorationSegment[],
-    cursorLineIndex: number
-  ): CommandDecoration[] => {
-    const commandDecorations: CommandDecoration[] = [];
-
-    segments.forEach((segment) => {
-      const isPromptLine = segment.lineIndex === promptLineIndex;
-      const marker = isPromptLine
-        ? promptMarker
-        : term.registerMarker(segment.lineIndex - cursorLineIndex);
-      if (!marker) return;
-
-      const decoration = term.registerDecoration({
-        marker,
-        x: segment.x,
-        width: segment.width,
-        foregroundColor: "#6ee7b7",
-        layer: "top",
-      });
-
-      if (!decoration) {
-        if (!isPromptLine) marker.dispose();
-        return;
-      }
-
-      commandDecorations.push({
-        decoration,
-        marker: isPromptLine ? undefined : marker,
-      });
-    });
-
-    return commandDecorations;
-  };
+    isManualLoggingPausedRef.current = isManualLoggingPaused;
+  }, [isManualLoggingPaused, sessionId]);
 
   useImperativeHandle(
     ref,
     () => ({
+      focus: () => {
+        termRef.current?.focus();
+      },
+      isFocused: () => {
+        const container = containerRef.current;
+        return Boolean(container && container.contains(document.activeElement));
+      },
       insertText: (text: string) => {
         if (!sessionId || !isConnectedRef.current) return;
         const data = text.replace(/\r?\n+$/g, "");
@@ -614,47 +244,34 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         term.paste(data);
         term.focus();
       },
+      selectAll: () => {
+        terminalEditActionsRef.current.selectAll();
+      },
+      copySelection: () => {
+        terminalEditActionsRef.current.copySelection();
+      },
+      paste: () => {
+        terminalEditActionsRef.current.paste();
+      },
+      clearViewport,
+      clearBuffer,
       flushManualLogBuffer: async () => {
         if (!sessionId) return;
         const logText = manualLogSanitizerRef.current.flush();
         if (!logText) return;
-        await invoke("logger_append_to_mode", {
+        await invoke("logger_append", {
           sessionId,
-          logMode: "manual",
           data: logText,
         });
       },
       flushLogBuffersForMove: async () => {
-        if (!sessionId) return;
-        const appendTasks: Promise<unknown>[] = [];
-        if (isAutoLoggingRef.current) {
-          const logText = autoLogSanitizerRef.current.flush();
-          if (logText) {
-            appendTasks.push(
-              invoke("logger_append_to_mode", {
-                sessionId,
-                logMode: "auto",
-                data: logText,
-              })
-            );
-          }
-        }
-        if (isManualLoggingRef.current) {
-          const logText = manualLogSanitizerRef.current.flush();
-          if (logText) {
-            appendTasks.push(
-              invoke("logger_append_to_mode", {
-                sessionId,
-                logMode: "manual",
-                data: logText,
-              })
-            );
-          }
-        }
-        await Promise.all(appendTasks);
+        if (!sessionId || !isManualLoggingRef.current) return;
+        const logText = manualLogSanitizerRef.current.flush();
+        if (!logText) return;
+        await invoke("logger_append", { sessionId, data: logText });
       },
     }),
-    [sessionId]
+    [clearBuffer, clearViewport, sessionId]
   );
 
   // Update decoder when encoding changes
@@ -663,29 +280,14 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   }, [encoding]);
 
   useEffect(() => {
-    autoLogSanitizerRef.current = createTerminalLogSanitizer(
-      terminalConfig?.log_format ?? "display"
-    );
     manualLogSanitizerRef.current = createTerminalLogSanitizer(
       terminalConfig?.log_format ?? "display"
     );
   }, [terminalConfig?.log_format]);
 
   useEffect(() => {
-    terminalModeRef.current = terminalMode;
-    cancelScheduledDecoration();
-    if (terminalMode === DEFAULT_TERMINAL_MODE) {
-      clearModeDecorations();
-      return;
-    }
-    if (!canDecorateTerminalMode(terminalMode)) {
-      clearModeDecorations();
-      return;
-    }
-    if (termRef.current) {
-      decorateTerminalMode(termRef.current, terminalMode);
-    }
-  }, [terminalMode]);
+    decorationController.setProfile(decorationProfile, termRef.current ?? undefined);
+  }, [decorationController, decorationProfile]);
 
   // Create the terminal once per session and keep it mounted after disconnect.
   useEffect(() => {
@@ -745,7 +347,10 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       invoke(protocol.write, { sessionId, data }).catch(console.error);
     });
     const scrollDecorationDisposable = term.onScroll(() => {
-      scheduleTerminalModeDecoration(term);
+      decorationController.schedule(term);
+    });
+    const selectionDisposable = term.onSelectionChange(() => {
+      onTerminalSelectionChangeRef.current?.(term.hasSelection());
     });
     let disposed = false;
 
@@ -809,6 +414,20 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         });
     };
 
+    const terminalEditActions: TerminalEditActions = {
+      selectAll: () => {
+        term.selectAll();
+        term.focus();
+      },
+      copySelection: () => {
+        runClipboardAction(() => copyTerminalSelection(false));
+      },
+      paste: () => {
+        runClipboardAction(pasteClipboardIntoTerminal);
+      },
+    };
+    terminalEditActionsRef.current = terminalEditActions;
+
     term.attachCustomKeyEventHandler((event) => {
       if (findShortcutAction(shortcutsRef.current, event, "application")) {
         return false;
@@ -827,13 +446,23 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
       switch (action) {
         case "terminal_select_all":
-          term.selectAll();
+          terminalEditActions.selectAll();
           break;
         case "terminal_copy":
-          runClipboardAction(() => copyTerminalSelection(false));
+          terminalEditActions.copySelection();
           break;
         case "terminal_paste":
-          runClipboardAction(pasteClipboardIntoTerminal);
+          terminalEditActions.paste();
+          break;
+        case "terminal_clear_viewport":
+          clearTerminalViewport(term, () => {
+            refreshDecorationsAfterClear(term);
+          });
+          break;
+        case "terminal_clear_buffer":
+          clearTerminalBuffer(term, () => {
+            refreshDecorationsAfterClear(term);
+          });
           break;
         case "terminal_log_start_overwrite":
         case "terminal_log_start_append":
@@ -851,9 +480,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     const handleContextMenu = (event: MouseEvent) => {
       event.preventDefault();
       runClipboardAction(
-        term.getSelection().length > 0
-          ? () => copyTerminalSelection(true)
-          : pasteClipboardIntoTerminal
+        term.hasSelection() ? () => copyTerminalSelection(true) : pasteClipboardIntoTerminal
       );
     };
 
@@ -866,23 +493,13 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     const writeTerminalText = (text: string) => {
       if (!text) return;
       term.write(text, () => {
-        scheduleTerminalModeDecoration(term);
+        decorationController.schedule(term);
       });
       if (onTerminalData) onTerminalData(text);
-      if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
-        const logText = autoLogSanitizerRef.current.push(text);
-        if (logText) {
-          invoke("logger_append_to_mode", { sessionId, logMode: "auto", data: logText }).catch(
-            () => {}
-          );
-        }
-      }
-      if (isManualLoggingRef.current && !isLoggingPausedRef.current) {
+      if (shouldAppendManualLog(isManualLoggingRef.current, isManualLoggingPausedRef.current)) {
         const logText = manualLogSanitizerRef.current.push(text);
         if (logText) {
-          invoke("logger_append_to_mode", { sessionId, logMode: "manual", data: logText }).catch(
-            () => {}
-          );
+          invoke("logger_append", { sessionId, data: logText }).catch(() => {});
         }
       }
     };
@@ -960,7 +577,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     const resizeCmd = protocol.resize;
     const handleResize = () => {
       fitAddon.fit();
-      scheduleTerminalModeDecoration(term, true);
+      decorationController.schedule(term, true);
       if (resizeCmd && sessionId && isConnectedRef.current) {
         invoke(resizeCmd, { sessionId, cols: term.cols, rows: term.rows }).catch(() => {});
       }
@@ -978,31 +595,25 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       void unlistenError?.then((fn) => {
         fn();
       });
-      if (isAutoLoggingRef.current && !isLoggingPausedRef.current) {
-        const logText = autoLogSanitizerRef.current.flush();
-        if (logText) {
-          invoke("logger_append_to_mode", { sessionId, logMode: "auto", data: logText }).catch(
-            () => {}
-          );
-        }
-      }
-      if (isManualLoggingRef.current && !isLoggingPausedRef.current) {
+      if (isManualLoggingRef.current) {
         const logText = manualLogSanitizerRef.current.flush();
         if (logText) {
-          invoke("logger_append_to_mode", { sessionId, logMode: "manual", data: logText }).catch(
-            () => {}
-          );
+          invoke("logger_append", { sessionId, data: logText }).catch(() => {});
         }
       }
       resizeObserver.disconnect();
       scrollDecorationDisposable.dispose();
-      cancelScheduledDecoration();
-      clearModeDecorations();
+      selectionDisposable.dispose();
+      onTerminalSelectionChangeRef.current?.(false);
+      if (terminalEditActionsRef.current === terminalEditActions) {
+        terminalEditActionsRef.current = EMPTY_TERMINAL_EDIT_ACTIONS;
+      }
+      decorationController.clear();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [sessionId, connectionType]);
+  }, [sessionId, connectionType, refreshDecorationsAfterClear]);
 
   // Re-fit the terminal whenever this tab becomes active (container goes from display:none to visible)
   useEffect(() => {
@@ -1011,7 +622,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       const timer = setTimeout(() => {
         fitRef.current?.fit();
         if (termRef.current) {
-          scheduleTerminalModeDecoration(termRef.current, true);
+          decorationController.schedule(termRef.current, true);
         }
         termRef.current?.focus();
       }, 50);
@@ -1033,7 +644,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       setTimeout(() => {
         fitRef.current?.fit();
         if (termRef.current) {
-          scheduleTerminalModeDecoration(termRef.current, true);
+          decorationController.schedule(termRef.current, true);
         }
       }, 50);
     }
@@ -1074,6 +685,38 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   return (
     <div className={`terminal-view ${!isActive ? "terminal-view--hidden" : ""}`}>
       <div ref={containerRef} className="terminal-view__terminal" />
+      {pinnedCommand && decorationProfile ? (
+        <div
+          className="terminal-view__pinned-command-overlay"
+          style={{
+            fontFamily:
+              terminalConfig?.font_family || "'JetBrains Mono', Consolas, 'Courier New', monospace",
+            fontSize: terminalConfig?.font_size || 14,
+          }}
+          aria-hidden="true"
+        >
+          {pinnedCommand.contextText ? (
+            <div
+              className="terminal-view__pinned-command-line"
+              style={{ color: getTerminalPromptColor("configuration") }}
+            >
+              {pinnedCommand.contextText}
+            </div>
+          ) : null}
+          <div className="terminal-view__pinned-command-line">
+            <span
+              style={{
+                color: getTerminalPromptColor(pinnedCommand.promptVariant),
+              }}
+            >
+              {pinnedCommand.promptText}
+            </span>
+            <span style={{ color: TERMINAL_DECORATION_COLORS.command }}>
+              {pinnedCommand.commandText}
+            </span>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 });

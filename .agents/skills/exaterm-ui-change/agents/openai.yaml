@@ -1,0 +1,4 @@
+interface:
+  display_name: "ExaTerm UI Change"
+  short_description: "Apply ExaTerm-specific UI design and state-preservation rules"
+  default_prompt: "Use $exaterm-ui-change to implement this ExaTerm UI change while preserving terminal state and existing design conventions."

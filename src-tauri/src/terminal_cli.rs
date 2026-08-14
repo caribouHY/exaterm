@@ -136,6 +136,11 @@ enum FlowControl {
 enum TerminalMode {
     General,
     CiscoIos,
+    AristaEos,
+    Vyos,
+    FujitsuSir,
+    AlliedTelesisAwplus,
+    FurukawaFitelnet,
 }
 
 #[derive(Debug, Args)]
@@ -562,6 +567,11 @@ impl TerminalMode {
         match self {
             Self::General => ExternalControlTerminalMode::General,
             Self::CiscoIos => ExternalControlTerminalMode::CiscoIos,
+            Self::AristaEos => ExternalControlTerminalMode::AristaEos,
+            Self::Vyos => ExternalControlTerminalMode::Vyos,
+            Self::FujitsuSir => ExternalControlTerminalMode::FujitsuSir,
+            Self::AlliedTelesisAwplus => ExternalControlTerminalMode::AlliedTelesisAwplus,
+            Self::FurukawaFitelnet => ExternalControlTerminalMode::FurukawaFitelnet,
         }
     }
 }
@@ -811,6 +821,166 @@ mod tests {
                 terminal_mode: Some(ExternalControlTerminalMode::CiscoIos),
                 cols: Some(140),
                 rows: Some(40),
+            })
+        );
+    }
+
+    #[test]
+    fn serial_connect_accepts_arista_eos_terminal_mode() {
+        let request = build_request(
+            parse(&[
+                "exaterm-cli",
+                "serial",
+                "connect",
+                "--port",
+                "COM3",
+                "--terminal-mode",
+                "arista-eos",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
+                port: "COM3".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: Some(ExternalControlTerminalMode::AristaEos),
+                cols: None,
+                rows: None,
+            })
+        );
+    }
+
+    #[test]
+    fn serial_connect_accepts_vyos_terminal_mode() {
+        let request = build_request(
+            parse(&[
+                "exaterm-cli",
+                "serial",
+                "connect",
+                "--port",
+                "COM3",
+                "--terminal-mode",
+                "vyos",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
+                port: "COM3".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: Some(ExternalControlTerminalMode::Vyos),
+                cols: None,
+                rows: None,
+            })
+        );
+    }
+
+    #[test]
+    fn serial_connect_accepts_fujitsu_sir_terminal_mode() {
+        let request = build_request(
+            parse(&[
+                "exaterm-cli",
+                "serial",
+                "connect",
+                "--port",
+                "COM3",
+                "--terminal-mode",
+                "fujitsu-sir",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
+                port: "COM3".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: Some(ExternalControlTerminalMode::FujitsuSir),
+                cols: None,
+                rows: None,
+            })
+        );
+    }
+
+    #[test]
+    fn serial_connect_accepts_allied_telesis_awplus_terminal_mode() {
+        let request = build_request(
+            parse(&[
+                "exaterm-cli",
+                "serial",
+                "connect",
+                "--port",
+                "COM3",
+                "--terminal-mode",
+                "allied-telesis-awplus",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
+                port: "COM3".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: Some(ExternalControlTerminalMode::AlliedTelesisAwplus),
+                cols: None,
+                rows: None,
+            })
+        );
+    }
+
+    #[test]
+    fn serial_connect_accepts_furukawa_fitelnet_terminal_mode() {
+        let request = build_request(
+            parse(&[
+                "exaterm-cli",
+                "serial",
+                "connect",
+                "--port",
+                "COM3",
+                "--terminal-mode",
+                "furukawa-fitelnet",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
+                port: "COM3".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: Some(ExternalControlTerminalMode::FurukawaFitelnet),
+                cols: None,
+                rows: None,
             })
         );
     }

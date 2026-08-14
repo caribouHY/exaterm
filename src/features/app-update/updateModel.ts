@@ -1,7 +1,6 @@
 export interface AppUpdateMetadata {
   version: string;
   currentVersion: string;
-  notes?: string | null;
   publishedAt?: string | null;
 }
 

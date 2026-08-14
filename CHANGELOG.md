@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## v0.9.0
+
+### Added
+
+- Added automatic SSH authentication with an optional default private key and fallback through keyboard-interactive and password methods.
+- Added a local history for successful manually configured SSH and Telnet connections, with reusable form values and Settings controls to disable or clear it.
+- Added menu actions and configurable shortcuts to clear the local terminal display or scrollback without ending the session.
+- Added a pinned Cisco IOS command context and built-in terminal highlighting modes for Arista EOS, VyOS, Fujitsu Si-R G, Allied Telesis AW+, and Furukawa FITELnet.
+
+### Changed
+
+- Replaced status-bar menus with searchable command palettes at the top of the terminal workspace.
+- Reorganized the title bar into File and Edit menus for session logs, terminal selection, clipboard, and clearing actions.
+- Added connection progress, cancellation, and error recovery for SSH, Telnet, and Serial connections; SSH credentials are cleared as soon as they are no longer needed.
+- Prevented SSH, Telnet, and Serial connections from starting until required connection fields contain valid values.
+- Unified connection-started and user-started session logs so automatic connection logging can be paused, resumed, or stopped consistently from the status bar, CLI, and MCP controls.
+
+### Removed
+
+- Removed release notes from the in-app update dialog.
+
+### Fixed
+
+- Improved SSH compatibility for keyboard-interactive authentication, jump hosts, and legacy key-exchange preferences.
+- Kept the desktop app language and localized backend error messages synchronized across open windows while preserving stable English CLI, MCP, and external-control errors.
+
 ## v0.8.2
 
 ### Added

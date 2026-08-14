@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { AppConfig } from "../../types";
 import type { SshAlgorithmCatalog } from "../../types";
+import { ConnectionHistorySettings } from "./ConnectionHistorySettings";
 import { SshSettings } from "./SshSettings";
 import { TerminalSettings } from "./TerminalSettings";
 import { SettingsToggle } from "./SettingsToggle";
@@ -8,12 +9,14 @@ import { SettingsToggle } from "./SettingsToggle";
 interface GeneralSettingsProps {
   language: AppConfig["language"];
   updateConfig: AppConfig["updates"];
+  connectionHistoryConfig: AppConfig["connection_history"];
   terminalConfig: AppConfig["terminal"];
   sshConfig: AppConfig["ssh"];
   sshAlgorithmCatalog: SshAlgorithmCatalog | null;
   sshAlgorithmCatalogLoadFailed: boolean;
   onLanguageChange: (language: AppConfig["language"]) => void;
   onUpdateChange: (patch: Partial<AppConfig["updates"]>) => void;
+  onConnectionHistoryChange: (patch: Partial<AppConfig["connection_history"]>) => void;
   onTerminalChange: (patch: Partial<AppConfig["terminal"]>) => void;
   onSshChange: (patch: Partial<AppConfig["ssh"]>) => void;
   onReloadSshAlgorithmCatalog: () => void;
@@ -32,12 +35,14 @@ const LANGUAGE_OPTIONS: Array<{
 export function GeneralSettings({
   language,
   updateConfig,
+  connectionHistoryConfig,
   terminalConfig,
   sshConfig,
   sshAlgorithmCatalog,
   sshAlgorithmCatalogLoadFailed,
   onLanguageChange,
   onUpdateChange,
+  onConnectionHistoryChange,
   onTerminalChange,
   onSshChange,
   onReloadSshAlgorithmCatalog,
@@ -78,6 +83,11 @@ export function GeneralSettings({
         onChange={(checkOnStartup) => {
           onUpdateChange({ check_on_startup: checkOnStartup });
         }}
+      />
+
+      <ConnectionHistorySettings
+        config={connectionHistoryConfig}
+        onChange={onConnectionHistoryChange}
       />
 
       <TerminalSettings config={terminalConfig} onChange={onTerminalChange} />

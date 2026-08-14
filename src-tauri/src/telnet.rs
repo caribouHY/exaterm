@@ -8,13 +8,10 @@ use uuid::Uuid;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
+use crate::connect_attempt::{run_with_attempt, ConnectAttempt, ConnectAttemptState};
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 use crate::workspace::{emit_workspace_updated, WorkspaceState};
 use crate::{logger, logger::LoggerState};
-
-fn localize_gui_error(state: &crate::i18n::BackendLanguageState, error: String) -> String {
-    crate::i18n::translate_gui_error(state, &error)
-}
 
 const IAC: u8 = 255;
 const DONT: u8 = 254;
@@ -32,6 +29,10 @@ const OPT_NAWS: u8 = 31;
 const TERMINAL_TYPE_IS: u8 = 0;
 const TERMINAL_TYPE_SEND: u8 = 1;
 
+const TELNET_CONNECT_CANCELLED: &str = "The Telnet connection attempt was cancelled";
+const TELNET_CONNECT_DUPLICATE: &str =
+    "A Telnet connection attempt with this request ID already exists";
+
 struct TelnetSession {
     writer: mpsc::Sender<Vec<u8>>,
     read_task: JoinHandle<()>,
@@ -41,12 +42,17 @@ struct TelnetSession {
 #[derive(Clone)]
 pub struct TelnetState {
     sessions: Arc<Mutex<HashMap<String, TelnetSession>>>,
+    connect_attempts: ConnectAttemptState,
 }
 
 impl TelnetState {
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            connect_attempts: ConnectAttemptState::new(
+                TELNET_CONNECT_CANCELLED,
+                TELNET_CONNECT_DUPLICATE,
+            ),
         }
     }
 }
@@ -261,13 +267,28 @@ pub async fn telnet_connect(
     terminals: tauri::State<'_, TerminalControlState>,
     workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     host: String,
     port: u16,
     cols: u32,
     rows: u32,
     encoding: Option<String>,
-) -> Result<String, String> {
+    request_id: Option<String>,
+) -> Result<String, crate::command_error::BackendCommandError> {
+    let request_id = request_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            crate::command_error::BackendCommandError::new(
+                "telnet.connect_request_id_required",
+                "A Telnet connection request ID is required",
+            )
+        })?
+        .to_string();
+    let attempt = state
+        .connect_attempts
+        .register(request_id)
+        .map_err(crate::command_error::BackendCommandError::from)?;
     connect(
         &app,
         &state,
@@ -279,9 +300,10 @@ pub async fn telnet_connect(
         cols,
         rows,
         encoding,
+        Some(attempt),
     )
     .await
-    .map_err(|error| localize_gui_error(language.inner(), error))
+    .map_err(Into::into)
 }
 
 pub async fn connect(
@@ -295,11 +317,21 @@ pub async fn connect(
     cols: u32,
     rows: u32,
     encoding: Option<String>,
+    mut attempt: Option<ConnectAttempt>,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
-    let stream = TcpStream::connect((host.as_str(), port))
-        .await
-        .map_err(|e| format!("Failed to connect over Telnet: {}", e))?;
+    let stream = run_with_attempt(attempt.as_ref(), async {
+        TcpStream::connect((host.as_str(), port))
+            .await
+            .map_err(|e| format!("Failed to connect over Telnet: {}", e))
+    })
+    .await?;
+    if attempt
+        .as_mut()
+        .is_some_and(|attempt| !attempt.begin_completion())
+    {
+        return Err(TELNET_CONNECT_CANCELLED.to_string());
+    }
     let (mut reader, mut writer_stream) = stream.into_split();
     let (writer, mut write_rx) = mpsc::channel::<Vec<u8>>(64);
 
@@ -409,16 +441,23 @@ pub async fn connect(
 }
 
 #[tauri::command]
+pub async fn telnet_connect_cancel(
+    state: tauri::State<'_, TelnetState>,
+    request_id: String,
+) -> Result<bool, crate::command_error::BackendCommandError> {
+    Ok(state.connect_attempts.cancel(&request_id))
+}
+
+#[tauri::command]
 pub async fn telnet_write(
     state: tauri::State<'_, TelnetState>,
     terminals: tauri::State<'_, TerminalControlState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     data: String,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     write_data(&state, terminals.inner(), &session_id, data)
         .await
-        .map_err(|error| localize_gui_error(language.inner(), error))
+        .map_err(Into::into)
 }
 
 pub async fn write_data(
@@ -447,11 +486,10 @@ pub async fn write_data(
 #[tauri::command]
 pub async fn telnet_resize(
     state: tauri::State<'_, TelnetState>,
-    language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
     cols: u32,
     rows: u32,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     let writer = {
         let sessions = state.sessions.lock().await;
         sessions
@@ -465,10 +503,10 @@ pub async fn telnet_resize(
         .send(build_naws(clamp_dimension(cols), clamp_dimension(rows)))
         .await
         .map_err(|e| {
-            localize_gui_error(
-                language.inner(),
-                format!("Failed to send the resize request: {}", e),
-            )
+            crate::command_error::BackendCommandError::from_message(format!(
+                "Failed to send the resize request: {}",
+                e
+            ))
         })
 }
 
@@ -479,9 +517,8 @@ pub async fn telnet_disconnect(
     terminals: tauri::State<'_, TerminalControlState>,
     workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
-    _language: tauri::State<'_, crate::i18n::BackendLanguageState>,
     session_id: String,
-) -> Result<(), String> {
+) -> Result<(), crate::command_error::BackendCommandError> {
     if let Some(session) = remove_session(
         &app,
         &terminals,

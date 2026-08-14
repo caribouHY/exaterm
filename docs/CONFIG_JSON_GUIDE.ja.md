@@ -29,10 +29,13 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 ```json
 {
-  "config_version": 5,
+  "config_version": 7,
   "language": "system",
   "updates": {
     "check_on_startup": true
+  },
+  "connection_history": {
+    "enabled": true
   },
   "ai": {
     "azure_openai_enabled": false,
@@ -58,6 +61,8 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "terminal_select_all": { "key": "a", "ctrl": true, "alt": false, "shift": true },
     "terminal_copy": { "key": "c", "ctrl": true, "alt": false, "shift": true },
     "terminal_paste": { "key": "v", "ctrl": true, "alt": false, "shift": true },
+    "terminal_clear_viewport": null,
+    "terminal_clear_buffer": null,
     "terminal_log_start_overwrite": { "key": "F9", "ctrl": true, "alt": false, "shift": true },
     "terminal_log_start_append": null,
     "terminal_log_stop": { "key": "F10", "ctrl": true, "alt": false, "shift": true },
@@ -74,6 +79,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "include_log_header": false
   },
   "ssh": {
+    "default_private_key_path": "",
     "algorithm_mode": "default",
     "algorithms": {
       "kex": [],
@@ -89,17 +95,18 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 ## ルート項目
 
-| パラメータ          | 型     | 既定値     | 説明                                                                                                                                            |
-| ------------------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`    | number | `5`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
-| `language`          | string | `"system"` | 画面表示言語です。`"system"` は OS の言語設定に従います。`"en"` は英語、`"ja"` は日本語です。未対応のシステム言語は英語にフォールバックします。 |
-| `updates`           | object | 下記参照   | 公開済みのExaTerm正式版を自動確認する動作を設定します。                                                                                         |
-| `ai`                | object | 下記参照   | AI アシスタント関連の設定です。                                                                                                                 |
-| `external_control`  | object | 下記参照   | ターミナル CLI と MCP 互換アダプターのためのローカル外部制御設定です。                                                                          |
-| `shortcuts`         | object | 下記参照   | アプリケーションのキーボードショートカット設定です。                                                                                            |
-| `terminal`          | object | 下記参照   | ターミナル表示とログ関連の設定です。                                                                                                            |
-| `ssh`               | object | 下記参照   | SSH 接続の互換性設定です。                                                                                                                      |
-| `saved_connections` | array  | `[]`       | 保存済み SSH/Telnet 接続プロファイルです。プロファイルは接続ダイアログから作成、選択、削除できます。                                            |
+| パラメータ           | 型     | 既定値     | 説明                                                                                                                                            |
+| -------------------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config_version`     | number | `7`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
+| `language`           | string | `"system"` | 画面表示言語です。`"system"` は OS の言語設定に従います。`"en"` は英語、`"ja"` は日本語です。未対応のシステム言語は英語にフォールバックします。 |
+| `updates`            | object | 下記参照   | 公開済みのExaTerm正式版を自動確認する動作を設定します。                                                                                         |
+| `connection_history` | object | 下記参照   | ローカルのSSH/Telnet接続履歴を設定します。                                                                                                      |
+| `ai`                 | object | 下記参照   | AI アシスタント関連の設定です。                                                                                                                 |
+| `external_control`   | object | 下記参照   | ターミナル CLI と MCP 互換アダプターのためのローカル外部制御設定です。                                                                          |
+| `shortcuts`          | object | 下記参照   | アプリケーションのキーボードショートカット設定です。                                                                                            |
+| `terminal`           | object | 下記参照   | ターミナル表示とログ関連の設定です。                                                                                                            |
+| `ssh`                | object | 下記参照   | SSH 接続の互換性設定です。                                                                                                                      |
+| `saved_connections`  | array  | `[]`       | 保存済み SSH/Telnet 接続プロファイルです。プロファイルは接続ダイアログから作成、選択、削除できます。                                            |
 
 ## updates
 
@@ -108,6 +115,20 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | `check_on_startup` | boolean | `true` | ExaTermのmainウィンドウ起動時に、最新の公開済み正式版を1回確認します。ダウンロードとインストールには引き続き確認が必要です。 |
 
 この値が`false`でも、アプリメニューからの手動確認は利用できます。
+
+## connection_history
+
+| キー      | 型      | 既定値 | 説明                                                                                                                             |
+| --------- | ------- | ------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled` | boolean | `true` | SSH/Telnet接続が成功したときに設定を保存します。オフにすると新規記録を停止しますが、既存の履歴は削除するまで表示・利用できます。 |
+
+接続履歴は `config.json` とは別に次の場所へ保存されます。
+
+```text
+%AppData%\ExaTerm\connection_history.json
+```
+
+ホスト、ポート、SSHユーザー名、認証方式、秘密鍵パス、踏み台プロファイルID、文字コード、ターミナルモード、接続日時を平文で保存します。パスワード、秘密鍵のパスフレーズ、踏み台の認証情報は保存しません。SSH/Telnetそれぞれ最大10件を保持します。接続ダイアログから個別削除でき、設定画面からすべて削除できます。
 
 ## ai
 
@@ -169,8 +190,8 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
   - `wait`: 新しい出力、または任意の `contains` 文字列が現れるまで待機します。`cursor` を省略した場合は現在の出力位置から待機します。
 - `send_terminal_input`: 接続中のセッションへテキストを送信します。
 - `run_terminal_command`: 接続中のセッションへコマンドを送信し、出力待機後に差分出力を返します。
-- `start_terminal_log`: 接続中セッションの手動平文ログを開始します。ログは `%AppData%\ExaTerm\logs` 配下に保存され、返却値には作成されたファイルパスが含まれます。
-- `stop_terminal_log`: ExaTerm が表示済み出力をログへ flush した後、セッションの手動平文ログを停止します。
+- `start_terminal_log`: 接続中セッションの平文ログを明示的に開始します。ログは `%AppData%\ExaTerm\logs` 配下に保存され、返却値には作成されたファイルパスが含まれます。
+- `stop_terminal_log`: ExaTerm が表示済み出力をログへ flush した後、セッションで実行中の平文ログを停止します。
 
 出力読み取りの例:
 
@@ -211,24 +232,28 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 
 各ショートカットは `key`、`ctrl`、`alt`、`shift` を持つオブジェクトです。未割り当てにする場合は `null` を指定します。通常キーと `Space` には `ctrl` または `alt` が必要です。`F1`～`F12` は修飾キーなしでも割り当てられます。割り当ての重複は許可されず、Windows が使用する `Alt+F4` は予約されています。
 
-| パラメータ                               | 既定値           | 操作                                                                             |
-| ---------------------------------------- | ---------------- | -------------------------------------------------------------------------------- |
-| `shortcuts.new_connection`               | `Ctrl+N`         | 新規接続ダイアログを開きます。                                                   |
-| `shortcuts.new_window`                   | `Ctrl+Shift+N`   | 新しい ExaTerm ウィンドウを開きます。                                            |
-| `shortcuts.open_settings`                | `Ctrl+,`         | ショートカットなどのアプリ設定を開きます。                                       |
-| `shortcuts.exit`                         | 未割り当て       | ExaTerm を終了します。接続中のターミナルセッションがある場合は確認します。       |
-| `shortcuts.terminal_select_all`          | `Ctrl+Shift+A`   | ターミナルの画面とスクロールバック全体を選択します。                             |
-| `shortcuts.terminal_copy`                | `Ctrl+Shift+C`   | ターミナルで選択した文字をコピーします。                                         |
-| `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | 接続中のターミナルへクリップボードの文字をペーストします。                       |
-| `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | 保存ダイアログを開き、新しい手動ログを開始するか選択したファイルを上書きします。 |
-| `shortcuts.terminal_log_start_append`    | 未割り当て       | 保存ダイアログを開き、選択した手動ログファイルへ追記します。                     |
-| `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | 保留中の画面表示をflushして、実行中の手動ログを停止します。                      |
-| `shortcuts.terminal_log_pause`           | 未割り当て       | ターミナルセッションで実行中の自動ログと手動ログを一時停止します。               |
-| `shortcuts.terminal_log_resume`          | 未割り当て       | 一時停止中の自動ログと手動ログを再開します。                                     |
+| パラメータ                               | 既定値           | 操作                                                                         |
+| ---------------------------------------- | ---------------- | ---------------------------------------------------------------------------- |
+| `shortcuts.new_connection`               | `Ctrl+N`         | 新規接続ダイアログを開きます。                                               |
+| `shortcuts.new_window`                   | `Ctrl+Shift+N`   | 新しい ExaTerm ウィンドウを開きます。                                        |
+| `shortcuts.open_settings`                | `Ctrl+,`         | ショートカットなどのアプリ設定を開きます。                                   |
+| `shortcuts.exit`                         | 未割り当て       | ExaTerm を終了します。接続中のターミナルセッションがある場合は確認します。   |
+| `shortcuts.terminal_select_all`          | `Ctrl+Shift+A`   | ターミナルの画面とスクロールバック全体を選択します。                         |
+| `shortcuts.terminal_copy`                | `Ctrl+Shift+C`   | ターミナルで選択した文字をコピーします。                                     |
+| `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | 接続中のターミナルへクリップボードの文字をペーストします。                   |
+| `shortcuts.terminal_clear_viewport`      | 未割り当て       | 接続先へ入力を送信せず、ローカルのターミナル表示領域をクリアします。         |
+| `shortcuts.terminal_clear_buffer`        | 未割り当て       | セッションを終了せず、ローカルのスクロールバックバッファーをクリアします。   |
+| `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | 保存ダイアログを開き、新しいログを開始するか選択したファイルを上書きします。 |
+| `shortcuts.terminal_log_start_append`    | 未割り当て       | 保存ダイアログを開き、選択したログファイルへの追記でログを開始します。       |
+| `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | 保留中の画面表示をflushして、実行中のログを停止します。                      |
+| `shortcuts.terminal_log_pause`           | 未割り当て       | ターミナルセッションで実行中のログを一時停止します。                         |
+| `shortcuts.terminal_log_resume`          | 未割り当て       | 一時停止中のログを再開します。                                               |
 
 英字キーは小文字、空白キーは `"Space"`、ファンクションキーは `"F2"` のような大文字表記で保存されます。修飾キーは完全一致で判定するため、たとえば `Ctrl+Shift+N` は `Ctrl+N` としては実行されません。
 
 ターミナル用ショートカットは、ターミナルにキーボードフォーカスがある場合だけ動作します。`Ctrl+A`、`Ctrl+C`、`Ctrl+V`をアプリまたはターミナル操作へ割り当てると、ExaTermにフォーカスがある間は、行頭移動、中断、quoted insertなどリモート側で一般的な操作より割り当てた操作が優先されます。
+
+ターミナルの表示領域またはバッファーのクリアは、ローカルのxterm表示だけに作用します。接続先へクリア操作を送信せず、セッション、保存済みログ、バックエンドが保持する出力も削除しません。
 
 ## terminal
 
@@ -238,13 +263,13 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 | `terminal.font_family`        | string  | `"Consolas, 'Courier New', monospace"` | ターミナルのフォントファミリーです。CSS の `font-family` と同じ形式で指定します。                                                                               |
 | `terminal.cursor_style`       | string  | `"block"`                              | ターミナルのカーソル形状です。現在の既定値はブロックカーソルです。手動編集時は xterm.js が受け付ける値を指定してください。例: `"block"`, `"underline"`, `"bar"` |
 | `terminal.scrollback`         | number  | `10000`                                | ターミナルのスクロールバック行数です。値を大きくすると過去ログを多く保持できますが、メモリ使用量が増える可能性があります。                                      |
-| `terminal.auto_session_log`   | boolean | `false`                                | `true` にすると、SSH/シリアル/Telnet 接続のターミナル入出力を平文ログとして保存します。                                                                         |
+| `terminal.auto_session_log`   | boolean | `false`                                | `true` にすると、新しいSSH/シリアル/Telnet接続ごとに平文ログを自動的に開始します。                                                                              |
 | `terminal.log_format`         | string  | `"display"`                            | セッションログの整形方式です。`"display"` は画面表示に近い内容、`"strip_controls"` は制御文字を除去した内容を保存します。                                       |
 | `terminal.include_log_header` | boolean | `false`                                | `true` にすると、新しいセッションログの先頭に ExaTerm ヘッダとして種別、接続先、ログモード、開始時刻を記録します。                                              |
 
 ### セッションログの注意
 
-`terminal.auto_session_log` を `true` にすると、ターミナルに表示された内容や入力内容がログファイルに保存されます。ログには次のような機密情報が含まれる可能性があります。
+`terminal.auto_session_log` を `true` にすると、新しい接続ごとにステータスバーから操作するものと同じログが開始されます。自動開始されたログも一時停止、再開、停止が可能です。停止後は同じセッション内で自動再開せず、次の接続時に設定が再評価されます。ログには次のような機密情報が含まれる可能性があります。
 
 - コマンドと実行結果
 - ホスト名、ユーザー名、プロンプト
@@ -261,18 +286,19 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 
 `terminal.log_format` が `"display"` の場合、Backspace、カーソル左移動、行末消去などの一般的な行編集を反映してからログへ保存します。`"strip_controls"` の場合は制御シーケンスを除去しますが、編集途中の文字が残る場合があります。
 
-`terminal.include_log_header` が `false` の場合、新しい自動ログと手動ログは ExaTerm ヘッダを書かず、ターミナル内容から直接始まります。既存のログファイルは変更されません。
+`terminal.include_log_header` が `false` の場合、新しいセッションログは ExaTerm ヘッダを書かず、ターミナル内容から直接始まります。既存のログファイルは変更されません。セッションログ履歴では、ログモードを「自動」または「手動」として確認できます。
 
 ## ssh
 
-| パラメータ                   | 型     | 既定値      | 説明                                                                             |
-| ---------------------------- | ------ | ----------- | -------------------------------------------------------------------------------- |
-| `ssh.algorithm_mode`         | 文字列 | `"default"` | 推奨設定は `"default"`、設定した許可リストを使う場合は `"custom"` を指定します。 |
-| `ssh.algorithms.kex`         | 配列   | `[]`        | カスタム設定で許可する鍵交換アルゴリズムです。                                   |
-| `ssh.algorithms.host_key`    | 配列   | `[]`        | カスタム設定で許可するサーバーホスト鍵アルゴリズムです。                         |
-| `ssh.algorithms.cipher`      | 配列   | `[]`        | カスタム設定で許可する共通鍵暗号です。                                           |
-| `ssh.algorithms.mac`         | 配列   | `[]`        | カスタム設定で許可するメッセージ認証アルゴリズムです。                           |
-| `ssh.algorithms.compression` | 配列   | `[]`        | カスタム設定で許可する圧縮アルゴリズムです。                                     |
+| パラメータ                     | 型     | 既定値      | 説明                                                                                                                                       |
+| ------------------------------ | ------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ssh.default_private_key_path` | 文字列 | `""`        | 自動認証で接続先の秘密鍵が未指定の場合だけ使用するデフォルト秘密鍵です。パスは平文で保存されますが、鍵本文とパスフレーズは保存されません。 |
+| `ssh.algorithm_mode`           | 文字列 | `"default"` | 推奨設定は `"default"`、設定した許可リストを使う場合は `"custom"` を指定します。                                                           |
+| `ssh.algorithms.kex`           | 配列   | `[]`        | カスタム設定で許可する鍵交換アルゴリズムです。                                                                                             |
+| `ssh.algorithms.host_key`      | 配列   | `[]`        | カスタム設定で許可するサーバーホスト鍵アルゴリズムです。                                                                                   |
+| `ssh.algorithms.cipher`        | 配列   | `[]`        | カスタム設定で許可する共通鍵暗号です。                                                                                                     |
+| `ssh.algorithms.mac`           | 配列   | `[]`        | カスタム設定で許可するメッセージ認証アルゴリズムです。                                                                                     |
+| `ssh.algorithms.compression`   | 配列   | `[]`        | カスタム設定で許可する圧縮アルゴリズムです。                                                                                               |
 
 ### 利用可能な SSH アルゴリズム
 
@@ -284,20 +310,20 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 
 `saved_connections` は保存済み SSH/Telnet 接続プロファイルを表す配列です。プロファイルは接続ダイアログから管理できます。シリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズ、その他の認証情報はこのセクションには保存されません。プロファイルのメモは平文で保存され、外部プロファイル接続が有効な場合は `list_connection_profiles` で返る可能性があるため、秘密情報は入力しないでください。既存プロファイルで `external_control_enabled` が未設定の場合は `true` として扱われます。
 
-| パラメータ                 | 型                 | 説明                                                                                                                                                                |
-| -------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                       | string             | プロファイル名兼識別子です。                                                                                                                                        |
-| `connection_type`          | string             | 接続種別です。プロファイルで対応している値は `"ssh"` と `"telnet"` です。                                                                                           |
-| `host`                     | string または null | SSH または Telnet 接続先ホストです。                                                                                                                                |
-| `port`                     | number または null | SSH または Telnet 接続先ポートです。                                                                                                                                |
-| `username`                 | string または null | SSH ユーザー名です。Telnet プロファイルでは使用しません。                                                                                                           |
-| `encoding`                 | string または null | このプロファイルで接続したときのターミナル表示文字コードです。指定できる値は `"utf-8"`、`"shift-jis"`、`"euc-jp"` です。未設定の場合は `"utf-8"` として扱われます。 |
-| `terminal_mode`            | string または null | このプロファイルで接続したときのターミナルモードです。指定できる値は `"general"` と `"cisco_ios"` です。未設定の場合は `"general"` として扱われます。               |
-| `auth_method`              | string または null | SSH 認証方式です。指定できる値は `"password"` と `"public_key"` です。未設定の場合は `"password"` として扱われます。Telnet プロファイルでは使用しません。           |
-| `private_key_path`         | string または null | SSH の `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                        |
-| `jump_profile_id`          | string または null | SSH 踏み台プロファイルの ID です。参照先は保存済み SSH プロファイルである必要があります。踏み台は 1 段のみ対応し、多段指定は拒否されます。                          |
-| `memo`                     | string または null | 任意の平文メモです。機種名、用途、作業時の注意などを記録できます。空でないメモは外部制御クライアント向けのプロファイル一覧で返る場合があります。                    |
-| `external_control_enabled` | boolean            | 信頼済み CLI / MCP クライアントがこの保存済みプロファイルを一覧表示し、接続に使えるかどうかです。未設定時の既定値は `true` です。                                   |
+| パラメータ                 | 型                 | 説明                                                                                                                                                                                                                                             |
+| -------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                       | string             | プロファイル名兼識別子です。                                                                                                                                                                                                                     |
+| `connection_type`          | string             | 接続種別です。プロファイルで対応している値は `"ssh"` と `"telnet"` です。                                                                                                                                                                        |
+| `host`                     | string または null | SSH または Telnet 接続先ホストです。                                                                                                                                                                                                             |
+| `port`                     | number または null | SSH または Telnet 接続先ポートです。                                                                                                                                                                                                             |
+| `username`                 | string または null | SSH ユーザー名です。Telnet プロファイルでは使用しません。                                                                                                                                                                                        |
+| `encoding`                 | string または null | このプロファイルで接続したときのターミナル表示文字コードです。指定できる値は `"utf-8"`、`"shift-jis"`、`"euc-jp"` です。未設定の場合は `"utf-8"` として扱われます。                                                                              |
+| `terminal_mode`            | string または null | このプロファイルで接続したときのターミナルモードです。指定できる値は `"general"`、`"cisco_ios"`、`"arista_eos"`、`"vyos"`、`"fujitsu_sir"`、`"allied_telesis_awplus"`、`"furukawa_fitelnet"` です。未設定の場合は `"general"` として扱われます。 |
+| `auth_method`              | string または null | SSH 認証方式です。指定できる値は `"auto"`、`"password"`、`"keyboard_interactive"`、`"public_key"` です。未設定の場合は `"auto"` として扱われます。Telnet プロファイルでは使用しません。                                                          |
+| `private_key_path`         | string または null | SSH の `"auto"` または `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                                                                                     |
+| `jump_profile_id`          | string または null | SSH 踏み台プロファイルの ID です。参照先は保存済み SSH プロファイルである必要があります。踏み台は 1 段のみ対応し、多段指定は拒否されます。                                                                                                       |
+| `memo`                     | string または null | 任意の平文メモです。機種名、用途、作業時の注意などを記録できます。空でないメモは外部制御クライアント向けのプロファイル一覧で返る場合があります。                                                                                                 |
+| `external_control_enabled` | boolean            | 信頼済み CLI / MCP クライアントがこの保存済みプロファイルを一覧表示し、接続に使えるかどうかです。未設定時の既定値は `true` です。                                                                                                                |
 
 例:
 
@@ -318,6 +344,10 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 ```
 
 `jump_profile_id` を設定すると、ExaTerm は参照先の SSH プロファイルへ先に接続し、その踏み台経由で接続先への SSH 接続を開きます。踏み台プロファイルからさらに別の踏み台を参照することはできず、自分自身を踏み台に指定することもできません。踏み台と接続先の SSH パスワードや暗号化鍵パスフレーズは ExaTerm UI で入力し、`config.json` には保存されません。
+
+`auto` は OpenSSH の既定優先順のうち ExaTerm が対応する公開鍵、keyboard-interactive、パスワードの順に認証を試します。プロファイルの秘密鍵を `ssh.default_private_key_path` より優先し、どちらも未設定の場合は公開鍵認証を行いません。自動認証で鍵に問題がある場合は接続診断へ表示し、サーバーが対応する次の方式を試します。明示的な `public_key` 認証では、従来どおりプロファイルまたは接続画面で秘密鍵を指定する必要があります。
+
+`password` と `keyboard_interactive` は明示的に選択する別々の認証方式であり、相互にフォールバックしません。Keyboard-interactive のプロンプトは SSH サーバーから要求されたときに表示します。
 
 Telnet の例:
 
@@ -402,6 +432,7 @@ OpenRouter API キーは設定画面から保存してください。ExaTerm は
 
 ```json
 "ssh": {
+  "default_private_key_path": "",
   "algorithm_mode": "custom",
   "algorithms": {
     "kex": ["curve25519-sha256", "diffie-hellman-group14-sha1"],

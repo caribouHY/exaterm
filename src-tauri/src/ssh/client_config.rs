@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use russh::keys::{Algorithm, EcdsaCurve, HashAlg};
 use serde::Serialize;
 
-use crate::config::{config_load, SshAlgorithmSelection, SshConfig};
+use crate::config::{SshAlgorithmSelection, SshConfig};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SshAlgorithmCatalogItem {
@@ -48,8 +48,8 @@ fn kex_catalog() -> Vec<(russh::kex::Name, bool)> {
         (russh::kex::ECDH_SHA2_NISTP521, false),
         (russh::kex::ECDH_SHA2_NISTP384, false),
         (russh::kex::ECDH_SHA2_NISTP256, false),
-        (russh::kex::DH_GEX_SHA1, true),
         (russh::kex::DH_G14_SHA1, true),
+        (russh::kex::DH_GEX_SHA1, true),
         (russh::kex::DH_G1_SHA1, true),
     ]
 }
@@ -337,9 +337,4 @@ pub(super) fn build_client_config(ssh_config: &SshConfig) -> Result<russh::clien
         )),
     };
     Ok(config)
-}
-
-pub(super) fn load_client_config() -> Result<russh::client::Config, String> {
-    let app_config = config_load()?;
-    build_client_config(&app_config.ssh)
 }

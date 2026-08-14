@@ -1,27 +1,23 @@
 import { useEffect } from "react";
-import type { SshCredentialPrompt, SshHostKeyCheck } from "./connectionDialogTypes";
+import type { SshCredentialPrompt } from "./connectionDialogTypes";
 
 interface UseConnectionDialogShortcutsParams {
   connecting: boolean;
+  canConnect: boolean;
   credentialPrompt: SshCredentialPrompt | null;
-  hostKeyCheck: SshHostKeyCheck | null;
   onClose: () => void;
   onCloseCredentialPrompt: () => void;
-  onCancelHostKeyCheck: () => void;
   onCredentialSubmit: () => void;
-  onTrustAndConnect: (replace: boolean) => void;
   onConnect: () => void;
 }
 
 export const useConnectionDialogShortcuts = ({
   connecting,
+  canConnect,
   credentialPrompt,
-  hostKeyCheck,
   onClose,
   onCloseCredentialPrompt,
-  onCancelHostKeyCheck,
   onCredentialSubmit,
-  onTrustAndConnect,
   onConnect,
 }: UseConnectionDialogShortcutsParams) => {
   useEffect(() => {
@@ -30,10 +26,6 @@ export const useConnectionDialogShortcuts = ({
       if (connecting) return;
       if (credentialPrompt) {
         onCloseCredentialPrompt();
-        return;
-      }
-      if (hostKeyCheck) {
-        onCancelHostKeyCheck();
         return;
       }
       onClose();
@@ -46,10 +38,7 @@ export const useConnectionDialogShortcuts = ({
         onCredentialSubmit();
         return;
       }
-      if (hostKeyCheck) {
-        onTrustAndConnect(hostKeyCheck.status === "mismatch");
-        return;
-      }
+      if (!canConnect) return;
       onConnect();
     };
 
@@ -68,14 +57,12 @@ export const useConnectionDialogShortcuts = ({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [
+    canConnect,
     connecting,
     credentialPrompt,
-    hostKeyCheck,
-    onCancelHostKeyCheck,
     onClose,
     onCloseCredentialPrompt,
     onConnect,
     onCredentialSubmit,
-    onTrustAndConnect,
   ]);
 };

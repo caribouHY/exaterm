@@ -5,6 +5,10 @@ import type {
   SshAuthMethod,
   TerminalMode,
 } from "../../types";
+import {
+  translateBackendCommandError,
+  type BackendErrorTranslator,
+} from "../../features/backend-errors/backendCommandError";
 
 export const SSH_ENCODINGS: { label: string; value: Encoding }[] = [
   { label: "UTF-8", value: "utf-8" },
@@ -13,7 +17,9 @@ export const SSH_ENCODINGS: { label: string; value: Encoding }[] = [
 ];
 
 export const SSH_AUTH_METHODS: { labelKey: string; value: SshAuthMethod }[] = [
+  { labelKey: "connection.auth_auto", value: "auto" },
   { labelKey: "connection.auth_password", value: "password" },
+  { labelKey: "connection.auth_keyboard_interactive", value: "keyboard_interactive" },
   { labelKey: "connection.auth_public_key", value: "public_key" },
 ];
 
@@ -24,7 +30,27 @@ export const normalizeEncoding = (encoding: string | null | undefined): Encoding
 };
 
 export const normalizeSshAuthMethod = (authMethod: string | null | undefined): SshAuthMethod => {
-  return authMethod === "public_key" ? "public_key" : "password";
+  if (authMethod == null || authMethod.trim() === "") return "auto";
+  return SSH_AUTH_METHODS.some((entry) => entry.value === authMethod)
+    ? (authMethod as SshAuthMethod)
+    : "password";
+};
+
+export const usesPrivateKeyAuthentication = (authMethod: SshAuthMethod): boolean =>
+  authMethod === "auto" || authMethod === "public_key";
+
+export const resolveSshAuthentication = (
+  authMethod: SshAuthMethod,
+  connectionPrivateKeyPath: string,
+  defaultPrivateKeyPath: string
+): { authMethod: SshAuthMethod; privateKeyPath: string } => {
+  const connectionPath = connectionPrivateKeyPath.trim();
+  if (authMethod === "public_key") return { authMethod, privateKeyPath: connectionPath };
+  if (authMethod !== "auto") return { authMethod, privateKeyPath: "" };
+  return {
+    authMethod,
+    privateKeyPath: connectionPath || defaultPrivateKeyPath.trim(),
+  };
 };
 
 export const normalizeProfileMemo = (memo: string): string | null => {
@@ -69,7 +95,9 @@ export const createSshProfile = (draft: SshProfileDraft): SavedConnection => ({
   port: Number.parseInt(draft.port, 10),
   username: draft.username.trim(),
   auth_method: draft.authMethod,
-  private_key_path: draft.authMethod === "public_key" ? draft.privateKeyPath.trim() : null,
+  private_key_path: usesPrivateKeyAuthentication(draft.authMethod)
+    ? draft.privateKeyPath.trim()
+    : null,
   jump_profile_id: draft.jumpProfileId || null,
   encoding: draft.encoding,
   terminal_mode: draft.terminalMode,
@@ -131,6 +159,8 @@ export const removeSavedProfile = (
   ),
 });
 
-export const getConnectionErrorMessage = (error: unknown, fallback: string) => {
-  return typeof error === "string" ? error : error instanceof Error ? error.message : fallback;
-};
+export const getConnectionErrorMessage = (
+  error: unknown,
+  t: BackendErrorTranslator,
+  fallback: string
+) => translateBackendCommandError(error, t, fallback);

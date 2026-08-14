@@ -2,9 +2,11 @@ mod ai;
 mod app_exit;
 mod app_update;
 mod cli;
+mod command_error;
 mod config;
+mod connect_attempt;
+mod connection_history;
 mod external_control;
-mod i18n;
 mod logger;
 mod mcp;
 mod serial;
@@ -16,11 +18,11 @@ mod terminal_control;
 mod workspace;
 
 use cli::{CliAction, StartupCliRequest};
+use connection_history::ConnectionHistoryState;
 use external_control::{
     spawn_gui_control_plane, ExternalControlCredentialState, ExternalControlLogControlState,
     ExternalControlRuntime,
 };
-use i18n::BackendLanguageState;
 use logger::LoggerState;
 use serial::SerialState;
 use ssh::SshState;
@@ -70,9 +72,9 @@ pub fn run() {
     let terminal_control_state = TerminalControlState::new();
     let workspace_state = WorkspaceState::new();
     let logger_state = LoggerState::new();
+    let connection_history_state = ConnectionHistoryState::new();
     let external_control_credential_state = ExternalControlCredentialState::new();
     let external_control_log_control_state = ExternalControlLogControlState::new();
-    let backend_language_state = BackendLanguageState::default();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -87,11 +89,12 @@ pub fn run() {
         .manage(terminal_control_state.clone())
         .manage(workspace_state.clone())
         .manage(logger_state.clone())
+        .manage(connection_history_state)
         .manage(external_control_credential_state.clone())
         .manage(external_control_log_control_state.clone())
-        .manage(backend_language_state)
         .on_window_event({
             let workspace_state = workspace_state.clone();
+            let ssh_state = ssh_state.clone();
             move |window, event| match event {
                 tauri::WindowEvent::Focused(true) => {
                     let app = window.app_handle().clone();
@@ -105,8 +108,14 @@ pub fn run() {
                 tauri::WindowEvent::Destroyed => {
                     let app = window.app_handle().clone();
                     let workspace_state = workspace_state.clone();
+                    let ssh_state = ssh_state.clone();
                     let window_id = window.label().to_string();
                     tauri::async_runtime::spawn(async move {
+                        ssh_state
+                            .authentication_prompts
+                            .cancel_window(&window_id)
+                            .await;
+                        ssh_state.host_key_prompts.cancel_window(&window_id).await;
                         let result = workspace_state.unregister_window(window_id).await;
                         workspace::emit_workspace_updates(&app, &result.snapshots);
                         workspace::emit_workspace_window_closed(&app, &result);
@@ -159,20 +168,23 @@ pub fn run() {
             // SSH
             startup_cli_request_get,
             ssh::ssh_algorithm_catalog,
-            ssh::ssh_probe_host_key,
-            ssh::ssh_trust_host_key,
             ssh::ssh_private_key_requires_passphrase,
             ssh::ssh_connect,
+            ssh::ssh_connect_cancel,
+            ssh::ssh_host_key_respond,
+            ssh::ssh_authentication_respond,
             ssh::ssh_write,
             ssh::ssh_resize,
             ssh::ssh_disconnect,
             // Serial
             serial::serial_list_ports,
             serial::serial_connect,
+            serial::serial_connect_cancel,
             serial::serial_write,
             serial::serial_disconnect,
             // Telnet
             telnet::telnet_connect,
+            telnet::telnet_connect_cancel,
             telnet::telnet_write,
             telnet::telnet_resize,
             telnet::telnet_disconnect,
@@ -184,16 +196,19 @@ pub fn run() {
             ai::ai_secret_clear,
             ai::ai_chat,
             // Logger
-            logger::logger_start,
-            logger::logger_start_auto,
             logger::logger_start_manual,
+            logger::logger_start_on_connection,
             logger::logger_stop_manual,
             logger::logger_is_manual_active,
             logger::logger_append,
-            logger::logger_append_to_mode,
             logger::logger_get_sessions,
             logger::logger_bulk_delete_sessions,
             logger::logger_get_log_dir,
+            // Connection history
+            connection_history::connection_history_list,
+            connection_history::connection_history_record,
+            connection_history::connection_history_delete,
+            connection_history::connection_history_clear,
             external_control::protocol::external_control_credential_submit,
             external_control::protocol::external_control_log_control_submit,
             terminal_control::terminal_encoding_set,
@@ -219,7 +234,6 @@ pub fn run() {
             // Config
             config::config_load,
             config::config_save,
-            i18n::backend_language_set,
             // App updates
             app_update::app_update_check,
             app_update::app_update_install,

@@ -39,6 +39,7 @@
 }
 
 .app__terminal-area {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -102,4 +103,77 @@
 
 .app-credential-modal__footer {
   padding: 12px 16px;
+}
+
+.ssh-auth-prompt form {
+  display: flex;
+  flex-direction: column;
+  max-height: min(680px, calc(100vh - 32px));
+}
+
+.ssh-auth-prompt__title,
+.ssh-auth-prompt__instructions,
+.ssh-auth-prompt__field .label {
+  white-space: pre-wrap;
+}
+
+.ssh-auth-prompt__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.ssh-auth-prompt__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ssh-host-key-prompt__content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ssh-host-key-prompt__message {
+  color: var(--text-primary);
+}
+
+.ssh-host-key-prompt__message,
+.ssh-host-key-prompt__warning {
+  line-height: 1.5;
+}
+
+.ssh-host-key-prompt__grid {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 8px 12px;
+  padding: 12px;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+}
+
+.ssh-host-key-prompt__label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ssh-host-key-prompt__value {
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.ssh-host-key-prompt__value--mono {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 520px) {
+  .ssh-host-key-prompt__grid {
+    grid-template-columns: 1fr;
+  }
 }

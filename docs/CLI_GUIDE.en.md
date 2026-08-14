@@ -75,15 +75,15 @@ UI, never as CLI arguments.
 
 `serial connect` supports:
 
-| Option             | Default     | Allowed values                 |
-| ------------------ | ----------- | ------------------------------ |
-| `--baud-rate`      | `9600`      | Positive integer               |
-| `--data-bits`      | `8`         | `5`, `6`, `7`, `8`             |
-| `--parity`         | `none`      | `none`, `odd`, `even`          |
-| `--stop-bits`      | `1`         | `1`, `2`                       |
-| `--flow-control`   | `none`      | `none`, `software`, `hardware` |
-| `--terminal-mode`  | `general`   | `general`, `cisco-ios`         |
-| `--cols`, `--rows` | `120`, `30` | `1` through `1000`             |
+| Option             | Default     | Allowed values                                                                                            |
+| ------------------ | ----------- | --------------------------------------------------------------------------------------------------------- |
+| `--baud-rate`      | `9600`      | Positive integer                                                                                          |
+| `--data-bits`      | `8`         | `5`, `6`, `7`, `8`                                                                                        |
+| `--parity`         | `none`      | `none`, `odd`, `even`                                                                                     |
+| `--stop-bits`      | `1`         | `1`, `2`                                                                                                  |
+| `--flow-control`   | `none`      | `none`, `software`, `hardware`                                                                            |
+| `--terminal-mode`  | `general`   | `general`, `cisco-ios`, `arista-eos`, `vyos`, `fujitsu-sir`, `allied-telesis-awplus`, `furukawa-fitelnet` |
+| `--cols`, `--rows` | `120`, `30` | `1` through `1000`                                                                                        |
 
 The port must exactly match a value returned by `serial ports`.
 
@@ -159,8 +159,8 @@ appear as normal ExaTerm tabs, and required SSH credentials are entered in the G
 
 Terminal output, commands, prompts, profile memos, hostnames, usernames, and log paths can
 be sensitive. Enable CLI access only for trusted local programs. The CLI does not expose
-saved credentials, API keys, private key contents, or log file contents. Manual logs are
-plaintext files and remain opt-in.
+saved credentials, API keys, private key contents, or log file contents. Session logs are
+plaintext files and are created only when connection logging is enabled or logging is explicitly started.
 
 ## Troubleshooting
 

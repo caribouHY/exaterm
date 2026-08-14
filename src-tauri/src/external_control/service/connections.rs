@@ -87,7 +87,7 @@ async fn connect_prepared_profile(
     let app = runtime.app.as_ref().ok_or_else(|| {
         internal_error("App handle required for external control connections is unavailable")
     })?;
-    let session_id = connect_prepared_profile_session(runtime, app, &prepared).await?;
+    let session_id = connect_prepared_profile_session(runtime, app, config, &prepared).await?;
     let connection_info = workspace_connection_info(&prepared);
 
     finish_created_session(
@@ -132,6 +132,7 @@ fn workspace_connection_info(prepared: &PreparedConnection) -> WorkspaceConnecti
 async fn connect_prepared_profile_session(
     runtime: &ExternalControlRuntime,
     app: &AppHandle,
+    config: &AppConfig,
     prepared: &PreparedConnection,
 ) -> Result<String, ExternalControlError> {
     match &prepared.kind {
@@ -146,6 +147,7 @@ async fn connect_prepared_profile_session(
             connect_prepared_ssh_profile(
                 runtime,
                 app,
+                config,
                 prepared,
                 PreparedSshProfileParts {
                     host,
@@ -178,20 +180,15 @@ struct PreparedSshProfileParts<'a> {
 async fn connect_prepared_ssh_profile(
     runtime: &ExternalControlRuntime,
     app: &AppHandle,
+    config: &AppConfig,
     prepared: &PreparedConnection,
     parts: PreparedSshProfileParts<'_>,
 ) -> Result<String, ExternalControlError> {
     let credentials = runtime.credentials.as_ref().ok_or_else(|| {
         internal_error("Credential prompt state required for external control is unavailable")
     })?;
+    let prompt_window_id = runtime.workspace.preferred_window_id().await;
     let jump_credential = request_jump_credential(credentials, app, parts.jump_profile).await?;
-    verify_profile_host_key(
-        parts.host,
-        parts.port,
-        parts.jump_profile,
-        jump_credential.clone(),
-    )
-    .await?;
     let profile_credential = request_profile_credential(
         credentials,
         app,
@@ -201,6 +198,7 @@ async fn connect_prepared_ssh_profile(
         parts.username,
         parts.auth_method,
         parts.private_key_path,
+        Some(&config.ssh.default_private_key_path),
         &prepared.target,
         &prepared.title,
     )
@@ -213,7 +211,10 @@ async fn connect_prepared_ssh_profile(
         &runtime.terminals,
         &runtime.workspace,
         runtime.logger.as_ref(),
+        prompt_window_id,
+        ssh::HostKeyHandling::RequireTrusted,
         options,
+        None,
     )
     .await
     .map_err(invalid_params)
@@ -239,6 +240,7 @@ async fn connect_prepared_telnet_profile(
         prepared.cols,
         prepared.rows,
         Some(prepared.encoding.clone()),
+        None,
     )
     .await
     .map_err(invalid_params)
@@ -253,9 +255,6 @@ async fn request_jump_credential(
     let Some(jump_profile) = jump_profile else {
         return Ok(None);
     };
-    ssh::verify_trusted_host_key(&jump_profile.host, jump_profile.port)
-        .await
-        .map_err(invalid_params)?;
     request_profile_credential(
         credentials,
         app,
@@ -265,6 +264,7 @@ async fn request_jump_credential(
         &jump_profile.username,
         &jump_profile.auth_method,
         jump_profile.private_key_path.as_deref(),
+        None,
         &format!(
             "{}@{}:{}",
             jump_profile.username, jump_profile.host, jump_profile.port
@@ -272,31 +272,6 @@ async fn request_jump_credential(
         &format!("{}@{}", jump_profile.username, jump_profile.host),
     )
     .await
-}
-
-#[cfg(not(test))]
-async fn verify_profile_host_key(
-    host: &str,
-    port: u16,
-    jump_profile: Option<&ssh::SshJumpProfile>,
-    jump_credential: Option<String>,
-) -> Result<(), ExternalControlError> {
-    match jump_profile {
-        Some(jump_profile) => {
-            let (jump_password, jump_key_passphrase) =
-                split_optional_ssh_credential(&jump_profile.auth_method, jump_credential);
-            ssh::verify_trusted_host_key_via_jump(
-                host,
-                port,
-                jump_profile.clone(),
-                jump_password,
-                jump_key_passphrase,
-            )
-            .await
-        }
-        None => ssh::verify_trusted_host_key(host, port).await,
-    }
-    .map_err(invalid_params)
 }
 
 #[cfg(not(test))]
@@ -368,10 +343,13 @@ async fn request_profile_credential(
     username: &str,
     auth_method: &str,
     private_key_path: Option<&str>,
+    default_private_key_path: Option<&str>,
     target: &str,
     title: &str,
 ) -> Result<Option<String>, ExternalControlError> {
-    if !ssh_credential_required(auth_method, private_key_path).map_err(invalid_params)? {
+    if !ssh_credential_required(auth_method, private_key_path, default_private_key_path)
+        .map_err(invalid_params)?
+    {
         return Ok(None);
     }
 
@@ -406,32 +384,33 @@ async fn finish_created_session(
     terminal_mode: String,
     connection_info: Option<WorkspaceConnectionInfo>,
 ) -> Result<Value, ExternalControlError> {
-    let auto_logging = if config.terminal.auto_session_log {
+    let auto_log_file_path = if config.terminal.auto_session_log {
         match &runtime.logger {
-            Some(logger_state) => logger::start_auto_log(
+            Some(logger_state) => logger::start_log_on_connection(
                 logger_state,
                 session_id.clone(),
                 connection_type.clone(),
                 target.clone(),
             )
             .await
-            .map(|_| true)
+            .map(Some)
             .unwrap_or_else(|error| {
                 log::warn!(
-                    "External control auto log start failed for session {session_id}: {error}"
+                    "External control connection log start failed for session {session_id}: {error}"
                 );
-                false
+                None
             }),
             None => {
                 log::warn!(
-                    "External control auto log start skipped because logger state is unavailable"
+                    "External control connection log start skipped because logger state is unavailable"
                 );
-                false
+                None
             }
         }
     } else {
-        false
+        None
     };
+    let auto_logging = auto_log_file_path.is_some();
 
     let protocol = terminal_protocol_from_log_type(&connection_type).map_err(invalid_params)?;
     let payload = ExternalControlConnectionCreatedPayload {
@@ -455,7 +434,8 @@ async fn finish_created_session(
             encoding,
             terminal_mode,
             connection_info,
-            is_auto_logging: auto_logging,
+            is_manual_logging: auto_logging,
+            manual_log_file_path: auto_log_file_path,
         })
         .await;
     #[cfg(not(test))]
@@ -488,6 +468,7 @@ async fn connect_prepared_serial_console(
         prepared.port.clone(),
         prepared.config,
         Some(prepared.encoding.clone()),
+        None,
     )
     .await
     .map_err(invalid_params)?;

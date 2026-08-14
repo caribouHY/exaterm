@@ -4,6 +4,9 @@ import TerminalTabs from "./components/Terminal/TerminalTabs";
 import TerminalView from "./components/Terminal/TerminalView";
 import type { TerminalViewHandle } from "./components/Terminal/TerminalView";
 import StatusBar from "./components/StatusBar/StatusBar";
+import StatusBarPalette from "./components/StatusBar/StatusBarPalette";
+import type { StatusBarPaletteCloseReason } from "./components/StatusBar/StatusBarPalette";
+import type { StatusBarMenuKind } from "./components/StatusBar/statusBarMenuModel";
 import type {
   TabInfo,
   ViewMode,
@@ -13,12 +16,18 @@ import type {
   ChatMessage,
   TerminalMode,
   StartupCliRequest,
+  SshAuthMethod,
   ManualLogWriteMode,
   WorkspaceConnectionInfo,
 } from "./types";
 import type { ConnectionDialogInitialValues } from "./components/Connection/connectionDialogTypes";
+import type { ConnectionLogState } from "./features/terminal-logging/connectionLogModel";
 import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  backendCommandErrorMessage,
+  translateBackendCommandError,
+} from "./features/backend-errors/backendCommandError";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
@@ -38,10 +47,17 @@ import { useTerminalTabLifecycle } from "./features/workspace-tabs/useTerminalTa
 import { useWorkspaceTabMovement } from "./features/workspace-tabs/useWorkspaceTabMovement";
 import { DEFAULT_SHORTCUT_CONFIG, findShortcutAction } from "./features/shortcuts/shortcutModel";
 import type { TerminalLogShortcutAction } from "./features/shortcuts/shortcutModel";
+import {
+  canPauseManualLog,
+  canResumeManualLog,
+} from "./features/terminal-logging/terminalLoggingModel";
 import { AppUpdateDialog } from "./features/app-update/AppUpdateDialog";
 import { useAppUpdate } from "./features/app-update/useAppUpdate";
 import { AppExitDialog } from "./features/app-exit/AppExitDialog";
 import { useAppExit } from "./features/app-exit/useAppExit";
+import { SshAuthenticationPromptDialog } from "./features/ssh-authentication/SshAuthenticationPromptDialog";
+import { SshHostKeyPromptDialog } from "./features/ssh-authentication/SshHostKeyPromptDialog";
+import { useSshPrompts } from "./features/ssh-authentication/useSshPrompts";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -69,7 +85,7 @@ interface McpCredentialRequestPayload {
   host: string;
   port: number;
   username: string;
-  auth_method: "password" | "public_key";
+  auth_method: SshAuthMethod;
   target: string;
   title: string;
 }
@@ -90,6 +106,7 @@ interface McpLogControlRequestPayload {
 export default function App() {
   const { t } = useTranslation();
   const windowTabs = useWindowTabs();
+  const sshPrompts = useSshPrompts();
   const {
     tabs,
     appTabs,
@@ -111,14 +128,25 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [manualLogBusyTabId, setManualLogBusyTabId] = useState<string | null>(null);
   const [logStatusMessage, setLogStatusMessage] = useState("");
+  const showTemporaryLogStatus = useCallback((message: string) => {
+    setLogStatusMessage(message);
+    window.setTimeout(() => {
+      setLogStatusMessage("");
+    }, 3000);
+  }, []);
+  const [openStatusBarMenu, setOpenStatusBarMenu] = useState<StatusBarMenuKind | null>(null);
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiSelectedProvider, setAiSelectedProvider] = useState("");
   const [aiSelectedModel, setAiSelectedModel] = useState("");
   const [startupCliRequest, setStartupCliRequest] = useState<StartupCliRequest | null>(null);
   const [mcpCredentialPrompts, setMcpCredentialPrompts] = useState<McpCredentialPromptState[]>([]);
+  const [terminalSelectionByTab, setTerminalSelectionByTab] = useState<
+    ReadonlyMap<string, boolean>
+  >(new Map());
   const activeTerminalBuffer = useRef("");
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
+  const restoreTerminalFocusAfterPaletteRef = useRef(false);
   const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
   const shortcuts = config?.shortcuts ?? DEFAULT_SHORTCUT_CONFIG;
   const appUpdate = useAppUpdate({
@@ -127,9 +155,77 @@ export default function App() {
   });
   const appExit = useAppExit();
 
+  const handleStatusBarMenuToggle = useCallback(
+    (kind: StatusBarMenuKind, pointerActivated: boolean) => {
+      if (!pointerActivated) {
+        restoreTerminalFocusAfterPaletteRef.current = false;
+      }
+      setOpenStatusBarMenu((current) => {
+        if (current === kind) {
+          restoreTerminalFocusAfterPaletteRef.current = false;
+          return null;
+        }
+        return kind;
+      });
+    },
+    []
+  );
+
+  const handleStatusBarMenuTriggerPointerDown = useCallback(() => {
+    restoreTerminalFocusAfterPaletteRef.current = Boolean(
+      activeTabId && terminalViewRefs.current.get(activeTabId)?.isFocused()
+    );
+  }, [activeTabId]);
+
+  const handleStatusBarPaletteClose = useCallback(
+    (reason: StatusBarPaletteCloseReason) => {
+      const menuToRestore = openStatusBarMenu;
+      const shouldRestoreTerminalFocus = restoreTerminalFocusAfterPaletteRef.current;
+      restoreTerminalFocusAfterPaletteRef.current = false;
+      if (reason === "tab" && menuToRestore) {
+        document.getElementById(`statusbar-menu-trigger-${menuToRestore}`)?.focus();
+      }
+      setOpenStatusBarMenu(null);
+      if (reason === "confirm" || reason === "escape") {
+        window.requestAnimationFrame(() => {
+          if (shouldRestoreTerminalFocus && activeTabId) {
+            terminalViewRefs.current.get(activeTabId)?.focus();
+          } else if (menuToRestore) {
+            document.getElementById(`statusbar-menu-trigger-${menuToRestore}`)?.focus();
+          }
+        });
+      } else if (reason === "action" && menuToRestore) {
+        window.requestAnimationFrame(() => {
+          document.getElementById(`statusbar-menu-trigger-${menuToRestore}`)?.focus();
+        });
+      }
+    },
+    [activeTabId, openStatusBarMenu]
+  );
+
+  useEffect(() => {
+    restoreTerminalFocusAfterPaletteRef.current = false;
+    setOpenStatusBarMenu(null);
+  }, [activeTabId, activeView]);
+
+  useEffect(() => {
+    if (
+      openStatusBarMenu === "log" &&
+      (!activeTab?.isConnected || manualLogBusyTabId === activeTab.id)
+    ) {
+      setOpenStatusBarMenu(null);
+    }
+  }, [activeTab, manualLogBusyTabId, openStatusBarMenu]);
+
   const removeTerminalFromState = useCallback(
     (tabId: string) => {
       terminalBuffers.current.delete(tabId);
+      setTerminalSelectionByTab((current) => {
+        if (!current.has(tabId)) return current;
+        const next = new Map(current);
+        next.delete(tabId);
+        return next;
+      });
       if (getCurrentWindowTabsState().activeTabId === tabId) {
         activeTerminalBuffer.current = "";
       }
@@ -139,6 +235,44 @@ export default function App() {
 
   const flushLogBuffersForMove = useCallback(async (tabId: string) => {
     await terminalViewRefs.current.get(tabId)?.flushLogBuffersForMove();
+  }, []);
+
+  const clearActiveTerminalViewport = useCallback(() => {
+    if (!activeTabId) return;
+    terminalViewRefs.current.get(activeTabId)?.clearViewport();
+  }, [activeTabId]);
+
+  const clearActiveTerminalBuffer = useCallback(() => {
+    if (!activeTabId) return;
+    terminalViewRefs.current.get(activeTabId)?.clearBuffer();
+  }, [activeTabId]);
+
+  const selectAllActiveTerminal = useCallback(() => {
+    if (!activeTabId) return;
+    terminalViewRefs.current.get(activeTabId)?.selectAll();
+  }, [activeTabId]);
+
+  const copyActiveTerminalSelection = useCallback(() => {
+    if (!activeTabId) return;
+    terminalViewRefs.current.get(activeTabId)?.copySelection();
+  }, [activeTabId]);
+
+  const pasteIntoActiveTerminal = useCallback(() => {
+    if (!activeTabId) return;
+    terminalViewRefs.current.get(activeTabId)?.paste();
+  }, [activeTabId]);
+
+  const handleTerminalSelectionChange = useCallback((tabId: string, hasSelection: boolean) => {
+    setTerminalSelectionByTab((current) => {
+      if (Boolean(current.get(tabId)) === hasSelection) return current;
+      const next = new Map(current);
+      if (hasSelection) {
+        next.set(tabId, true);
+      } else {
+        next.delete(tabId);
+      }
+      return next;
+    });
   }, []);
 
   const terminalTabLifecycle = useTerminalTabLifecycle({
@@ -155,7 +289,7 @@ export default function App() {
       type: ConnectionType,
       sessionId: string,
       title: string,
-      isAutoLogging: boolean,
+      logState: ConnectionLogState,
       encoding: Encoding = "utf-8",
       terminalMode: TerminalMode = DEFAULT_TERMINAL_MODE,
       connectionInfo?: WorkspaceConnectionInfo
@@ -164,15 +298,19 @@ export default function App() {
         connectionType: type,
         sessionId,
         title,
-        isAutoLogging,
+        isManualLogging: logState.isLogging,
+        manualLogFilePath: logState.filePath,
         encoding,
         terminalMode,
         connectionInfo,
       });
       setConnectionInitialValues(null);
       setShowConnection(false);
+      if (logState.startFailed) {
+        showTemporaryLogStatus("statusbar.log_start_failed");
+      }
     },
-    [terminalTabLifecycle]
+    [showTemporaryLogStatus, terminalTabLifecycle]
   );
 
   const handleViewChange = useCallback(
@@ -256,6 +394,10 @@ export default function App() {
           return;
         }
         if (tab.isManualLogging && tab.manualLogFilePath) {
+          if (tab.isManualLoggingPaused) {
+            await updateWorkspaceTabMetadata(tab.id, { isManualLoggingPaused: false });
+            await waitForUiUpdate();
+          }
           await submitLogControl(payload.request_id, tab.manualLogFilePath, null);
           return;
         }
@@ -270,17 +412,17 @@ export default function App() {
           });
           await updateWorkspaceTabMetadata(payload.session_id, {
             isManualLogging: true,
-            isLoggingPaused: false,
+            isManualLoggingPaused: false,
             manualLogFilePath: filePath,
           });
           await waitForUiUpdate();
           await submitLogControl(payload.request_id, filePath, null);
         } catch (error) {
-          console.error("Failed to start MCP manual log:", error);
+          console.error("Failed to start the MCP log:", error);
           await submitLogControl(
             payload.request_id,
             null,
-            typeof error === "string" ? error : "MCPログ開始に失敗しました"
+            backendCommandErrorMessage(error, "Failed to start the external control log.")
           );
         }
       }
@@ -307,16 +449,16 @@ export default function App() {
           await invoke("logger_stop_manual", { sessionId: payload.session_id });
           await updateWorkspaceTabMetadata(payload.session_id, {
             isManualLogging: false,
-            isLoggingPaused: tab.isAutoLogging ? tab.isLoggingPaused : false,
+            isManualLoggingPaused: false,
           });
           await waitForUiUpdate();
           await submitLogControl(payload.request_id, null, null);
         } catch (error) {
-          console.error("Failed to stop MCP manual log:", error);
+          console.error("Failed to stop the MCP log:", error);
           await submitLogControl(
             payload.request_id,
             null,
-            typeof error === "string" ? error : "MCPログ停止に失敗しました"
+            backendCommandErrorMessage(error, "Failed to stop the external control log.")
           );
         }
       }
@@ -363,7 +505,7 @@ export default function App() {
         setMcpCredentialPrompts((prev) => prev.slice(1));
       } catch (error) {
         updateActiveMcpCredentialPrompt({
-          error: typeof error === "string" ? error : t("mcp.credential_submit_failed"),
+          error: translateBackendCommandError(error, t, t("mcp.credential_submit_failed")),
           submitting: false,
         });
       }
@@ -409,13 +551,6 @@ export default function App() {
     return `exaterm_${stamp}_${sessionPrefix}.log`;
   }, []);
 
-  const showTemporaryLogStatus = useCallback((message: string) => {
-    setLogStatusMessage(message);
-    window.setTimeout(() => {
-      setLogStatusMessage("");
-    }, 3000);
-  }, []);
-
   const handleStartManualLog = useCallback(
     async (writeMode: ManualLogWriteMode) => {
       if (!activeTab?.sessionId || !activeTab.isConnected || activeTab.isManualLogging) return;
@@ -438,11 +573,11 @@ export default function App() {
         });
         await updateWorkspaceTabMetadata(activeTab.id, {
           isManualLogging: true,
-          isLoggingPaused: false,
+          isManualLoggingPaused: false,
           manualLogFilePath: filePath,
         });
       } catch (error) {
-        console.error("Failed to start manual log:", error);
+        console.error("Failed to start the log:", error);
         showTemporaryLogStatus("statusbar.log_start_failed");
       } finally {
         setManualLogBusyTabId(null);
@@ -460,21 +595,22 @@ export default function App() {
       await invoke("logger_stop_manual", { sessionId: activeTab.sessionId });
       await updateWorkspaceTabMetadata(activeTab.id, {
         isManualLogging: false,
-        isLoggingPaused: activeTab.isAutoLogging ? activeTab.isLoggingPaused : false,
+        isManualLoggingPaused: false,
       });
     } catch (error) {
-      console.error("Failed to stop manual log:", error);
+      console.error("Failed to stop the log:", error);
       showTemporaryLogStatus("statusbar.log_stop_failed");
     } finally {
       setManualLogBusyTabId(null);
     }
   }, [activeTab, showTemporaryLogStatus, updateWorkspaceTabMetadata]);
 
-  const handleSetLoggingPaused = useCallback(
+  const handleSetManualLoggingPaused = useCallback(
     (paused: boolean) => {
-      if (!activeTab?.isConnected || !(activeTab.isAutoLogging || activeTab.isManualLogging))
-        return;
-      updateWorkspaceTabMetadata(activeTab.id, { isLoggingPaused: paused }).catch(console.error);
+      if (!activeTab?.isConnected || !activeTab.isManualLogging) return;
+      updateWorkspaceTabMetadata(activeTab.id, { isManualLoggingPaused: paused }).catch(
+        console.error
+      );
     },
     [activeTab, updateWorkspaceTabMetadata]
   );
@@ -490,7 +626,6 @@ export default function App() {
         return;
       }
 
-      const isLoggingActive = Boolean(activeTab.isAutoLogging || activeTab.isManualLogging);
       switch (action) {
         case "terminal_log_start_overwrite":
           if (!activeTab.isManualLogging) {
@@ -508,20 +643,30 @@ export default function App() {
           }
           break;
         case "terminal_log_pause":
-          if (isLoggingActive && !activeTab.isLoggingPaused) {
-            handleSetLoggingPaused(true);
+          if (
+            canPauseManualLog(
+              Boolean(activeTab.isManualLogging),
+              Boolean(activeTab.isManualLoggingPaused)
+            )
+          ) {
+            handleSetManualLoggingPaused(true);
           }
           break;
         case "terminal_log_resume":
-          if (isLoggingActive && activeTab.isLoggingPaused) {
-            handleSetLoggingPaused(false);
+          if (
+            canResumeManualLog(
+              Boolean(activeTab.isManualLogging),
+              Boolean(activeTab.isManualLoggingPaused)
+            )
+          ) {
+            handleSetManualLoggingPaused(false);
           }
           break;
       }
     },
     [
       activeTab,
-      handleSetLoggingPaused,
+      handleSetManualLoggingPaused,
       handleStartManualLog,
       handleStopManualLog,
       manualLogBusyTabId,
@@ -546,6 +691,15 @@ export default function App() {
   }, []);
 
   const openWindow = windowTabs.createWorkspaceWindow;
+
+  const activeTerminalTab =
+    activeView === "terminal" && activeTab?.kind === "terminal" ? activeTab : null;
+  const canAccessActiveTerminal = Boolean(activeTerminalTab?.sessionId);
+  const canCopyActiveTerminal =
+    canAccessActiveTerminal && Boolean(activeTabId && terminalSelectionByTab.get(activeTabId));
+  const canPasteActiveTerminal = Boolean(
+    activeTerminalTab?.sessionId && activeTerminalTab.isConnected
+  );
 
   const toggleAiPanel = useCallback(() => {
     setShowAiPanel((current) => {
@@ -673,6 +827,14 @@ export default function App() {
         onViewChange={handleViewChange}
         onOpenConnection={openConnection}
         onOpenWindow={openWindow}
+        canAccessTerminal={canAccessActiveTerminal}
+        canCopyTerminal={canCopyActiveTerminal}
+        canPasteTerminal={canPasteActiveTerminal}
+        onSelectAllTerminal={selectAllActiveTerminal}
+        onCopyTerminal={copyActiveTerminalSelection}
+        onPasteTerminal={pasteIntoActiveTerminal}
+        onClearTerminalViewport={clearActiveTerminalViewport}
+        onClearTerminalBuffer={clearActiveTerminalBuffer}
         onToggleAiPanel={toggleAiPanel}
         onCheckForUpdates={appUpdate.checkManually}
         onExit={appExit.requestExit}
@@ -706,15 +868,36 @@ export default function App() {
               <div
                 className={`app__terminal-area ${activeView !== "terminal" ? "app__hidden" : ""}`}
               >
+                {openStatusBarMenu && activeTab && (
+                  <StatusBarPalette
+                    key={openStatusBarMenu}
+                    kind={openStatusBarMenu}
+                    activeTab={activeTab}
+                    shortcuts={shortcuts}
+                    onEncodingChange={(encoding) => {
+                      handleEncodingChange(activeTab.id, encoding);
+                    }}
+                    onTerminalModeChange={(terminalMode) => {
+                      handleTerminalModeChange(activeTab.id, terminalMode);
+                    }}
+                    onStartManualLog={(writeMode) => {
+                      void handleStartManualLog(writeMode);
+                    }}
+                    onStopManualLog={() => {
+                      void handleStopManualLog();
+                    }}
+                    onSetManualLoggingPaused={handleSetManualLoggingPaused}
+                    onClose={handleStatusBarPaletteClose}
+                  />
+                )}
                 {tabs.length === 0 ? (
                   <TerminalView
                     sessionId={null}
                     connectionType="ssh"
                     isConnected={false}
                     isActive={activeView === "terminal"}
-                    isAutoLogging={false}
                     isManualLogging={false}
-                    isLoggingPaused={false}
+                    isManualLoggingPaused={false}
                     onOpenConnection={openConnection}
                     onTerminalData={() => {}}
                     encoding="utf-8"
@@ -737,15 +920,17 @@ export default function App() {
                       connectionType={tab.connectionType}
                       isConnected={tab.isConnected}
                       isActive={activeView === "terminal" && tab.id === activeTabId}
-                      isAutoLogging={Boolean(tab.isAutoLogging)}
                       isManualLogging={Boolean(tab.isManualLogging)}
-                      isLoggingPaused={Boolean(tab.isLoggingPaused)}
+                      isManualLoggingPaused={Boolean(tab.isManualLoggingPaused)}
                       onOpenConnection={openConnection}
                       onTerminalData={(data) => {
                         handleTerminalData(tab.id, data);
                       }}
                       onTerminalLogShortcut={(action) => {
                         handleTerminalLogShortcut(tab.id, action);
+                      }}
+                      onTerminalSelectionChange={(hasSelection) => {
+                        handleTerminalSelectionChange(tab.id, hasSelection);
                       }}
                       encoding={tab.encoding}
                       terminalMode={tab.terminalMode}
@@ -801,15 +986,9 @@ export default function App() {
           <StatusBar
             activeTab={activeTab}
             showConnectionStatus={activeView === "terminal"}
-            onEncodingChange={(encoding) =>
-              activeTab && handleEncodingChange(activeTab.id, encoding)
-            }
-            onTerminalModeChange={(terminalMode) =>
-              activeTab && handleTerminalModeChange(activeTab.id, terminalMode)
-            }
-            onStartManualLog={handleStartManualLog}
-            onStopManualLog={handleStopManualLog}
-            onSetLoggingPaused={handleSetLoggingPaused}
+            openMenu={openStatusBarMenu}
+            onMenuToggle={handleStatusBarMenuToggle}
+            onMenuTriggerPointerDown={handleStatusBarMenuTriggerPointerDown}
             manualLogBusy={Boolean(activeTab && manualLogBusyTabId === activeTab.id)}
             logStatusMessage={logStatusMessage}
           />
@@ -831,6 +1010,29 @@ export default function App() {
           />
         </Suspense>
       )}
+      {sshPrompts.activePrompt?.kind === "authentication" && (
+        <SshAuthenticationPromptDialog
+          prompt={sshPrompts.activePrompt.value}
+          onResponseChange={sshPrompts.updateResponse}
+          onSubmit={() => {
+            void sshPrompts.submit();
+          }}
+          onCancel={() => {
+            void sshPrompts.cancel();
+          }}
+        />
+      )}
+      {sshPrompts.activePrompt?.kind === "host_key" && (
+        <SshHostKeyPromptDialog
+          prompt={sshPrompts.activePrompt.value}
+          onAccept={() => {
+            void sshPrompts.submit();
+          }}
+          onCancel={() => {
+            void sshPrompts.cancel();
+          }}
+        />
+      )}
       {activeMcpCredentialPrompt && (
         <div className="app-credential-overlay">
           <ModalFrame
@@ -846,7 +1048,8 @@ export default function App() {
                   {t("mcp.credential_request_title")}
                 </div>
                 <ModalTitle className="app-credential-modal__title" id="mcp-credential-title">
-                  {activeMcpCredentialPrompt.auth_method === "public_key"
+                  {activeMcpCredentialPrompt.auth_method === "public_key" ||
+                  activeMcpCredentialPrompt.auth_method === "auto"
                     ? t("connection.key_passphrase_prompt_title")
                     : t("connection.password_prompt_title")}
                 </ModalTitle>
@@ -863,7 +1066,8 @@ export default function App() {
                 {t("mcp.credential_request_desc")}
               </ModalDescription>
               <label className="label" htmlFor="mcp-credential-input">
-                {activeMcpCredentialPrompt.auth_method === "public_key"
+                {activeMcpCredentialPrompt.auth_method === "public_key" ||
+                activeMcpCredentialPrompt.auth_method === "auto"
                   ? t("connection.key_passphrase")
                   : t("connection.password")}
               </label>
