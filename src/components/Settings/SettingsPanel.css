@@ -446,6 +446,20 @@
   max-width: 380px;
 }
 
+.settings-ssh__file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.settings-ssh__file-row .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  white-space: nowrap;
+}
+
 .settings-ssh__custom {
   padding-right: var(--space-md);
 }

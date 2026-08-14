@@ -4,6 +4,7 @@ import {
   normalizeSshAuthMethod,
   SSH_KEY_PATH_PLACEHOLDER,
   SSH_AUTH_METHODS,
+  usesPrivateKeyAuthentication,
 } from "./connectionProfileUtils";
 import type { SshFormActions, SshFormState, SshProfileOptions } from "./connectionDialogTypes";
 import {
@@ -92,7 +93,7 @@ export function SshConnectionForm({
           ))}
         </select>
       </div>
-      {formState.authMethod === "public_key" && (
+      {usesPrivateKeyAuthentication(formState.authMethod) && (
         <div>
           <label className="label">{t("connection.private_key_path")}</label>
           <div className="connection-dialog__file-row">
@@ -114,6 +115,9 @@ export function SshConnectionForm({
               {t("connection.select_file")}
             </button>
           </div>
+          {formState.authMethod === "auto" && (
+            <p className="connection-dialog__field-help">{t("connection.auto_private_key_desc")}</p>
+          )}
         </div>
       )}
       <div>

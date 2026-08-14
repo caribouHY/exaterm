@@ -64,6 +64,7 @@ impl BackendCommandError {
             "The Telnet connection attempt was cancelled" => "telnet.connect_cancelled",
             "The Serial connection attempt was cancelled" => "serial.connect_cancelled",
             "The SSH authentication method is invalid" => "ssh.invalid_auth_method",
+            "SSH automatic authentication failed" => "ssh.automatic_authentication_failed",
             "The SSH authentication prompt was cancelled" => "ssh.auth_prompt_cancelled",
             "The SSH authentication prompt timed out" => "ssh.auth_prompt_timed_out",
             "The SSH authentication response count does not match the prompt count" => {
@@ -345,6 +346,10 @@ mod tests {
             )
             .code,
             "ssh.auth_prompt_response_mismatch"
+        );
+        assert_eq!(
+            BackendCommandError::from_message("SSH automatic authentication failed").code,
+            "ssh.automatic_authentication_failed"
         );
     }
 

@@ -39,18 +39,17 @@ export function CredentialPromptModal({
   onValueChange,
 }: CredentialPromptModalProps) {
   const { t } = useTranslation();
-  const credentialTitle =
-    credentialPrompt.authMethod === "public_key"
-      ? t("connection.key_passphrase_prompt_title")
-      : t("connection.password_prompt_title");
-  const credentialLabel =
-    credentialPrompt.authMethod === "public_key"
-      ? t("connection.key_passphrase")
-      : t("connection.password");
-  const credentialDescription =
-    credentialPrompt.authMethod === "public_key"
-      ? t("connection.key_passphrase_prompt_desc")
-      : t("connection.password_prompt_desc");
+  const promptsForKeyPassphrase =
+    credentialPrompt.authMethod === "auto" || credentialPrompt.authMethod === "public_key";
+  const credentialTitle = promptsForKeyPassphrase
+    ? t("connection.key_passphrase_prompt_title")
+    : t("connection.password_prompt_title");
+  const credentialLabel = promptsForKeyPassphrase
+    ? t("connection.key_passphrase")
+    : t("connection.password");
+  const credentialDescription = promptsForKeyPassphrase
+    ? t("connection.key_passphrase_prompt_desc")
+    : t("connection.password_prompt_desc");
 
   return (
     <div

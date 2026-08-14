@@ -154,7 +154,7 @@ fn normalize_input(
             }
             if !matches!(
                 auth_method.as_str(),
-                "password" | "keyboard_interactive" | "public_key"
+                "auto" | "password" | "keyboard_interactive" | "public_key"
             ) {
                 return Err("Invalid SSH connection history authentication method".into());
             }
@@ -381,6 +381,30 @@ mod tests {
             normalized.connection_info,
             WorkspaceConnectionInfo::Ssh { auth_method, .. }
                 if auth_method == "keyboard_interactive"
+        ));
+    }
+
+    #[test]
+    fn automatic_ssh_history_is_valid_without_a_connection_key() {
+        let mut input = ssh_input("router.example", "operator");
+        if let WorkspaceConnectionInfo::Ssh {
+            auth_method,
+            private_key_path,
+            ..
+        } = &mut input.connection_info
+        {
+            *auth_method = "auto".into();
+            *private_key_path = None;
+        }
+
+        let normalized = normalize_input(input).unwrap();
+        assert!(matches!(
+            normalized.connection_info,
+            WorkspaceConnectionInfo::Ssh {
+                auth_method,
+                private_key_path: None,
+                ..
+            } if auth_method == "auto"
         ));
     }
 

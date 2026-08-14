@@ -79,7 +79,7 @@ export default function ConnectionDialog({
   const [host, setHost] = useState("192.168.1.1");
   const [port, setPort] = useState("22");
   const [username, setUsername] = useState("admin");
-  const [authMethod, setAuthMethod] = useState<SshAuthMethod>("password");
+  const [authMethod, setAuthMethod] = useState<SshAuthMethod>("auto");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [jumpProfileId, setJumpProfileId] = useState("");
   const [missingInitialJumpProfileId, setMissingInitialJumpProfileId] = useState("");
@@ -419,6 +419,7 @@ export default function ConnectionDialog({
       jumpProfileId,
       encoding,
       terminalMode: sshTerminalMode,
+      defaultPrivateKeyPath: config?.ssh.default_private_key_path ?? "",
     },
     telnet: {
       host: telnetHost,
@@ -447,7 +448,7 @@ export default function ConnectionDialog({
       setHost(request.host ?? "");
       setUsername(request.username ?? "");
       setPort(String(request.port ?? 22));
-      setAuthMethod("password");
+      setAuthMethod("auto");
       setPrivateKeyPath("");
       setJumpProfileId("");
       setEncoding("utf-8");

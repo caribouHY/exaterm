@@ -101,7 +101,8 @@ mod terminal_mode_tests {
 
 pub(crate) fn normalize_profile_auth_method(value: Option<&str>) -> Result<String, String> {
     match value.map(str::trim).filter(|value| !value.is_empty()) {
-        None | Some("password") => Ok("password".into()),
+        None | Some("auto") => Ok("auto".into()),
+        Some("password") => Ok("password".into()),
         Some("keyboard_interactive") => Ok("keyboard_interactive".into()),
         Some("public_key") => Ok("public_key".into()),
         Some(_) => Err("The SSH authentication method is invalid".into()),
@@ -111,10 +112,19 @@ pub(crate) fn normalize_profile_auth_method(value: Option<&str>) -> Result<Strin
 pub(crate) fn ssh_credential_required(
     auth_method: &str,
     private_key_path: Option<&str>,
+    default_private_key_path: Option<&str>,
 ) -> Result<bool, String> {
     match auth_method {
         "password" => Ok(false),
         "keyboard_interactive" => Ok(false),
+        "auto" => {
+            let private_key_path = normalize_profile_string(private_key_path)
+                .or_else(|| normalize_profile_string(default_private_key_path));
+            let Some(private_key_path) = private_key_path else {
+                return Ok(false);
+            };
+            Ok(ssh::private_key_requires_passphrase(&private_key_path).unwrap_or(false))
+        }
         "public_key" => {
             let private_key_path = private_key_path
                 .map(str::trim)
@@ -228,7 +238,7 @@ pub(crate) fn list_connection_profiles_from_config(
                             .as_deref()
                             .map(str::trim)
                             .filter(|value| !value.is_empty())
-                            .unwrap_or("password")
+                            .unwrap_or("auto")
                             .to_string(),
                     ),
                     encoding: Some(normalize_profile_encoding(profile.encoding.as_deref())),
@@ -236,11 +246,15 @@ pub(crate) fn list_connection_profiles_from_config(
                         profile.terminal_mode.as_deref(),
                     )),
                     private_key_configured: Some(
-                        profile
-                            .private_key_path
-                            .as_deref()
-                            .map(str::trim)
-                            .is_some_and(|value| !value.is_empty()),
+                        normalize_profile_string(profile.private_key_path.as_deref()).is_some()
+                            || (profile
+                                .auth_method
+                                .as_deref()
+                                .is_some_and(|value| value.trim() == "auto")
+                                && normalize_profile_string(Some(
+                                    &config.ssh.default_private_key_path,
+                                ))
+                                .is_some()),
                     ),
                     jump_profile_id: normalize_profile_string(profile.jump_profile_id.as_deref()),
                     memo,

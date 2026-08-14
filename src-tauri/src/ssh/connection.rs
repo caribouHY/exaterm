@@ -244,13 +244,14 @@ fn prepare_connect(
         options.request_id.clone(),
         prompt_window_id.to_string(),
     );
+    let app_config = config_load().map_err(|error| error.message)?;
     let auth = build_auth_request(
         options.auth_method.clone(),
         options.password.clone(),
         options.private_key_path.clone(),
         options.key_passphrase.clone(),
+        Some(app_config.ssh.default_private_key_path.clone()),
     )?;
-    let app_config = config_load().map_err(|error| error.message)?;
     let jump_profile = resolve_jump_profile(&app_config, options.jump_profile_id.as_deref(), None)?;
     let config = Arc::new(build_client_config(&app_config.ssh)?);
     let host_verifier = HostKeyVerifier::new(options.host.clone(), options.port);
@@ -452,7 +453,7 @@ async fn authenticate_target(
 ) -> Result<(), String> {
     diagnostic.progress("target", "authenticating");
     diagnostic.info("target: authentication started");
-    let result = authenticate_ssh(handle, username, auth, context).await;
+    let result = authenticate_ssh(handle, username, auth, context, Some(diagnostic)).await;
     match result {
         Ok(()) => {
             diagnostic.info("target: authentication succeeded");

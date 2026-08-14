@@ -284,6 +284,7 @@ fn legacy_client_config_appends_legacy_algorithms() {
     let config = build_client_config(&SshConfig {
         algorithm_mode: "custom".into(),
         algorithms: crate::ssh::legacy_algorithm_selection(),
+        default_private_key_path: String::new(),
     })
     .unwrap();
 
@@ -331,6 +332,7 @@ fn minimal_custom_config() -> SshConfig {
             mac: vec!["hmac-sha2-256".into()],
             compression: vec!["none".into()],
         },
+        default_private_key_path: String::new(),
     }
 }
 
@@ -392,13 +394,14 @@ fn custom_algorithm_validation_rejects_empty_unknown_and_duplicate_values() {
 }
 
 #[test]
-fn auth_request_defaults_to_password() {
-    let request = build_auth_request(None, "secret".to_string(), None, None).unwrap();
+fn auth_request_defaults_to_automatic() {
+    let request = build_auth_request(None, "secret".to_string(), None, None, None).unwrap();
 
     assert_eq!(
         request,
-        SshAuthRequest::Password {
-            password: "secret".to_string()
+        SshAuthRequest::Auto {
+            private_key_path: None,
+            key_passphrase: None,
         }
     );
 }
@@ -410,6 +413,7 @@ fn keyboard_interactive_auth_builds_explicit_request() {
         String::new(),
         None,
         None,
+        None,
     )
     .unwrap();
 
@@ -418,6 +422,8 @@ fn keyboard_interactive_auth_builds_explicit_request() {
 
 #[test]
 fn profile_auth_method_accepts_keyboard_interactive() {
+    assert_eq!(normalize_profile_auth_method(None).unwrap(), "auto");
+    assert_eq!(normalize_profile_auth_method(Some("auto")).unwrap(), "auto");
     assert_eq!(
         normalize_profile_auth_method(Some("keyboard_interactive")).unwrap(),
         "keyboard_interactive"
@@ -430,6 +436,7 @@ fn public_key_auth_requires_private_key_path() {
         Some("public_key".to_string()),
         String::new(),
         Some("  ".to_string()),
+        None,
         None,
     )
     .unwrap_err();
@@ -444,6 +451,7 @@ fn public_key_auth_trims_path_and_empty_passphrase() {
         String::new(),
         Some(" C:\\Users\\me\\.ssh\\id_ed25519 ".to_string()),
         Some("  ".to_string()),
+        None,
     )
     .unwrap();
 
@@ -451,6 +459,62 @@ fn public_key_auth_trims_path_and_empty_passphrase() {
         request,
         SshAuthRequest::PublicKey {
             private_key_path: "C:\\Users\\me\\.ssh\\id_ed25519".to_string(),
+            key_passphrase: None,
+        }
+    );
+}
+
+#[test]
+fn automatic_auth_prefers_connection_key_then_default_key() {
+    let request = build_auth_request(
+        Some("auto".to_string()),
+        String::new(),
+        Some(" connection-key ".to_string()),
+        Some(" passphrase ".to_string()),
+        Some(" default-key ".to_string()),
+    )
+    .unwrap();
+
+    assert_eq!(
+        request,
+        SshAuthRequest::Auto {
+            private_key_path: Some("connection-key".to_string()),
+            key_passphrase: Some("passphrase".to_string()),
+        }
+    );
+
+    let request = build_auth_request(
+        Some("auto".to_string()),
+        String::new(),
+        None,
+        None,
+        Some(" default-key ".to_string()),
+    )
+    .unwrap();
+    assert_eq!(
+        request,
+        SshAuthRequest::Auto {
+            private_key_path: Some("default-key".to_string()),
+            key_passphrase: None,
+        }
+    );
+}
+
+#[test]
+fn automatic_auth_skips_public_key_when_no_key_is_configured() {
+    let request = build_auth_request(
+        Some("auto".to_string()),
+        String::new(),
+        Some("  ".to_string()),
+        None,
+        Some("  ".to_string()),
+    )
+    .unwrap();
+
+    assert_eq!(
+        request,
+        SshAuthRequest::Auto {
+            private_key_path: None,
             key_passphrase: None,
         }
     );

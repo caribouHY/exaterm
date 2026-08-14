@@ -17,6 +17,7 @@ export const SSH_ENCODINGS: { label: string; value: Encoding }[] = [
 ];
 
 export const SSH_AUTH_METHODS: { labelKey: string; value: SshAuthMethod }[] = [
+  { labelKey: "connection.auth_auto", value: "auto" },
   { labelKey: "connection.auth_password", value: "password" },
   { labelKey: "connection.auth_keyboard_interactive", value: "keyboard_interactive" },
   { labelKey: "connection.auth_public_key", value: "public_key" },
@@ -29,13 +30,28 @@ export const normalizeEncoding = (encoding: string | null | undefined): Encoding
 };
 
 export const normalizeSshAuthMethod = (authMethod: string | null | undefined): SshAuthMethod => {
+  if (authMethod == null || authMethod.trim() === "") return "auto";
   return SSH_AUTH_METHODS.some((entry) => entry.value === authMethod)
     ? (authMethod as SshAuthMethod)
     : "password";
 };
 
 export const usesPrivateKeyAuthentication = (authMethod: SshAuthMethod): boolean =>
-  authMethod === "public_key";
+  authMethod === "auto" || authMethod === "public_key";
+
+export const resolveSshAuthentication = (
+  authMethod: SshAuthMethod,
+  connectionPrivateKeyPath: string,
+  defaultPrivateKeyPath: string
+): { authMethod: SshAuthMethod; privateKeyPath: string } => {
+  const connectionPath = connectionPrivateKeyPath.trim();
+  if (authMethod === "public_key") return { authMethod, privateKeyPath: connectionPath };
+  if (authMethod !== "auto") return { authMethod, privateKeyPath: "" };
+  return {
+    authMethod,
+    privateKeyPath: connectionPath || defaultPrivateKeyPath.trim(),
+  };
+};
 
 export const normalizeProfileMemo = (memo: string): string | null => {
   const trimmed = memo.trim();

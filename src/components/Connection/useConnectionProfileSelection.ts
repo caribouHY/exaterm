@@ -83,7 +83,7 @@ export const useConnectionProfileSelection = ({
 
   const resetSshProfileFields = useCallback(() => {
     sshSetters.setProfileName("");
-    sshSetters.setAuthMethod("password");
+    sshSetters.setAuthMethod("auto");
     sshSetters.setPrivateKeyPath("");
     sshSetters.setJumpProfileId("");
     sshSetters.setEncoding("utf-8");

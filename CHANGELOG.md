@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added automatic SSH authentication with an optional default private key and fallback through keyboard-interactive and password methods.
 - Added local recent-connection history for successful SSH and Telnet connections, with reusable form values, individual removal, and Settings controls to disable or clear history.
 - Added menu actions and configurable shortcuts for clearing the local terminal display or scrollback buffer without ending the session.
 - Added a pinned command line in Cisco IOS terminals so long command output remains identifiable while scrolling.

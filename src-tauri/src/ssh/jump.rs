@@ -39,6 +39,7 @@ pub(super) async fn connect_jump_profile(
         jump_password.unwrap_or_default(),
         jump_profile.private_key_path.clone(),
         jump_key_passphrase,
+        None,
     )?;
     let jump_verifier = HostKeyVerifier::new(jump_profile.host.clone(), jump_profile.port);
     let mut handle = run_with_attempt(
@@ -144,7 +145,7 @@ async fn authenticate_jump(
         diagnostic.info("jump: host key accepted");
         diagnostic.info("jump: authentication started");
     }
-    let result = authenticate_ssh(handle, username, auth, context).await;
+    let result = authenticate_ssh(handle, username, auth, context, diagnostic).await;
     match result {
         Ok(()) => {
             if let Some(diagnostic) = diagnostic {

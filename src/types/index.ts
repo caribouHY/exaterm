@@ -20,7 +20,7 @@ export interface SshConnectParams {
   rows: number;
 }
 
-export type SshAuthMethod = "password" | "keyboard_interactive" | "public_key";
+export type SshAuthMethod = "auto" | "password" | "keyboard_interactive" | "public_key";
 
 export type HostKeyCheckStatus = "trusted" | "unknown" | "mismatch";
 
@@ -166,6 +166,7 @@ export type LogFormat = "display" | "strip_controls";
 export interface SshConfig {
   algorithm_mode: SshAlgorithmMode;
   algorithms: SshAlgorithmSelection;
+  default_private_key_path: string;
 }
 
 export type SshAlgorithmMode = "default" | "custom";

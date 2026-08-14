@@ -1048,7 +1048,8 @@ export default function App() {
                   {t("mcp.credential_request_title")}
                 </div>
                 <ModalTitle className="app-credential-modal__title" id="mcp-credential-title">
-                  {activeMcpCredentialPrompt.auth_method === "public_key"
+                  {activeMcpCredentialPrompt.auth_method === "public_key" ||
+                  activeMcpCredentialPrompt.auth_method === "auto"
                     ? t("connection.key_passphrase_prompt_title")
                     : t("connection.password_prompt_title")}
                 </ModalTitle>
@@ -1065,7 +1066,8 @@ export default function App() {
                 {t("mcp.credential_request_desc")}
               </ModalDescription>
               <label className="label" htmlFor="mcp-credential-input">
-                {activeMcpCredentialPrompt.auth_method === "public_key"
+                {activeMcpCredentialPrompt.auth_method === "public_key" ||
+                activeMcpCredentialPrompt.auth_method === "auto"
                   ? t("connection.key_passphrase")
                   : t("connection.password")}
               </label>

@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter};
 use crate::ai::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
 use crate::terminal_control::TerminalControlState;
 
-const CURRENT_CONFIG_VERSION: u32 = 6;
+const CURRENT_CONFIG_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppConfig {
@@ -394,12 +394,14 @@ struct SshConfigInput {
     algorithm_mode: Option<String>,
     algorithms: Option<SshAlgorithmSelection>,
     allow_legacy_algorithms: Option<bool>,
+    default_private_key_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SshConfig {
     pub algorithm_mode: String,
     pub algorithms: SshAlgorithmSelection,
+    pub default_private_key_path: String,
 }
 
 impl Default for SshConfig {
@@ -407,6 +409,7 @@ impl Default for SshConfig {
         Self {
             algorithm_mode: default_ssh_algorithm_mode(),
             algorithms: SshAlgorithmSelection::default(),
+            default_private_key_path: String::new(),
         }
     }
 }
@@ -417,10 +420,12 @@ impl<'de> Deserialize<'de> for SshConfig {
         D: Deserializer<'de>,
     {
         let input = SshConfigInput::deserialize(deserializer)?;
+        let default_private_key_path = input.default_private_key_path.unwrap_or_default();
         if let Some(algorithm_mode) = input.algorithm_mode {
             return Ok(Self {
                 algorithm_mode,
                 algorithms: input.algorithms.unwrap_or_default(),
+                default_private_key_path,
             });
         }
 
@@ -428,10 +433,14 @@ impl<'de> Deserialize<'de> for SshConfig {
             return Ok(Self {
                 algorithm_mode: "custom".into(),
                 algorithms: crate::ssh::legacy_algorithm_selection(),
+                default_private_key_path,
             });
         }
 
-        Ok(Self::default())
+        Ok(Self {
+            default_private_key_path,
+            ..Self::default()
+        })
     }
 }
 
@@ -743,6 +752,7 @@ mod tests {
         assert!(!cfg.terminal.include_log_header);
         assert_eq!(cfg.ssh.algorithm_mode, "default");
         assert_eq!(cfg.ssh.algorithms, SshAlgorithmSelection::default());
+        assert_eq!(cfg.ssh.default_private_key_path, "");
         assert!(cfg.saved_connections.is_empty());
     }
 
@@ -776,6 +786,30 @@ mod tests {
         assert!(!cfg.connection_history.enabled);
         let value = serde_json::to_value(&cfg).unwrap();
         assert_eq!(value["connection_history"]["enabled"], false);
+    }
+
+    #[test]
+    fn ssh_default_private_key_path_round_trips() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "config_version": 7,
+                "ssh": {
+                    "algorithm_mode": "default",
+                    "default_private_key_path": "C:\\Users\\me\\.ssh\\id_ed25519"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            cfg.ssh.default_private_key_path,
+            "C:\\Users\\me\\.ssh\\id_ed25519"
+        );
+        let value = serde_json::to_value(cfg).unwrap();
+        assert_eq!(
+            value["ssh"]["default_private_key_path"],
+            "C:\\Users\\me\\.ssh\\id_ed25519"
+        );
     }
 
     #[test]
