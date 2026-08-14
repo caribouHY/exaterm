@@ -7,7 +7,7 @@ description: Prepare ExaTerm release version bumps and release notes. Use when C
 
 ## Overview
 
-Use this skill when preparing a new ExaTerm release version. Keep the release workflow self-contained here; do not duplicate these release-preparation steps in `ai-docs/` or user-facing `docs/`.
+Use this skill when preparing a new ExaTerm release version. Keep the agent workflow self-contained here; do not duplicate these release-preparation steps in human-facing `docs/`.
 
 Run commands from the repository root in Windows PowerShell unless a user explicitly directs otherwise.
 

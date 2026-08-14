@@ -103,6 +103,7 @@ Ollamaは通常APIキーを必要としませんが、ExaTermから到達でき�
 
 - [設定ガイド](docs/CONFIG_JSON_GUIDE.ja.md)
 - [ターミナル CLI ガイド](docs/CLI_GUIDE.ja.md)
+- [ドキュメント索引](docs/README.ja.md)
 
 ## 開発者向けセットアップ
 

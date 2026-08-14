@@ -105,6 +105,7 @@ Configuration files, logs, and related data are stored in the following location
 
 - [Config guide](docs/CONFIG_JSON_GUIDE.en.md)
 - [Terminal CLI guide](docs/CLI_GUIDE.en.md)
+- [Documentation index](docs/README.en.md)
 
 ## Developer Setup
 
