@@ -43,6 +43,12 @@ import {
   sshConnectionAttemptReducer,
 } from "./sshConnectionAttemptModel";
 import { connectionAttemptReducer, initialConnectionAttemptState } from "./connectionAttemptModel";
+import {
+  isActiveConnectionFormValid,
+  validateSerialConnectionForm,
+  validateSshConnectionForm,
+  validateTelnetConnectionForm,
+} from "./connectionFormValidation";
 import "./ConnectionDialog.css";
 
 export default function ConnectionDialog({
@@ -399,8 +405,16 @@ export default function ConnectionDialog({
     }
   };
 
+  const formValidation = {
+    ssh: validateSshConnectionForm({ host, port, username, authMethod, privateKeyPath }),
+    telnet: validateTelnetConnectionForm({ host: telnetHost, port: telnetPort }),
+    serial: validateSerialConnectionForm({ selectedPort }),
+  };
+  const canConnect = isActiveConnectionFormValid(tab, formValidation);
+
   const connectionActions = useConnectionActions({
     tab,
+    canConnect,
     connectingRef,
     setConnecting,
     setError,
@@ -505,6 +519,7 @@ export default function ConnectionDialog({
 
   useConnectionDialogShortcuts({
     connecting,
+    canConnect,
     credentialPrompt,
     onClose,
     onCloseCredentialPrompt: connectionActions.handleCredentialCancel,
@@ -620,6 +635,7 @@ export default function ConnectionDialog({
     terminalMode: sshTerminalMode,
     memo: sshMemo,
     externalControlEnabled: sshExternalControlEnabled,
+    validationErrors: formValidation.ssh.errors,
   };
   const sshFormActions: SshFormActions = {
     onSelectSource: handleSelectSshSource,
@@ -685,6 +701,7 @@ export default function ConnectionDialog({
     terminalMode: telnetTerminalMode,
     memo: telnetMemo,
     externalControlEnabled: telnetExternalControlEnabled,
+    validationErrors: formValidation.telnet.errors,
   };
   const telnetFormActions: TelnetFormActions = {
     onSelectSource: handleSelectTelnetSource,
@@ -707,7 +724,7 @@ export default function ConnectionDialog({
       setTelnetPort(value);
     },
     onPortEnter: () => {
-      void connectionActions.handleConnect();
+      if (canConnect) void connectionActions.handleConnect();
     },
     onEncodingChange: (value) => {
       setError("");
@@ -737,6 +754,7 @@ export default function ConnectionDialog({
         setTab(value);
       }}
       connecting={connecting}
+      canConnect={canConnect}
       error={error}
       historyError={
         connectionHistory.error
@@ -767,6 +785,7 @@ export default function ConnectionDialog({
         parity,
         stopBits,
         terminalMode: serialTerminalMode,
+        validationErrors: formValidation.serial.errors,
       }}
       serialActions={{
         onSelectedPortChange: (value) => {

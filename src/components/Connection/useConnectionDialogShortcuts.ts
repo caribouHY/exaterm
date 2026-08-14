@@ -3,6 +3,7 @@ import type { SshCredentialPrompt } from "./connectionDialogTypes";
 
 interface UseConnectionDialogShortcutsParams {
   connecting: boolean;
+  canConnect: boolean;
   credentialPrompt: SshCredentialPrompt | null;
   onClose: () => void;
   onCloseCredentialPrompt: () => void;
@@ -12,6 +13,7 @@ interface UseConnectionDialogShortcutsParams {
 
 export const useConnectionDialogShortcuts = ({
   connecting,
+  canConnect,
   credentialPrompt,
   onClose,
   onCloseCredentialPrompt,
@@ -36,6 +38,7 @@ export const useConnectionDialogShortcuts = ({
         onCredentialSubmit();
         return;
       }
+      if (!canConnect) return;
       onConnect();
     };
 
@@ -54,6 +57,7 @@ export const useConnectionDialogShortcuts = ({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [
+    canConnect,
     connecting,
     credentialPrompt,
     onClose,

@@ -11,6 +11,11 @@ import type {
 } from "../../types";
 import type { SshConnectionProgressEvent } from "./sshConnectionAttemptModel";
 import type { ConnectionLogState } from "../../features/terminal-logging/connectionLogModel";
+import type {
+  SerialConnectionValidationErrors,
+  SshConnectionValidationErrors,
+  TelnetConnectionValidationErrors,
+} from "./connectionFormValidation";
 
 export interface ConnectionDialogInitialValues {
   connectionInfo: WorkspaceConnectionInfo;
@@ -80,6 +85,7 @@ export interface SshFormState {
   terminalMode: TerminalMode;
   memo: string;
   externalControlEnabled: boolean;
+  validationErrors: SshConnectionValidationErrors;
 }
 
 export interface SshFormActions {
@@ -119,6 +125,7 @@ export interface TelnetFormState {
   terminalMode: TerminalMode;
   memo: string;
   externalControlEnabled: boolean;
+  validationErrors: TelnetConnectionValidationErrors;
 }
 
 export interface TelnetFormActions {
@@ -151,6 +158,7 @@ export interface SerialFormState {
   parity: string;
   stopBits: string;
   terminalMode: TerminalMode;
+  validationErrors: SerialConnectionValidationErrors;
 }
 
 export interface SerialFormActions {
