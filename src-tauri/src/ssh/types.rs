@@ -36,6 +36,10 @@ pub struct SshJumpProfile {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum SshAuthRequest {
+    Auto {
+        private_key_path: Option<String>,
+        key_passphrase: Option<String>,
+    },
     Password {
         password: String,
     },

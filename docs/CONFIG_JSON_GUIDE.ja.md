@@ -29,7 +29,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 ```json
 {
-  "config_version": 6,
+  "config_version": 7,
   "language": "system",
   "updates": {
     "check_on_startup": true
@@ -79,6 +79,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "include_log_header": false
   },
   "ssh": {
+    "default_private_key_path": "",
     "algorithm_mode": "default",
     "algorithms": {
       "kex": [],
@@ -96,7 +97,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 | パラメータ           | 型     | 既定値     | 説明                                                                                                                                            |
 | -------------------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`     | number | `6`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
+| `config_version`     | number | `7`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
 | `language`           | string | `"system"` | 画面表示言語です。`"system"` は OS の言語設定に従います。`"en"` は英語、`"ja"` は日本語です。未対応のシステム言語は英語にフォールバックします。 |
 | `updates`            | object | 下記参照   | 公開済みのExaTerm正式版を自動確認する動作を設定します。                                                                                         |
 | `connection_history` | object | 下記参照   | ローカルのSSH/Telnet接続履歴を設定します。                                                                                                      |
@@ -289,14 +290,15 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 
 ## ssh
 
-| パラメータ                   | 型     | 既定値      | 説明                                                                             |
-| ---------------------------- | ------ | ----------- | -------------------------------------------------------------------------------- |
-| `ssh.algorithm_mode`         | 文字列 | `"default"` | 推奨設定は `"default"`、設定した許可リストを使う場合は `"custom"` を指定します。 |
-| `ssh.algorithms.kex`         | 配列   | `[]`        | カスタム設定で許可する鍵交換アルゴリズムです。                                   |
-| `ssh.algorithms.host_key`    | 配列   | `[]`        | カスタム設定で許可するサーバーホスト鍵アルゴリズムです。                         |
-| `ssh.algorithms.cipher`      | 配列   | `[]`        | カスタム設定で許可する共通鍵暗号です。                                           |
-| `ssh.algorithms.mac`         | 配列   | `[]`        | カスタム設定で許可するメッセージ認証アルゴリズムです。                           |
-| `ssh.algorithms.compression` | 配列   | `[]`        | カスタム設定で許可する圧縮アルゴリズムです。                                     |
+| パラメータ                     | 型     | 既定値      | 説明                                                                                                                                       |
+| ------------------------------ | ------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ssh.default_private_key_path` | 文字列 | `""`        | 自動認証で接続先の秘密鍵が未指定の場合だけ使用するデフォルト秘密鍵です。パスは平文で保存されますが、鍵本文とパスフレーズは保存されません。 |
+| `ssh.algorithm_mode`           | 文字列 | `"default"` | 推奨設定は `"default"`、設定した許可リストを使う場合は `"custom"` を指定します。                                                           |
+| `ssh.algorithms.kex`           | 配列   | `[]`        | カスタム設定で許可する鍵交換アルゴリズムです。                                                                                             |
+| `ssh.algorithms.host_key`      | 配列   | `[]`        | カスタム設定で許可するサーバーホスト鍵アルゴリズムです。                                                                                   |
+| `ssh.algorithms.cipher`        | 配列   | `[]`        | カスタム設定で許可する共通鍵暗号です。                                                                                                     |
+| `ssh.algorithms.mac`           | 配列   | `[]`        | カスタム設定で許可するメッセージ認証アルゴリズムです。                                                                                     |
+| `ssh.algorithms.compression`   | 配列   | `[]`        | カスタム設定で許可する圧縮アルゴリズムです。                                                                                               |
 
 ### 利用可能な SSH アルゴリズム
 
@@ -317,8 +319,8 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 | `username`                 | string または null | SSH ユーザー名です。Telnet プロファイルでは使用しません。                                                                                                                                                                                        |
 | `encoding`                 | string または null | このプロファイルで接続したときのターミナル表示文字コードです。指定できる値は `"utf-8"`、`"shift-jis"`、`"euc-jp"` です。未設定の場合は `"utf-8"` として扱われます。                                                                              |
 | `terminal_mode`            | string または null | このプロファイルで接続したときのターミナルモードです。指定できる値は `"general"`、`"cisco_ios"`、`"arista_eos"`、`"vyos"`、`"fujitsu_sir"`、`"allied_telesis_awplus"`、`"furukawa_fitelnet"` です。未設定の場合は `"general"` として扱われます。 |
-| `auth_method`              | string または null | SSH 認証方式です。指定できる値は `"password"`、`"keyboard_interactive"`、`"public_key"` です。未設定の場合は `"password"` として扱われます。Telnet プロファイルでは使用しません。                                                                |
-| `private_key_path`         | string または null | SSH の `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                                                                                                     |
+| `auth_method`              | string または null | SSH 認証方式です。指定できる値は `"auto"`、`"password"`、`"keyboard_interactive"`、`"public_key"` です。未設定の場合は `"auto"` として扱われます。Telnet プロファイルでは使用しません。                                                          |
+| `private_key_path`         | string または null | SSH の `"auto"` または `"public_key"` 認証で使用する秘密鍵ファイルのパスです。例: `id_ed25519`。ファイル本文とパスフレーズは保存されません。                                                                                                     |
 | `jump_profile_id`          | string または null | SSH 踏み台プロファイルの ID です。参照先は保存済み SSH プロファイルである必要があります。踏み台は 1 段のみ対応し、多段指定は拒否されます。                                                                                                       |
 | `memo`                     | string または null | 任意の平文メモです。機種名、用途、作業時の注意などを記録できます。空でないメモは外部制御クライアント向けのプロファイル一覧で返る場合があります。                                                                                                 |
 | `external_control_enabled` | boolean            | 信頼済み CLI / MCP クライアントがこの保存済みプロファイルを一覧表示し、接続に使えるかどうかです。未設定時の既定値は `true` です。                                                                                                                |
@@ -343,7 +345,9 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 
 `jump_profile_id` を設定すると、ExaTerm は参照先の SSH プロファイルへ先に接続し、その踏み台経由で接続先への SSH 接続を開きます。踏み台プロファイルからさらに別の踏み台を参照することはできず、自分自身を踏み台に指定することもできません。踏み台と接続先の SSH パスワードや暗号化鍵パスフレーズは ExaTerm UI で入力し、`config.json` には保存されません。
 
-`password` と `keyboard_interactive` は別々の認証方式であり、相互に自動フォールバックしません。Keyboard-interactive のプロンプトは SSH サーバーから要求されたときに表示します。
+`auto` は OpenSSH の既定優先順のうち ExaTerm が対応する公開鍵、keyboard-interactive、パスワードの順に認証を試します。プロファイルの秘密鍵を `ssh.default_private_key_path` より優先し、どちらも未設定の場合は公開鍵認証を行いません。自動認証で鍵に問題がある場合は接続診断へ表示し、サーバーが対応する次の方式を試します。明示的な `public_key` 認証では、従来どおりプロファイルまたは接続画面で秘密鍵を指定する必要があります。
+
+`password` と `keyboard_interactive` は明示的に選択する別々の認証方式であり、相互にフォールバックしません。Keyboard-interactive のプロンプトは SSH サーバーから要求されたときに表示します。
 
 Telnet の例:
 
@@ -428,6 +432,7 @@ OpenRouter API キーは設定画面から保存してください。ExaTerm は
 
 ```json
 "ssh": {
+  "default_private_key_path": "",
   "algorithm_mode": "custom",
   "algorithms": {
     "kex": ["curve25519-sha256", "diffie-hellman-group14-sha1"],

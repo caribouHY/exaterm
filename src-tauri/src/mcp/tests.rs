@@ -468,6 +468,7 @@ fn list_connection_profiles_filters_by_connection_type() {
 
     assert_eq!(ssh_profiles.len(), 1);
     assert_eq!(ssh_profiles[0].id, "ssh-profile");
+    assert_eq!(ssh_profiles[0].auth_method.as_deref(), Some("auto"));
     assert_eq!(telnet_profiles.len(), 1);
     assert_eq!(telnet_profiles[0].id, "telnet-profile");
 }
@@ -662,6 +663,35 @@ fn prepare_saved_profile_allows_profiles_without_explicit_mcp_flag() {
     .unwrap();
 
     assert_eq!(prepared.profile_id, "default-enabled");
+}
+
+#[test]
+fn prepare_saved_profile_defaults_missing_auth_method_to_auto() {
+    let mut config = AppConfig::default();
+    config.saved_connections = vec![SavedConnection {
+        id: "legacy-auto".into(),
+        connection_type: "ssh".into(),
+        host: Some("192.0.2.10".into()),
+        username: Some("admin".into()),
+        auth_method: None,
+        ..SavedConnection::default()
+    }];
+
+    let prepared = prepare_saved_profile_connection(
+        &config,
+        ConnectSavedProfileArgs {
+            profile_id: "legacy-auto".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
+            cols: None,
+            rows: None,
+        },
+    )
+    .unwrap();
+
+    assert!(matches!(
+        prepared.kind,
+        PreparedConnectionKind::Ssh { auth_method, .. } if auth_method == "auto"
+    ));
 }
 
 #[test]
@@ -1070,14 +1100,16 @@ fn prepare_saved_profile_rejects_invalid_jump_profiles() {
 
 #[test]
 fn ssh_credential_required_defers_password_prompt_and_rejects_missing_key() {
+    assert_eq!(normalize_profile_auth_method(None).unwrap(), "auto");
     assert_eq!(
         normalize_profile_auth_method(Some("keyboard_interactive")).unwrap(),
         "keyboard_interactive"
     );
-    assert!(!ssh_credential_required("password", None).unwrap());
-    assert!(!ssh_credential_required("keyboard_interactive", None).unwrap());
+    assert!(!ssh_credential_required("password", None, None).unwrap());
+    assert!(!ssh_credential_required("keyboard_interactive", None, None).unwrap());
+    assert!(!ssh_credential_required("auto", None, None).unwrap());
 
-    let error = ssh_credential_required("public_key", None).unwrap_err();
+    let error = ssh_credential_required("public_key", None, None).unwrap_err();
     assert!(error.contains("private key"));
 }
 

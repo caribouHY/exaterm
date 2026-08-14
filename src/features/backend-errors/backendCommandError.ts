@@ -45,6 +45,7 @@ const errorKeys: Record<string, string> = {
   "ssh.connect_cancelled": "backend_errors.ssh_connect_cancelled",
   "ssh.connect_request_id_required": "backend_errors.ssh_connect_request_id_required",
   "ssh.invalid_auth_method": "backend_errors.ssh_invalid_auth_method",
+  "ssh.automatic_authentication_failed": "backend_errors.ssh_automatic_authentication_failed",
   "ssh.auth_prompt_cancelled": "backend_errors.ssh_auth_prompt_cancelled",
   "ssh.auth_prompt_timed_out": "backend_errors.ssh_auth_prompt_timed_out",
   "ssh.auth_prompt_response_mismatch": "backend_errors.ssh_auth_prompt_response_mismatch",

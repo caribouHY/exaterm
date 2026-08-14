@@ -87,7 +87,7 @@ async fn connect_prepared_profile(
     let app = runtime.app.as_ref().ok_or_else(|| {
         internal_error("App handle required for external control connections is unavailable")
     })?;
-    let session_id = connect_prepared_profile_session(runtime, app, &prepared).await?;
+    let session_id = connect_prepared_profile_session(runtime, app, config, &prepared).await?;
     let connection_info = workspace_connection_info(&prepared);
 
     finish_created_session(
@@ -132,6 +132,7 @@ fn workspace_connection_info(prepared: &PreparedConnection) -> WorkspaceConnecti
 async fn connect_prepared_profile_session(
     runtime: &ExternalControlRuntime,
     app: &AppHandle,
+    config: &AppConfig,
     prepared: &PreparedConnection,
 ) -> Result<String, ExternalControlError> {
     match &prepared.kind {
@@ -146,6 +147,7 @@ async fn connect_prepared_profile_session(
             connect_prepared_ssh_profile(
                 runtime,
                 app,
+                config,
                 prepared,
                 PreparedSshProfileParts {
                     host,
@@ -178,6 +180,7 @@ struct PreparedSshProfileParts<'a> {
 async fn connect_prepared_ssh_profile(
     runtime: &ExternalControlRuntime,
     app: &AppHandle,
+    config: &AppConfig,
     prepared: &PreparedConnection,
     parts: PreparedSshProfileParts<'_>,
 ) -> Result<String, ExternalControlError> {
@@ -195,6 +198,7 @@ async fn connect_prepared_ssh_profile(
         parts.username,
         parts.auth_method,
         parts.private_key_path,
+        Some(&config.ssh.default_private_key_path),
         &prepared.target,
         &prepared.title,
     )
@@ -260,6 +264,7 @@ async fn request_jump_credential(
         &jump_profile.username,
         &jump_profile.auth_method,
         jump_profile.private_key_path.as_deref(),
+        None,
         &format!(
             "{}@{}:{}",
             jump_profile.username, jump_profile.host, jump_profile.port
@@ -338,10 +343,13 @@ async fn request_profile_credential(
     username: &str,
     auth_method: &str,
     private_key_path: Option<&str>,
+    default_private_key_path: Option<&str>,
     target: &str,
     title: &str,
 ) -> Result<Option<String>, ExternalControlError> {
-    if !ssh_credential_required(auth_method, private_key_path).map_err(invalid_params)? {
+    if !ssh_credential_required(auth_method, private_key_path, default_private_key_path)
+        .map_err(invalid_params)?
+    {
         return Ok(None);
     }
 

@@ -1,4 +1,5 @@
-import { ChevronDown } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { ChevronDown, FolderOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type {
   SshAlgorithmCatalog,
@@ -41,6 +42,16 @@ export function SshSettings({
 }: SshSettingsProps) {
   const { t } = useTranslation();
 
+  const selectDefaultPrivateKey = async () => {
+    try {
+      const selected = await open({ multiple: false });
+      if (!selected || Array.isArray(selected)) return;
+      onChange({ default_private_key_path: selected });
+    } catch {
+      // Closing the native dialog or a platform dialog failure must not modify Settings.
+    }
+  };
+
   const setMode = (algorithm_mode: SshConfig["algorithm_mode"]) => {
     if (!catalog) return;
     onChange({
@@ -64,6 +75,36 @@ export function SshSettings({
   return (
     <div className="settings-ssh">
       <div className="settings-section__title">{t("settings.ssh_settings")}</div>
+      <div className="settings-row">
+        <div className="settings-ssh__mode">
+          <label className="label" htmlFor="settings-ssh-default-private-key">
+            {t("settings.ssh_default_private_key")}
+          </label>
+          <div className="settings-ssh__file-row">
+            <input
+              id="settings-ssh-default-private-key"
+              className="input"
+              value={config.default_private_key_path}
+              onChange={(event) => {
+                onChange({ default_private_key_path: event.target.value });
+              }}
+              placeholder="C:\\Users\\user\\.ssh\\id_ed25519"
+            />
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                void selectDefaultPrivateKey();
+              }}
+              title={t("connection.select_file")}
+            >
+              <FolderOpen size={14} />
+              {t("connection.select_file")}
+            </button>
+          </div>
+          <p className="settings-help">{t("settings.ssh_default_private_key_desc")}</p>
+        </div>
+      </div>
       <div className="settings-row">
         <div className="settings-ssh__mode">
           <label className="label" htmlFor="settings-ssh-algorithm-mode">

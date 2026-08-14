@@ -33,6 +33,16 @@ describe("backendCommandError", () => {
         "fallback"
       )
     ).toBe("translated:backend_errors.ssh_auth_prompt_timed_out");
+    expect(
+      translateBackendCommandError(
+        {
+          code: "ssh.automatic_authentication_failed",
+          message: "SSH automatic authentication failed",
+        },
+        t,
+        "fallback"
+      )
+    ).toBe("translated:backend_errors.ssh_automatic_authentication_failed");
   });
 
   it("translates SSH host key prompt response errors", () => {

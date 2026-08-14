@@ -29,7 +29,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 ```json
 {
-  "config_version": 6,
+  "config_version": 7,
   "language": "system",
   "updates": {
     "check_on_startup": true
@@ -79,6 +79,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "include_log_header": false
   },
   "ssh": {
+    "default_private_key_path": "",
     "algorithm_mode": "default",
     "algorithms": {
       "kex": [],
@@ -96,7 +97,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 | Parameter            | Type   | Default    | Description                                                                                                                                                |
 | -------------------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`     | number | `6`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
+| `config_version`     | number | `7`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
 | `language`           | string | `"system"` | Display language. Use `"system"` to follow the OS language, `"en"` for English, or `"ja"` for Japanese. Unsupported system languages fall back to English. |
 | `updates`            | object | See below  | Controls automatic checks for published stable ExaTerm updates.                                                                                            |
 | `connection_history` | object | See below  | Controls local SSH and Telnet connection history.                                                                                                          |
@@ -289,14 +290,15 @@ When `terminal.include_log_header` is `false`, new session logs start directly w
 
 ## ssh
 
-| Parameter                    | Type   | Default     | Description                                                                                |
-| ---------------------------- | ------ | ----------- | ------------------------------------------------------------------------------------------ |
-| `ssh.algorithm_mode`         | string | `"default"` | Uses `"default"` for the recommended defaults or `"custom"` for the configured allowlists. |
-| `ssh.algorithms.kex`         | array  | `[]`        | Allowed key exchange algorithms in custom mode.                                            |
-| `ssh.algorithms.host_key`    | array  | `[]`        | Allowed server host-key algorithms in custom mode.                                         |
-| `ssh.algorithms.cipher`      | array  | `[]`        | Allowed symmetric ciphers in custom mode.                                                  |
-| `ssh.algorithms.mac`         | array  | `[]`        | Allowed message authentication algorithms in custom mode.                                  |
-| `ssh.algorithms.compression` | array  | `[]`        | Allowed compression algorithms in custom mode.                                             |
+| Parameter                      | Type   | Default     | Description                                                                                                                                                                     |
+| ------------------------------ | ------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ssh.default_private_key_path` | string | `""`        | Default private key used only by Automatic authentication when a connection does not specify one. The path is stored as plaintext; key contents and passphrases are not stored. |
+| `ssh.algorithm_mode`           | string | `"default"` | Uses `"default"` for the recommended defaults or `"custom"` for the configured allowlists.                                                                                      |
+| `ssh.algorithms.kex`           | array  | `[]`        | Allowed key exchange algorithms in custom mode.                                                                                                                                 |
+| `ssh.algorithms.host_key`      | array  | `[]`        | Allowed server host-key algorithms in custom mode.                                                                                                                              |
+| `ssh.algorithms.cipher`        | array  | `[]`        | Allowed symmetric ciphers in custom mode.                                                                                                                                       |
+| `ssh.algorithms.mac`           | array  | `[]`        | Allowed message authentication algorithms in custom mode.                                                                                                                       |
+| `ssh.algorithms.compression`   | array  | `[]`        | Allowed compression algorithms in custom mode.                                                                                                                                  |
 
 ### Available SSH Algorithms
 
@@ -317,8 +319,8 @@ Unknown names, duplicate names, and empty custom categories are rejected. Intern
 | `username`                 | string or null | SSH username. Not used for Telnet profiles.                                                                                                                                                                                     |
 | `encoding`                 | string or null | Initial terminal display encoding for the profile. Supported values are `"utf-8"`, `"shift-jis"`, and `"euc-jp"`. Missing values default to `"utf-8"`.                                                                          |
 | `terminal_mode`            | string or null | Initial terminal mode for the profile. Supported values are `"general"`, `"cisco_ios"`, `"arista_eos"`, `"vyos"`, `"fujitsu_sir"`, `"allied_telesis_awplus"`, and `"furukawa_fitelnet"`. Missing values default to `"general"`. |
-| `auth_method`              | string or null | SSH authentication method. Supported values are `"password"`, `"keyboard_interactive"`, and `"public_key"`. Missing values default to `"password"`. Not used for Telnet profiles.                                               |
-| `private_key_path`         | string or null | Private key file path used with SSH `"public_key"` authentication, such as an `id_ed25519` file. The file contents and passphrase are not stored.                                                                               |
+| `auth_method`              | string or null | SSH authentication method. Supported values are `"auto"`, `"password"`, `"keyboard_interactive"`, and `"public_key"`. Missing values default to `"auto"`. Not used for Telnet profiles.                                         |
+| `private_key_path`         | string or null | Private key file path used with SSH `"auto"` or `"public_key"` authentication, such as an `id_ed25519` file. The file contents and passphrase are not stored.                                                                   |
 | `jump_profile_id`          | string or null | SSH jump host profile ID. The referenced profile must be a saved SSH profile. Only one jump host is supported; nested jump hosts are rejected.                                                                                  |
 | `memo`                     | string or null | Optional plaintext profile memo, such as the device model, role, or operational notes. Non-empty memos may be returned by external-control profile listing.                                                                     |
 | `external_control_enabled` | boolean        | Whether trusted CLI and MCP clients may list and open this saved profile. Missing values default to `true`.                                                                                                                     |
@@ -343,7 +345,9 @@ Example:
 
 When `jump_profile_id` is set, ExaTerm first connects to the referenced SSH profile and then opens the target connection through that jump host. The jump host profile cannot reference another jump host, and a profile cannot reference itself. SSH passwords and encrypted key passphrases for both the jump host and the target are requested in the ExaTerm UI and are not saved in `config.json`.
 
-`password` and `keyboard_interactive` are separate authentication methods. ExaTerm does not automatically fall back between them. Keyboard-interactive prompts are displayed when requested by the SSH server.
+`auto` follows the supported portion of OpenSSH's default preference order: public key, keyboard-interactive, then password. The profile key takes priority over `ssh.default_private_key_path`; when neither is configured, public-key authentication is skipped. A key error in Automatic mode is reported in the connection diagnostics and the next server-supported method is tried. Explicit `public_key` authentication still requires the profile or connection to specify its own key.
+
+`password` and `keyboard_interactive` remain separate explicit authentication methods and do not fall back to one another. Keyboard-interactive prompts are displayed when requested by the SSH server.
 
 Telnet example:
 
@@ -428,6 +432,7 @@ Keep the other fields in the actual `terminal` object. The snippet above only sh
 
 ```json
 "ssh": {
+  "default_private_key_path": "",
   "algorithm_mode": "custom",
   "algorithms": {
     "kex": ["curve25519-sha256", "diffie-hellman-group14-sha1"],

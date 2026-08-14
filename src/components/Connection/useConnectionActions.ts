@@ -24,6 +24,7 @@ import { shouldRecordConnectionHistory } from "./connectionHistoryModel";
 import {
   getConnectionErrorMessage,
   normalizeSshAuthMethod,
+  resolveSshAuthentication,
   usesPrivateKeyAuthentication,
 } from "./connectionProfileUtils";
 import {
@@ -60,6 +61,7 @@ interface UseConnectionActionsParams {
     jumpProfileId: string;
     encoding: Encoding;
     terminalMode: TerminalMode;
+    defaultPrivateKeyPath: string;
   };
   telnet: {
     host: string;
@@ -195,6 +197,7 @@ export const useConnectionActions = ({
       sshPort: number,
       credential: string,
       promptAuthMethod: SshAuthMethod,
+      effectivePrivateKeyPath: string,
       currentJumpCredential: string,
       requestId: string
     ) => {
@@ -208,11 +211,13 @@ export const useConnectionActions = ({
           username: ssh.username,
           password: promptAuthMethod === "password" ? credential : "",
           authMethod: promptAuthMethod,
-          privateKeyPath: ssh.privateKeyPath,
-          keyPassphrase: promptAuthMethod === "public_key" ? credential : "",
+          privateKeyPath: effectivePrivateKeyPath || null,
+          keyPassphrase: usesPrivateKeyAuthentication(promptAuthMethod) ? credential : "",
           jumpProfileId: ssh.jumpProfileId || null,
           jumpPassword: jumpAuthMethod === "password" ? currentJumpCredential : "",
-          jumpKeyPassphrase: jumpAuthMethod === "public_key" ? currentJumpCredential : "",
+          jumpKeyPassphrase: usesPrivateKeyAuthentication(jumpAuthMethod)
+            ? currentJumpCredential
+            : "",
           cols: 120,
           rows: 30,
           encoding: ssh.encoding,
@@ -231,7 +236,9 @@ export const useConnectionActions = ({
         port: sshPort,
         username: ssh.username,
         auth_method: promptAuthMethod,
-        private_key_path: ssh.privateKeyPath || null,
+        private_key_path: usesPrivateKeyAuthentication(promptAuthMethod)
+          ? ssh.privateKeyPath.trim() || null
+          : null,
         jump_profile_id: ssh.jumpProfileId || null,
       };
       await onConnect(
@@ -260,7 +267,12 @@ export const useConnectionActions = ({
       requestId: string,
       currentJumpCredential = jumpCredentialRef.current
     ) => {
-      if (!usesPrivateKeyAuthentication(ssh.authMethod)) {
+      const { authMethod: effectiveAuthMethod, privateKeyPath: effectivePrivateKeyPath } =
+        resolveSshAuthentication(ssh.authMethod, ssh.privateKeyPath, ssh.defaultPrivateKeyPath);
+      if (
+        !usesPrivateKeyAuthentication(ssh.authMethod) ||
+        (ssh.authMethod === "auto" && !effectivePrivateKeyPath)
+      ) {
         const startLogOnConnection = await getStartLogOnConnectionPreference();
         if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
         jumpCredentialRef.current = "";
@@ -268,16 +280,35 @@ export const useConnectionActions = ({
           startLogOnConnection,
           sshPort,
           "",
-          ssh.authMethod,
+          effectiveAuthMethod,
+          effectivePrivateKeyPath,
           currentJumpCredential,
           requestId
         );
         return;
       }
 
-      const requiresPassphrase = await invoke<boolean>("ssh_private_key_requires_passphrase", {
-        privateKeyPath: ssh.privateKeyPath,
-      });
+      let requiresPassphrase: boolean;
+      try {
+        requiresPassphrase = await invoke<boolean>("ssh_private_key_requires_passphrase", {
+          privateKeyPath: effectivePrivateKeyPath,
+        });
+      } catch (error: unknown) {
+        if (ssh.authMethod !== "auto") throw error;
+        const startLogOnConnection = await getStartLogOnConnectionPreference();
+        if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+        jumpCredentialRef.current = "";
+        await performSshConnect(
+          startLogOnConnection,
+          sshPort,
+          "",
+          "auto",
+          effectivePrivateKeyPath,
+          currentJumpCredential,
+          requestId
+        );
+        return;
+      }
       if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
       if (requiresPassphrase) {
         openCredentialPrompt(
@@ -286,7 +317,7 @@ export const useConnectionActions = ({
           sshPort,
           ssh.username,
           ssh.authMethod,
-          ssh.privateKeyPath
+          effectivePrivateKeyPath
         );
         setBusy(false);
         return;
@@ -299,7 +330,8 @@ export const useConnectionActions = ({
         startLogOnConnection,
         sshPort,
         "",
-        "public_key",
+        effectiveAuthMethod,
+        effectivePrivateKeyPath,
         currentJumpCredential,
         requestId
       );
@@ -319,6 +351,11 @@ export const useConnectionActions = ({
       const jumpUsername = jumpProfile.username ?? "";
       const jumpPrivateKeyPath = jumpProfile.private_key_path ?? "";
       const jumpAuthMethod = normalizeSshAuthMethod(jumpProfile.auth_method);
+      const { privateKeyPath: effectiveJumpPrivateKeyPath } = resolveSshAuthentication(
+        jumpAuthMethod,
+        jumpPrivateKeyPath,
+        ssh.defaultPrivateKeyPath
+      );
       if (!jumpProfile.host || !jumpUsername) {
         throw new Error(t("connection.jump_profile_incomplete", { profile: ssh.jumpProfileId }));
       }
@@ -330,20 +367,30 @@ export const useConnectionActions = ({
           jumpPort,
           jumpUsername,
           jumpAuthMethod,
-          jumpPrivateKeyPath,
+          effectiveJumpPrivateKeyPath,
           sshPort
         );
         setBusy(false);
       };
 
-      if (!usesPrivateKeyAuthentication(jumpAuthMethod)) {
+      if (
+        !usesPrivateKeyAuthentication(jumpAuthMethod) ||
+        (jumpAuthMethod === "auto" && !effectiveJumpPrivateKeyPath)
+      ) {
         await continueSshConnect(sshPort, requestId, "");
         return;
       }
 
-      const requiresPassphrase = await invoke<boolean>("ssh_private_key_requires_passphrase", {
-        privateKeyPath: jumpPrivateKeyPath,
-      });
+      let requiresPassphrase: boolean;
+      try {
+        requiresPassphrase = await invoke<boolean>("ssh_private_key_requires_passphrase", {
+          privateKeyPath: effectiveJumpPrivateKeyPath,
+        });
+      } catch (error: unknown) {
+        if (jumpAuthMethod !== "auto") throw error;
+        await continueSshConnect(sshPort, requestId, "");
+        return;
+      }
       if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
       if (requiresPassphrase) {
         promptForJumpCredential();
@@ -408,6 +455,7 @@ export const useConnectionActions = ({
         credentialPrompt.port,
         credential,
         credentialPrompt.authMethod,
+        credentialPrompt.privateKeyPath,
         jumpCredential,
         requestId
       );
