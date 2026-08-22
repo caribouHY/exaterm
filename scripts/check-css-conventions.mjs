@@ -5,9 +5,29 @@ import { pathToFileURL } from "node:url";
 
 const SRC_DIR = path.join(process.cwd(), "src");
 
+const GLOBAL_STYLE_ENTRY_FILE = "src/styles/index.css";
+const ORDERED_GLOBAL_STYLE_SOURCE_FILES = [
+  "src/styles/tokens.css",
+  "src/styles/foundation/reset.css",
+  "src/styles/foundation/base.css",
+  "src/styles/foundation/scrollbar.css",
+  "src/styles/utilities.css",
+  "src/styles/components/controls.css",
+  "src/styles/components/shared-ui.css",
+  "src/styles/motion.css",
+];
+
 export const CSS_ARCHITECTURE = {
-  tokenSourceFiles: new Set(["src/index.css"]),
-  sharedStyleSourceFiles: new Set(["src/index.css"]),
+  globalStyleEntryFile: GLOBAL_STYLE_ENTRY_FILE,
+  orderedGlobalStyleSourceFiles: ORDERED_GLOBAL_STYLE_SOURCE_FILES,
+  globalStyleSourceFiles: new Set([GLOBAL_STYLE_ENTRY_FILE, ...ORDERED_GLOBAL_STYLE_SOURCE_FILES]),
+  tokenSourceFiles: new Set(["src/styles/tokens.css"]),
+  sharedStyleSourceFiles: new Set([
+    "src/styles/utilities.css",
+    "src/styles/components/controls.css",
+    "src/styles/components/shared-ui.css",
+    "src/styles/motion.css",
+  ]),
   maxSelectorDepth: 4,
   featureStylesheets: new Map([
     [
@@ -98,6 +118,92 @@ export function toRepoPath(filePath) {
 
 export function stripCommentsPreservingLines(content) {
   return content.replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n]/g, " "));
+}
+
+export function findStylesheetImports(file, content) {
+  const imports = [];
+  const cleanContent = stripCommentsPreservingLines(content);
+  const importPattern = /^\s*@import\s+(?:url\()?['"]([^'"]+)['"]\)?\s*;/gm;
+  let match;
+
+  while ((match = importPattern.exec(cleanContent)) !== null) {
+    const importedFile = path.posix.normalize(path.posix.join(path.posix.dirname(file), match[1]));
+    imports.push({ file: importedFile, line: lineForIndex(cleanContent, match.index) });
+  }
+
+  return imports;
+}
+
+export function checkGlobalStyleEntry(file, content) {
+  const issues = [];
+  const imports = findStylesheetImports(file, content);
+  const actualFiles = imports.map((entry) => entry.file);
+  const expectedFiles = CSS_ARCHITECTURE.orderedGlobalStyleSourceFiles;
+
+  if (
+    actualFiles.length !== expectedFiles.length ||
+    actualFiles.some((importedFile, index) => importedFile !== expectedFiles.at(index))
+  ) {
+    issues.push({
+      file,
+      line: 1,
+      rule: "global-style-import-order",
+      property: "@import",
+      value: actualFiles.join(", "),
+      message: `Import each registered global source once in this order: ${expectedFiles.join(", ")}.`,
+    });
+  }
+
+  const importPattern = /^\s*@import\s+(?:url\()?['"][^'"]+['"]\)?\s*;/gm;
+  const remainingContent = stripCommentsPreservingLines(content).replace(importPattern, "").trim();
+  if (remainingContent.length > 0) {
+    issues.push({
+      file,
+      line: 1,
+      rule: "global-style-entry-content",
+      property: "stylesheet",
+      value: file,
+      message: "Keep the global entry import-only so cascade order remains explicit.",
+    });
+  }
+
+  return issues;
+}
+
+export function checkGlobalStyleSources(stylesheets) {
+  const issues = [];
+  const stylesheetFiles = new Set(stylesheets.map(({ file }) => file));
+  const globalEntry = stylesheets.find(
+    ({ file }) => file === CSS_ARCHITECTURE.globalStyleEntryFile
+  );
+
+  if (!globalEntry) {
+    issues.push({
+      file: CSS_ARCHITECTURE.globalStyleEntryFile,
+      line: 1,
+      rule: "global-style-entry-missing",
+      property: "stylesheet",
+      value: CSS_ARCHITECTURE.globalStyleEntryFile,
+      message: "Keep one registered global stylesheet entry imported by src/main.tsx.",
+    });
+  } else {
+    issues.push(...checkGlobalStyleEntry(globalEntry.file, globalEntry.content));
+  }
+
+  for (const sourceFile of CSS_ARCHITECTURE.orderedGlobalStyleSourceFiles) {
+    if (!stylesheetFiles.has(sourceFile)) {
+      issues.push({
+        file: sourceFile,
+        line: 1,
+        rule: "global-style-source-missing",
+        property: "stylesheet",
+        value: sourceFile,
+        message: "Keep every registered global style source present in the source tree.",
+      });
+    }
+  }
+
+  return issues;
 }
 
 export function findRootTokenRanges(content) {
@@ -301,7 +407,7 @@ export function checkStylesheetStructure(file, content, sharedClasses = new Set(
   }
 
   const policy = CSS_ARCHITECTURE.featureStylesheets.get(file);
-  if (!policy && !CSS_ARCHITECTURE.sharedStyleSourceFiles.has(file)) {
+  if (!policy && !CSS_ARCHITECTURE.globalStyleSourceFiles.has(file)) {
     issues.push({
       file,
       line: 1,
@@ -495,7 +601,7 @@ export function checkDeclaration(file, declaration) {
     issues.push({
       ...declaration,
       rule: "raw-color",
-      message: "Use a design token from src/index.css instead of a raw color.",
+      message: "Use a design token from src/styles/tokens.css instead of a raw color.",
     });
   }
 
@@ -537,8 +643,19 @@ export function formatIssue(issue) {
   return `${issue.file}:${issue.line} [${issue.rule}] ${issue.property}: ${issue.value}\n  ${issue.message}`;
 }
 
-export function checkStylesheets(stylesheets) {
+export function checkStylesheets(stylesheets, { requireGlobalStyleSources = false } = {}) {
   const issues = [];
+
+  if (requireGlobalStyleSources) {
+    issues.push(...checkGlobalStyleSources(stylesheets));
+  } else {
+    const globalEntry = stylesheets.find(
+      ({ file }) => file === CSS_ARCHITECTURE.globalStyleEntryFile
+    );
+    if (globalEntry) {
+      issues.push(...checkGlobalStyleEntry(globalEntry.file, globalEntry.content));
+    }
+  }
 
   const globalTokens = new Set(
     stylesheets
@@ -602,7 +719,7 @@ export async function checkCssFiles(cssFiles) {
     stylesheets.push({ file, content });
   }
 
-  return checkStylesheets(stylesheets);
+  return checkStylesheets(stylesheets, { requireGlobalStyleSources: true });
 }
 
 export async function run() {
