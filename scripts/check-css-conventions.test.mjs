@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   CSS_ARCHITECTURE,
   checkDeclaration,
+  checkGlobalStyleEntry,
+  checkGlobalStyleSources,
   checkStylesheets,
   checkStylesheetStructure,
   findCustomPropertyDefinitions,
@@ -282,7 +284,7 @@ test("requires new feature stylesheets to declare ownership", () => {
 
 test("reports custom property usages with no definition across stylesheets", () => {
   const issues = checkStylesheets([
-    { file: "src/index.css", content: ":root { --defined: #fff; }" },
+    { file: "src/styles/tokens.css", content: ":root { --defined: #fff; }" },
     {
       file: "src/components/AI/AIChatPanel.css",
       content: ".ai-panel { color: var(--defined); background: var(--missing); }",
@@ -298,7 +300,7 @@ test("reports custom property usages with no definition across stylesheets", () 
 
 test("allows a feature-scoped custom property within its own stylesheet", () => {
   const issues = checkStylesheets([
-    { file: "src/index.css", content: ":root { --global: #fff; }" },
+    { file: "src/styles/tokens.css", content: ":root { --global: #fff; }" },
     {
       file: "src/components/Settings/SettingsPanel.css",
       content:
@@ -311,7 +313,7 @@ test("allows a feature-scoped custom property within its own stylesheet", () => 
 
 test("rejects a feature-scoped custom property used by another stylesheet", () => {
   const issues = checkStylesheets([
-    { file: "src/index.css", content: ":root { --global: #fff; }" },
+    { file: "src/styles/tokens.css", content: ":root { --global: #fff; }" },
     {
       file: "src/components/Settings/SettingsPanel.css",
       content: ".settings-panel { --settings-gap: 12px; gap: var(--settings-gap); }",
@@ -327,4 +329,50 @@ test("rejects a feature-scoped custom property used by another stylesheet", () =
     ["undefined-custom-property"]
   );
   assert.equal(issues.at(0)?.value, "--settings-gap");
+});
+
+test("accepts the import-only global entry in the registered cascade order", () => {
+  const content = CSS_ARCHITECTURE.orderedGlobalStyleSourceFiles
+    .map((file) => {
+      const relativeFile = file.replace("src/styles/", "./");
+      return `@import "${relativeFile}";`;
+    })
+    .join("\n");
+
+  assert.deepEqual(checkGlobalStyleEntry(CSS_ARCHITECTURE.globalStyleEntryFile, content), []);
+});
+
+test("rejects missing or reordered global imports", () => {
+  const content = '@import "./foundation/reset.css";\n@import "./tokens.css";';
+  const issues = checkGlobalStyleEntry(CSS_ARCHITECTURE.globalStyleEntryFile, content);
+
+  assert.deepEqual(
+    issues.map(({ rule }) => rule),
+    ["global-style-import-order"]
+  );
+});
+
+test("keeps the global entry import-only", () => {
+  const imports = CSS_ARCHITECTURE.orderedGlobalStyleSourceFiles
+    .map((file) => `@import "${file.replace("src/styles/", "./")}";`)
+    .join("\n");
+  const issues = checkGlobalStyleEntry(
+    CSS_ARCHITECTURE.globalStyleEntryFile,
+    `${imports}\nbody { color: var(--text-primary); }`
+  );
+
+  assert.deepEqual(
+    issues.map(({ rule }) => rule),
+    ["global-style-entry-content"]
+  );
+});
+
+test("requires the registered entry and sources during a complete source scan", () => {
+  const issues = checkGlobalStyleSources([]);
+
+  assert.equal(issues.at(0)?.rule, "global-style-entry-missing");
+  assert.equal(
+    issues.filter(({ rule }) => rule === "global-style-source-missing").length,
+    CSS_ARCHITECTURE.orderedGlobalStyleSourceFiles.length
+  );
 });

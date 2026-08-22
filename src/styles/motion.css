@@ -1,0 +1,66 @@
+/* ============================================
+   Animations
+   ============================================ */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn var(--transition-normal) forwards;
+}
+.animate-slide-right {
+  animation: slideInRight var(--transition-slow) forwards;
+}
+.animate-slide-up {
+  animation: slideInUp var(--transition-normal) forwards;
+}
+.animate-pulse {
+  animation: pulse 2s infinite;
+}
+.animate-spin {
+  animation: spin 1s linear infinite;
+}

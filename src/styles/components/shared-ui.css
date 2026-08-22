@@ -1,0 +1,200 @@
+/* ============================================
+   Shared UI Patterns
+   ============================================ */
+
+.ui-message {
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ui-message--error {
+  border-color: var(--accent-danger-border);
+  background: var(--accent-danger-muted);
+  color: var(--accent-red);
+}
+
+.ui-message--warning {
+  border-color: var(--accent-warning-border);
+  background: var(--accent-warning-muted);
+  color: var(--accent-yellow);
+}
+
+.ui-message--success {
+  border-color: var(--accent-success-border);
+  background: var(--accent-success-muted);
+  color: var(--accent-green);
+}
+
+.ui-message--info {
+  border-color: var(--border-secondary);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.ui-modal {
+  overflow: hidden;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.ui-modal__header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 14px var(--space-lg);
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.ui-modal__body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+}
+
+.ui-modal__footer {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  border-top: 1px solid var(--border-secondary);
+}
+
+.ui-modal__title {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ui-modal__description {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ui-modal__target {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-modal__busy {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.ui-modal__spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-primary);
+  border-top-color: var(--accent-blue);
+  border-radius: var(--radius-full);
+  animation: spin 0.8s linear infinite;
+}
+
+.ui-empty-state {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: var(--space-xl);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.ui-empty-state__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ui-empty-state__title,
+.ui-empty-state__body {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ui-popover-menu {
+  min-width: 210px;
+  padding: var(--space-xs);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.ui-popover-menu__item {
+  display: grid;
+  width: 100%;
+  height: 32px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: 0 9px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  text-align: left;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.ui-popover-menu__item:hover,
+.ui-popover-menu__item--active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ui-popover-menu__item:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.ui-popover-menu__item:disabled:hover {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.ui-popover-menu__item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-popover-menu__shortcut {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.ui-popover-menu__separator {
+  height: 1px;
+  margin: var(--space-xs) 7px;
+  background: var(--border-secondary);
+}

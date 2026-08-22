@@ -12,7 +12,18 @@ Tailwind CSS and shadcn/ui are not part of the current migration. A later propos
 
 ### Global design system
 
-`src/index.css` currently owns global tokens, the reset and base element rules, common utilities, shared controls, shared UI surfaces, and global motion. Later migration stages will move these responsibilities into files under `src/styles/` behind one ordered global entry point.
+`src/styles/index.css` is the only global entry point. It imports the global layers in this cascade order:
+
+1. `tokens.css`: the existing flat design-token definitions;
+2. `foundation/reset.css`: universal reset rules;
+3. `foundation/base.css`: root sizing and base document styles;
+4. `foundation/scrollbar.css`: global scrollbar styling;
+5. `utilities.css`: shared utility classes;
+6. `components/controls.css`: shared buttons, inputs, selects, and labels;
+7. `components/shared-ui.css`: shared messages, modals, empty states, and popover menus; and
+8. `motion.css`: global keyframes and animation utilities.
+
+`src/main.tsx` imports only this entry point. Keep the entry import-only and register global source files in their intended order in `CSS_ARCHITECTURE`; feature code must not import an individual global layer directly.
 
 Global tokens must be defined in an approved token source. Feature stylesheets may define a custom property only when its meaning and lifetime are scoped to that component. Such a property is private to its stylesheet and must not be referenced by another feature. The existing `--settings-scrollbar-gap` is such a layout-private property; it is not a reusable design token.
 
@@ -56,11 +67,11 @@ Automated CSS checks do not prove GUI appearance, focus behavior, active-session
 - feature-root redefinitions of shared classes; and
 - selectors deeper than four compound levels.
 
-Token and shared-style source paths are centralized in `CSS_ARCHITECTURE`. When the global layer moves from `src/index.css` to `src/styles/`, update those source sets instead of weakening individual rules. Compatibility entries must be narrow, include a reason, and represent an actual external or migration boundary rather than a way to silence a finding.
+Token, global-layer, and shared-style source paths are centralized in `CSS_ARCHITECTURE`. The convention check verifies that `src/styles/index.css` imports every registered global source exactly once and in the declared cascade order. A new file under `src/styles/` must be registered as a global source or as a feature-owned stylesheet; do not weaken individual rules to admit it. Compatibility entries must be narrow, include a reason, and represent an actual external or migration boundary rather than a way to silence a finding.
 
 ## Staged migration
 
-1. Physically split the global stylesheet into tokens, foundation, shared UI, utilities, and motion without changing names or values.
+1. **Completed:** physically split the global stylesheet into tokens, foundation, shared controls, shared UI, utilities, and motion without changing names or values.
 2. Split Settings styles along existing React ownership while preserving its desktop and mobile scrolling contracts.
 3. Split AI styles into panel, messages and Markdown, commands, and composer responsibilities; then split Connection styles if the review size remains manageable.
 4. Introduce primitive, semantic, and intentionally limited component token layers, with semantic tokens remaining the application-facing contract.
