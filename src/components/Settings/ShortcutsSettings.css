@@ -1,0 +1,98 @@
+.settings-shortcuts__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-md);
+}
+
+.settings-shortcuts__header > div {
+  min-width: 0;
+}
+
+.settings-shortcuts__header .settings-section__title {
+  margin-bottom: var(--space-sm);
+}
+
+.settings-shortcuts__header .settings-help {
+  margin: 0;
+}
+
+.settings-shortcuts__list {
+  border-top: 1px solid var(--border-secondary);
+}
+
+.settings-shortcuts__item {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 220px) auto;
+  align-items: center;
+  gap: var(--space-md);
+  min-height: 52px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.settings-shortcuts__description {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-xs);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.settings-shortcuts__error {
+  color: var(--accent-red);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.settings-shortcuts__recorder {
+  min-height: 30px;
+  padding: 0 var(--space-md);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-shortcut);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: left;
+}
+
+.settings-shortcuts__recorder:hover {
+  border-color: var(--border-focus);
+}
+
+.settings-shortcuts__recorder:focus-visible,
+.settings-shortcuts__recorder--active {
+  border-color: var(--border-focus);
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.settings-shortcuts__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+@media (max-width: 760px) {
+  .settings-shortcuts__header,
+  .settings-shortcuts__item {
+    align-items: stretch;
+  }
+
+  .settings-shortcuts__header {
+    flex-direction: column;
+  }
+
+  .settings-shortcuts__item {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-sm);
+    padding: var(--space-md) 0;
+  }
+
+  .settings-shortcuts__actions {
+    justify-content: flex-end;
+  }
+}

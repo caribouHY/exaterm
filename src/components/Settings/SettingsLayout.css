@@ -1,0 +1,100 @@
+.settings-panel {
+  --settings-scrollbar-gap: 12px;
+
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 24px 32px 0;
+  animation: fadeIn 0.2s ease;
+}
+
+.settings-panel h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+}
+
+.settings-section {
+  margin-bottom: 28px;
+}
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: minmax(160px, 200px) minmax(0, 1fr);
+  flex: 1;
+  gap: var(--space-xl);
+  min-height: 0;
+  align-items: stretch;
+}
+
+.settings-content {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-xl);
+  padding-right: var(--settings-scrollbar-gap);
+}
+
+.settings-content .settings-section {
+  margin-bottom: 0;
+}
+
+.settings-section__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-blue);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 14px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.settings-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.settings-row > div {
+  flex: 1;
+}
+
+.settings-row .input,
+.settings-row .select {
+  width: 100%;
+}
+
+.settings-panel .input:focus-visible,
+.settings-panel .select:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.settings-help {
+  margin: 6px 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .settings-panel {
+    padding: var(--space-lg) var(--space-lg) 0;
+  }
+
+  .settings-layout {
+    display: block;
+    overflow-y: auto;
+    padding-right: var(--settings-scrollbar-gap);
+  }
+
+  .settings-content {
+    overflow-y: visible;
+    padding-right: 0;
+  }
+}

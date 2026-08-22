@@ -1,0 +1,70 @@
+.settings-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-shrink: 0;
+  min-height: 52px;
+  margin: 0 -32px;
+  padding: var(--space-sm) 32px;
+  border-top: 1px solid var(--border-secondary);
+  background: var(--bg-surface);
+}
+
+.settings-actions__status,
+.settings-actions__buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.settings-actions__status {
+  flex: 1;
+}
+
+.settings-actions__buttons {
+  flex-shrink: 0;
+}
+
+.settings-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-green);
+  font-size: 12px;
+  animation: fadeIn 0.2s ease;
+}
+
+.settings-unsaved {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.settings-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-red);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .settings-actions {
+    flex-direction: column;
+    align-items: stretch;
+    margin-right: calc(var(--space-lg) * -1);
+    margin-left: calc(var(--space-lg) * -1);
+    padding-right: var(--space-lg);
+    padding-left: var(--space-lg);
+  }
+
+  .settings-actions__status,
+  .settings-actions__buttons {
+    width: 100%;
+  }
+
+  .settings-actions__buttons {
+    justify-content: flex-end;
+  }
+}
