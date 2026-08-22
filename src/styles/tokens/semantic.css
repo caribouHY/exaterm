@@ -91,4 +91,17 @@
   --motion-transition-fast: var(--primitive-duration-120) ease;
   --motion-transition-normal: var(--primitive-duration-200) ease;
   --motion-transition-slow: var(--primitive-duration-350) ease;
+
+  --stack-focus: var(--primitive-layer-1);
+  --stack-terminal-overlay: var(--primitive-layer-2);
+  --stack-tab-indicator: var(--primitive-layer-5);
+  --stack-sticky-control: var(--primitive-layer-6);
+  --stack-local-popover: var(--primitive-layer-10);
+  --stack-command-palette: var(--primitive-layer-20);
+  --stack-titlebar: var(--primitive-layer-100);
+  --stack-connection-overlay: var(--primitive-layer-500);
+  --stack-credential-overlay: var(--primitive-layer-700);
+  --stack-critical-overlay: var(--primitive-layer-750);
+  --stack-menu: var(--primitive-layer-1000);
+  --stack-context-menu: var(--primitive-layer-1200);
 }

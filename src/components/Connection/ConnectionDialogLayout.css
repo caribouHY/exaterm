@@ -1,11 +1,5 @@
 .connection-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--bg-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 500;
+  z-index: var(--stack-connection-overlay);
   animation: fadeIn 0.15s ease;
 }
 
@@ -26,27 +20,27 @@
   flex-shrink: 0;
   gap: 0;
   padding: 0 18px;
-  border-bottom: 1px solid var(--border-secondary);
+  border-bottom: 1px solid var(--color-border-secondary);
 }
 
 .connection-dialog__tab {
   padding: 10px 16px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   background: transparent;
   border: none;
   cursor: pointer;
   position: relative;
-  transition: color var(--transition-fast);
+  transition: color var(--motion-transition-fast);
 }
 
 .connection-dialog__tab:hover {
-  color: var(--text-primary);
+  color: var(--color-text-primary);
 }
 
 .connection-dialog__tab--active {
-  color: var(--text-primary);
+  color: var(--color-text-primary);
 }
 
 .connection-dialog__tab--active::after {
@@ -56,7 +50,7 @@
   left: 0;
   right: 0;
   height: 2px;
-  background: var(--accent-blue);
+  background: var(--color-accent-primary);
 }
 
 .connection-dialog__body {
@@ -70,8 +64,8 @@
 }
 
 .connection-dialog__error-banner:focus-visible {
-  border-radius: var(--radius-sm);
-  outline: var(--focus-ring);
+  border-radius: var(--radius-control);
+  outline: var(--focus-outline);
 }
 
 .connection-dialog__row {
@@ -85,23 +79,23 @@
 
 .connection-dialog__required-mark {
   margin-left: 3px;
-  color: var(--status-error);
+  color: var(--color-status-error);
 }
 
 .connection-dialog__field-error {
   margin: 4px 0 0;
-  color: var(--status-error);
+  color: var(--color-status-error);
   font-size: 11px;
   line-height: 1.4;
 }
 
 .connection-dialog :is(.input, .select)[aria-invalid="true"] {
-  border-color: var(--status-error);
+  border-color: var(--color-status-error);
 }
 
 .connection-dialog :is(.input, .select)[aria-invalid="true"]:focus {
-  border-color: var(--status-error);
-  outline: var(--focus-ring);
+  border-color: var(--color-status-error);
+  outline: var(--focus-outline);
 }
 
 .connection-dialog__profile {
@@ -138,7 +132,7 @@
 }
 
 .connection-dialog__profile-actions span {
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -150,7 +144,7 @@
 
 .connection-dialog__field-help {
   margin-top: 6px;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -159,7 +153,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: var(--text-primary);
+  color: var(--color-text-primary);
   font-size: 12px;
   cursor: pointer;
 }
@@ -173,7 +167,7 @@
 }
 
 .connection-dialog__shortcut {
-  color: var(--text-shortcut);
-  font-family: var(--font-mono);
+  color: var(--color-text-shortcut);
+  font-family: var(--font-family-code);
   font-size: 11px;
 }

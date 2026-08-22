@@ -1,7 +1,7 @@
 .ai-command-list__title {
   font-size: 10px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   -webkit-user-select: none;
@@ -18,9 +18,9 @@
 }
 
 .ai-command__body {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-sm);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-control);
   overflow: hidden;
 }
 
@@ -30,13 +30,13 @@
   justify-content: space-between;
   gap: 8px;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--border-secondary);
+  border-bottom: 1px solid var(--color-border-secondary);
 }
 
 .ai-command__language {
   min-width: 0;
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-code);
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -48,20 +48,20 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-  color: var(--text-on-accent);
-  background: var(--accent-blue);
+  color: var(--color-text-on-accent);
+  background: var(--color-accent-primary);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   padding: 4px 8px;
   font-size: 11px;
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: background var(--motion-transition-fast);
   -webkit-user-select: none;
   user-select: none;
 }
 
 .ai-command__insert:hover {
-  background: var(--accent-blue-hover);
+  background: var(--color-accent-primary-hover);
 }
 
 .ai-command__insert:disabled {
@@ -72,9 +72,9 @@
 .ai-command__code {
   margin: 0;
   padding: 8px;
-  color: var(--text-primary);
-  background: var(--bg-input);
-  font-family: var(--font-mono);
+  color: var(--color-text-primary);
+  background: var(--color-control-background);
+  font-family: var(--font-family-code);
   font-size: 12px;
   line-height: 1.5;
   overflow-x: auto;

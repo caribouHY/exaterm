@@ -9,22 +9,22 @@
   gap: 6px;
   padding: 6px 14px;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  font-family: var(--font-ui);
+  border-radius: var(--radius-control);
+  font-family: var(--font-family-interface);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition:
-    background var(--transition-fast),
-    border-color var(--transition-fast),
-    color var(--transition-fast),
-    opacity var(--transition-fast);
+    background var(--motion-transition-fast),
+    border-color var(--motion-transition-fast),
+    color var(--motion-transition-fast),
+    opacity var(--motion-transition-fast);
   outline: none;
   white-space: nowrap;
 }
 
 .btn:focus-visible {
-  outline: var(--focus-ring);
+  outline: var(--focus-outline);
   outline-offset: 1px;
 }
 
@@ -35,28 +35,28 @@
 }
 
 .btn-primary {
-  background: var(--accent-blue);
-  color: var(--text-on-accent);
-  border-color: var(--accent-blue);
+  background: var(--color-accent-primary);
+  color: var(--color-text-on-accent);
+  border-color: var(--color-accent-primary);
 }
 .btn-primary:hover {
-  background: var(--accent-blue-hover);
+  background: var(--color-accent-primary-hover);
 }
 
 .btn-ghost {
   background: transparent;
-  color: var(--text-primary);
+  color: var(--color-text-primary);
 }
 .btn-ghost:hover {
-  background: var(--bg-hover);
+  background: var(--color-interactive-hover);
 }
 
 .btn-danger {
-  background: var(--accent-red-dim);
-  color: var(--text-on-danger);
+  background: var(--color-accent-danger-dim);
+  color: var(--color-text-on-danger);
 }
 .btn-danger:hover {
-  background: var(--accent-red);
+  background: var(--color-accent-danger);
 }
 
 .btn-sm {
@@ -68,20 +68,20 @@
   padding: 4px;
   background: transparent;
   border: none;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   cursor: pointer;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   transition:
-    background var(--transition-fast),
-    color var(--transition-fast),
-    opacity var(--transition-fast);
+    background var(--motion-transition-fast),
+    color var(--motion-transition-fast),
+    opacity var(--motion-transition-fast);
 }
 .btn-icon:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--color-interactive-hover);
+  color: var(--color-text-primary);
 }
 
 /* ============================================
@@ -89,32 +89,32 @@
    ============================================ */
 
 .input {
-  background: var(--bg-input);
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-family: var(--font-ui);
+  background: var(--color-control-background);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-control);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-interface);
   font-size: 13px;
   padding: 5px 8px;
   outline: none;
-  transition: border-color var(--transition-fast);
+  transition: border-color var(--motion-transition-fast);
   width: 100%;
 }
 
 .input:focus {
-  border-color: var(--border-focus);
+  border-color: var(--color-border-focus);
 }
 
 .input::placeholder {
-  color: var(--text-muted);
+  color: var(--color-text-muted);
 }
 
 .select {
-  background: var(--bg-input);
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-family: var(--font-ui);
+  background: var(--color-control-background);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-control);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-interface);
   font-size: 13px;
   padding: 5px 8px;
   outline: none;
@@ -122,7 +122,7 @@
 }
 
 .select:focus {
-  border-color: var(--border-focus);
+  border-color: var(--color-border-focus);
 }
 
 /* ============================================
@@ -132,7 +132,7 @@
 .label {
   display: block;
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   margin-bottom: 4px;
   font-weight: 500;
 }

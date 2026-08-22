@@ -1,9 +1,9 @@
 .terminal-tabs {
   display: flex;
   align-items: center;
-  height: var(--tab-height);
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-secondary);
+  height: var(--component-tab-height);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border-secondary);
   overflow-x: auto;
   flex-shrink: 0;
   position: relative;
@@ -21,15 +21,15 @@
   padding: 0 12px;
   background: transparent;
   border: none;
-  border-right: 1px solid var(--border-secondary);
-  color: var(--text-secondary);
-  font-family: var(--font-ui);
+  border-right: 1px solid var(--color-border-secondary);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-interface);
   font-size: 12px;
   cursor: pointer;
   transition:
-    background var(--transition-fast),
-    color var(--transition-fast),
-    opacity var(--transition-fast);
+    background var(--motion-transition-fast),
+    color var(--motion-transition-fast),
+    opacity var(--motion-transition-fast);
   white-space: nowrap;
   min-width: 120px;
   max-width: 200px;
@@ -39,17 +39,17 @@
 }
 
 .terminal-tab:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--color-interactive-hover);
+  color: var(--color-text-primary);
 }
 
 .terminal-tab--active {
-  background: var(--bg-base);
-  color: var(--text-primary);
+  background: var(--color-background);
+  color: var(--color-text-primary);
 }
 
 .terminal-tab--dragging {
-  background: var(--bg-active);
+  background: var(--color-interactive-active);
   cursor: grabbing;
   opacity: 0.55;
 }
@@ -60,11 +60,11 @@
   bottom: 2px;
   width: 2px;
   margin-left: -1px;
-  background: var(--text-primary);
-  border-radius: var(--radius-full);
-  box-shadow: var(--shadow-glow);
+  background: var(--color-text-primary);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--effect-accent-glow);
   pointer-events: none;
-  z-index: 5;
+  z-index: var(--stack-tab-indicator);
 }
 
 .terminal-tab--active::after {
@@ -74,7 +74,7 @@
   left: 0;
   right: 0;
   height: 1px;
-  background: var(--bg-base);
+  background: var(--color-background);
 }
 
 .terminal-tab__icon {
@@ -87,17 +87,17 @@
 .terminal-tab__status {
   width: 6px;
   height: 6px;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-pill);
   flex-shrink: 0;
 }
 
 .terminal-tab__status--connected {
-  background: var(--status-connected);
-  box-shadow: var(--shadow-status-connected);
+  background: var(--color-status-connected);
+  box-shadow: var(--component-status-connected-shadow);
 }
 
 .terminal-tab__status--disconnected {
-  background: var(--status-disconnected);
+  background: var(--color-status-disconnected);
 }
 
 .terminal-tab__close {
@@ -106,11 +106,11 @@
   justify-content: center;
   width: 18px;
   height: 18px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   opacity: 0;
   transition:
-    background var(--transition-fast),
-    opacity var(--transition-fast);
+    background var(--motion-transition-fast),
+    opacity var(--motion-transition-fast);
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -120,7 +120,7 @@
 }
 
 .terminal-tab__close:hover {
-  background: var(--bg-active);
+  background: var(--color-interactive-active);
 }
 
 .terminal-tab__label {
@@ -134,28 +134,28 @@
 .terminal-tabs__add {
   position: sticky;
   right: 0;
-  z-index: 6;
+  z-index: var(--stack-sticky-control);
   display: flex;
   align-items: center;
   justify-content: center;
   width: 36px;
   height: 100%;
-  background: var(--bg-surface);
+  background: var(--color-surface);
   border: none;
-  color: var(--text-muted);
+  color: var(--color-text-muted);
   cursor: pointer;
   transition:
-    background var(--transition-fast),
-    color var(--transition-fast);
+    background var(--motion-transition-fast),
+    color var(--motion-transition-fast);
   flex-shrink: 0;
 }
 
 .terminal-tabs__add:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--color-interactive-hover);
+  color: var(--color-text-primary);
 }
 
 .terminal-tabs__context-menu {
   position: fixed;
-  z-index: 1200;
+  z-index: var(--stack-context-menu);
 }

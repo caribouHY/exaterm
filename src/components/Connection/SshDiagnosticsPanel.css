@@ -20,14 +20,14 @@
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
 }
 
 .connection-dialog__diagnostics-toggle:hover {
-  color: var(--text-primary);
+  color: var(--color-text-primary);
 }
 
 .connection-dialog__diagnostics-copy {
@@ -41,11 +41,11 @@
   max-height: 152px;
   overflow: auto;
   padding: 8px 10px;
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-elevated);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-code);
   font-size: 11px;
   line-height: 1.55;
 }
@@ -62,11 +62,11 @@
 }
 
 .connection-dialog__diagnostics-line--error {
-  color: var(--accent-red);
+  color: var(--color-accent-danger);
 }
 
 .connection-dialog__diagnostics-time {
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   opacity: 0.75;
   white-space: nowrap;
 }

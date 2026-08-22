@@ -53,7 +53,7 @@ export function CredentialPromptModal({
 
   return (
     <div
-      className="connection-overlay"
+      className="ui-overlay connection-overlay"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

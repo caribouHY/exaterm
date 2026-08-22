@@ -49,7 +49,7 @@ export function SshHostKeyPromptDialog({
   }, [onAccept, onCancel, prompt.submitting]);
 
   return (
-    <div className="app-credential-overlay">
+    <div className="ui-overlay app-credential-overlay">
       <ModalFrame
         className="app-credential-modal ssh-host-key-prompt"
         role="dialog"

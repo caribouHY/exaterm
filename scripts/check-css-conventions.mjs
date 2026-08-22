@@ -11,7 +11,6 @@ const ORDERED_TOKEN_STYLE_SOURCE_FILES = [
   "src/styles/tokens/primitives.css",
   "src/styles/tokens/semantic.css",
   "src/styles/tokens/components.css",
-  "src/styles/tokens/compatibility.css",
 ];
 const ORDERED_GLOBAL_STYLE_SOURCE_FILES = [
   TOKEN_STYLE_ENTRY_FILE,
@@ -180,33 +179,12 @@ export const CSS_ARCHITECTURE = {
 
 const RAW_COLOR_PATTERN = /(?:#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla)\s*\()/;
 const ALLOWED_RADIUS_TOKENS = new Set([
-  "--radius-sm",
-  "--radius-md",
-  "--radius-lg",
-  "--radius-full",
+  "--radius-control",
+  "--radius-surface",
+  "--radius-dialog",
+  "--radius-pill",
 ]);
 const ZERO_RADIUS = /^(?:0|0px|0rem|0em)$/;
-
-const SHADOW_ALLOWLIST = [
-  {
-    file: "src/components/AI/AIChatComposer.css",
-    property: "box-shadow",
-    value: "0 0 0 2px var(--bg-surface)",
-    reason: "keeps the active context indicator readable on the panel surface",
-  },
-  {
-    file: "src/components/Terminal/TerminalView.css",
-    property: "box-shadow",
-    value: "inset 0 -1px 0 var(--accent-blue-muted)",
-    reason: "marks detected Cisco hostnames without adding a new global token",
-  },
-  {
-    file: "src/components/Terminal/TerminalView.css",
-    property: "box-shadow",
-    value: "inset 0 -1px 0 var(--accent-yellow-muted)",
-    reason: "marks Cisco config-mode hostnames without adding a new global token",
-  },
-];
 
 export async function collectCssFiles(directory) {
   const resolvedDirectory = path.resolve(directory);
@@ -429,7 +407,7 @@ export function checkTokenLayerDependencies(stylesheets) {
           property: "custom-property",
           value: usage.token,
           message:
-            "Token layers may reference only earlier layers: primitive, semantic, component, then compatibility.",
+            "Token layers may reference only earlier layers: primitive, semantic, then component.",
         });
       }
     }
@@ -812,16 +790,10 @@ export function findVarToken(value) {
   return value.match(/var\(\s*(--[\w-]+)/)?.[1];
 }
 
-export function isAllowedShadow(file, declaration) {
-  if (declaration.value === "none" || /var\(\s*--shadow-[\w-]+\s*\)/.test(declaration.value)) {
-    return true;
-  }
-
-  return SHADOW_ALLOWLIST.some(
-    (entry) =>
-      entry.file === file &&
-      entry.property === declaration.property &&
-      entry.value === declaration.value
+export function isAllowedShadow(_file, declaration) {
+  return (
+    declaration.value === "none" ||
+    /var\(\s*--(?:elevation|effect|component)-[\w-]+\s*\)/.test(declaration.value)
   );
 }
 
@@ -845,6 +817,17 @@ export function checkDeclaration(file, declaration) {
     });
   }
 
+  if (
+    declaration.property === "z-index" &&
+    !/^var\(\s*--stack-[\w-]+\s*\)$/.test(declaration.value)
+  ) {
+    issues.push({
+      ...declaration,
+      rule: "z-index",
+      message: "Use a shared --stack-* token so stacking decisions remain centralized.",
+    });
+  }
+
   if (declaration.property.endsWith("radius")) {
     const token = findVarToken(declaration.value);
     if (!ZERO_RADIUS.test(declaration.value) && (!token || !ALLOWED_RADIUS_TOKENS.has(token))) {
@@ -864,7 +847,7 @@ export function checkDeclaration(file, declaration) {
     issues.push({
       ...declaration,
       rule: "local-shadow",
-      message: "Use a shared --shadow-* token, or add a narrow allowlist entry with a reason.",
+      message: "Use a shared elevation, effect, or component token for shadows and filters.",
     });
   }
 

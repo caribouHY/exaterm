@@ -8,7 +8,7 @@
 .log-viewer h2 {
   font-size: 18px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--color-text-primary);
   margin-bottom: 6px;
 }
 
@@ -22,7 +22,7 @@
 
 .log-viewer__subtitle {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
 }
 
 .log-viewer__actions {
@@ -40,18 +40,18 @@
   gap: 6px;
   min-height: 32px;
   padding: 0 12px;
-  border: 1px solid var(--accent-danger-border);
-  border-radius: var(--radius-sm);
-  background: var(--accent-danger-muted);
-  color: var(--accent-red);
+  border: 1px solid var(--color-danger-border);
+  border-radius: var(--radius-control);
+  background: var(--color-danger-muted);
+  color: var(--color-accent-danger);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
 }
 
 .log-viewer__delete-button:hover:not(:disabled) {
-  background: var(--accent-danger-muted-hover);
-  color: var(--text-on-danger);
+  background: var(--color-danger-muted-hover);
+  color: var(--color-text-on-danger);
 }
 
 .log-viewer__delete-button:disabled {
@@ -77,27 +77,27 @@
   padding: 8px 12px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border-primary);
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
 .log-table td {
   padding: 8px 12px;
   font-size: 12px;
-  color: var(--text-primary);
-  border-bottom: 1px solid var(--border-secondary);
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border-secondary);
 }
 
 .log-table tr:hover td {
-  background: var(--bg-hover);
+  background: var(--color-interactive-hover);
 }
 
 .log-table__type {
   display: inline-flex;
   padding: 2px 8px;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-pill);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -105,24 +105,24 @@
 }
 
 .log-table__type--ssh {
-  background: var(--accent-blue-muted);
-  color: var(--accent-blue);
+  background: var(--color-accent-primary-muted);
+  color: var(--color-accent-primary);
 }
 
 .log-table__type--serial {
-  background: var(--accent-green-muted);
-  color: var(--accent-green);
+  background: var(--color-accent-success-muted);
+  color: var(--color-accent-success);
 }
 
 .log-table__type--telnet {
-  background: var(--accent-yellow-muted);
-  color: var(--accent-yellow);
+  background: var(--color-accent-warning-muted);
+  color: var(--color-accent-warning);
 }
 
 .log-table__path {
-  font-family: var(--font-mono);
+  font-family: var(--font-family-code);
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;

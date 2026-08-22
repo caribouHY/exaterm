@@ -3,8 +3,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-md);
-  margin-bottom: var(--space-md);
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
 }
 
 .settings-ssh__custom-header .settings-help {
@@ -18,36 +18,36 @@
 .settings-ssh__file-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-sm);
+  gap: var(--spacing-sm);
   align-items: center;
 }
 
 .settings-ssh__file-row .btn {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--spacing-xs);
   white-space: nowrap;
 }
 
 .settings-ssh__custom {
-  padding-right: var(--space-md);
+  padding-right: var(--spacing-md);
 }
 
 .settings-ssh__group {
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--color-border-subtle);
 }
 
 .settings-ssh__group:last-child {
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .settings-ssh__group summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-md);
+  gap: var(--spacing-md);
   min-height: 36px;
-  color: var(--text-primary);
+  color: var(--color-text-primary);
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
@@ -59,12 +59,12 @@
 }
 
 .settings-ssh__group summary:focus-visible {
-  outline: var(--focus-ring);
+  outline: var(--focus-outline);
   outline-offset: 1px;
 }
 
 .settings-ssh__group summary small {
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   font-size: 11px;
   font-weight: 400;
 }
@@ -72,12 +72,12 @@
 .settings-ssh__group-meta {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--spacing-sm);
   flex-shrink: 0;
 }
 
 .settings-ssh__group-chevron {
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
 }
 
 .settings-ssh__group[open] .settings-ssh__group-chevron {
@@ -87,17 +87,17 @@
 .settings-ssh__algorithm-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-xs) var(--space-lg);
-  padding: var(--space-xs) 0 var(--space-md) var(--space-md);
+  gap: var(--spacing-xs) var(--spacing-lg);
+  padding: var(--spacing-xs) 0 var(--spacing-md) var(--spacing-md);
 }
 
 .settings-ssh__algorithm {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--spacing-sm);
   min-width: 0;
   min-height: 26px;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   cursor: pointer;
 }
 
@@ -111,7 +111,7 @@
 
 .settings-ssh__algorithm code {
   overflow: hidden;
-  color: var(--text-primary);
+  color: var(--color-text-primary);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -119,7 +119,7 @@
 
 .settings-ssh__algorithm small {
   flex-shrink: 0;
-  color: var(--text-muted);
+  color: var(--color-text-muted);
   font-size: 10px;
 }
 

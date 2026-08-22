@@ -72,6 +72,19 @@
   --primitive-duration-200: 200ms;
   --primitive-duration-350: 350ms;
 
+  --primitive-layer-1: 1;
+  --primitive-layer-2: 2;
+  --primitive-layer-5: 5;
+  --primitive-layer-6: 6;
+  --primitive-layer-10: 10;
+  --primitive-layer-20: 20;
+  --primitive-layer-100: 100;
+  --primitive-layer-500: 500;
+  --primitive-layer-700: 700;
+  --primitive-layer-750: 750;
+  --primitive-layer-1000: 1000;
+  --primitive-layer-1200: 1200;
+
   --primitive-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
   --primitive-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
   --primitive-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);

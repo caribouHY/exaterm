@@ -11,10 +11,10 @@ body,
 }
 
 body {
-  font-family: var(--font-ui);
+  font-family: var(--font-family-interface);
   font-size: 13px;
-  color: var(--text-primary);
-  background: var(--bg-base);
+  color: var(--color-text-primary);
+  background: var(--color-background);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   user-select: none;

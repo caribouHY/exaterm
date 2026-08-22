@@ -1,11 +1,5 @@
 .app-update-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 750;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-overlay);
+  z-index: var(--stack-critical-overlay);
 }
 
 .app-update-dialog {
@@ -21,25 +15,25 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-elevated);
+  color: var(--color-text-secondary);
 }
 
 .app-update-dialog__version strong {
-  color: var(--text-primary);
+  color: var(--color-text-primary);
 }
 
 .app-update-dialog__progress {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 
 .app-update-dialog__progress progress {
   width: 100%;
-  accent-color: var(--accent-blue);
+  accent-color: var(--color-accent-primary);
 }
