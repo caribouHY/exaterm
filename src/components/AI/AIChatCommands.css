@@ -1,0 +1,84 @@
+.ai-command-list__title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.ai-command {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 95%;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.ai-command__body {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.ai-command__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.ai-command__language {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-command__insert {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  color: var(--text-on-accent);
+  background: var(--accent-blue);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.ai-command__insert:hover {
+  background: var(--accent-blue-hover);
+}
+
+.ai-command__insert:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ai-command__code {
+  margin: 0;
+  padding: 8px;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+  -webkit-user-select: text;
+  user-select: text;
+}

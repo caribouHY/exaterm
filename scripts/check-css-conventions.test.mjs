@@ -118,7 +118,7 @@ test("measures selector depth by compound selector levels", () => {
 
 test("rejects root token definitions outside approved token sources", () => {
   const issues = checkStylesheetStructure(
-    "src/components/AI/AIChatPanel.css",
+    "src/components/AI/AIChatPanelLayout.css",
     ":root { --feature-color: #fff; }",
     new Set()
   );
@@ -141,7 +141,7 @@ test("allows component-scoped custom properties", () => {
 
 test("requires feature selectors to start from an owned class", () => {
   const issues = checkStylesheetStructure(
-    "src/components/AI/AIChatPanel.css",
+    "src/components/AI/AIChatPanelLayout.css",
     ".connection-dialog .ai-panel { display: block; }",
     new Set()
   );
@@ -154,7 +154,7 @@ test("requires feature selectors to start from an owned class", () => {
 
 test("rejects unscoped element selectors in feature stylesheets", () => {
   const issues = checkStylesheetStructure(
-    "src/components/AI/AIChatPanel.css",
+    "src/components/AI/AIChatPanelLayout.css",
     "button { display: block; }",
     new Set()
   );
@@ -167,7 +167,7 @@ test("rejects unscoped element selectors in feature stylesheets", () => {
 
 test("rejects unowned descendant classes", () => {
   const issues = checkStylesheetStructure(
-    "src/components/AI/AIChatPanel.css",
+    "src/components/AI/AIChatPanelLayout.css",
     ".ai-panel .connection-dialog { display: block; }",
     new Set()
   );
@@ -202,7 +202,7 @@ test("uses the most specific registered prefix for AI component ownership", () =
   );
 
   const issues = checkStylesheetStructure(
-    "src/components/AI/AIChatPanel.css",
+    "src/components/AI/AIChatPanelLayout.css",
     ".ai-panel .ai-assistant-logo { display: block; }",
     new Set()
   );
@@ -237,7 +237,7 @@ test("allows a shared class only when scoped beneath an owned class", () => {
   const sharedClasses = new Set(["btn"]);
   assert.deepEqual(
     checkStylesheetStructure(
-      "src/components/Connection/ConnectionDialog.css",
+      "src/components/Connection/ConnectionDialogLayout.css",
       ".connection-dialog__footer .btn { display: block; }",
       sharedClasses
     ),
@@ -245,7 +245,7 @@ test("allows a shared class only when scoped beneath an owned class", () => {
   );
 
   const issues = checkStylesheetStructure(
-    "src/components/Connection/ConnectionDialog.css",
+    "src/components/Connection/ConnectionDialogLayout.css",
     ".btn.connection-dialog__submit { display: block; }",
     sharedClasses
   );
@@ -256,9 +256,9 @@ test("allows a shared class only when scoped beneath an owned class", () => {
 });
 
 test("rejects selectors beyond the configured depth", () => {
-  const selector = [".ai-panel", ".ai-message", ".ai-markdown", "ul", "li"].join(" ");
+  const selector = [".ai-message", ".ai-message__content", ".ai-markdown", "ul", "li"].join(" ");
   const issues = checkStylesheetStructure(
-    "src/components/AI/AIChatPanel.css",
+    "src/components/AI/AIChatMessages.css",
     `${selector} { display: block; }`,
     new Set()
   );
@@ -287,7 +287,7 @@ test("reports custom property usages with no definition across stylesheets", () 
   const issues = checkStylesheets([
     { file: "src/styles/tokens.css", content: ":root { --defined: #fff; }" },
     {
-      file: "src/components/AI/AIChatPanel.css",
+      file: "src/components/AI/AIChatPanelLayout.css",
       content: ".ai-panel { color: var(--defined); background: var(--missing); }",
     },
   ]);
@@ -320,7 +320,7 @@ test("rejects a feature-scoped custom property used by another stylesheet", () =
       content: ".settings-panel { --settings-gap: 12px; gap: var(--settings-gap); }",
     },
     {
-      file: "src/components/AI/AIChatPanel.css",
+      file: "src/components/AI/AIChatPanelLayout.css",
       content: ".ai-panel { gap: var(--settings-gap); }",
     },
   ]);
@@ -378,16 +378,18 @@ test("requires the registered entry and sources during a complete source scan", 
   );
 });
 
-test("accepts the import-only Settings entry in the registered order", () => {
-  const [entryFile, sourceFiles] = [...CSS_ARCHITECTURE.featureStyleEntries].at(0);
-  const content = sourceFiles
-    .map((file) => `@import "./${file.replace("src/components/Settings/", "")}";`)
-    .join("\n");
+test("accepts registered import-only feature entries in their declared order", () => {
+  const stylesheets = [...CSS_ARCHITECTURE.featureStyleEntries].map(([entryFile, sourceFiles]) => ({
+    file: entryFile,
+    content: sourceFiles
+      .map((file) => `@import "./${file.slice(file.lastIndexOf("/") + 1)}";`)
+      .join("\n"),
+  }));
 
-  assert.deepEqual(checkFeatureStyleEntries([{ file: entryFile, content }]), []);
+  assert.deepEqual(checkFeatureStyleEntries(stylesheets), []);
 });
 
-test("rejects missing or reordered Settings imports", () => {
+test("rejects missing or reordered feature imports", () => {
   const [entryFile] = [...CSS_ARCHITECTURE.featureStyleEntries].at(0);
   const issues = checkFeatureStyleEntries([
     { file: entryFile, content: '@import "./SettingsSidebar.css";' },
@@ -402,8 +404,6 @@ test("rejects missing or reordered Settings imports", () => {
 test("requires registered feature entries and sources during a complete source scan", () => {
   const issues = checkFeatureStyleEntries([], { requireEntries: true });
 
-  assert.deepEqual(
-    issues.map(({ rule }) => rule),
-    ["feature-style-entry-missing"]
-  );
+  assert.equal(issues.length, CSS_ARCHITECTURE.featureStyleEntries.size);
+  assert.ok(issues.every(({ rule }) => rule === "feature-style-entry-missing"));
 });

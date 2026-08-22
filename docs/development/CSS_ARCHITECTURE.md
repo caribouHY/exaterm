@@ -37,6 +37,8 @@ Styles under `src/components/`, `src/features/`, and `src/App.css` own layout an
 
 Settings uses `src/components/Settings/SettingsPanel.css` as an import-only feature entry. Its source files follow the existing React responsibilities: panel layout, category navigation, shortcuts, footer, AI, connection history, SSH, and toggles. Keep normal-width and compact-window rules for a responsibility in the same source file; the `760px` breakpoint describes a narrow desktop window, not a separate mobile application.
 
+AI uses `src/components/AI/AIChatPanel.css` as an import-only feature entry for panel layout, messages and Markdown, command suggestions, and composer styles. Connection uses `src/components/Connection/ConnectionDialog.css` as an import-only feature entry for the main dialog, connection progress, SSH diagnostics, and credential prompt boundaries. Keep these source files aligned with their existing React responsibilities rather than grouping rules only by visual property.
+
 Selectors should remain shallow. The automated check permits at most four compound levels; a component boundary or shared primitive should be introduced before a selector grows beyond that limit.
 
 ### xterm third-party overrides
@@ -69,13 +71,13 @@ Automated CSS checks do not prove GUI appearance, focus behavior, active-session
 - feature-root redefinitions of shared classes; and
 - selectors deeper than four compound levels.
 
-Token, global-layer, feature-entry, and shared-style source paths are centralized in `CSS_ARCHITECTURE`. The convention check verifies that `src/styles/index.css` and the Settings feature entry import every registered source exactly once and in the declared cascade order. A new file under `src/styles/` must be registered as a global source or as a feature-owned stylesheet; do not weaken individual rules to admit it. Compatibility entries must be narrow, include a reason, and represent an actual external or migration boundary rather than a way to silence a finding.
+Token, global-layer, feature-entry, and shared-style source paths are centralized in `CSS_ARCHITECTURE`. The convention check verifies that `src/styles/index.css` and every registered feature entry import each source exactly once and in the declared cascade order. A new file under `src/styles/` must be registered as a global source or as a feature-owned stylesheet; do not weaken individual rules to admit it. Compatibility entries must be narrow, include a reason, and represent an actual external or migration boundary rather than a way to silence a finding.
 
 ## Staged migration
 
 1. **Completed:** physically split the global stylesheet into tokens, foundation, shared controls, shared UI, utilities, and motion without changing names or values.
 2. **Completed:** split Settings styles along existing React ownership while preserving its normal-width and compact-window scrolling contracts.
-3. Split AI styles into panel, messages and Markdown, commands, and composer responsibilities; then split Connection styles if the review size remains manageable.
+3. **Completed:** split AI styles into panel, messages and Markdown, commands, and composer responsibilities, and split Connection styles along its dialog, progress, diagnostics, and credential boundaries.
 4. Introduce primitive, semantic, and intentionally limited component token layers, with semantic tokens remaining the application-facing contract.
 5. Replace isolated z-index and motion decisions with shared layers, consolidate shared UI ownership, remove obsolete aliases, and update this document to the resulting structure.
 

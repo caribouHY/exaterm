@@ -1,0 +1,179 @@
+.connection-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+  animation: fadeIn 0.15s ease;
+}
+
+.connection-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 440px;
+  max-height: 80vh;
+  animation: slideInUp 0.2s ease;
+}
+
+.connection-dialog__header {
+  padding: 14px 18px;
+}
+
+.connection-dialog__tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.connection-dialog__tab {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: color var(--transition-fast);
+}
+
+.connection-dialog__tab:hover {
+  color: var(--text-primary);
+}
+
+.connection-dialog__tab--active {
+  color: var(--text-primary);
+}
+
+.connection-dialog__tab--active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent-blue);
+}
+
+.connection-dialog__body {
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.connection-dialog__error-banner {
+  margin: 12px 18px 0;
+  outline: none;
+}
+
+.connection-dialog__error-banner:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: var(--focus-ring);
+}
+
+.connection-dialog__row {
+  display: flex;
+  gap: 12px;
+}
+
+.connection-dialog__row > * {
+  flex: 1;
+}
+
+.connection-dialog__required-mark {
+  margin-left: 3px;
+  color: var(--status-error);
+}
+
+.connection-dialog__field-error {
+  margin: 4px 0 0;
+  color: var(--status-error);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.connection-dialog :is(.input, .select)[aria-invalid="true"] {
+  border-color: var(--status-error);
+}
+
+.connection-dialog :is(.input, .select)[aria-invalid="true"]:focus {
+  border-color: var(--status-error);
+  outline: var(--focus-ring);
+}
+
+.connection-dialog__profile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.connection-dialog__profile-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.connection-dialog__file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.connection-dialog__file-row .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.connection-dialog__profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.connection-dialog__profile-actions span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.connection-dialog__memo {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.connection-dialog__field-help {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.connection-dialog__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.connection-dialog__checkbox input {
+  margin: 0;
+}
+
+.connection-dialog__footer {
+  padding: 12px 18px;
+}
+
+.connection-dialog__shortcut {
+  color: var(--text-shortcut);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
