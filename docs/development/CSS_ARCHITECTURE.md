@@ -35,6 +35,8 @@ Classes such as `.btn`, `.input`, `.select`, `.ui-modal`, and `.ui-popover-menu`
 
 Styles under `src/components/`, `src/features/`, and `src/App.css` own layout and visual states for their React boundary. Selectors start with a registered feature-owned class prefix and use BEM-style block, element, and modifier names. When registered prefixes overlap, the longest and most specific matching prefix owns the class. Cross-feature selectors and unscoped element rules are not allowed. New stylesheets must register their owned prefixes in `CSS_ARCHITECTURE` in `scripts/check-css-conventions.mjs`.
 
+Settings uses `src/components/Settings/SettingsPanel.css` as an import-only feature entry. Its source files follow the existing React responsibilities: panel layout, category navigation, shortcuts, footer, AI, connection history, SSH, and toggles. Keep normal-width and compact-window rules for a responsibility in the same source file; the `760px` breakpoint describes a narrow desktop window, not a separate mobile application.
+
 Selectors should remain shallow. The automated check permits at most four compound levels; a component boundary or shared primitive should be introduced before a selector grows beyond that limit.
 
 ### xterm third-party overrides
@@ -46,8 +48,8 @@ xterm.js owns the `.xterm*` DOM. Overrides belong only in `src/components/Termin
 CSS migration pull requests must preserve these behaviors:
 
 - `TerminalView` and xterm remain mounted. Styling work must not clear buffers, disconnect sessions, recreate sessions, remount terminal views, or issue resize operations that are unnecessary for an actual size change.
-- On desktop, `.settings-content` owns Settings scrolling.
-- At viewport widths of `760px` or less, `.settings-layout` owns Settings scrolling.
+- At normal window widths, `.settings-content` owns Settings scrolling.
+- At compact window widths of `760px` or less, `.settings-layout` owns Settings scrolling.
 - `SettingsFooter` remains outside the scrolling region and stays at the bottom of the Settings panel.
 - Overlays retain their stacking relationship, focus containment or restoration, keyboard behavior, and dismissal behavior. z-index changes must be evaluated as a complete overlay stack rather than as isolated numbers.
 - Motion changes preserve existing feedback and add a coherent `prefers-reduced-motion` path. Reduced motion must not remove state visibility or keyboard feedback.
@@ -67,12 +69,12 @@ Automated CSS checks do not prove GUI appearance, focus behavior, active-session
 - feature-root redefinitions of shared classes; and
 - selectors deeper than four compound levels.
 
-Token, global-layer, and shared-style source paths are centralized in `CSS_ARCHITECTURE`. The convention check verifies that `src/styles/index.css` imports every registered global source exactly once and in the declared cascade order. A new file under `src/styles/` must be registered as a global source or as a feature-owned stylesheet; do not weaken individual rules to admit it. Compatibility entries must be narrow, include a reason, and represent an actual external or migration boundary rather than a way to silence a finding.
+Token, global-layer, feature-entry, and shared-style source paths are centralized in `CSS_ARCHITECTURE`. The convention check verifies that `src/styles/index.css` and the Settings feature entry import every registered source exactly once and in the declared cascade order. A new file under `src/styles/` must be registered as a global source or as a feature-owned stylesheet; do not weaken individual rules to admit it. Compatibility entries must be narrow, include a reason, and represent an actual external or migration boundary rather than a way to silence a finding.
 
 ## Staged migration
 
 1. **Completed:** physically split the global stylesheet into tokens, foundation, shared controls, shared UI, utilities, and motion without changing names or values.
-2. Split Settings styles along existing React ownership while preserving its desktop and mobile scrolling contracts.
+2. **Completed:** split Settings styles along existing React ownership while preserving its normal-width and compact-window scrolling contracts.
 3. Split AI styles into panel, messages and Markdown, commands, and composer responsibilities; then split Connection styles if the review size remains manageable.
 4. Introduce primitive, semantic, and intentionally limited component token layers, with semantic tokens remaining the application-facing contract.
 5. Replace isolated z-index and motion decisions with shared layers, consolidate shared UI ownership, remove obsolete aliases, and update this document to the resulting structure.

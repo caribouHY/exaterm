@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   CSS_ARCHITECTURE,
   checkDeclaration,
+  checkFeatureStyleEntries,
   checkGlobalStyleEntry,
   checkGlobalStyleSources,
   checkStylesheets,
@@ -130,7 +131,7 @@ test("rejects root token definitions outside approved token sources", () => {
 
 test("allows component-scoped custom properties", () => {
   const issues = checkStylesheetStructure(
-    "src/components/Settings/SettingsPanel.css",
+    "src/components/Settings/SettingsLayout.css",
     ".settings-panel { --settings-gap: 12px; padding: var(--settings-gap); }",
     new Set()
   );
@@ -302,7 +303,7 @@ test("allows a feature-scoped custom property within its own stylesheet", () => 
   const issues = checkStylesheets([
     { file: "src/styles/tokens.css", content: ":root { --global: #fff; }" },
     {
-      file: "src/components/Settings/SettingsPanel.css",
+      file: "src/components/Settings/SettingsLayout.css",
       content:
         ".settings-panel { --settings-gap: 12px; color: var(--global); gap: var(--settings-gap); }",
     },
@@ -315,7 +316,7 @@ test("rejects a feature-scoped custom property used by another stylesheet", () =
   const issues = checkStylesheets([
     { file: "src/styles/tokens.css", content: ":root { --global: #fff; }" },
     {
-      file: "src/components/Settings/SettingsPanel.css",
+      file: "src/components/Settings/SettingsLayout.css",
       content: ".settings-panel { --settings-gap: 12px; gap: var(--settings-gap); }",
     },
     {
@@ -374,5 +375,35 @@ test("requires the registered entry and sources during a complete source scan", 
   assert.equal(
     issues.filter(({ rule }) => rule === "global-style-source-missing").length,
     CSS_ARCHITECTURE.orderedGlobalStyleSourceFiles.length
+  );
+});
+
+test("accepts the import-only Settings entry in the registered order", () => {
+  const [entryFile, sourceFiles] = [...CSS_ARCHITECTURE.featureStyleEntries].at(0);
+  const content = sourceFiles
+    .map((file) => `@import "./${file.replace("src/components/Settings/", "")}";`)
+    .join("\n");
+
+  assert.deepEqual(checkFeatureStyleEntries([{ file: entryFile, content }]), []);
+});
+
+test("rejects missing or reordered Settings imports", () => {
+  const [entryFile] = [...CSS_ARCHITECTURE.featureStyleEntries].at(0);
+  const issues = checkFeatureStyleEntries([
+    { file: entryFile, content: '@import "./SettingsSidebar.css";' },
+  ]);
+
+  assert.deepEqual(
+    issues.map(({ rule }) => rule),
+    ["feature-style-import-order"]
+  );
+});
+
+test("requires registered feature entries and sources during a complete source scan", () => {
+  const issues = checkFeatureStyleEntries([], { requireEntries: true });
+
+  assert.deepEqual(
+    issues.map(({ rule }) => rule),
+    ["feature-style-entry-missing"]
   );
 });

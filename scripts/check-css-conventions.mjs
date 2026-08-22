@@ -16,10 +16,22 @@ const ORDERED_GLOBAL_STYLE_SOURCE_FILES = [
   "src/styles/components/shared-ui.css",
   "src/styles/motion.css",
 ];
+const SETTINGS_STYLE_ENTRY_FILE = "src/components/Settings/SettingsPanel.css";
+const ORDERED_SETTINGS_STYLE_SOURCE_FILES = [
+  "src/components/Settings/SettingsLayout.css",
+  "src/components/Settings/SettingsSidebar.css",
+  "src/components/Settings/ShortcutsSettings.css",
+  "src/components/Settings/SettingsFooter.css",
+  "src/components/Settings/AiSettings.css",
+  "src/components/Settings/ConnectionHistorySettings.css",
+  "src/components/Settings/SshSettings.css",
+  "src/components/Settings/SettingsToggle.css",
+];
 
 export const CSS_ARCHITECTURE = {
   globalStyleEntryFile: GLOBAL_STYLE_ENTRY_FILE,
   orderedGlobalStyleSourceFiles: ORDERED_GLOBAL_STYLE_SOURCE_FILES,
+  featureStyleEntries: new Map([[SETTINGS_STYLE_ENTRY_FILE, ORDERED_SETTINGS_STYLE_SOURCE_FILES]]),
   globalStyleSourceFiles: new Set([GLOBAL_STYLE_ENTRY_FILE, ...ORDERED_GLOBAL_STYLE_SOURCE_FILES]),
   tokenSourceFiles: new Set(["src/styles/tokens.css"]),
   sharedStyleSourceFiles: new Set([
@@ -40,7 +52,38 @@ export const CSS_ARCHITECTURE = {
     ["src/components/AI/AIChatPanel.css", { ownedPrefixes: ["ai"] }],
     ["src/components/Connection/ConnectionDialog.css", { ownedPrefixes: ["connection"] }],
     ["src/components/Log/LogViewer.css", { ownedPrefixes: ["log"] }],
-    ["src/components/Settings/SettingsPanel.css", { ownedPrefixes: ["settings", "toggle"] }],
+    ["src/components/Settings/SettingsPanel.css", { ownedPrefixes: [] }],
+    [
+      "src/components/Settings/SettingsLayout.css",
+      { ownedPrefixes: ["settings", "settings-section", "settings-help"] },
+    ],
+    ["src/components/Settings/SettingsSidebar.css", { ownedPrefixes: ["settings-category"] }],
+    [
+      "src/components/Settings/ShortcutsSettings.css",
+      { ownedPrefixes: ["settings-shortcuts", "settings-section", "settings-help"] },
+    ],
+    [
+      "src/components/Settings/SettingsFooter.css",
+      {
+        ownedPrefixes: ["settings-actions", "settings-saved", "settings-unsaved", "settings-error"],
+      },
+    ],
+    [
+      "src/components/Settings/AiSettings.css",
+      { ownedPrefixes: ["settings-secret", "settings-provider", "settings-toggle"] },
+    ],
+    [
+      "src/components/Settings/ConnectionHistorySettings.css",
+      { ownedPrefixes: ["settings-connection-history", "settings-help"] },
+    ],
+    [
+      "src/components/Settings/SshSettings.css",
+      { ownedPrefixes: ["settings-ssh", "settings-help"] },
+    ],
+    [
+      "src/components/Settings/SettingsToggle.css",
+      { ownedPrefixes: ["settings-toggle", "toggle"] },
+    ],
     ["src/components/StatusBar/StatusBar.css", { ownedPrefixes: ["statusbar"] }],
     ["src/components/StatusBar/StatusBarPalette.css", { ownedPrefixes: ["statusbar-palette"] }],
     [
@@ -135,10 +178,18 @@ export function findStylesheetImports(file, content) {
 }
 
 export function checkGlobalStyleEntry(file, content) {
+  return checkImportOnlyStyleEntry(
+    file,
+    content,
+    CSS_ARCHITECTURE.orderedGlobalStyleSourceFiles,
+    "global"
+  );
+}
+
+export function checkImportOnlyStyleEntry(file, content, expectedFiles, rulePrefix) {
   const issues = [];
   const imports = findStylesheetImports(file, content);
   const actualFiles = imports.map((entry) => entry.file);
-  const expectedFiles = CSS_ARCHITECTURE.orderedGlobalStyleSourceFiles;
 
   if (
     actualFiles.length !== expectedFiles.length ||
@@ -147,10 +198,10 @@ export function checkGlobalStyleEntry(file, content) {
     issues.push({
       file,
       line: 1,
-      rule: "global-style-import-order",
+      rule: `${rulePrefix}-style-import-order`,
       property: "@import",
       value: actualFiles.join(", "),
-      message: `Import each registered global source once in this order: ${expectedFiles.join(", ")}.`,
+      message: `Import each registered ${rulePrefix} source once in this order: ${expectedFiles.join(", ")}.`,
     });
   }
 
@@ -160,11 +211,53 @@ export function checkGlobalStyleEntry(file, content) {
     issues.push({
       file,
       line: 1,
-      rule: "global-style-entry-content",
+      rule: `${rulePrefix}-style-entry-content`,
       property: "stylesheet",
       value: file,
-      message: "Keep the global entry import-only so cascade order remains explicit.",
+      message: `Keep the ${rulePrefix} style entry import-only so cascade order remains explicit.`,
     });
+  }
+
+  return issues;
+}
+
+export function checkFeatureStyleEntries(stylesheets, { requireEntries = false } = {}) {
+  const issues = [];
+  const stylesheetFiles = new Set(stylesheets.map(({ file }) => file));
+
+  for (const [entryFile, sourceFiles] of CSS_ARCHITECTURE.featureStyleEntries) {
+    const entry = stylesheets.find(({ file }) => file === entryFile);
+
+    if (!entry) {
+      if (requireEntries) {
+        issues.push({
+          file: entryFile,
+          line: 1,
+          rule: "feature-style-entry-missing",
+          property: "stylesheet",
+          value: entryFile,
+          message: "Keep every registered feature stylesheet entry present in the source tree.",
+        });
+      }
+      continue;
+    }
+
+    issues.push(...checkImportOnlyStyleEntry(entry.file, entry.content, sourceFiles, "feature"));
+
+    if (requireEntries) {
+      for (const sourceFile of sourceFiles) {
+        if (!stylesheetFiles.has(sourceFile)) {
+          issues.push({
+            file: sourceFile,
+            line: 1,
+            rule: "feature-style-source-missing",
+            property: "stylesheet",
+            value: sourceFile,
+            message: "Keep every registered feature style source present in the source tree.",
+          });
+        }
+      }
+    }
   }
 
   return issues;
@@ -656,6 +749,12 @@ export function checkStylesheets(stylesheets, { requireGlobalStyleSources = fals
       issues.push(...checkGlobalStyleEntry(globalEntry.file, globalEntry.content));
     }
   }
+
+  issues.push(
+    ...checkFeatureStyleEntries(stylesheets, {
+      requireEntries: requireGlobalStyleSources,
+    })
+  );
 
   const globalTokens = new Set(
     stylesheets

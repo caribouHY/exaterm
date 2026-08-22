@@ -1,0 +1,62 @@
+.settings-category-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding-right: var(--space-md);
+  border-right: 1px solid var(--border-secondary);
+}
+
+.settings-category-button {
+  display: flex;
+  width: 100%;
+  min-height: 30px;
+  align-items: center;
+  padding: 0 var(--space-md);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  text-align: left;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.settings-category-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.settings-category-button:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.settings-category-button--active {
+  border-color: var(--border-secondary);
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.settings-category-select {
+  display: none;
+  margin-bottom: var(--space-lg);
+}
+
+.settings-category-select .select {
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .settings-category-nav {
+    display: none;
+  }
+
+  .settings-category-select {
+    display: block;
+  }
+}
