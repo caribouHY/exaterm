@@ -8,6 +8,8 @@ import {
   checkGlobalStyleSources,
   checkStylesheets,
   checkStylesheetStructure,
+  checkTokenLayerDependencies,
+  checkTokenStyleEntry,
   findCustomPropertyDefinitions,
   findCustomPropertyUsages,
   findClassOwners,
@@ -285,7 +287,7 @@ test("requires new feature stylesheets to declare ownership", () => {
 
 test("reports custom property usages with no definition across stylesheets", () => {
   const issues = checkStylesheets([
-    { file: "src/styles/tokens.css", content: ":root { --defined: #fff; }" },
+    { file: "src/styles/tokens/primitives.css", content: ":root { --defined: #fff; }" },
     {
       file: "src/components/AI/AIChatPanelLayout.css",
       content: ".ai-panel { color: var(--defined); background: var(--missing); }",
@@ -301,7 +303,7 @@ test("reports custom property usages with no definition across stylesheets", () 
 
 test("allows a feature-scoped custom property within its own stylesheet", () => {
   const issues = checkStylesheets([
-    { file: "src/styles/tokens.css", content: ":root { --global: #fff; }" },
+    { file: "src/styles/tokens/primitives.css", content: ":root { --global: #fff; }" },
     {
       file: "src/components/Settings/SettingsLayout.css",
       content:
@@ -314,7 +316,7 @@ test("allows a feature-scoped custom property within its own stylesheet", () => 
 
 test("rejects a feature-scoped custom property used by another stylesheet", () => {
   const issues = checkStylesheets([
-    { file: "src/styles/tokens.css", content: ":root { --global: #fff; }" },
+    { file: "src/styles/tokens/primitives.css", content: ":root { --global: #fff; }" },
     {
       file: "src/components/Settings/SettingsLayout.css",
       content: ".settings-panel { --settings-gap: 12px; gap: var(--settings-gap); }",
@@ -375,6 +377,69 @@ test("requires the registered entry and sources during a complete source scan", 
   assert.equal(
     issues.filter(({ rule }) => rule === "global-style-source-missing").length,
     CSS_ARCHITECTURE.orderedGlobalStyleSourceFiles.length
+  );
+  assert.equal(
+    issues.filter(({ rule }) => rule === "token-style-source-missing").length,
+    CSS_ARCHITECTURE.orderedTokenStyleSourceFiles.length
+  );
+});
+
+test("accepts the import-only token entry in the registered layer order", () => {
+  const content = CSS_ARCHITECTURE.orderedTokenStyleSourceFiles
+    .map((file) => `@import "./${file.replace("src/styles/", "")}";`)
+    .join("\n");
+
+  assert.deepEqual(checkTokenStyleEntry(CSS_ARCHITECTURE.tokenStyleEntryFile, content), []);
+});
+
+test("rejects reordered token layer imports", () => {
+  const content = '@import "./semantic.css";\n@import "./primitives.css";';
+  const issues = checkTokenStyleEntry(CSS_ARCHITECTURE.tokenStyleEntryFile, content);
+
+  assert.deepEqual(
+    issues.map(({ rule }) => rule),
+    ["token-style-import-order"]
+  );
+});
+
+test("allows token dependencies on earlier layers", () => {
+  const issues = checkTokenLayerDependencies([
+    {
+      file: "src/styles/tokens/primitives.css",
+      content: ":root { --primitive-color: #fff; }",
+    },
+    {
+      file: "src/styles/tokens/semantic.css",
+      content: ":root { --color-text: var(--primitive-color); }",
+    },
+    {
+      file: "src/styles/tokens/components.css",
+      content: ":root { --component-label-color: var(--color-text); }",
+    },
+  ]);
+
+  assert.deepEqual(issues, []);
+});
+
+test("rejects token dependencies on the same or later layer", () => {
+  const issues = checkTokenLayerDependencies([
+    {
+      file: "src/styles/tokens/semantic.css",
+      content: ":root { --color-text: var(--color-other); --color-other: #fff; }",
+    },
+    {
+      file: "src/styles/tokens/components.css",
+      content: ":root { --component-label-color: #fff; }",
+    },
+    {
+      file: "src/styles/tokens/compatibility.css",
+      content: ":root { --legacy-color: var(--legacy-other); --legacy-other: #fff; }",
+    },
+  ]);
+
+  assert.deepEqual(
+    issues.map(({ rule }) => rule),
+    ["token-layer-dependency", "token-layer-dependency"]
   );
 });
 
