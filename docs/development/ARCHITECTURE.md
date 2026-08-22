@@ -121,6 +121,7 @@ Do not move cloud API keys into `config.json`, logs, terminal buffers, or extern
 
 - `docs/` contains human-facing user and contributor documentation.
 - This file records current architecture, not an implementation plan or task checklist.
+- `CSS_ARCHITECTURE.md` records styling ownership and the contracts for the staged CSS migration.
 - Durable decisions that benefit from rationale belong in `docs/development/decisions/`.
 - Repository-local agent procedures belong in `.agents/skills/`.
 - Always-on constraints and routing belong in `AGENTS.md`.

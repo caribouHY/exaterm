@@ -4,7 +4,46 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 
 const SRC_DIR = path.join(process.cwd(), "src");
-const INDEX_CSS = "src/index.css";
+
+export const CSS_ARCHITECTURE = {
+  tokenSourceFiles: new Set(["src/index.css"]),
+  sharedStyleSourceFiles: new Set(["src/index.css"]),
+  maxSelectorDepth: 4,
+  featureStylesheets: new Map([
+    [
+      "src/App.css",
+      {
+        ownedPrefixes: ["app", "app-credential", "ssh-auth-prompt", "ssh-host-key-prompt"],
+      },
+    ],
+    ["src/components/AI/AIAssistantLogo.css", { ownedPrefixes: ["ai-assistant-logo"] }],
+    ["src/components/AI/AIChatPanel.css", { ownedPrefixes: ["ai"] }],
+    ["src/components/Connection/ConnectionDialog.css", { ownedPrefixes: ["connection"] }],
+    ["src/components/Log/LogViewer.css", { ownedPrefixes: ["log"] }],
+    ["src/components/Settings/SettingsPanel.css", { ownedPrefixes: ["settings", "toggle"] }],
+    ["src/components/StatusBar/StatusBar.css", { ownedPrefixes: ["statusbar"] }],
+    ["src/components/StatusBar/StatusBarPalette.css", { ownedPrefixes: ["statusbar-palette"] }],
+    [
+      "src/components/Terminal/TerminalTabs.css",
+      { ownedPrefixes: ["terminal-tab", "terminal-tabs"] },
+    ],
+    [
+      "src/components/Terminal/TerminalView.css",
+      {
+        ownedPrefixes: ["terminal-view"],
+        externalPrefixes: [
+          {
+            prefix: "xterm",
+            reason: "xterm.js owns these elements; TerminalView scopes all overrides.",
+          },
+        ],
+      },
+    ],
+    ["src/components/TitleBar/TitleBar.css", { ownedPrefixes: ["titlebar"] }],
+    ["src/features/app-exit/AppExitDialog.css", { ownedPrefixes: ["app-exit"] }],
+    ["src/features/app-update/AppUpdateDialog.css", { ownedPrefixes: ["app-update"] }],
+  ]),
+};
 
 const RAW_COLOR_PATTERN = /(?:#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla)\s*\()/;
 const ALLOWED_RADIUS_TOKENS = new Set([
@@ -86,6 +125,274 @@ export function findRootTokenRanges(content) {
   }
 
   return ranges;
+}
+
+export function findCustomPropertyDefinitions(content) {
+  const cleanContent = stripCommentsPreservingLines(content);
+  const definitions = [];
+  const pattern = /(--[\w-]+)\s*:/g;
+  let match;
+
+  while ((match = pattern.exec(cleanContent)) !== null) {
+    definitions.push({
+      token: match[1],
+      line: lineForIndex(cleanContent, match.index),
+      index: match.index,
+    });
+  }
+
+  return definitions;
+}
+
+export function findCustomPropertyUsages(content) {
+  const cleanContent = stripCommentsPreservingLines(content);
+  const usages = [];
+  const pattern = /var\(\s*(--[\w-]+)/g;
+  let match;
+
+  while ((match = pattern.exec(cleanContent)) !== null) {
+    usages.push({
+      token: match[1],
+      line: lineForIndex(cleanContent, match.index),
+    });
+  }
+
+  return usages;
+}
+
+function isRuleContainer(prelude) {
+  return /^@(media|supports|container|layer)\b/i.test(prelude);
+}
+
+export function splitSelectorList(prelude) {
+  const selectors = [];
+  let start = 0;
+  let parenthesisDepth = 0;
+  let bracketDepth = 0;
+  let quote = null;
+
+  for (let index = 0; index < prelude.length; index += 1) {
+    const char = prelude.charAt(index);
+    if (quote) {
+      if (char === quote && prelude.charAt(index - 1) !== "\\") {
+        quote = null;
+      }
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === "(") {
+      parenthesisDepth += 1;
+    } else if (char === ")") {
+      parenthesisDepth -= 1;
+    } else if (char === "[") {
+      bracketDepth += 1;
+    } else if (char === "]") {
+      bracketDepth -= 1;
+    } else if (char === "," && parenthesisDepth === 0 && bracketDepth === 0) {
+      selectors.push(prelude.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+
+  selectors.push(prelude.slice(start).trim());
+  return selectors.filter(Boolean);
+}
+
+export function findSelectors(content) {
+  const cleanContent = stripCommentsPreservingLines(content);
+  const selectors = [];
+  const stack = [{ acceptsRules: true }];
+  let statementStart = 0;
+
+  for (let index = 0; index < cleanContent.length; index += 1) {
+    const char = cleanContent.charAt(index);
+    if (char === "{") {
+      const prelude = cleanContent.slice(statementStart, index).trim();
+      const parent = stack.at(-1);
+      const atRule = prelude.startsWith("@");
+
+      if (parent?.acceptsRules && prelude && !atRule) {
+        const preludeOffset = cleanContent.indexOf(prelude, statementStart);
+        for (const selector of splitSelectorList(prelude)) {
+          const trimmedSelector = selector.trim();
+          if (trimmedSelector) {
+            selectors.push({
+              selector: trimmedSelector,
+              line: lineForIndex(cleanContent, preludeOffset),
+            });
+          }
+        }
+      }
+
+      stack.push({ acceptsRules: atRule && isRuleContainer(prelude) });
+      statementStart = index + 1;
+    } else if (char === "}") {
+      stack.pop();
+      statementStart = index + 1;
+    }
+  }
+
+  return selectors;
+}
+
+export function findSelectorClasses(selector) {
+  return [...selector.matchAll(/\.([_a-zA-Z][\w-]*)/g)].map((match) => match[1]);
+}
+
+export function selectorDepth(selector) {
+  const withoutAttributes = selector.replace(/\[[^\]]*\]/g, "");
+  const withoutFunctionalPseudos = withoutAttributes.replace(/:(?:is|where|not|has)\([^)]*\)/g, "");
+  return withoutFunctionalPseudos
+    .trim()
+    .split(/\s+(?![^()]*\))|\s*[>+~]\s*/)
+    .filter(Boolean).length;
+}
+
+function matchesPrefix(className, prefix) {
+  return (
+    className === prefix ||
+    className.startsWith(`${prefix}-`) ||
+    className.startsWith(`${prefix}__`) ||
+    className.startsWith(`${prefix}--`)
+  );
+}
+
+export function findClassOwners(className) {
+  let longestPrefixLength = -1;
+  const owners = new Set();
+
+  for (const [file, policy] of CSS_ARCHITECTURE.featureStylesheets) {
+    for (const prefix of policy.ownedPrefixes) {
+      if (!matchesPrefix(className, prefix)) {
+        continue;
+      }
+
+      if (prefix.length > longestPrefixLength) {
+        longestPrefixLength = prefix.length;
+        owners.clear();
+      }
+      if (prefix.length === longestPrefixLength) {
+        owners.add(file);
+      }
+    }
+  }
+
+  return owners;
+}
+
+export function checkStylesheetStructure(file, content, sharedClasses = new Set()) {
+  const issues = [];
+  const rootRanges = findRootTokenRanges(content);
+  const rootDefinitions = findCustomPropertyDefinitions(content).filter((definition) =>
+    isInsideRange(definition.index, rootRanges)
+  );
+  const tokenSource = CSS_ARCHITECTURE.tokenSourceFiles.has(file);
+
+  if (!tokenSource) {
+    for (const definition of rootDefinitions) {
+      issues.push({
+        file,
+        line: definition.line,
+        rule: "feature-root-token",
+        property: definition.token,
+        value: ":root",
+        message: "Define global design tokens in an approved token source, not feature CSS.",
+      });
+    }
+  }
+
+  const policy = CSS_ARCHITECTURE.featureStylesheets.get(file);
+  if (!policy && !CSS_ARCHITECTURE.sharedStyleSourceFiles.has(file)) {
+    issues.push({
+      file,
+      line: 1,
+      rule: "missing-style-ownership",
+      property: "stylesheet",
+      value: file,
+      message: "Register the stylesheet and its owned class prefixes in CSS_ARCHITECTURE.",
+    });
+    return issues;
+  }
+
+  if (!policy) {
+    return issues;
+  }
+
+  for (const { selector, line } of findSelectors(content)) {
+    const classes = findSelectorClasses(selector);
+    const firstClass = classes.at(0);
+
+    if (selector === ":root" && rootDefinitions.length > 0) {
+      continue;
+    }
+
+    if (selectorDepth(selector) > CSS_ARCHITECTURE.maxSelectorDepth) {
+      issues.push({
+        file,
+        line,
+        rule: "selector-depth",
+        property: "selector",
+        value: selector,
+        message: `Keep selectors at ${CSS_ARCHITECTURE.maxSelectorDepth} compound levels or fewer.`,
+      });
+    }
+
+    if (!firstClass) {
+      issues.push({
+        file,
+        line,
+        rule: "class-ownership",
+        property: "selector",
+        value: selector,
+        message: `Start the selector with a class owned by ${file}.`,
+      });
+      continue;
+    }
+
+    if (sharedClasses.has(firstClass)) {
+      issues.push({
+        file,
+        line,
+        rule: "shared-class-root",
+        property: "selector",
+        value: selector,
+        message: "Scope shared-class adjustments beneath a feature-owned class.",
+      });
+      continue;
+    }
+
+    const externalPrefixes = policy.externalPrefixes ?? [];
+    const firstClassOwners = findClassOwners(firstClass);
+    if (!firstClassOwners.has(file)) {
+      issues.push({
+        file,
+        line,
+        rule: "class-ownership",
+        property: "selector",
+        value: selector,
+        message: `Start the selector with a class owned by ${file}.`,
+      });
+      continue;
+    }
+
+    const unownedClass = classes.find(
+      (className) =>
+        !sharedClasses.has(className) &&
+        !externalPrefixes.some(({ prefix }) => matchesPrefix(className, prefix)) &&
+        !findClassOwners(className).has(file)
+    );
+    if (unownedClass) {
+      issues.push({
+        file,
+        line,
+        rule: "class-ownership",
+        property: "selector",
+        value: selector,
+        message: `Class .${unownedClass} is not owned, shared, or an approved external class.`,
+      });
+    }
+  }
+
+  return issues;
 }
 
 export function isInsideRange(index, ranges) {
@@ -230,16 +537,46 @@ export function formatIssue(issue) {
   return `${issue.file}:${issue.line} [${issue.rule}] ${issue.property}: ${issue.value}\n  ${issue.message}`;
 }
 
-export async function checkCssFiles(cssFiles) {
+export function checkStylesheets(stylesheets) {
   const issues = [];
 
-  for (const filePath of cssFiles) {
-    const resolvedFilePath = path.resolve(filePath);
-    const file = toRepoPath(resolvedFilePath);
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Reads resolved repository CSS files discovered by collectCssFiles.
-    const content = await readFile(path.resolve(filePath), "utf8");
-    const ignoredRanges = file === INDEX_CSS ? findRootTokenRanges(content) : [];
+  const globalTokens = new Set(
+    stylesheets
+      .filter(({ file }) => CSS_ARCHITECTURE.tokenSourceFiles.has(file))
+      .flatMap(({ content }) => findCustomPropertyDefinitions(content).map(({ token }) => token))
+  );
+  const sharedClasses = new Set(
+    stylesheets
+      .filter(({ file }) => CSS_ARCHITECTURE.sharedStyleSourceFiles.has(file))
+      .flatMap(({ content }) =>
+        findSelectors(content).flatMap(({ selector }) => findSelectorClasses(selector))
+      )
+  );
+
+  for (const { file, content } of stylesheets) {
+    const ignoredRanges = CSS_ARCHITECTURE.tokenSourceFiles.has(file)
+      ? findRootTokenRanges(content)
+      : [];
     const declarations = findDeclarations(content, ignoredRanges);
+    const availableTokens = new Set([
+      ...globalTokens,
+      ...findCustomPropertyDefinitions(content).map(({ token }) => token),
+    ]);
+
+    issues.push(...checkStylesheetStructure(file, content, sharedClasses));
+
+    for (const usage of findCustomPropertyUsages(content)) {
+      if (!availableTokens.has(usage.token)) {
+        issues.push({
+          file,
+          line: usage.line,
+          rule: "undefined-custom-property",
+          property: "custom-property",
+          value: usage.token,
+          message: "Define the custom property before using it with var().",
+        });
+      }
+    }
 
     for (const declaration of declarations) {
       issues.push(
@@ -252,6 +589,20 @@ export async function checkCssFiles(cssFiles) {
   }
 
   return issues;
+}
+
+export async function checkCssFiles(cssFiles) {
+  const stylesheets = [];
+
+  for (const filePath of cssFiles) {
+    const resolvedFilePath = path.resolve(filePath);
+    const file = toRepoPath(resolvedFilePath);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Reads resolved repository CSS files discovered by collectCssFiles.
+    const content = await readFile(path.resolve(filePath), "utf8");
+    stylesheets.push({ file, content });
+  }
+
+  return checkStylesheets(stylesheets);
 }
 
 export async function run() {
