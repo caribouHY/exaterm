@@ -1,0 +1,38 @@
+.ai-panel {
+  width: 100%;
+  height: 100%;
+  min-width: min(var(--panel-min-width), 100%);
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-secondary);
+  display: flex;
+  flex-direction: column;
+  animation: slideInRight 0.25s ease;
+  flex-shrink: 0;
+}
+
+.ai-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  height: var(--tab-height);
+  border-bottom: 1px solid var(--border-secondary);
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ai-panel__heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--accent-blue);
+}
+
+.ai-panel__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}

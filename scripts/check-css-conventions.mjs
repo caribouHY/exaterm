@@ -27,11 +27,29 @@ const ORDERED_SETTINGS_STYLE_SOURCE_FILES = [
   "src/components/Settings/SshSettings.css",
   "src/components/Settings/SettingsToggle.css",
 ];
+const AI_CHAT_STYLE_ENTRY_FILE = "src/components/AI/AIChatPanel.css";
+const ORDERED_AI_CHAT_STYLE_SOURCE_FILES = [
+  "src/components/AI/AIChatPanelLayout.css",
+  "src/components/AI/AIChatMessages.css",
+  "src/components/AI/AIChatCommands.css",
+  "src/components/AI/AIChatComposer.css",
+];
+const CONNECTION_STYLE_ENTRY_FILE = "src/components/Connection/ConnectionDialog.css";
+const ORDERED_CONNECTION_STYLE_SOURCE_FILES = [
+  "src/components/Connection/ConnectionDialogLayout.css",
+  "src/components/Connection/ConnectionProgressDialog.css",
+  "src/components/Connection/SshDiagnosticsPanel.css",
+  "src/components/Connection/CredentialPromptModal.css",
+];
 
 export const CSS_ARCHITECTURE = {
   globalStyleEntryFile: GLOBAL_STYLE_ENTRY_FILE,
   orderedGlobalStyleSourceFiles: ORDERED_GLOBAL_STYLE_SOURCE_FILES,
-  featureStyleEntries: new Map([[SETTINGS_STYLE_ENTRY_FILE, ORDERED_SETTINGS_STYLE_SOURCE_FILES]]),
+  featureStyleEntries: new Map([
+    [SETTINGS_STYLE_ENTRY_FILE, ORDERED_SETTINGS_STYLE_SOURCE_FILES],
+    [AI_CHAT_STYLE_ENTRY_FILE, ORDERED_AI_CHAT_STYLE_SOURCE_FILES],
+    [CONNECTION_STYLE_ENTRY_FILE, ORDERED_CONNECTION_STYLE_SOURCE_FILES],
+  ]),
   globalStyleSourceFiles: new Set([GLOBAL_STYLE_ENTRY_FILE, ...ORDERED_GLOBAL_STYLE_SOURCE_FILES]),
   tokenSourceFiles: new Set(["src/styles/tokens.css"]),
   sharedStyleSourceFiles: new Set([
@@ -49,8 +67,47 @@ export const CSS_ARCHITECTURE = {
       },
     ],
     ["src/components/AI/AIAssistantLogo.css", { ownedPrefixes: ["ai-assistant-logo"] }],
-    ["src/components/AI/AIChatPanel.css", { ownedPrefixes: ["ai"] }],
-    ["src/components/Connection/ConnectionDialog.css", { ownedPrefixes: ["connection"] }],
+    ["src/components/AI/AIChatPanel.css", { ownedPrefixes: [] }],
+    ["src/components/AI/AIChatPanelLayout.css", { ownedPrefixes: ["ai-panel"] }],
+    [
+      "src/components/AI/AIChatMessages.css",
+      {
+        ownedPrefixes: [
+          "ai-panel__messages",
+          "ai-panel__welcome",
+          "ai-panel__loading",
+          "ai-message",
+          "ai-markdown",
+        ],
+      },
+    ],
+    ["src/components/AI/AIChatCommands.css", { ownedPrefixes: ["ai-command"] }],
+    [
+      "src/components/AI/AIChatComposer.css",
+      {
+        ownedPrefixes: [
+          "ai-panel__provider",
+          "ai-panel__input",
+          "ai-panel__bottom",
+          "ai-panel__context",
+          "ai-panel__send",
+        ],
+      },
+    ],
+    ["src/components/Connection/ConnectionDialog.css", { ownedPrefixes: [] }],
+    ["src/components/Connection/ConnectionDialogLayout.css", { ownedPrefixes: ["connection"] }],
+    [
+      "src/components/Connection/ConnectionProgressDialog.css",
+      { ownedPrefixes: ["connection-progress-dialog"] },
+    ],
+    [
+      "src/components/Connection/SshDiagnosticsPanel.css",
+      { ownedPrefixes: ["connection-dialog__diagnostics"] },
+    ],
+    [
+      "src/components/Connection/CredentialPromptModal.css",
+      { ownedPrefixes: ["connection-credential-modal"] },
+    ],
     ["src/components/Log/LogViewer.css", { ownedPrefixes: ["log"] }],
     ["src/components/Settings/SettingsPanel.css", { ownedPrefixes: [] }],
     [
@@ -119,7 +176,7 @@ const ZERO_RADIUS = /^(?:0|0px|0rem|0em)$/;
 
 const SHADOW_ALLOWLIST = [
   {
-    file: "src/components/AI/AIChatPanel.css",
+    file: "src/components/AI/AIChatComposer.css",
     property: "box-shadow",
     value: "0 0 0 2px var(--bg-surface)",
     reason: "keeps the active context indicator readable on the panel surface",
