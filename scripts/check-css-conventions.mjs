@@ -6,8 +6,15 @@ import { pathToFileURL } from "node:url";
 const SRC_DIR = path.join(process.cwd(), "src");
 
 const GLOBAL_STYLE_ENTRY_FILE = "src/styles/index.css";
+const TOKEN_STYLE_ENTRY_FILE = "src/styles/tokens.css";
+const ORDERED_TOKEN_STYLE_SOURCE_FILES = [
+  "src/styles/tokens/primitives.css",
+  "src/styles/tokens/semantic.css",
+  "src/styles/tokens/components.css",
+  "src/styles/tokens/compatibility.css",
+];
 const ORDERED_GLOBAL_STYLE_SOURCE_FILES = [
-  "src/styles/tokens.css",
+  TOKEN_STYLE_ENTRY_FILE,
   "src/styles/foundation/reset.css",
   "src/styles/foundation/base.css",
   "src/styles/foundation/scrollbar.css",
@@ -45,13 +52,19 @@ const ORDERED_CONNECTION_STYLE_SOURCE_FILES = [
 export const CSS_ARCHITECTURE = {
   globalStyleEntryFile: GLOBAL_STYLE_ENTRY_FILE,
   orderedGlobalStyleSourceFiles: ORDERED_GLOBAL_STYLE_SOURCE_FILES,
+  tokenStyleEntryFile: TOKEN_STYLE_ENTRY_FILE,
+  orderedTokenStyleSourceFiles: ORDERED_TOKEN_STYLE_SOURCE_FILES,
   featureStyleEntries: new Map([
     [SETTINGS_STYLE_ENTRY_FILE, ORDERED_SETTINGS_STYLE_SOURCE_FILES],
     [AI_CHAT_STYLE_ENTRY_FILE, ORDERED_AI_CHAT_STYLE_SOURCE_FILES],
     [CONNECTION_STYLE_ENTRY_FILE, ORDERED_CONNECTION_STYLE_SOURCE_FILES],
   ]),
-  globalStyleSourceFiles: new Set([GLOBAL_STYLE_ENTRY_FILE, ...ORDERED_GLOBAL_STYLE_SOURCE_FILES]),
-  tokenSourceFiles: new Set(["src/styles/tokens.css"]),
+  globalStyleSourceFiles: new Set([
+    GLOBAL_STYLE_ENTRY_FILE,
+    ...ORDERED_GLOBAL_STYLE_SOURCE_FILES,
+    ...ORDERED_TOKEN_STYLE_SOURCE_FILES,
+  ]),
+  tokenSourceFiles: new Set(ORDERED_TOKEN_STYLE_SOURCE_FILES),
   sharedStyleSourceFiles: new Set([
     "src/styles/utilities.css",
     "src/styles/components/controls.css",
@@ -243,6 +256,15 @@ export function checkGlobalStyleEntry(file, content) {
   );
 }
 
+export function checkTokenStyleEntry(file, content) {
+  return checkImportOnlyStyleEntry(
+    file,
+    content,
+    CSS_ARCHITECTURE.orderedTokenStyleSourceFiles,
+    "token"
+  );
+}
+
 export function checkImportOnlyStyleEntry(file, content, expectedFiles, rulePrefix) {
   const issues = [];
   const imports = findStylesheetImports(file, content);
@@ -340,6 +362,11 @@ export function checkGlobalStyleSources(stylesheets) {
     issues.push(...checkGlobalStyleEntry(globalEntry.file, globalEntry.content));
   }
 
+  const tokenEntry = stylesheets.find(({ file }) => file === CSS_ARCHITECTURE.tokenStyleEntryFile);
+  if (tokenEntry) {
+    issues.push(...checkTokenStyleEntry(tokenEntry.file, tokenEntry.content));
+  }
+
   for (const sourceFile of CSS_ARCHITECTURE.orderedGlobalStyleSourceFiles) {
     if (!stylesheetFiles.has(sourceFile)) {
       issues.push({
@@ -350,6 +377,61 @@ export function checkGlobalStyleSources(stylesheets) {
         value: sourceFile,
         message: "Keep every registered global style source present in the source tree.",
       });
+    }
+  }
+
+  for (const sourceFile of CSS_ARCHITECTURE.orderedTokenStyleSourceFiles) {
+    if (!stylesheetFiles.has(sourceFile)) {
+      issues.push({
+        file: sourceFile,
+        line: 1,
+        rule: "token-style-source-missing",
+        property: "stylesheet",
+        value: sourceFile,
+        message: "Keep every registered token layer present in the source tree.",
+      });
+    }
+  }
+
+  return issues;
+}
+
+export function checkTokenLayerDependencies(stylesheets) {
+  const issues = [];
+  const layerByFile = new Map(
+    CSS_ARCHITECTURE.orderedTokenStyleSourceFiles.map((file, index) => [file, index])
+  );
+  const definitionLayers = new Map();
+
+  for (const { file, content } of stylesheets) {
+    const layer = layerByFile.get(file);
+    if (layer === undefined) {
+      continue;
+    }
+    for (const { token } of findCustomPropertyDefinitions(content)) {
+      definitionLayers.set(token, layer);
+    }
+  }
+
+  for (const { file, content } of stylesheets) {
+    const sourceLayer = layerByFile.get(file);
+    if (sourceLayer === undefined) {
+      continue;
+    }
+
+    for (const usage of findCustomPropertyUsages(content)) {
+      const targetLayer = definitionLayers.get(usage.token);
+      if (targetLayer !== undefined && targetLayer >= sourceLayer) {
+        issues.push({
+          file,
+          line: usage.line,
+          rule: "token-layer-dependency",
+          property: "custom-property",
+          value: usage.token,
+          message:
+            "Token layers may reference only earlier layers: primitive, semantic, component, then compatibility.",
+        });
+      }
     }
   }
 
@@ -805,6 +887,12 @@ export function checkStylesheets(stylesheets, { requireGlobalStyleSources = fals
     if (globalEntry) {
       issues.push(...checkGlobalStyleEntry(globalEntry.file, globalEntry.content));
     }
+    const tokenEntry = stylesheets.find(
+      ({ file }) => file === CSS_ARCHITECTURE.tokenStyleEntryFile
+    );
+    if (tokenEntry) {
+      issues.push(...checkTokenStyleEntry(tokenEntry.file, tokenEntry.content));
+    }
   }
 
   issues.push(
@@ -812,6 +900,7 @@ export function checkStylesheets(stylesheets, { requireGlobalStyleSources = fals
       requireEntries: requireGlobalStyleSources,
     })
   );
+  issues.push(...checkTokenLayerDependencies(stylesheets));
 
   const globalTokens = new Set(
     stylesheets
