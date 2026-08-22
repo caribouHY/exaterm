@@ -5,7 +5,7 @@
   "identifier": "com.caribouhy.exaterm",
   "build": {
     "beforeDevCommand": "pnpm run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:14200",
     "beforeBuildCommand": "pnpm run build && pnpm run prepare:sidecars",
     "frontendDist": "../dist"
   },
