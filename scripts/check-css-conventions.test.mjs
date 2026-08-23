@@ -59,14 +59,17 @@ test("checks longhand radius properties", () => {
   assert.deepEqual(issueRules(".sample {\n  border-bottom-right-radius: 2px;\n}"), [
     "border-radius",
   ]);
-  assert.deepEqual(issueRules(".sample {\n  border-bottom-right-radius: var(--radius-sm);\n}"), []);
+  assert.deepEqual(
+    issueRules(".sample {\n  border-bottom-right-radius: var(--radius-control);\n}"),
+    []
+  );
 });
 
 test("allows shadow tokens embedded in compound values and none", () => {
   assert.equal(
     isAllowedShadow("src/components/Test.css", {
       property: "box-shadow",
-      value: "0 0 0 1px var(--shadow-sm)",
+      value: "0 0 0 1px var(--elevation-sm)",
     }),
     true
   );
@@ -77,6 +80,11 @@ test("allows shadow tokens embedded in compound values and none", () => {
     }),
     true
   );
+});
+
+test("requires shared stacking tokens for z-index", () => {
+  assert.deepEqual(issueRules(".sample {\n  z-index: 100;\n}"), ["z-index"]);
+  assert.deepEqual(issueRules(".sample {\n  z-index: var(--stack-titlebar);\n}"), []);
 });
 
 test("finds custom property definitions and usages without reading comments", () => {
@@ -425,15 +433,12 @@ test("rejects token dependencies on the same or later layer", () => {
   const issues = checkTokenLayerDependencies([
     {
       file: "src/styles/tokens/semantic.css",
-      content: ":root { --color-text: var(--color-other); --color-other: #fff; }",
+      content:
+        ":root { --color-text: var(--color-other); --color-other: #fff; --color-later: var(--component-label-color); }",
     },
     {
       file: "src/styles/tokens/components.css",
       content: ":root { --component-label-color: #fff; }",
-    },
-    {
-      file: "src/styles/tokens/compatibility.css",
-      content: ":root { --legacy-color: var(--legacy-other); --legacy-other: #fff; }",
     },
   ]);
 

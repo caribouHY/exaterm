@@ -49,18 +49,13 @@
   }
 }
 
-.animate-fade-in {
-  animation: fadeIn var(--transition-normal) forwards;
-}
-.animate-slide-right {
-  animation: slideInRight var(--transition-slow) forwards;
-}
-.animate-slide-up {
-  animation: slideInUp var(--transition-normal) forwards;
-}
-.animate-pulse {
-  animation: pulse 2s infinite;
-}
-.animate-spin {
-  animation: spin 1s linear infinite;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }

@@ -25,8 +25,8 @@
 .connection-progress-dialog__role {
   flex: none;
   padding-right: 8px;
-  border-right: 1px solid var(--border-secondary);
-  color: var(--text-secondary);
+  border-right: 1px solid var(--color-border-secondary);
+  color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 500;
 }

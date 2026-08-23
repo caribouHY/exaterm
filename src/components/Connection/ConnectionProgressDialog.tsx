@@ -44,7 +44,7 @@ export function ConnectionProgressDialog({
   const titleId = `${connectionType}-connection-progress-title`;
 
   return (
-    <div className="connection-overlay">
+    <div className="ui-overlay connection-overlay">
       <ModalFrame
         className="connection-progress-dialog"
         role="dialog"

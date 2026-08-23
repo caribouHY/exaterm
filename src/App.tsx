@@ -1034,7 +1034,7 @@ export default function App() {
         />
       )}
       {activeMcpCredentialPrompt && (
-        <div className="app-credential-overlay">
+        <div className="ui-overlay app-credential-overlay">
           <ModalFrame
             className="app-credential-modal"
             role="dialog"

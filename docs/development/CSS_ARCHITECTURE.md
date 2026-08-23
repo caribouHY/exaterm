@@ -20,7 +20,7 @@ Tailwind CSS and shadcn/ui are not part of the current migration. A later propos
 4. `foundation/scrollbar.css`: global scrollbar styling;
 5. `utilities.css`: shared utility classes;
 6. `components/controls.css`: shared buttons, inputs, selects, and labels;
-7. `components/shared-ui.css`: shared messages, modals, empty states, and popover menus; and
+7. `components/shared-ui.css`: shared overlay backdrops, messages, modals, empty states, and popover menus; and
 8. `motion.css`: global keyframes and animation utilities.
 
 `src/main.tsx` imports only this entry point. Keep the entry import-only and register global source files in their intended order in `CSS_ARCHITECTURE`; feature code must not import an individual global layer directly.
@@ -31,14 +31,15 @@ Global tokens must be defined in an approved token source. Feature stylesheets m
 
 1. `tokens/primitives.css` contains context-free values such as palette colors, spacing, sizes, radii, durations, and raw effects;
 2. `tokens/semantic.css` maps primitives to application intent such as surfaces, text, borders, status, and motion;
-3. `tokens/components.css` contains the intentionally limited dimensions and effects that belong to a reusable UI boundary; and
-4. `tokens/compatibility.css` maps the previous flat custom-property names to the canonical layers while feature styles migrate incrementally.
+3. `tokens/components.css` contains the intentionally limited dimensions and effects that belong to a reusable UI boundary.
 
-A token layer may reference only earlier layers. New feature CSS should prefer semantic tokens, using component tokens only for the component contract they name. Primitive tokens are implementation values rather than the application-facing styling contract. Existing flat names remain supported through the compatibility layer during migration; do not add new feature usage of those aliases.
+A token layer may reference only earlier layers. Feature CSS uses semantic tokens, using component tokens only for the component contract they name. Primitive tokens are implementation values rather than the application-facing styling contract. The temporary flat-name compatibility layer has been removed; do not reintroduce its aliases.
 
 ### Shared UI
 
 Classes such as `.btn`, `.input`, `.select`, `.ui-modal`, and `.ui-popover-menu` are shared contracts. Their root definitions belong to the global shared-UI layer. A feature may adjust a shared class only beneath a feature-owned selector, for example `.connection-dialog__file-row .btn`. A feature stylesheet must not redefine a shared class at the selector root.
+
+Every full-window dialog backdrop also carries `.ui-overlay`, which owns fixed positioning, viewport coverage, centering, and the overlay color. Feature overlay classes own only their semantic stack tier and feature-specific motion. The shared stack tokens define this order from lower to higher: local focus and terminal adornments, sticky controls and local popovers, command palette, title bar, connection overlay, credential overlay, critical application overlay, title-bar menu, and terminal context menu. Add or reorder a tier in the token layers and review the complete stack instead of introducing a local numeric `z-index`.
 
 ### Feature and component CSS
 
@@ -77,6 +78,7 @@ Automated CSS checks do not prove GUI appearance, focus behavior, active-session
 - custom-property uses without a definition in the source CSS set;
 - `:root` token definitions outside approved token sources;
 - token-layer imports outside the declared order and dependencies on the same or a later token layer;
+- numeric or feature-local z-index decisions instead of shared `--stack-*` tokens;
 - missing or invalid feature class ownership;
 - feature-root redefinitions of shared classes; and
 - selectors deeper than four compound levels.
@@ -88,7 +90,7 @@ Token, global-layer, feature-entry, and shared-style source paths are centralize
 1. **Completed:** physically split the global stylesheet into tokens, foundation, shared controls, shared UI, utilities, and motion without changing names or values.
 2. **Completed:** split Settings styles along existing React ownership while preserving its normal-width and compact-window scrolling contracts.
 3. **Completed:** split AI styles into panel, messages and Markdown, commands, and composer responsibilities, and split Connection styles along its dialog, progress, diagnostics, and credential boundaries.
-4. **Completed:** introduce primitive, semantic, and intentionally limited component token layers, retain the flat names as compatibility aliases, and make semantic tokens the application-facing contract.
-5. Replace isolated z-index and motion decisions with shared layers, consolidate shared UI ownership, remove obsolete aliases, and update this document to the resulting structure.
+4. **Completed:** introduce primitive, semantic, and intentionally limited component token layers, retain the flat names as temporary compatibility aliases, and make semantic tokens the application-facing contract.
+5. **Completed:** replace isolated z-index decisions with shared stack tokens, centralize overlay backdrop ownership and reduced-motion behavior, migrate feature CSS to canonical tokens, and remove temporary aliases and unused animation utility classes.
 
-Each stage should be a display-preserving refactor except for separately reviewed accessibility improvements such as reduced motion.
+The resulting system keeps one global import path, three ordered token layers, shared controls and UI contracts, feature-owned layout CSS, isolated xterm overrides, and one global motion policy. Reduced motion shortens transitions and animations to a single near-instant completion rather than hiding final states or focus feedback.

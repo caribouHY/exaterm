@@ -13,12 +13,12 @@
 
 .settings-toggle-label span {
   font-size: 13px;
-  color: var(--text-primary);
+  color: var(--color-text-primary);
 }
 
 .settings-toggle-label small {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
 }
 
 .toggle {
@@ -38,19 +38,19 @@
 .toggle-track {
   position: absolute;
   inset: 0;
-  background: var(--border-secondary);
-  border-radius: var(--radius-full);
+  background: var(--color-border-secondary);
+  border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: background var(--transition-normal);
+  transition: background var(--motion-transition-normal);
 }
 
 .toggle input:focus-visible + .toggle-track {
-  outline: var(--focus-ring);
+  outline: var(--focus-outline);
   outline-offset: 1px;
 }
 
 .toggle input:checked + .toggle-track {
-  background: var(--accent-blue);
+  background: var(--color-accent-primary);
 }
 
 .toggle input:disabled + .toggle-track {
@@ -65,10 +65,10 @@
   left: 3px;
   width: 18px;
   height: 18px;
-  background: var(--text-on-accent);
-  border-radius: var(--radius-full);
-  transition: transform var(--transition-normal);
-  box-shadow: var(--shadow-toggle-thumb);
+  background: var(--color-text-on-accent);
+  border-radius: var(--radius-pill);
+  transition: transform var(--motion-transition-normal);
+  box-shadow: var(--component-toggle-thumb-shadow);
 }
 
 .toggle input:checked + .toggle-track::after {

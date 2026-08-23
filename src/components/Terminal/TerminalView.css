@@ -3,7 +3,7 @@
   min-height: 0;
   position: relative;
   overflow: hidden;
-  background: var(--bg-surface);
+  background: var(--color-surface);
 }
 
 .terminal-view--hidden {
@@ -26,11 +26,11 @@
 }
 
 .terminal-view .xterm-viewport {
-  background-color: var(--bg-surface) !important;
+  background-color: var(--color-surface) !important;
 }
 
 .terminal-view .xterm-scrollable-element {
-  background-color: var(--bg-surface) !important;
+  background-color: var(--color-surface) !important;
 }
 
 .terminal-view .xterm-decoration {
@@ -42,11 +42,11 @@
   top: 4px;
   right: 0;
   left: 8px;
-  z-index: 2;
+  z-index: var(--stack-terminal-overlay);
   overflow: hidden;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
-  color: var(--text-primary);
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
   line-height: 1.2;
   pointer-events: none;
   text-overflow: ellipsis;
@@ -72,19 +72,19 @@
 .terminal-view__empty-icon {
   width: 64px;
   height: 64px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-dialog);
   object-fit: contain;
 }
 
 .terminal-view__empty-title {
   font-size: 16px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--color-text-primary);
 }
 
 .terminal-view__empty-desc {
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   text-align: center;
   line-height: 1.6;
 }
@@ -101,19 +101,19 @@
   align-items: center;
   gap: 12px;
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
 }
 
 .terminal-view__key {
   display: inline-flex;
   align-items: center;
   padding: 2px 6px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-control);
+  font-family: var(--font-family-code);
   font-size: 11px;
-  color: var(--text-primary);
+  color: var(--color-text-primary);
   min-width: 60px;
   justify-content: center;
 }

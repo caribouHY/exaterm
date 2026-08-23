@@ -33,7 +33,7 @@ export function SshAuthenticationPromptDialog({
       : t("connection.auth_prompt_phase_target");
 
   return (
-    <div className="app-credential-overlay">
+    <div className="ui-overlay app-credential-overlay">
       <ModalFrame
         className="app-credential-modal ssh-auth-prompt"
         role="dialog"

@@ -2,46 +2,55 @@
    Shared UI Patterns
    ============================================ */
 
+.ui-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-overlay);
+}
+
 .ui-message {
-  padding: var(--space-sm) var(--space-md);
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.45;
 }
 
 .ui-message--error {
-  border-color: var(--accent-danger-border);
-  background: var(--accent-danger-muted);
-  color: var(--accent-red);
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-muted);
+  color: var(--color-accent-danger);
 }
 
 .ui-message--warning {
-  border-color: var(--accent-warning-border);
-  background: var(--accent-warning-muted);
-  color: var(--accent-yellow);
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-muted);
+  color: var(--color-accent-warning);
 }
 
 .ui-message--success {
-  border-color: var(--accent-success-border);
-  background: var(--accent-success-muted);
-  color: var(--accent-green);
+  border-color: var(--color-success-border);
+  background: var(--color-success-muted);
+  color: var(--color-accent-success);
 }
 
 .ui-message--info {
-  border-color: var(--border-secondary);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
+  border-color: var(--color-border-secondary);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
 }
 
 .ui-modal {
   overflow: hidden;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-dialog);
+  background: var(--color-surface);
+  box-shadow: var(--elevation-lg);
 }
 
 .ui-modal__header {
@@ -49,45 +58,45 @@
   flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-md);
-  padding: 14px var(--space-lg);
-  border-bottom: 1px solid var(--border-secondary);
+  gap: var(--spacing-md);
+  padding: 14px var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border-secondary);
 }
 
 .ui-modal__body {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  gap: var(--space-md);
-  padding: var(--space-lg);
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
 }
 
 .ui-modal__footer {
   display: flex;
   flex-shrink: 0;
   justify-content: flex-end;
-  gap: var(--space-sm);
-  padding: var(--space-md) var(--space-lg);
-  border-top: 1px solid var(--border-secondary);
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-top: 1px solid var(--color-border-secondary);
 }
 
 .ui-modal__title {
-  color: var(--text-primary);
+  color: var(--color-text-primary);
   font-size: 14px;
   font-weight: 600;
 }
 
 .ui-modal__description {
   margin: 0;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.45;
 }
 
 .ui-modal__target {
   overflow: hidden;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-code);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -96,17 +105,17 @@
 .ui-modal__busy {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  color: var(--text-secondary);
+  gap: var(--spacing-sm);
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 
 .ui-modal__spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid var(--border-primary);
-  border-top-color: var(--accent-blue);
-  border-radius: var(--radius-full);
+  border: 2px solid var(--color-border-primary);
+  border-top-color: var(--color-accent-primary);
+  border-radius: var(--radius-pill);
   animation: spin 0.8s linear infinite;
 }
 
@@ -116,9 +125,9 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-md);
-  padding: var(--space-xl);
-  color: var(--text-secondary);
+  gap: var(--spacing-md);
+  padding: var(--spacing-xl);
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
@@ -136,11 +145,11 @@
 
 .ui-popover-menu {
   min-width: 210px;
-  padding: var(--space-xs);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-md);
+  padding: var(--spacing-xs);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-surface);
+  background: var(--color-surface-elevated);
+  box-shadow: var(--elevation-md);
 }
 
 .ui-popover-menu__item {
@@ -149,25 +158,25 @@
   height: 32px;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-lg);
+  gap: var(--spacing-lg);
   padding: 0 9px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   cursor: pointer;
-  font-family: var(--font-ui);
+  font-family: var(--font-family-interface);
   font-size: 12px;
   text-align: left;
   transition:
-    background var(--transition-fast),
-    color var(--transition-fast);
+    background var(--motion-transition-fast),
+    color var(--motion-transition-fast);
 }
 
 .ui-popover-menu__item:hover,
 .ui-popover-menu__item--active {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--color-interactive-hover);
+  color: var(--color-text-primary);
 }
 
 .ui-popover-menu__item:disabled {
@@ -177,7 +186,7 @@
 
 .ui-popover-menu__item:disabled:hover {
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
 }
 
 .ui-popover-menu__item-label {
@@ -188,13 +197,13 @@
 }
 
 .ui-popover-menu__shortcut {
-  color: var(--text-muted);
+  color: var(--color-text-muted);
   font-size: 11px;
   white-space: nowrap;
 }
 
 .ui-popover-menu__separator {
   height: 1px;
-  margin: var(--space-xs) 7px;
-  background: var(--border-secondary);
+  margin: var(--spacing-xs) 7px;
+  background: var(--color-border-secondary);
 }

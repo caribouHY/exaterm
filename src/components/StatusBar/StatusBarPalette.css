@@ -1,19 +1,19 @@
 .statusbar-palette {
   position: absolute;
-  z-index: 20;
+  z-index: var(--stack-command-palette);
   top: 8px;
   left: 50%;
   display: flex;
   width: min(600px, calc(100% - 24px));
   max-height: calc(100% - 16px);
   flex-direction: column;
-  padding: var(--space-xs);
+  padding: var(--spacing-xs);
   transform: translateX(-50%);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-md);
-  animation: statusbar-palette-enter var(--transition-fast);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-surface);
+  background: var(--color-surface-elevated);
+  box-shadow: var(--elevation-md);
+  animation: statusbar-palette-enter var(--motion-transition-fast);
 }
 
 .statusbar-palette__input {
@@ -21,30 +21,30 @@
   height: 34px;
   flex: 0 0 auto;
   padding: 0 10px;
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-control);
   outline: none;
-  background: var(--bg-input);
-  color: var(--text-primary);
-  font-family: var(--font-ui);
+  background: var(--color-control-background);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-interface);
   font-size: 13px;
 }
 
 .statusbar-palette__input:focus {
-  border-color: var(--border-focus);
-  outline: var(--focus-ring);
+  border-color: var(--color-border-focus);
+  outline: var(--focus-outline);
   outline-offset: -1px;
 }
 
 .statusbar-palette__input::placeholder {
-  color: var(--text-muted);
+  color: var(--color-text-muted);
 }
 
 .statusbar-palette__list {
   min-height: 0;
   max-height: 320px;
   overflow-y: auto;
-  padding-top: var(--space-xs);
+  padding-top: var(--spacing-xs);
 }
 
 .statusbar-palette__item {
@@ -53,26 +53,26 @@
   height: 32px;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--spacing-sm);
   padding: 0 9px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   cursor: pointer;
-  font-family: var(--font-ui);
+  font-family: var(--font-family-interface);
   font-size: 12px;
   text-align: left;
   transition:
-    background var(--transition-fast),
-    color var(--transition-fast),
-    opacity var(--transition-fast);
+    background var(--motion-transition-fast),
+    color var(--motion-transition-fast),
+    opacity var(--motion-transition-fast);
 }
 
 .statusbar-palette__item:hover,
 .statusbar-palette__item--highlighted {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--color-interactive-hover);
+  color: var(--color-text-primary);
 }
 
 .statusbar-palette__item:disabled {
@@ -82,7 +82,7 @@
 
 .statusbar-palette__item:disabled:hover {
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
 }
 
 .statusbar-palette__item-label {
@@ -94,22 +94,22 @@
 
 .statusbar-palette__match {
   background: transparent;
-  color: var(--accent-blue);
+  color: var(--color-accent-primary);
 }
 
 .statusbar-palette__search-label {
-  color: var(--text-muted);
+  color: var(--color-text-muted);
 }
 
 .statusbar-palette__shortcut {
-  color: var(--text-shortcut);
+  color: var(--color-text-shortcut);
   font-size: 11px;
   white-space: nowrap;
 }
 
 .statusbar-palette__empty {
-  padding: var(--space-md) 10px;
-  color: var(--text-muted);
+  padding: var(--spacing-md) 10px;
+  color: var(--color-text-muted);
   font-size: 12px;
   text-align: center;
 }
@@ -123,11 +123,5 @@
   to {
     opacity: 1;
     transform: translate(-50%, 0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .statusbar-palette {
-    animation: none;
   }
 }

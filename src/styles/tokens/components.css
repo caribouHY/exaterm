@@ -7,4 +7,5 @@
   --component-status-connected-shadow: 0 0 6px var(--color-status-connected);
   --component-toggle-thumb-shadow: var(--primitive-shadow-toggle-thumb);
   --component-ai-logo-filter: var(--primitive-filter-ai-logo);
+  --component-ai-context-indicator-shadow: 0 0 0 2px var(--color-surface);
 }

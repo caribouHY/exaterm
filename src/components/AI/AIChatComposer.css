@@ -5,10 +5,10 @@
 }
 
 .ai-panel__provider select {
-  background: var(--bg-input);
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
+  background: var(--color-control-background);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-control);
+  color: var(--color-text-primary);
   font-size: 11px;
   padding: 2px 6px;
   outline: none;
@@ -17,11 +17,11 @@
 
 .ai-panel__input-area {
   padding: 8px 12px;
-  border-top: 1px solid var(--border-secondary);
+  border-top: 1px solid var(--color-border-secondary);
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--bg-surface);
+  background: var(--color-surface);
 }
 
 .ai-panel__context-btn {
@@ -32,26 +32,26 @@
   width: 30px;
   height: 30px;
   flex-shrink: 0;
-  color: var(--accent-green);
-  background: var(--accent-success-muted);
-  border: 1px solid var(--accent-success-border);
-  border-radius: var(--radius-sm);
+  color: var(--color-accent-success);
+  background: var(--color-success-muted);
+  border: 1px solid var(--color-success-border);
+  border-radius: var(--radius-control);
   padding: 0;
   cursor: pointer;
   transition:
-    background var(--transition-fast),
-    border-color var(--transition-fast),
-    color var(--transition-fast);
+    background var(--motion-transition-fast),
+    border-color var(--motion-transition-fast),
+    color var(--motion-transition-fast);
   align-self: flex-start;
 }
 
 .ai-panel__context-btn:hover,
 .ai-panel__context-btn:focus-visible {
-  background: var(--accent-success-muted-hover);
+  background: var(--color-success-muted-hover);
 }
 
 .ai-panel__context-btn:focus-visible {
-  outline: var(--focus-ring);
+  outline: var(--focus-outline);
   outline-offset: 2px;
 }
 
@@ -60,15 +60,15 @@
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
-  z-index: 10;
+  z-index: var(--stack-local-popover);
   width: max-content;
   max-width: 220px;
   padding: 5px 8px;
-  color: var(--text-primary);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-md);
+  color: var(--color-text-primary);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-control);
+  box-shadow: var(--elevation-md);
   font-size: 11px;
   line-height: 1.4;
   white-space: normal;
@@ -76,8 +76,8 @@
   pointer-events: none;
   transform: translateY(2px);
   transition:
-    opacity var(--transition-fast),
-    transform var(--transition-fast);
+    opacity var(--motion-transition-fast),
+    transform var(--motion-transition-fast);
 }
 
 .ai-panel__context-btn:hover::after,
@@ -87,8 +87,8 @@
 }
 
 .ai-panel__context-btn--active {
-  background: var(--accent-success-muted-active);
-  border-color: var(--accent-green);
+  background: var(--color-success-muted-active);
+  border-color: var(--color-accent-success);
 }
 
 .ai-panel__context-btn--active::before {
@@ -98,9 +98,9 @@
   top: 4px;
   width: 6px;
   height: 6px;
-  background: var(--accent-green);
-  border-radius: var(--radius-full);
-  box-shadow: 0 0 0 2px var(--bg-surface);
+  background: var(--color-accent-success);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--component-ai-context-indicator-shadow);
 }
 
 .ai-panel__input-row {
@@ -118,11 +118,11 @@
 
 .ai-panel__input {
   flex: 1;
-  background: var(--bg-input);
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-family: var(--font-ui);
+  background: var(--color-control-background);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-control);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-interface);
   font-size: 13px;
   padding: 6px 10px;
   outline: none;
@@ -133,7 +133,7 @@
 }
 
 .ai-panel__input:focus {
-  border-color: var(--border-focus);
+  border-color: var(--color-border-focus);
 }
 
 .ai-panel__send {
@@ -142,17 +142,17 @@
   justify-content: center;
   width: 36px;
   height: 36px;
-  background: var(--accent-blue);
+  background: var(--color-accent-primary);
   border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-on-accent);
+  border-radius: var(--radius-control);
+  color: var(--color-text-on-accent);
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: background var(--motion-transition-fast);
   flex-shrink: 0;
 }
 
 .ai-panel__send:hover {
-  background: var(--accent-blue-hover);
+  background: var(--color-accent-primary-hover);
 }
 
 .ai-panel__send:disabled {
