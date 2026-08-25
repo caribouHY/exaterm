@@ -60,8 +60,8 @@
   --primitive-size-36: 36px;
   --primitive-size-280: 280px;
 
-  --primitive-font-family-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
-  --primitive-font-family-mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+  --primitive-font-family-sans: "Segoe UI", sans-serif;
+  --primitive-font-family-mono: Consolas, "Courier New", monospace;
 
   --primitive-radius-1: 3px;
   --primitive-radius-2: 5px;
