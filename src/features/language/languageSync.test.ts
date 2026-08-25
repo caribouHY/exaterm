@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createLanguageSyncController, type LanguageSyncStage } from "./languageSync";
+import {
+  createLanguageSyncController,
+  loadAndApplyConfig,
+  type LanguageSyncStage,
+} from "./languageSync";
 
 function createDeferred() {
   let resolvePromise = () => {};
@@ -143,5 +147,35 @@ describe("createLanguageSyncController", () => {
     await sync;
 
     expect(changeFrontendLanguage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("loadAndApplyConfig", () => {
+  it("shares the loaded config and returns its language", async () => {
+    const config = { language: "ja", updates: { check_on_startup: true } };
+    const applyConfig = vi.fn();
+
+    await expect(
+      loadAndApplyConfig(
+        vi.fn(async () => config),
+        applyConfig
+      )
+    ).resolves.toBe("ja");
+    expect(applyConfig).toHaveBeenCalledWith(config);
+  });
+
+  it("does not replace the shared config when loading fails", async () => {
+    const loadError = new Error("load failed");
+    const applyConfig = vi.fn();
+
+    await expect(
+      loadAndApplyConfig(
+        vi.fn(async () => {
+          throw loadError;
+        }),
+        applyConfig
+      )
+    ).rejects.toBe(loadError);
+    expect(applyConfig).not.toHaveBeenCalled();
   });
 });

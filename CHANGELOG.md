@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Improved application startup performance.
+
 ## v0.9.0
 
 ### Added

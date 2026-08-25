@@ -264,7 +264,7 @@ export interface TabInfo {
   id: string;
   title: string;
   connectionType: ConnectionType;
-  sessionId?: string;
+  sessionId: string;
   isConnected: boolean;
   encoding: Encoding;
   terminalMode: TerminalMode;

@@ -11,14 +11,12 @@ import { useTranslation } from "react-i18next";
 import type {
   ConnectionType,
   Encoding,
-  ShortcutBinding,
   ShortcutConfig,
   TerminalConfig,
   TerminalMode,
 } from "../../types";
 import {
   findShortcutAction,
-  formatShortcut,
   type TerminalLogShortcutAction,
 } from "../../features/shortcuts/shortcutModel";
 import { shouldAppendManualLog } from "../../features/terminal-logging/terminalLoggingModel";
@@ -31,12 +29,11 @@ import { getTerminalDecorationProfile } from "./terminalDecorationProfiles";
 import { getTerminalPromptColor, TERMINAL_DECORATION_COLORS } from "./terminalDecorationTheme";
 import type { TerminalPinnedCommand } from "./terminalDecorationTypes";
 import { clearTerminalBuffer, clearTerminalViewport } from "./terminalClearActions";
-import appIcon from "../../../src-tauri/icons/icon.png";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
 interface TerminalViewProps {
-  sessionId: string | null;
+  sessionId: string;
   connectionType: ConnectionType;
   isConnected: boolean;
   isActive: boolean;
@@ -46,7 +43,6 @@ interface TerminalViewProps {
   terminalConfig?: TerminalConfig;
   shortcuts: ShortcutConfig;
   terminalMode: TerminalMode;
-  onOpenConnection: () => void;
   onTerminalData?: (data: string) => void;
   onTerminalLogShortcut?: (action: TerminalLogShortcutAction) => void;
   onTerminalSelectionChange?: (hasSelection: boolean) => void;
@@ -106,7 +102,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     terminalConfig,
     shortcuts,
     terminalMode,
-    onOpenConnection,
     onTerminalData,
     onTerminalLogShortcut,
     onTerminalSelectionChange,
@@ -649,38 +644,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       }, 50);
     }
   }, [terminalConfig]);
-
-  if (!sessionId) {
-    return (
-      <div className={`terminal-view ${!isActive ? "terminal-view--hidden" : ""}`}>
-        <div className="terminal-view__empty">
-          <img className="terminal-view__empty-icon" src={appIcon} alt="" aria-hidden="true" />
-          <div className="terminal-view__empty-title">ExaTerm</div>
-          <div className="terminal-view__empty-desc">{t("terminal.empty_desc")}</div>
-          <button className="btn btn-primary" onClick={onOpenConnection}>
-            {t("connection.new")}
-          </button>
-          <div className="terminal-view__empty-shortcuts">
-            {(
-              [
-                { binding: shortcuts.new_connection, label: t("connection.new") },
-                { binding: shortcuts.new_window, label: t("titlebar.menu.new_window") },
-                { binding: shortcuts.open_settings, label: t("titlebar.menu.settings") },
-              ] satisfies Array<{ binding: ShortcutBinding | null; label: string }>
-            ).map(({ binding, label }) => {
-              const shortcut = formatShortcut(binding);
-              return shortcut ? (
-                <div className="terminal-view__shortcut" key={String(label)}>
-                  <span className="terminal-view__key">{shortcut}</span>
-                  <span>{label}</span>
-                </div>
-              ) : null;
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className={`terminal-view ${!isActive ? "terminal-view--hidden" : ""}`}>
