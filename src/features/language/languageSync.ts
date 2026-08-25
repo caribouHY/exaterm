@@ -19,6 +19,7 @@ interface LanguageSyncDependencies {
   loadConfiguredLanguage: () => Promise<string | undefined>;
   getFrontendLanguage: () => string | undefined;
   changeFrontendLanguage: (language: EffectiveLanguage) => Promise<void>;
+  setDocumentLanguage: (language: EffectiveLanguage) => void;
   systemLanguage: string | undefined;
   reportError: (stage: LanguageSyncStage, error: unknown) => void;
 }
@@ -32,6 +33,7 @@ export function createLanguageSyncController({
   loadConfiguredLanguage,
   getFrontendLanguage,
   changeFrontendLanguage,
+  setDocumentLanguage,
   systemLanguage,
   reportError,
 }: LanguageSyncDependencies): LanguageSyncController {
@@ -59,6 +61,10 @@ export function createLanguageSyncController({
       } catch (error) {
         reportError("frontend", error);
       }
+    }
+
+    if (getFrontendLanguage() === effectiveLanguage) {
+      setDocumentLanguage(effectiveLanguage);
     }
 
     hasAppliedLanguage = true;

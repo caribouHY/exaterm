@@ -19,28 +19,39 @@ function createController(overrides?: {
   loadConfiguredLanguage?: () => Promise<string | undefined>;
   getFrontendLanguage?: () => string | undefined;
   changeFrontendLanguage?: (language: "en" | "ja") => Promise<void>;
+  setDocumentLanguage?: (language: "en" | "ja") => void;
 }) {
   const errors: Array<{ stage: LanguageSyncStage; error: unknown }> = [];
   const changeFrontendLanguage =
     overrides?.changeFrontendLanguage ?? vi.fn(async (_language: "en" | "ja") => {});
+  const setDocumentLanguage = overrides?.setDocumentLanguage ?? vi.fn();
   const controller = createLanguageSyncController({
     loadConfiguredLanguage: overrides?.loadConfiguredLanguage ?? vi.fn(async () => "ja"),
     getFrontendLanguage: overrides?.getFrontendLanguage ?? (() => "en"),
     changeFrontendLanguage,
+    setDocumentLanguage,
     systemLanguage: "en-US",
     reportError: (stage, error) => errors.push({ stage, error }),
   });
 
-  return { controller, errors, changeFrontendLanguage };
+  return { controller, errors, changeFrontendLanguage, setDocumentLanguage };
 }
 
 describe("createLanguageSyncController", () => {
   it("applies the configured language to the frontend", async () => {
-    const { controller, changeFrontendLanguage } = createController();
+    let currentLanguage = "en";
+    const changeFrontendLanguage = vi.fn(async (language: "en" | "ja") => {
+      currentLanguage = language;
+    });
+    const { controller, setDocumentLanguage } = createController({
+      getFrontendLanguage: () => currentLanguage,
+      changeFrontendLanguage,
+    });
 
     await controller.requestSync();
 
     expect(changeFrontendLanguage).toHaveBeenCalledWith("ja");
+    expect(setDocumentLanguage).toHaveBeenCalledWith("ja");
   });
 
   it("uses the system language when the initial config load fails", async () => {
@@ -77,7 +88,7 @@ describe("createLanguageSyncController", () => {
 
   it("reports a frontend update failure", async () => {
     const frontendError = new Error("frontend failed");
-    const { controller, errors } = createController({
+    const { controller, errors, setDocumentLanguage } = createController({
       changeFrontendLanguage: vi.fn(async () => {
         throw frontendError;
       }),
@@ -86,16 +97,18 @@ describe("createLanguageSyncController", () => {
     await controller.requestSync();
 
     expect(errors).toEqual([{ stage: "frontend", error: frontendError }]);
+    expect(setDocumentLanguage).not.toHaveBeenCalled();
   });
 
   it("skips a redundant frontend language update", async () => {
-    const { controller, changeFrontendLanguage } = createController({
+    const { controller, changeFrontendLanguage, setDocumentLanguage } = createController({
       getFrontendLanguage: () => "ja",
     });
 
     await controller.requestSync();
 
     expect(changeFrontendLanguage).not.toHaveBeenCalled();
+    expect(setDocumentLanguage).toHaveBeenCalledWith("ja");
   });
 
   it("serializes overlapping refresh requests", async () => {
