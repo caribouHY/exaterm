@@ -105,3 +105,7 @@
   --stack-menu: var(--primitive-layer-1000);
   --stack-context-menu: var(--primitive-layer-1200);
 }
+
+:root:lang(ja) {
+  --font-family-interface: "Segoe UI", "Yu Gothic UI", sans-serif;
+}

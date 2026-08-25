@@ -46,6 +46,9 @@ export function LanguageCoordinator({ children }: LanguageCoordinatorProps) {
       changeFrontendLanguage: async (language) => {
         await i18n.changeLanguage(language);
       },
+      setDocumentLanguage: (language) => {
+        document.documentElement.lang = language;
+      },
       systemLanguage: globalThis.navigator.language,
       reportError: reportLanguageSyncError,
     });
