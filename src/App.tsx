@@ -12,7 +12,6 @@ import type {
   ViewMode,
   ConnectionType,
   Encoding,
-  AppConfig,
   ChatMessage,
   TerminalMode,
   StartupCliRequest,
@@ -58,6 +57,7 @@ import { useAppExit } from "./features/app-exit/useAppExit";
 import { SshAuthenticationPromptDialog } from "./features/ssh-authentication/SshAuthenticationPromptDialog";
 import { SshHostKeyPromptDialog } from "./features/ssh-authentication/SshHostKeyPromptDialog";
 import { useSshPrompts } from "./features/ssh-authentication/useSshPrompts";
+import { useAppConfig } from "./features/language/LanguageCoordinator";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -107,6 +107,7 @@ interface McpLogControlRequestPayload {
 
 export default function App() {
   const { t } = useTranslation();
+  const config = useAppConfig();
   const windowTabs = useWindowTabs();
   const sshPrompts = useSshPrompts();
   const {
@@ -127,7 +128,6 @@ export default function App() {
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [aiPanelWidth, setAiPanelWidth] = useState(AI_PANEL_DEFAULT_WIDTH);
   const [isDragging, setIsDragging] = useState(false);
-  const [config, setConfig] = useState<AppConfig | null>(null);
   const [manualLogBusyTabId, setManualLogBusyTabId] = useState<string | null>(null);
   const [logStatusMessage, setLogStatusMessage] = useState("");
   const showTemporaryLogStatus = useCallback((message: string) => {
@@ -745,30 +745,6 @@ export default function App() {
     };
   }, [appExit.requestExit, openConnection, openUtilityTab, openWindow, shortcuts]);
 
-  const refreshConfig = useCallback(async () => {
-    try {
-      const cfg = await invoke<AppConfig>("config_load");
-      setConfig(cfg);
-    } catch (e) {
-      console.error("Failed to load config:", e);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshConfig();
-  }, [refreshConfig]);
-
-  useEffect(() => {
-    const unlisten = listen("config://updated", () => {
-      void refreshConfig();
-    });
-    return () => {
-      void unlisten.then((stopListening) => {
-        stopListening();
-      });
-    };
-  }, [refreshConfig]);
-
   useEffect(() => {
     invoke<StartupCliRequest | null>("startup_cli_request_get")
       .then((request) => {
@@ -943,7 +919,7 @@ export default function App() {
               </div>
               {activeView === "settings" && (
                 <Suspense fallback={<div aria-hidden="true" />}>
-                  <SettingsPanel onSave={refreshConfig} />
+                  <SettingsPanel />
                 </Suspense>
               )}
               {activeView === "logs" && (

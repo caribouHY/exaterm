@@ -1,7 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter};
 
 use crate::ai::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
@@ -673,23 +673,34 @@ fn config_path() -> PathBuf {
 
 #[tauri::command]
 pub fn config_load() -> Result<AppConfig, crate::command_error::BackendCommandError> {
-    let cfg = config_read().map_err(crate::command_error::BackendCommandError::from)?;
-    config_write(&cfg).map_err(crate::command_error::BackendCommandError::from)?;
-    Ok(cfg)
+    config_load_from_path(&config_path()).map_err(crate::command_error::BackendCommandError::from)
 }
 
 pub(crate) fn config_read() -> Result<AppConfig, String> {
-    let path = config_path();
+    config_read_from_path(&config_path()).map(|(config, _)| config)
+}
+
+fn config_read_from_path(path: &Path) -> Result<(AppConfig, bool), String> {
     if path.exists() {
         let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        let cfg: AppConfig = serde_json::from_str(&data).map_err(|e| e.to_string())?;
+        let stored: serde_json::Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
+        let cfg: AppConfig = serde_json::from_value(stored.clone()).map_err(|e| e.to_string())?;
         let cfg = cfg.migrate();
         crate::ssh::validate_algorithm_config(&cfg.ssh)?;
         validate_shortcut_config(&cfg.shortcuts)?;
-        Ok(cfg)
+        let normalized = serde_json::to_value(&cfg).map_err(|e| e.to_string())?;
+        Ok((cfg, stored != normalized))
     } else {
-        Ok(AppConfig::default())
+        Ok((AppConfig::default(), true))
     }
+}
+
+fn config_load_from_path(path: &Path) -> Result<AppConfig, String> {
+    let (config, should_write) = config_read_from_path(path)?;
+    if should_write {
+        config_write_to_path(path, &config)?;
+    }
+    Ok(config)
 }
 
 #[tauri::command]
@@ -712,7 +723,10 @@ pub fn config_save(
 }
 
 fn config_write(config: &AppConfig) -> Result<(), String> {
-    let path = config_path();
+    config_write_to_path(&config_path(), config)
+}
+
+fn config_write_to_path(path: &Path, config: &AppConfig) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
@@ -723,6 +737,75 @@ fn config_write(config: &AppConfig) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
+
+    struct TestConfigFile {
+        directory: PathBuf,
+        path: PathBuf,
+    }
+
+    impl TestConfigFile {
+        fn new(label: &str) -> Self {
+            let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("target")
+                .join("test-config")
+                .join(Uuid::new_v4().to_string());
+            fs::create_dir_all(&directory).unwrap();
+            let path = directory.join(format!("{label}.json"));
+            Self { directory, path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestConfigFile {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.directory);
+        }
+    }
+
+    #[test]
+    fn canonical_config_load_does_not_rewrite_the_file() {
+        let config_file = TestConfigFile::new("canonical");
+        let path = config_file.path();
+        let compact = serde_json::to_string(&AppConfig::default()).unwrap();
+        fs::write(&path, &compact).unwrap();
+
+        let loaded = config_load_from_path(&path).unwrap();
+
+        assert_eq!(loaded.config_version, CURRENT_CONFIG_VERSION);
+        assert_eq!(fs::read_to_string(&path).unwrap(), compact);
+    }
+
+    #[test]
+    fn missing_config_is_created_with_current_defaults() {
+        let config_file = TestConfigFile::new("missing");
+        let path = config_file.path();
+
+        let loaded = config_load_from_path(&path).unwrap();
+        let stored: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+
+        assert_eq!(loaded.config_version, CURRENT_CONFIG_VERSION);
+        assert_eq!(stored, serde_json::to_value(&loaded).unwrap());
+    }
+
+    #[test]
+    fn legacy_or_partial_config_is_rewritten_once() {
+        let config_file = TestConfigFile::new("legacy");
+        let path = config_file.path();
+        fs::write(&path, r#"{"config_version":1,"language":"ja"}"#).unwrap();
+
+        let loaded = config_load_from_path(&path).unwrap();
+        let rewritten = fs::read_to_string(&path).unwrap();
+
+        assert_eq!(loaded.config_version, CURRENT_CONFIG_VERSION);
+        assert_eq!(loaded.language, "ja");
+        assert_ne!(rewritten, r#"{"config_version":1,"language":"ja"}"#);
+        assert!(!config_read_from_path(&path).unwrap().1);
+    }
 
     #[test]
     fn partial_config_uses_defaults_and_migrates_version() {
