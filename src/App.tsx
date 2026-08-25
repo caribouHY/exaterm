@@ -1,8 +1,8 @@
 import { lazy, Suspense, useState, useRef, useCallback, useEffect } from "react";
 import TitleBar from "./components/TitleBar/TitleBar";
 import TerminalTabs from "./components/Terminal/TerminalTabs";
-import TerminalView from "./components/Terminal/TerminalView";
 import type { TerminalViewHandle } from "./components/Terminal/TerminalView";
+import TerminalEmptyState from "./components/Terminal/TerminalEmptyState";
 import StatusBar from "./components/StatusBar/StatusBar";
 import StatusBarPalette from "./components/StatusBar/StatusBarPalette";
 import type { StatusBarPaletteCloseReason } from "./components/StatusBar/StatusBarPalette";
@@ -64,11 +64,13 @@ const loadConnectionDialog = () => import("./components/Connection/ConnectionDia
 const loadAIChatPanel = () => import("./components/AI/AIChatPanel");
 const loadSettingsPanel = () => import("./components/Settings/SettingsPanel");
 const loadLogViewer = () => import("./components/Log/LogViewer");
+const loadTerminalView = () => import("./components/Terminal/TerminalView");
 
 const ConnectionDialog = lazy(loadConnectionDialog);
 const AIChatPanel = lazy(loadAIChatPanel);
 const SettingsPanel = lazy(loadSettingsPanel);
 const LogViewer = lazy(loadLogViewer);
+const TerminalView = lazy(loadTerminalView);
 
 const AI_PANEL_DEFAULT_WIDTH = 340;
 const AI_PANEL_MIN_WIDTH = 200;
@@ -891,53 +893,52 @@ export default function App() {
                   />
                 )}
                 {tabs.length === 0 ? (
-                  <TerminalView
-                    sessionId={null}
-                    connectionType="ssh"
-                    isConnected={false}
+                  <TerminalEmptyState
                     isActive={activeView === "terminal"}
-                    isManualLogging={false}
-                    isManualLoggingPaused={false}
                     onOpenConnection={openConnection}
-                    onTerminalData={() => {}}
-                    encoding="utf-8"
-                    terminalConfig={config?.terminal}
                     shortcuts={shortcuts}
-                    terminalMode={DEFAULT_TERMINAL_MODE}
                   />
                 ) : (
-                  tabs.map((tab) => (
-                    <TerminalView
-                      key={tab.id}
-                      ref={(handle) => {
-                        if (handle) {
-                          terminalViewRefs.current.set(tab.id, handle);
-                        } else {
-                          terminalViewRefs.current.delete(tab.id);
-                        }
-                      }}
-                      sessionId={tab.sessionId || null}
-                      connectionType={tab.connectionType}
-                      isConnected={tab.isConnected}
-                      isActive={activeView === "terminal" && tab.id === activeTabId}
-                      isManualLogging={Boolean(tab.isManualLogging)}
-                      isManualLoggingPaused={Boolean(tab.isManualLoggingPaused)}
-                      onOpenConnection={openConnection}
-                      onTerminalData={(data) => {
-                        handleTerminalData(tab.id, data);
-                      }}
-                      onTerminalLogShortcut={(action) => {
-                        handleTerminalLogShortcut(tab.id, action);
-                      }}
-                      onTerminalSelectionChange={(hasSelection) => {
-                        handleTerminalSelectionChange(tab.id, hasSelection);
-                      }}
-                      encoding={tab.encoding}
-                      terminalMode={tab.terminalMode}
-                      terminalConfig={config?.terminal}
-                      shortcuts={shortcuts}
-                    />
-                  ))
+                  <Suspense
+                    fallback={
+                      <div
+                        className={`terminal-view ${activeView !== "terminal" ? "terminal-view--hidden" : ""}`}
+                        aria-busy="true"
+                      />
+                    }
+                  >
+                    {tabs.map((tab) => (
+                      <TerminalView
+                        key={tab.id}
+                        ref={(handle) => {
+                          if (handle) {
+                            terminalViewRefs.current.set(tab.id, handle);
+                          } else {
+                            terminalViewRefs.current.delete(tab.id);
+                          }
+                        }}
+                        sessionId={tab.sessionId}
+                        connectionType={tab.connectionType}
+                        isConnected={tab.isConnected}
+                        isActive={activeView === "terminal" && tab.id === activeTabId}
+                        isManualLogging={Boolean(tab.isManualLogging)}
+                        isManualLoggingPaused={Boolean(tab.isManualLoggingPaused)}
+                        onTerminalData={(data) => {
+                          handleTerminalData(tab.id, data);
+                        }}
+                        onTerminalLogShortcut={(action) => {
+                          handleTerminalLogShortcut(tab.id, action);
+                        }}
+                        onTerminalSelectionChange={(hasSelection) => {
+                          handleTerminalSelectionChange(tab.id, hasSelection);
+                        }}
+                        encoding={tab.encoding}
+                        terminalMode={tab.terminalMode}
+                        terminalConfig={config?.terminal}
+                        shortcuts={shortcuts}
+                      />
+                    ))}
+                  </Suspense>
                 )}
               </div>
               {activeView === "settings" && (
