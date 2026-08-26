@@ -72,8 +72,10 @@ pub async fn ssh_connect(
         .connect_attempts
         .register(request_id)
         .map_err(crate::command_error::BackendCommandError::from)?;
+    // Keep the large SSH connection future off Tauri's command-dispatch stack. In optimized
+    // builds, embedding it in the generated IPC future can overflow the Windows main thread.
     command_result(
-        connection::connect(
+        Box::pin(connection::connect(
             &app,
             &state,
             &terminals,
@@ -83,7 +85,7 @@ pub async fn ssh_connect(
             HostKeyHandling::Prompt,
             options,
             Some(attempt),
-        )
+        ))
         .await,
     )
 }
