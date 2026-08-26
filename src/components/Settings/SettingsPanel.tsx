@@ -30,11 +30,7 @@ import {
 } from "./settingsModel";
 import "./SettingsPanel.css";
 
-interface SettingsPanelProps {
-  onSave?: () => void;
-}
-
-export default function SettingsPanel({ onSave }: SettingsPanelProps) {
+export default function SettingsPanel() {
   const { t } = useTranslation();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [initialConfigSnapshot, setInitialConfigSnapshot] = useState<AppConfig | null>(null);
@@ -146,7 +142,6 @@ export default function SettingsPanel({ onSave }: SettingsPanelProps) {
       await refreshSecretStatus();
 
       setSaved(true);
-      onSave?.();
       savedTimeoutRef.current = setTimeout(() => {
         setSaved(false);
         savedTimeoutRef.current = null;

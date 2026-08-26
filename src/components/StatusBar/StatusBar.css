@@ -2,12 +2,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--statusbar-height);
-  background: var(--bg-surface);
-  border-top: 1px solid var(--border-secondary);
+  height: var(--component-statusbar-height);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border-secondary);
   padding: 0 10px;
   font-size: 11px;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 
@@ -35,19 +35,19 @@
   font-family: inherit;
   font-size: inherit;
   transition:
-    background var(--transition-fast),
-    color var(--transition-fast),
-    opacity var(--transition-fast);
+    background var(--motion-transition-fast),
+    color var(--motion-transition-fast),
+    opacity var(--motion-transition-fast);
 }
 
 .statusbar__item--clickable:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--color-interactive-hover);
+  color: var(--color-text-primary);
   opacity: 1;
 }
 
 .statusbar__item--clickable:focus-visible {
-  outline: var(--focus-ring);
+  outline: var(--focus-outline);
   outline-offset: -1px;
 }
 
@@ -72,13 +72,13 @@
 }
 
 .statusbar__log--manual {
-  background: var(--bg-active);
-  color: var(--text-primary);
+  background: var(--color-interactive-active);
+  color: var(--color-text-primary);
   opacity: 1;
 }
 
 .statusbar__log--paused {
-  color: var(--accent-yellow);
+  color: var(--color-accent-warning);
   opacity: 1;
 }
 
@@ -91,14 +91,14 @@
 .statusbar__dot {
   width: 7px;
   height: 7px;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-pill);
 }
 
 .statusbar__dot--connected {
-  background: var(--status-connected);
-  box-shadow: var(--shadow-status-connected);
+  background: var(--color-status-connected);
+  box-shadow: var(--component-status-connected-shadow);
 }
 
 .statusbar__dot--disconnected {
-  background: var(--status-disconnected);
+  background: var(--color-status-disconnected);
 }

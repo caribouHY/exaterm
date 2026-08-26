@@ -1,15 +1,26 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import i18n from "../../i18n";
-import { createLanguageSyncController, type LanguageSyncStage } from "./languageSync";
+import type { AppConfig } from "../../types";
+import {
+  createLanguageSyncController,
+  loadAndApplyConfig,
+  type LanguageSyncStage,
+} from "./languageSync";
 
 interface LanguageCoordinatorProps {
   children: ReactNode;
 }
 
-interface LanguageConfig {
-  language?: string;
+const AppConfigContext = createContext<AppConfig | null | undefined>(undefined);
+
+export function useAppConfig() {
+  const config = useContext(AppConfigContext);
+  if (config === undefined) {
+    throw new Error("useAppConfig must be used within LanguageCoordinator.");
+  }
+  return config;
 }
 
 function reportLanguageSyncError(stage: LanguageSyncStage, error: unknown) {
@@ -18,16 +29,25 @@ function reportLanguageSyncError(stage: LanguageSyncStage, error: unknown) {
 
 export function LanguageCoordinator({ children }: LanguageCoordinatorProps) {
   const [ready, setReady] = useState(false);
+  const [config, setConfig] = useState<AppConfig | null>(null);
 
   useEffect(() => {
     let active = true;
     let unlisten: UnlistenFn | undefined;
     const controller = createLanguageSyncController({
-      loadConfiguredLanguage: async () =>
-        (await invoke<LanguageConfig | null>("config_load"))?.language,
+      loadConfiguredLanguage: () =>
+        loadAndApplyConfig(
+          () => invoke<AppConfig>("config_load"),
+          (nextConfig) => {
+            if (active) setConfig(nextConfig);
+          }
+        ),
       getFrontendLanguage: () => i18n.resolvedLanguage ?? i18n.language,
       changeFrontendLanguage: async (language) => {
         await i18n.changeLanguage(language);
+      },
+      setDocumentLanguage: (language) => {
+        document.documentElement.lang = language;
       },
       systemLanguage: globalThis.navigator.language,
       reportError: reportLanguageSyncError,
@@ -59,5 +79,7 @@ export function LanguageCoordinator({ children }: LanguageCoordinatorProps) {
     };
   }, []);
 
-  return ready ? children : null;
+  return ready ? (
+    <AppConfigContext.Provider value={config}>{children}</AppConfigContext.Provider>
+  ) : null;
 }

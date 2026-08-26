@@ -1,0 +1,36 @@
+.settings-connection-history {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.settings-connection-history__count {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.settings-connection-history .settings-help {
+  margin: 4px 0 0;
+}
+
+.settings-connection-history .btn {
+  align-self: flex-end;
+  flex-shrink: 0;
+}
+
+.settings-connection-history__feedback {
+  margin-bottom: var(--spacing-lg);
+}
+
+@media (max-width: 760px) {
+  .settings-connection-history {
+    flex-direction: column;
+  }
+
+  .settings-connection-history .btn {
+    align-self: flex-start;
+  }
+}

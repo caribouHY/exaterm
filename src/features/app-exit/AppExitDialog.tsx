@@ -20,7 +20,7 @@ export function AppExitDialog({ controller }: AppExitDialogProps) {
   if (controller.activeSessionCount === null) return null;
 
   return (
-    <div className="app-exit-overlay">
+    <div className="ui-overlay app-exit-overlay">
       <ModalFrame
         className="app-exit-dialog"
         role="alertdialog"

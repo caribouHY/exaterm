@@ -101,7 +101,11 @@ export function ConnectionDialogView({
   }, [error]);
 
   return (
-    <div className="connection-overlay" onMouseDown={onOverlayMouseDown} onClick={onOverlayClick}>
+    <div
+      className="ui-overlay connection-overlay"
+      onMouseDown={onOverlayMouseDown}
+      onClick={onOverlayClick}
+    >
       <ModalFrame
         className="connection-dialog"
         role="dialog"

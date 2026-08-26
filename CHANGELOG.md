@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## v0.9.1
+
+### Changed
+
+- Improved application startup performance.
+
+### Fixed
+
+- Fixed release builds crashing while starting SSH connections.
+
 ## v0.9.0
 
 ### Added

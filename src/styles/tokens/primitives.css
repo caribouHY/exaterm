@@ -1,0 +1,95 @@
+:root {
+  --primitive-color-neutral-950: #1e1e1e;
+  --primitive-color-neutral-925: #1f1f1f;
+  --primitive-color-neutral-900: #252526;
+  --primitive-color-neutral-875: #2a2d2e;
+  --primitive-color-neutral-850: #2d2d2d;
+  --primitive-color-neutral-800: #37373d;
+  --primitive-color-neutral-700: #3c3c3c;
+  --primitive-color-neutral-600: #474747;
+  --primitive-color-neutral-500: #5a5a5a;
+  --primitive-color-neutral-400: #858585;
+  --primitive-color-neutral-200: #cccccc;
+  --primitive-color-white: #ffffff;
+  --primitive-color-blue-900: #264f78;
+  --primitive-color-blue-700: #007acc;
+  --primitive-color-blue-600: #1a8ad4;
+  --primitive-color-blue-500: #3794ff;
+  --primitive-color-blue-400: #569cd6;
+  --primitive-color-green-700: #2d8a73;
+  --primitive-color-green-500: #4ec9b0;
+  --primitive-color-orange-500: #ce9178;
+  --primitive-color-red-700: #a03030;
+  --primitive-color-red-500: #f44747;
+  --primitive-color-yellow-600: #cca700;
+  --primitive-color-yellow-300: #dcdcaa;
+  --primitive-color-purple-500: #c586c0;
+  --primitive-color-cyan-400: #9cdcfe;
+
+  --primitive-color-white-a04: rgba(255, 255, 255, 0.04);
+  --primitive-color-white-a06: rgba(255, 255, 255, 0.06);
+  --primitive-color-white-a12: rgba(255, 255, 255, 0.12);
+  --primitive-color-white-a20: rgba(255, 255, 255, 0.2);
+  --primitive-color-white-a75: rgba(255, 255, 255, 0.75);
+  --primitive-color-black-a20: rgba(0, 0, 0, 0.2);
+  --primitive-color-black-a30: rgba(0, 0, 0, 0.3);
+  --primitive-color-black-a40: rgba(0, 0, 0, 0.4);
+  --primitive-color-black-a50: rgba(0, 0, 0, 0.5);
+  --primitive-color-black-a55: rgba(0, 0, 0, 0.55);
+  --primitive-color-blue-a15: rgba(0, 122, 204, 0.15);
+  --primitive-color-blue-soft-a45: rgba(86, 156, 214, 0.45);
+  --primitive-color-green-a08: rgba(78, 201, 176, 0.08);
+  --primitive-color-green-a15: rgba(78, 201, 176, 0.15);
+  --primitive-color-green-a20: rgba(78, 201, 176, 0.2);
+  --primitive-color-yellow-a08: rgba(204, 167, 0, 0.08);
+  --primitive-color-yellow-a15: rgba(204, 167, 0, 0.15);
+  --primitive-color-yellow-a35: rgba(204, 167, 0, 0.35);
+  --primitive-color-red-a10: rgba(244, 71, 71, 0.1);
+  --primitive-color-red-a20: rgba(244, 71, 71, 0.2);
+  --primitive-color-red-a30: rgba(244, 71, 71, 0.3);
+
+  --primitive-space-0-75: 3px;
+  --primitive-space-1: 4px;
+  --primitive-space-2: 8px;
+  --primitive-space-3: 12px;
+  --primitive-space-4: 16px;
+  --primitive-space-6: 24px;
+
+  --primitive-size-24: 24px;
+  --primitive-size-32: 32px;
+  --primitive-size-36: 36px;
+  --primitive-size-280: 280px;
+
+  --primitive-font-family-sans: "Segoe UI", sans-serif;
+  --primitive-font-family-mono: Consolas, "Courier New", monospace;
+
+  --primitive-radius-1: 3px;
+  --primitive-radius-2: 5px;
+  --primitive-radius-3: 8px;
+  --primitive-radius-round: 9999px;
+
+  --primitive-duration-120: 120ms;
+  --primitive-duration-200: 200ms;
+  --primitive-duration-350: 350ms;
+
+  --primitive-layer-1: 1;
+  --primitive-layer-2: 2;
+  --primitive-layer-5: 5;
+  --primitive-layer-6: 6;
+  --primitive-layer-10: 10;
+  --primitive-layer-20: 20;
+  --primitive-layer-100: 100;
+  --primitive-layer-500: 500;
+  --primitive-layer-700: 700;
+  --primitive-layer-750: 750;
+  --primitive-layer-1000: 1000;
+  --primitive-layer-1200: 1200;
+
+  --primitive-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --primitive-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --primitive-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --primitive-shadow-menu: 0 -2px 10px rgba(0, 0, 0, 0.5);
+  --primitive-shadow-accent-glow: 0 0 20px rgba(0, 122, 204, 0.15);
+  --primitive-shadow-toggle-thumb: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --primitive-filter-ai-logo: drop-shadow(0 0 4px rgba(86, 156, 214, 0.45));
+}

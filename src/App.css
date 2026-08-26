@@ -55,15 +55,15 @@
   width: 4px;
   cursor: col-resize;
   background: transparent;
-  transition: background var(--transition-fast);
-  z-index: 10;
+  transition: background var(--motion-transition-fast);
+  z-index: var(--stack-local-popover);
   position: relative;
   margin: 0 -2px;
 }
 
 .app__resizer:hover,
 .app__resizer--dragging {
-  background: var(--accent-blue);
+  background: var(--color-accent-primary);
 }
 
 .app__ai-panel {
@@ -73,13 +73,7 @@
 }
 
 .app-credential-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-overlay);
+  z-index: var(--stack-credential-overlay);
 }
 
 .app-credential-modal {
@@ -92,7 +86,7 @@
 
 .app-credential-modal__eyebrow {
   margin-bottom: 4px;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   font-size: 11px;
 }
 
@@ -137,7 +131,7 @@
 }
 
 .ssh-host-key-prompt__message {
-  color: var(--text-primary);
+  color: var(--color-text-primary);
 }
 
 .ssh-host-key-prompt__message,
@@ -150,26 +144,26 @@
   grid-template-columns: 150px minmax(0, 1fr);
   gap: 8px 12px;
   padding: 12px;
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elevated);
+  border: 1px solid var(--color-border-secondary);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-elevated);
 }
 
 .ssh-host-key-prompt__label {
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   font-size: 12px;
   white-space: nowrap;
 }
 
 .ssh-host-key-prompt__value {
-  color: var(--text-primary);
+  color: var(--color-text-primary);
   font-size: 12px;
   line-height: 1.5;
   word-break: break-word;
 }
 
 .ssh-host-key-prompt__value--mono {
-  font-family: var(--font-mono);
+  font-family: var(--font-family-code);
 }
 
 @media (max-width: 520px) {

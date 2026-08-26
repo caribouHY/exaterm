@@ -2,13 +2,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--titlebar-height);
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-secondary);
+  height: var(--component-titlebar-height);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border-secondary);
   -webkit-app-region: drag;
   padding: 0;
   position: relative;
-  z-index: 100;
+  z-index: var(--stack-titlebar);
 }
 
 .titlebar__left {
@@ -36,7 +36,7 @@
   transform: translateX(-50%);
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   letter-spacing: 0;
   white-space: nowrap;
 }
@@ -63,13 +63,13 @@
   padding: 0 9px;
   background: transparent;
   border: none;
-  color: var(--text-secondary);
-  font-family: var(--font-ui);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-interface);
   font-size: 12px;
   cursor: pointer;
   transition:
-    background var(--transition-fast),
-    color var(--transition-fast);
+    background var(--motion-transition-fast),
+    color var(--motion-transition-fast);
 }
 
 .titlebar__menu-trigger::after {
@@ -80,22 +80,22 @@
   height: 2px;
   background: transparent;
   content: "";
-  transition: background var(--transition-fast);
+  transition: background var(--motion-transition-fast);
 }
 
 .titlebar__menu-trigger:hover,
 .titlebar__menu-trigger--open {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--color-interactive-hover);
+  color: var(--color-text-primary);
 }
 
 .titlebar__menu-trigger--open::after {
-  background: var(--accent-blue);
+  background: var(--color-accent-primary);
 }
 
 .titlebar__menu-trigger:focus-visible {
-  z-index: 1;
-  outline: 1px solid var(--accent-blue);
+  z-index: var(--stack-focus);
+  outline: 1px solid var(--color-accent-primary);
   outline-offset: -2px;
 }
 
@@ -103,7 +103,7 @@
   position: absolute;
   top: calc(100% + 3px);
   left: 0;
-  z-index: 1000;
+  z-index: var(--stack-menu);
   width: max-content;
 }
 
@@ -136,20 +136,20 @@
   margin-right: 4px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  border-radius: var(--radius-control);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition:
-    background var(--transition-fast),
-    border-color var(--transition-fast),
-    color var(--transition-fast);
+    background var(--motion-transition-fast),
+    border-color var(--motion-transition-fast),
+    color var(--motion-transition-fast);
 }
 
 .titlebar__ai-btn:hover,
 .titlebar__ai-btn--active {
-  background: var(--bg-hover);
-  border-color: var(--border-subtle);
-  color: var(--text-primary);
+  background: var(--color-interactive-hover);
+  border-color: var(--color-border-subtle);
+  color: var(--color-text-primary);
 }
 
 .titlebar__btn {
@@ -160,17 +160,17 @@
   height: 100%;
   background: transparent;
   border: none;
-  color: var(--text-secondary);
+  color: var(--color-text-secondary);
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: background var(--motion-transition-fast);
 }
 
 .titlebar__btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--color-interactive-hover);
+  color: var(--color-text-primary);
 }
 
 .titlebar__btn--close:hover {
-  background: var(--accent-red);
-  color: var(--text-on-danger);
+  background: var(--color-accent-danger);
+  color: var(--color-text-on-danger);
 }

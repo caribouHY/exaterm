@@ -42,7 +42,7 @@ export function AppUpdateDialog({ controller }: AppUpdateDialogProps) {
       : null;
 
   return (
-    <div className="app-update-overlay">
+    <div className="ui-overlay app-update-overlay">
       <ModalFrame
         className="app-update-dialog"
         role={state.phase === "confirm_active_sessions" ? "alertdialog" : "dialog"}

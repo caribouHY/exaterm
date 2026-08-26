@@ -1,8 +1,8 @@
 import { lazy, Suspense, useState, useRef, useCallback, useEffect } from "react";
 import TitleBar from "./components/TitleBar/TitleBar";
 import TerminalTabs from "./components/Terminal/TerminalTabs";
-import TerminalView from "./components/Terminal/TerminalView";
 import type { TerminalViewHandle } from "./components/Terminal/TerminalView";
+import TerminalEmptyState from "./components/Terminal/TerminalEmptyState";
 import StatusBar from "./components/StatusBar/StatusBar";
 import StatusBarPalette from "./components/StatusBar/StatusBarPalette";
 import type { StatusBarPaletteCloseReason } from "./components/StatusBar/StatusBarPalette";
@@ -12,7 +12,6 @@ import type {
   ViewMode,
   ConnectionType,
   Encoding,
-  AppConfig,
   ChatMessage,
   TerminalMode,
   StartupCliRequest,
@@ -58,17 +57,20 @@ import { useAppExit } from "./features/app-exit/useAppExit";
 import { SshAuthenticationPromptDialog } from "./features/ssh-authentication/SshAuthenticationPromptDialog";
 import { SshHostKeyPromptDialog } from "./features/ssh-authentication/SshHostKeyPromptDialog";
 import { useSshPrompts } from "./features/ssh-authentication/useSshPrompts";
+import { useAppConfig } from "./features/language/LanguageCoordinator";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
 const loadAIChatPanel = () => import("./components/AI/AIChatPanel");
 const loadSettingsPanel = () => import("./components/Settings/SettingsPanel");
 const loadLogViewer = () => import("./components/Log/LogViewer");
+const loadTerminalView = () => import("./components/Terminal/TerminalView");
 
 const ConnectionDialog = lazy(loadConnectionDialog);
 const AIChatPanel = lazy(loadAIChatPanel);
 const SettingsPanel = lazy(loadSettingsPanel);
 const LogViewer = lazy(loadLogViewer);
+const TerminalView = lazy(loadTerminalView);
 
 const AI_PANEL_DEFAULT_WIDTH = 340;
 const AI_PANEL_MIN_WIDTH = 200;
@@ -105,6 +107,7 @@ interface McpLogControlRequestPayload {
 
 export default function App() {
   const { t } = useTranslation();
+  const config = useAppConfig();
   const windowTabs = useWindowTabs();
   const sshPrompts = useSshPrompts();
   const {
@@ -125,7 +128,6 @@ export default function App() {
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [aiPanelWidth, setAiPanelWidth] = useState(AI_PANEL_DEFAULT_WIDTH);
   const [isDragging, setIsDragging] = useState(false);
-  const [config, setConfig] = useState<AppConfig | null>(null);
   const [manualLogBusyTabId, setManualLogBusyTabId] = useState<string | null>(null);
   const [logStatusMessage, setLogStatusMessage] = useState("");
   const showTemporaryLogStatus = useCallback((message: string) => {
@@ -743,30 +745,6 @@ export default function App() {
     };
   }, [appExit.requestExit, openConnection, openUtilityTab, openWindow, shortcuts]);
 
-  const refreshConfig = useCallback(async () => {
-    try {
-      const cfg = await invoke<AppConfig>("config_load");
-      setConfig(cfg);
-    } catch (e) {
-      console.error("Failed to load config:", e);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshConfig();
-  }, [refreshConfig]);
-
-  useEffect(() => {
-    const unlisten = listen("config://updated", () => {
-      void refreshConfig();
-    });
-    return () => {
-      void unlisten.then((stopListening) => {
-        stopListening();
-      });
-    };
-  }, [refreshConfig]);
-
   useEffect(() => {
     invoke<StartupCliRequest | null>("startup_cli_request_get")
       .then((request) => {
@@ -891,58 +869,57 @@ export default function App() {
                   />
                 )}
                 {tabs.length === 0 ? (
-                  <TerminalView
-                    sessionId={null}
-                    connectionType="ssh"
-                    isConnected={false}
+                  <TerminalEmptyState
                     isActive={activeView === "terminal"}
-                    isManualLogging={false}
-                    isManualLoggingPaused={false}
                     onOpenConnection={openConnection}
-                    onTerminalData={() => {}}
-                    encoding="utf-8"
-                    terminalConfig={config?.terminal}
                     shortcuts={shortcuts}
-                    terminalMode={DEFAULT_TERMINAL_MODE}
                   />
                 ) : (
-                  tabs.map((tab) => (
-                    <TerminalView
-                      key={tab.id}
-                      ref={(handle) => {
-                        if (handle) {
-                          terminalViewRefs.current.set(tab.id, handle);
-                        } else {
-                          terminalViewRefs.current.delete(tab.id);
-                        }
-                      }}
-                      sessionId={tab.sessionId || null}
-                      connectionType={tab.connectionType}
-                      isConnected={tab.isConnected}
-                      isActive={activeView === "terminal" && tab.id === activeTabId}
-                      isManualLogging={Boolean(tab.isManualLogging)}
-                      isManualLoggingPaused={Boolean(tab.isManualLoggingPaused)}
-                      onOpenConnection={openConnection}
-                      onTerminalData={(data) => {
-                        handleTerminalData(tab.id, data);
-                      }}
-                      onTerminalLogShortcut={(action) => {
-                        handleTerminalLogShortcut(tab.id, action);
-                      }}
-                      onTerminalSelectionChange={(hasSelection) => {
-                        handleTerminalSelectionChange(tab.id, hasSelection);
-                      }}
-                      encoding={tab.encoding}
-                      terminalMode={tab.terminalMode}
-                      terminalConfig={config?.terminal}
-                      shortcuts={shortcuts}
-                    />
-                  ))
+                  <Suspense
+                    fallback={
+                      <div
+                        className={`terminal-view ${activeView !== "terminal" ? "terminal-view--hidden" : ""}`}
+                        aria-busy="true"
+                      />
+                    }
+                  >
+                    {tabs.map((tab) => (
+                      <TerminalView
+                        key={tab.id}
+                        ref={(handle) => {
+                          if (handle) {
+                            terminalViewRefs.current.set(tab.id, handle);
+                          } else {
+                            terminalViewRefs.current.delete(tab.id);
+                          }
+                        }}
+                        sessionId={tab.sessionId}
+                        connectionType={tab.connectionType}
+                        isConnected={tab.isConnected}
+                        isActive={activeView === "terminal" && tab.id === activeTabId}
+                        isManualLogging={Boolean(tab.isManualLogging)}
+                        isManualLoggingPaused={Boolean(tab.isManualLoggingPaused)}
+                        onTerminalData={(data) => {
+                          handleTerminalData(tab.id, data);
+                        }}
+                        onTerminalLogShortcut={(action) => {
+                          handleTerminalLogShortcut(tab.id, action);
+                        }}
+                        onTerminalSelectionChange={(hasSelection) => {
+                          handleTerminalSelectionChange(tab.id, hasSelection);
+                        }}
+                        encoding={tab.encoding}
+                        terminalMode={tab.terminalMode}
+                        terminalConfig={config?.terminal}
+                        shortcuts={shortcuts}
+                      />
+                    ))}
+                  </Suspense>
                 )}
               </div>
               {activeView === "settings" && (
                 <Suspense fallback={<div aria-hidden="true" />}>
-                  <SettingsPanel onSave={refreshConfig} />
+                  <SettingsPanel />
                 </Suspense>
               )}
               {activeView === "logs" && (
@@ -1034,7 +1011,7 @@ export default function App() {
         />
       )}
       {activeMcpCredentialPrompt && (
-        <div className="app-credential-overlay">
+        <div className="ui-overlay app-credential-overlay">
           <ModalFrame
             className="app-credential-modal"
             role="dialog"
