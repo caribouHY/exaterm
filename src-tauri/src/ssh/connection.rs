@@ -116,14 +116,14 @@ pub async fn connect(
     .await?;
     let channel = match run_with_attempt(
         attempt.as_ref(),
-        establish_target_shell(
+        Box::pin(establish_target_shell(
             &mut handle,
             &jump_handle,
             auth,
             &options,
             &diagnostic,
             &authentication_prompter,
-        ),
+        )),
     )
     .await
     {
@@ -355,11 +355,15 @@ async fn connect_target_via_jump(
     diagnostic.info("target: starting SSH handshake");
     let handle = run_with_attempt(
         attempt,
-        run_ssh_operation_with_timeout(connect_timeout, SSH_CONNECT_TIMEOUT_ERROR, async {
-            russh::client::connect_stream(config, stream, handler)
-                .await
-                .map_err(|error| map_connect_error(error, host_verifier))
-        }),
+        Box::pin(run_ssh_operation_with_timeout(
+            connect_timeout,
+            SSH_CONNECT_TIMEOUT_ERROR,
+            async {
+                russh::client::connect_stream(config, stream, handler)
+                    .await
+                    .map_err(|error| map_connect_error(error, host_verifier))
+            },
+        )),
     )
     .await;
     match handle {
@@ -394,11 +398,15 @@ async fn connect_target_direct(
     diagnostic.info("target: starting SSH handshake");
     let handle = run_with_attempt(
         attempt,
-        run_ssh_operation_with_timeout(connect_timeout, SSH_CONNECT_TIMEOUT_ERROR, async {
-            russh::client::connect(config, (options.host.as_str(), options.port), handler)
-                .await
-                .map_err(|error| map_connect_error(error, host_verifier))
-        }),
+        Box::pin(run_ssh_operation_with_timeout(
+            connect_timeout,
+            SSH_CONNECT_TIMEOUT_ERROR,
+            async {
+                russh::client::connect(config, (options.host.as_str(), options.port), handler)
+                    .await
+                    .map_err(|error| map_connect_error(error, host_verifier))
+            },
+        )),
     )
     .await
     .map_err(|error| {

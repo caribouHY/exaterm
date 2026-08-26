@@ -44,14 +44,14 @@ pub(super) async fn connect_jump_profile(
     let jump_verifier = HostKeyVerifier::new(jump_profile.host.clone(), jump_profile.port);
     let mut handle = run_with_attempt(
         attempt,
-        connect_jump_ssh(
+        Box::pin(connect_jump_ssh(
             config,
             &jump_profile,
             &jump_verifier,
             diagnostic,
             host_key_prompter,
             connect_timeout,
-        ),
+        )),
     )
     .await?;
     let auth_context = authentication_prompter.context(
@@ -62,13 +62,13 @@ pub(super) async fn connect_jump_profile(
     );
     if let Err(error) = run_with_attempt(
         attempt,
-        authenticate_jump(
+        Box::pin(authenticate_jump(
             &mut handle,
             &jump_profile.username,
             auth,
             diagnostic,
             &auth_context,
-        ),
+        )),
     )
     .await
     {
@@ -79,7 +79,12 @@ pub(super) async fn connect_jump_profile(
     }
     let channel = match run_with_attempt(
         attempt,
-        open_jump_direct_tcpip(&mut handle, target_host, target_port, diagnostic),
+        Box::pin(open_jump_direct_tcpip(
+            &mut handle,
+            target_host,
+            target_port,
+            diagnostic,
+        )),
     )
     .await
     {
