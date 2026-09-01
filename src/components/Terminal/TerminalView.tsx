@@ -45,6 +45,7 @@ interface TerminalViewProps {
   shortcuts: ShortcutConfig;
   terminalMode: TerminalMode;
   onTerminalData?: (data: string) => void;
+  onTerminalModeShortcut?: () => void;
   onTerminalLogShortcut?: (action: TerminalLogShortcutAction) => void;
   onTerminalSelectionChange?: (hasSelection: boolean) => void;
 }
@@ -104,6 +105,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     shortcuts,
     terminalMode,
     onTerminalData,
+    onTerminalModeShortcut,
     onTerminalLogShortcut,
     onTerminalSelectionChange,
   },
@@ -120,6 +122,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const isManualLoggingRef = useRef(isManualLogging);
   const isManualLoggingPausedRef = useRef(isManualLoggingPaused);
   const shortcutsRef = useRef(shortcuts);
+  const onTerminalModeShortcutRef = useRef(onTerminalModeShortcut);
   const onTerminalLogShortcutRef = useRef(onTerminalLogShortcut);
   const onTerminalSelectionChangeRef = useRef(onTerminalSelectionChange);
   const clipboardActionInProgressRef = useRef(false);
@@ -162,6 +165,10 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
+
+  useEffect(() => {
+    onTerminalModeShortcutRef.current = onTerminalModeShortcut;
+  }, [onTerminalModeShortcut]);
 
   useEffect(() => {
     onTerminalLogShortcutRef.current = onTerminalLogShortcut;
@@ -469,6 +476,11 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           clearTerminalBuffer(term, () => {
             refreshDecorationsAfterClear(term);
           });
+          break;
+        case "terminal_mode_menu":
+          if (isActiveRef.current && isConnectedRef.current) {
+            onTerminalModeShortcutRef.current?.();
+          }
           break;
         case "terminal_log_start_overwrite":
         case "terminal_log_start_append":
