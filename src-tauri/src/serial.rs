@@ -246,7 +246,8 @@ pub async fn connect(
     };
     // Dropping the join handle cannot stop every platform driver, but it ensures a late result is
     // dropped without registering a session after cancellation.
-    let (serial_port, mut writer_port) = run_with_attempt(attempt.as_ref(), open_operation).await?;
+    let (serial_port, mut writer_port) =
+        run_with_attempt(attempt.as_ref(), Box::pin(open_operation)).await?;
     if attempt
         .as_mut()
         .is_some_and(|attempt| !attempt.begin_completion())
