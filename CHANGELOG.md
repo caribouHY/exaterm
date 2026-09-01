@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Fixed terminal input for Ctrl+Shift+6.
+- Improved terminal keyboard input compatibility.
 
 ## v0.9.1
 
