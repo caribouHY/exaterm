@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added a configurable terminal shortcut for opening the terminal mode command palette.
+
 ### Fixed
 
 - Improved terminal keyboard input compatibility.

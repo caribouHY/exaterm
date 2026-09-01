@@ -38,6 +38,7 @@
   "settings.shortcuts.action.terminal_paste": "ターミナルへペースト",
   "settings.shortcuts.action.terminal_clear_viewport": "ターミナルの表示領域をクリア",
   "settings.shortcuts.action.terminal_clear_buffer": "ターミナルのバッファーをクリア",
+  "settings.shortcuts.action.terminal_mode_menu": "ターミナルモードを選択",
   "settings.shortcuts.action.terminal_log_start_overwrite": "ログを開始（新規/上書き）",
   "settings.shortcuts.action.terminal_log_start_append": "ログを開始 (追記)",
   "settings.shortcuts.action.terminal_log_stop": "ログを停止",

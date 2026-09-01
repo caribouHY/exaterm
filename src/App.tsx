@@ -538,6 +538,15 @@ export default function App() {
     [updateWorkspaceTabMetadata]
   );
 
+  const handleTerminalModeShortcut = useCallback(
+    (tabId: string) => {
+      if (!activeTab || activeTab.id !== tabId || !activeTab.isConnected) return;
+      restoreTerminalFocusAfterPaletteRef.current = true;
+      setOpenStatusBarMenu("terminalMode");
+    },
+    [activeTab]
+  );
+
   const buildManualLogFileName = useCallback((tab: TabInfo) => {
     const now = new Date();
     const stamp = [
@@ -901,6 +910,9 @@ export default function App() {
                         isManualLoggingPaused={Boolean(tab.isManualLoggingPaused)}
                         onTerminalData={(data) => {
                           handleTerminalData(tab.id, data);
+                        }}
+                        onTerminalModeShortcut={() => {
+                          handleTerminalModeShortcut(tab.id);
                         }}
                         onTerminalLogShortcut={(action) => {
                           handleTerminalLogShortcut(tab.id, action);

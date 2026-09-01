@@ -75,6 +75,11 @@ export const SHORTCUT_ACTIONS: Array<{
     scope: "terminal",
   },
   {
+    id: "terminal_mode_menu",
+    labelKey: "settings.shortcuts.action.terminal_mode_menu",
+    scope: "terminal",
+  },
+  {
     id: "terminal_log_start_overwrite",
     labelKey: "settings.shortcuts.action.terminal_log_start_overwrite",
     scope: "terminal",
@@ -137,6 +142,12 @@ const DEFAULT_TERMINAL_PASTE_SHORTCUT: ShortcutBinding = {
   alt: false,
   shift: true,
 };
+const DEFAULT_TERMINAL_MODE_MENU_SHORTCUT: ShortcutBinding = {
+  key: "F8",
+  ctrl: true,
+  alt: false,
+  shift: true,
+};
 const DEFAULT_TERMINAL_LOG_START_OVERWRITE_SHORTCUT: ShortcutBinding = {
   key: "F9",
   ctrl: true,
@@ -160,6 +171,7 @@ export const DEFAULT_SHORTCUT_CONFIG: ShortcutConfig = {
   terminal_paste: DEFAULT_TERMINAL_PASTE_SHORTCUT,
   terminal_clear_viewport: null,
   terminal_clear_buffer: null,
+  terminal_mode_menu: DEFAULT_TERMINAL_MODE_MENU_SHORTCUT,
   terminal_log_start_overwrite: DEFAULT_TERMINAL_LOG_START_OVERWRITE_SHORTCUT,
   terminal_log_start_append: null,
   terminal_log_stop: DEFAULT_TERMINAL_LOG_STOP_SHORTCUT,
@@ -178,6 +190,7 @@ export function createDefaultShortcutConfig(): ShortcutConfig {
     terminal_paste: { ...DEFAULT_TERMINAL_PASTE_SHORTCUT },
     terminal_clear_viewport: null,
     terminal_clear_buffer: null,
+    terminal_mode_menu: { ...DEFAULT_TERMINAL_MODE_MENU_SHORTCUT },
     terminal_log_start_overwrite: { ...DEFAULT_TERMINAL_LOG_START_OVERWRITE_SHORTCUT },
     terminal_log_start_append: null,
     terminal_log_stop: { ...DEFAULT_TERMINAL_LOG_STOP_SHORTCUT },
@@ -328,6 +341,10 @@ export function normalizeShortcutConfig(shortcuts?: Partial<ShortcutConfig>): Sh
       shortcuts.terminal_clear_buffer === undefined
         ? defaults.terminal_clear_buffer
         : shortcuts.terminal_clear_buffer,
+    terminal_mode_menu:
+      shortcuts.terminal_mode_menu === undefined
+        ? defaults.terminal_mode_menu
+        : shortcuts.terminal_mode_menu,
     terminal_log_start_overwrite:
       shortcuts.terminal_log_start_overwrite === undefined
         ? defaults.terminal_log_start_overwrite

@@ -63,6 +63,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
     "terminal_paste": { "key": "v", "ctrl": true, "alt": false, "shift": true },
     "terminal_clear_viewport": null,
     "terminal_clear_buffer": null,
+    "terminal_mode_menu": { "key": "F8", "ctrl": true, "alt": false, "shift": true },
     "terminal_log_start_overwrite": { "key": "F9", "ctrl": true, "alt": false, "shift": true },
     "terminal_log_start_append": null,
     "terminal_log_stop": { "key": "F10", "ctrl": true, "alt": false, "shift": true },
@@ -243,6 +244,7 @@ Each shortcut is either an object with `key`, `ctrl`, `alt`, and `shift` fields 
 | `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | Pastes clipboard text into a connected terminal.                                  |
 | `shortcuts.terminal_clear_viewport`      | Unassigned       | Clears the visible terminal display locally without sending input to the session. |
 | `shortcuts.terminal_clear_buffer`        | Unassigned       | Clears the local terminal scrollback buffer without ending the session.           |
+| `shortcuts.terminal_mode_menu`           | `Ctrl+Shift+F8`  | Opens the terminal mode command palette for the focused connected terminal.       |
 | `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | Opens the save dialog and starts a new log or overwrites the selected file.       |
 | `shortcuts.terminal_log_start_append`    | Unassigned       | Opens the save dialog and starts a log by appending to the selected file.         |
 | `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | Flushes pending displayed output and stops the active log.                        |

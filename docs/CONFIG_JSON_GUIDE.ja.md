@@ -63,6 +63,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "terminal_paste": { "key": "v", "ctrl": true, "alt": false, "shift": true },
     "terminal_clear_viewport": null,
     "terminal_clear_buffer": null,
+    "terminal_mode_menu": { "key": "F8", "ctrl": true, "alt": false, "shift": true },
     "terminal_log_start_overwrite": { "key": "F9", "ctrl": true, "alt": false, "shift": true },
     "terminal_log_start_append": null,
     "terminal_log_stop": { "key": "F10", "ctrl": true, "alt": false, "shift": true },
@@ -243,6 +244,7 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 | `shortcuts.terminal_paste`               | `Ctrl+Shift+V`   | 接続中のターミナルへクリップボードの文字をペーストします。                   |
 | `shortcuts.terminal_clear_viewport`      | 未割り当て       | 接続先へ入力を送信せず、ローカルのターミナル表示領域をクリアします。         |
 | `shortcuts.terminal_clear_buffer`        | 未割り当て       | セッションを終了せず、ローカルのスクロールバックバッファーをクリアします。   |
+| `shortcuts.terminal_mode_menu`           | `Ctrl+Shift+F8`  | フォーカス中で接続済みのターミナルに対するモード選択パレットを開きます。     |
 | `shortcuts.terminal_log_start_overwrite` | `Ctrl+Shift+F9`  | 保存ダイアログを開き、新しいログを開始するか選択したファイルを上書きします。 |
 | `shortcuts.terminal_log_start_append`    | 未割り当て       | 保存ダイアログを開き、選択したログファイルへの追記でログを開始します。       |
 | `shortcuts.terminal_log_stop`            | `Ctrl+Shift+F10` | 保留中の画面表示をflushして、実行中のログを停止します。                      |

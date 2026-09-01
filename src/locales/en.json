@@ -38,6 +38,7 @@
   "settings.shortcuts.action.terminal_paste": "Paste into terminal",
   "settings.shortcuts.action.terminal_clear_viewport": "Clear terminal display",
   "settings.shortcuts.action.terminal_clear_buffer": "Clear terminal buffer",
+  "settings.shortcuts.action.terminal_mode_menu": "Select terminal mode",
   "settings.shortcuts.action.terminal_log_start_overwrite": "Start log (new/overwrite)",
   "settings.shortcuts.action.terminal_log_start_append": "Start log (append)",
   "settings.shortcuts.action.terminal_log_stop": "Stop log",

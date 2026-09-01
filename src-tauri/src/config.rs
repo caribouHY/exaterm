@@ -95,6 +95,8 @@ pub struct ShortcutConfig {
     pub terminal_clear_viewport: Option<ShortcutBinding>,
     #[serde(default)]
     pub terminal_clear_buffer: Option<ShortcutBinding>,
+    #[serde(default = "default_terminal_mode_menu_shortcut")]
+    pub terminal_mode_menu: Option<ShortcutBinding>,
     #[serde(default = "default_terminal_log_start_overwrite_shortcut")]
     pub terminal_log_start_overwrite: Option<ShortcutBinding>,
     #[serde(default)]
@@ -140,6 +142,10 @@ fn default_terminal_paste_shortcut() -> Option<ShortcutBinding> {
     shortcut("v", true, false, true)
 }
 
+fn default_terminal_mode_menu_shortcut() -> Option<ShortcutBinding> {
+    shortcut("F8", true, false, true)
+}
+
 fn default_terminal_log_start_overwrite_shortcut() -> Option<ShortcutBinding> {
     shortcut("F9", true, false, true)
 }
@@ -160,6 +166,7 @@ impl Default for ShortcutConfig {
             terminal_paste: default_terminal_paste_shortcut(),
             terminal_clear_viewport: None,
             terminal_clear_buffer: None,
+            terminal_mode_menu: default_terminal_mode_menu_shortcut(),
             terminal_log_start_overwrite: default_terminal_log_start_overwrite_shortcut(),
             terminal_log_start_append: None,
             terminal_log_stop: default_terminal_log_stop_shortcut(),
@@ -193,6 +200,7 @@ impl ShortcutConfig {
             &mut self.terminal_paste,
             &mut self.terminal_clear_viewport,
             &mut self.terminal_clear_buffer,
+            &mut self.terminal_mode_menu,
             &mut self.terminal_log_start_overwrite,
             &mut self.terminal_log_start_append,
             &mut self.terminal_log_stop,
@@ -230,6 +238,7 @@ fn validate_shortcut_config(shortcuts: &ShortcutConfig) -> Result<(), String> {
             &shortcuts.terminal_clear_viewport,
         ),
         ("terminal_clear_buffer", &shortcuts.terminal_clear_buffer),
+        ("terminal_mode_menu", &shortcuts.terminal_mode_menu),
         (
             "terminal_log_start_overwrite",
             &shortcuts.terminal_log_start_overwrite,
@@ -1281,6 +1290,10 @@ mod tests {
         assert_eq!(cfg.shortcuts.terminal_clear_viewport, None);
         assert_eq!(cfg.shortcuts.terminal_clear_buffer, None);
         assert_eq!(
+            cfg.shortcuts.terminal_mode_menu,
+            default_terminal_mode_menu_shortcut()
+        );
+        assert_eq!(
             cfg.shortcuts.terminal_log_start_overwrite,
             default_terminal_log_start_overwrite_shortcut()
         );
@@ -1348,6 +1361,15 @@ mod tests {
     }
 
     #[test]
+    fn shortcut_config_preserves_explicit_null_terminal_mode_menu() {
+        let cfg: AppConfig =
+            serde_json::from_str(r#"{"shortcuts":{"terminal_mode_menu":null}}"#).unwrap();
+
+        assert_eq!(cfg.shortcuts.terminal_mode_menu, None);
+        assert!(serde_json::to_value(cfg).unwrap()["shortcuts"]["terminal_mode_menu"].is_null());
+    }
+
+    #[test]
     fn shortcut_config_rejects_duplicate_assignments() {
         let duplicate = Some(ShortcutBinding {
             key: "n".into(),
@@ -1365,6 +1387,7 @@ mod tests {
             terminal_paste: None,
             terminal_clear_viewport: None,
             terminal_clear_buffer: duplicate,
+            terminal_mode_menu: None,
             terminal_log_start_overwrite: None,
             terminal_log_start_append: None,
             terminal_log_stop: None,
@@ -1395,6 +1418,7 @@ mod tests {
             terminal_paste: None,
             terminal_clear_viewport: None,
             terminal_clear_buffer: None,
+            terminal_mode_menu: None,
             terminal_log_start_overwrite: None,
             terminal_log_start_append: None,
             terminal_log_stop: None,
