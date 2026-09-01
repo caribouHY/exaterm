@@ -29,6 +29,7 @@ import { getTerminalDecorationProfile } from "./terminalDecorationProfiles";
 import { getTerminalPromptColor, TERMINAL_DECORATION_COLORS } from "./terminalDecorationTheme";
 import type { TerminalPinnedCommand } from "./terminalDecorationTypes";
 import { clearTerminalBuffer, clearTerminalViewport } from "./terminalClearActions";
+import { getTerminalControlInput } from "./terminalControlInput";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
@@ -430,7 +431,17 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
       const action = findShortcutAction(shortcutsRef.current, event, "terminal");
       if (!action) {
-        return true;
+        const controlInput = getTerminalControlInput(event);
+        if (!controlInput) {
+          return true;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.type === "keydown") {
+          term.input(controlInput);
+        }
+        return false;
       }
 
       event.preventDefault();
