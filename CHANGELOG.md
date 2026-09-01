@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Fixed terminal input for Ctrl+Shift+6.
+
 ## v0.9.1
 
 ### Changed
