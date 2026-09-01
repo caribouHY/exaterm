@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Improved terminal keyboard input compatibility.
+
 ## v0.9.1
 
 ### Changed
