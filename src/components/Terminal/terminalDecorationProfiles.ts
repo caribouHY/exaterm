@@ -18,6 +18,11 @@ export interface VyosPrompt extends TerminalParsedPrompt {
   username: string;
 }
 
+export interface JuniperJunosPrompt extends TerminalParsedPrompt {
+  hostname: string;
+  username: string;
+}
+
 export interface FujitsuSirPrompt extends TerminalParsedPrompt {
   hostname: string;
   configurationFile: "config1" | "config2";
@@ -63,6 +68,12 @@ const ARISTA_EOS_ERROR_PREFIXES = [
 ];
 
 const VYOS_ERROR_PREFIXES = ["set failed", "commit failed", "cannot exit:", "invalid command"];
+const JUNIPER_JUNOS_ERROR_PREFIXES = [
+  "error:",
+  "syntax error,",
+  "syntax error ",
+  "unknown command.",
+];
 
 interface AlliedTelesisAwplusMessage {
   hasPercentPrefix: boolean;
@@ -579,7 +590,7 @@ export function parseFurukawaFitelnetPrompt(line: string): FurukawaFitelnetPromp
   };
 }
 
-function isVyosIdentityCharacter(character: string): boolean {
+function isNetworkOsIdentityCharacter(character: string): boolean {
   const codePoint = character.charCodeAt(0);
   const isAsciiLetter =
     (codePoint >= 65 && codePoint <= 90) || (codePoint >= 97 && codePoint <= 122);
@@ -590,7 +601,7 @@ function isVyosIdentityCharacter(character: string): boolean {
 export function parseVyosPrompt(line: string): VyosPrompt | null {
   const trimmedLine = line.trimEnd();
   let cursor = 0;
-  while (cursor < trimmedLine.length && isVyosIdentityCharacter(trimmedLine.charAt(cursor))) {
+  while (cursor < trimmedLine.length && isNetworkOsIdentityCharacter(trimmedLine.charAt(cursor))) {
     cursor += 1;
   }
   if (cursor === 0 || trimmedLine.charAt(cursor) !== "@") return null;
@@ -598,7 +609,7 @@ export function parseVyosPrompt(line: string): VyosPrompt | null {
   const username = trimmedLine.slice(0, cursor);
   cursor += 1;
   const hostnameStart = cursor;
-  while (cursor < trimmedLine.length && isVyosIdentityCharacter(trimmedLine.charAt(cursor))) {
+  while (cursor < trimmedLine.length && isNetworkOsIdentityCharacter(trimmedLine.charAt(cursor))) {
     cursor += 1;
   }
   if (cursor === hostnameStart) return null;
@@ -639,6 +650,45 @@ export function parseVyosContextLine(line: string): TerminalParsedContext | null
   return { contextText, contextStart, variant: "configuration" };
 }
 
+export function parseJuniperJunosPrompt(line: string): JuniperJunosPrompt | null {
+  const trimmedLine = line.trimEnd();
+  let cursor = 0;
+  while (cursor < trimmedLine.length && isNetworkOsIdentityCharacter(trimmedLine.charAt(cursor))) {
+    cursor += 1;
+  }
+  if (cursor === 0 || trimmedLine.charAt(cursor) !== "@") return null;
+
+  const username = trimmedLine.slice(0, cursor);
+  cursor += 1;
+  const hostnameStart = cursor;
+  while (cursor < trimmedLine.length && isNetworkOsIdentityCharacter(trimmedLine.charAt(cursor))) {
+    cursor += 1;
+  }
+  if (cursor === hostnameStart) return null;
+
+  const hostname = trimmedLine.slice(hostnameStart, cursor);
+  const terminator = trimmedLine.charAt(cursor);
+  if (terminator !== ">" && terminator !== "#") return null;
+
+  const promptEnd = cursor + 1;
+  const promptText = trimmedLine.slice(0, promptEnd);
+  const commandStart = promptEnd + (trimmedLine.charAt(promptEnd) === " " ? 1 : 0);
+  return {
+    hostname,
+    username,
+    promptText,
+    promptStart: 0,
+    commandText: trimmedLine.slice(commandStart),
+    commandStart,
+    commandSeparator: trimmedLine.slice(promptText.length, commandStart),
+    variant: terminator === "#" ? "configuration" : "default",
+  };
+}
+
+export function parseJuniperJunosContextLine(line: string): TerminalParsedContext | null {
+  return parseVyosContextLine(line);
+}
+
 export const CISCO_IOS_DECORATION_PROFILE: TerminalDecorationProfile = {
   mode: "cisco_ios",
   decorationLookback: 80,
@@ -672,6 +722,22 @@ export const VYOS_DECORATION_PROFILE: TerminalDecorationProfile = {
     return (
       VYOS_ERROR_PREFIXES.some((prefix) => normalizedLine.startsWith(prefix)) ||
       (normalizedLine.startsWith("configuration path") && normalizedLine.endsWith("does not exist"))
+    );
+  },
+};
+
+export const JUNIPER_JUNOS_DECORATION_PROFILE: TerminalDecorationProfile = {
+  mode: "juniper_junos",
+  decorationLookback: 80,
+  decorationStyle: "text-only-v1",
+  pinnedCommand: true,
+  parsePrompt: parseJuniperJunosPrompt,
+  parseContextLine: parseJuniperJunosContextLine,
+  isErrorLine: (line) => {
+    const normalizedLine = line.trimStart().toLowerCase();
+    return (
+      normalizedLine === "syntax error" ||
+      JUNIPER_JUNOS_ERROR_PREFIXES.some((prefix) => normalizedLine.startsWith(prefix))
     );
   },
 };
@@ -717,6 +783,7 @@ export const FURUKAWA_FITELNET_DECORATION_PROFILE: TerminalDecorationProfile = {
 const TERMINAL_DECORATION_PROFILES = new Map<TerminalMode, TerminalDecorationProfile>([
   ["cisco_ios", CISCO_IOS_DECORATION_PROFILE],
   ["arista_eos", ARISTA_EOS_DECORATION_PROFILE],
+  ["juniper_junos", JUNIPER_JUNOS_DECORATION_PROFILE],
   ["vyos", VYOS_DECORATION_PROFILE],
   ["fujitsu_sir", FUJITSU_SIR_DECORATION_PROFILE],
   ["allied_telesis_awplus", ALLIED_TELESIS_AWPLUS_DECORATION_PROFILE],

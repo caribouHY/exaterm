@@ -5,6 +5,7 @@
 ### Added
 
 - Added a configurable terminal shortcut for opening the terminal mode command palette.
+- Added the Juniper Junos terminal highlighting mode with configuration-context display.
 
 ### Fixed
 

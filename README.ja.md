@@ -22,7 +22,7 @@ ExaTermはAIエージェント連携とAIチャットに対応した、SSH/Telne
 - AIエージェント向けCLIツールとSkill
 - ターミナル内蔵AIチャット
 - ログ機能（手動/自動選択可能）
-- ネットワーク機器向け色分け機能（Cisco IOS・Arista EOS・VyOS・Fujitsu Si-R・Allied Telesis AW+・Furukawa FITELnet対応）
+- ネットワーク機器向け色分け機能（Cisco IOS・Arista EOS・Juniper Junos・VyOS・Fujitsu Si-R・Allied Telesis AW+・Furukawa FITELnet対応）
 
 ## 対応OS
 

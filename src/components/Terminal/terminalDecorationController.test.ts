@@ -4,6 +4,7 @@ import { createTerminalDecorationController } from "./terminalDecorationControll
 import {
   FUJITSU_SIR_DECORATION_PROFILE,
   FURUKAWA_FITELNET_DECORATION_PROFILE,
+  JUNIPER_JUNOS_DECORATION_PROFILE,
   VYOS_DECORATION_PROFILE,
 } from "./terminalDecorationProfiles";
 import { TERMINAL_DECORATION_COLORS } from "./terminalDecorationTheme";
@@ -156,6 +157,30 @@ describe("createTerminalDecorationController", () => {
     });
 
     staleController.setProfile(VYOS_DECORATION_PROFILE, stale.terminal);
+    expect(stale.decorations).toHaveLength(2);
+  });
+
+  it("decorates a Juniper Junos edit context only when followed by a configuration prompt", () => {
+    const valid = createTerminal(
+      ["[edit system]", "admin@router# set host-name edge", "output"],
+      2
+    );
+    const validController = createTerminalDecorationController({
+      onPinnedCommandChange: () => undefined,
+    });
+
+    validController.setProfile(JUNIPER_JUNOS_DECORATION_PROFILE, valid.terminal);
+    expect(valid.decorations).toHaveLength(3);
+
+    const stale = createTerminal(
+      ["[edit system]", "unrelated output", "admin@router# commit", "output"],
+      3
+    );
+    const staleController = createTerminalDecorationController({
+      onPinnedCommandChange: () => undefined,
+    });
+
+    staleController.setProfile(JUNIPER_JUNOS_DECORATION_PROFILE, stale.terminal);
     expect(stale.decorations).toHaveLength(2);
   });
 

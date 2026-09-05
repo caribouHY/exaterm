@@ -264,6 +264,7 @@
   "terminal_mode.general": "General",
   "terminal_mode.cisco_ios": "Cisco IOS",
   "terminal_mode.arista_eos": "Arista EOS",
+  "terminal_mode.juniper_junos": "Juniper Junos",
   "terminal_mode.vyos": "VyOS",
   "terminal_mode.fujitsu_sir": "Fujitsu Si-R",
   "terminal_mode.allied_telesis_awplus": "Allied Telesis AW+",
