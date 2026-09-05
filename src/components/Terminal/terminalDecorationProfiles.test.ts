@@ -370,7 +370,7 @@ describe("terminal decoration profile registry", () => {
     expect(JUNIPER_JUNOS_DECORATION_PROFILE.decorationLookback).toBe(80);
     expect(JUNIPER_JUNOS_DECORATION_PROFILE.isErrorLine("error: commit failed")).toBe(true);
     expect(
-      JUNIPER_JUNOS_DECORATION_PROFILE.isErrorLine("Syntax error, expecting <identifier>")
+      JUNIPER_JUNOS_DECORATION_PROFILE.isErrorLine("Syntax error, expecting an identifier")
     ).toBe(true);
     expect(JUNIPER_JUNOS_DECORATION_PROFILE.isErrorLine("unknown command.")).toBe(true);
     expect(JUNIPER_JUNOS_DECORATION_PROFILE.isErrorLine("error-free status")).toBe(false);
