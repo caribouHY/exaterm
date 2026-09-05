@@ -17,6 +17,7 @@ The former HTTP MCP transport required a listener and transport-specific setting
 - Keep `exaterm-cli` and `exaterm-mcp` as separate adapters over the same external-control service.
 - Remove HTTP MCP rather than maintaining transport compatibility.
 - Require explicit configuration gates for external control, individual adapters, and new-connection capability.
+- Require a separate, default-off gate for direct SSH/Telnet targets. Direct SSH may prompt for an unknown host key in the GUI, but must reject a mismatch; credentials remain GUI-owned.
 
 ## Consequences
 

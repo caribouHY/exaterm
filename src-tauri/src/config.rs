@@ -285,6 +285,8 @@ pub struct ExternalControlConfig {
     #[serde(default)]
     pub connect_enabled: bool,
     #[serde(default)]
+    pub direct_connect_enabled: bool,
+    #[serde(default)]
     pub mcp_enabled: bool,
     #[serde(default)]
     pub cli_enabled: bool,
@@ -295,6 +297,7 @@ impl Default for ExternalControlConfig {
         Self {
             enabled: false,
             connect_enabled: false,
+            direct_connect_enabled: false,
             mcp_enabled: false,
             cli_enabled: false,
         }
@@ -305,6 +308,7 @@ impl Default for ExternalControlConfig {
 struct ExternalControlConfigInput {
     enabled: Option<bool>,
     connect_enabled: Option<bool>,
+    direct_connect_enabled: Option<bool>,
     mcp_enabled: Option<bool>,
     cli_enabled: Option<bool>,
 }
@@ -648,6 +652,7 @@ impl<'de> Deserialize<'de> for AppConfig {
                 connect_enabled: external_control
                     .connect_enabled
                     .unwrap_or(legacy_mcp.connect_enabled),
+                direct_connect_enabled: external_control.direct_connect_enabled.unwrap_or(false),
                 mcp_enabled: external_control
                     .mcp_enabled
                     .unwrap_or(legacy_mcp.stdio_enabled),
@@ -832,6 +837,7 @@ mod tests {
         assert!(!cfg.ai.azure_openai_enabled);
         assert!(!cfg.external_control.enabled);
         assert!(!cfg.external_control.connect_enabled);
+        assert!(!cfg.external_control.direct_connect_enabled);
         assert!(!cfg.external_control.mcp_enabled);
         assert!(!cfg.external_control.cli_enabled);
         assert_eq!(cfg.shortcuts, ShortcutConfig::default());
@@ -1246,6 +1252,25 @@ mod tests {
             value["saved_connections"][0]["external_control_enabled"],
             false
         );
+    }
+
+    #[test]
+    fn direct_external_connection_permission_round_trips() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "external_control": {
+                    "enabled": true,
+                    "connect_enabled": true,
+                    "direct_connect_enabled": true,
+                    "cli_enabled": true
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert!(cfg.external_control.direct_connect_enabled);
+        let value = serde_json::to_value(cfg).unwrap();
+        assert_eq!(value["external_control"]["direct_connect_enabled"], true);
     }
 
     #[test]

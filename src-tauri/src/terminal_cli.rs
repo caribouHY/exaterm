@@ -8,12 +8,14 @@ use crate::{
     external_control::{
         client::ExternalControlClient,
         service::{
-            ExternalControlSerialFlowControl, ExternalControlSerialParity,
-            ExternalControlTerminalMode, ListConnectionProfilesArgs, SavedProfileConnectionType,
+            normalize_direct_host, ExternalControlEncoding, ExternalControlSerialFlowControl,
+            ExternalControlSerialParity, ExternalControlSshAuthMethod, ExternalControlTerminalMode,
+            ListConnectionProfilesArgs, SavedProfileConnectionType,
         },
-        ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ExternalControlError,
-        ExternalControlRequest, ExternalControlResponse, ReadTerminalOutputArgs,
-        RunTerminalCommandArgs, SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs,
+        ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs,
+        ExternalControlError, ExternalControlRequest, ExternalControlResponse,
+        ReadTerminalOutputArgs, RunTerminalCommandArgs, SendTerminalInputArgs,
+        StartTerminalLogArgs, StopTerminalLogArgs,
     },
 };
 
@@ -33,6 +35,8 @@ struct Cli {
 enum RootCommand {
     Sessions(SessionsArgs),
     Profiles(ProfilesArgs),
+    Ssh(SshArgs),
+    Telnet(TelnetArgs),
     Serial(SerialArgs),
     Terminal(TerminalArgs),
 }
@@ -82,6 +86,83 @@ struct ProfileConnectArgs {
 enum ProfileType {
     Ssh,
     Telnet,
+}
+
+#[derive(Debug, Args)]
+struct SshArgs {
+    #[command(subcommand)]
+    command: SshCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SshCommand {
+    Connect(SshConnectArgs),
+}
+
+#[derive(Debug, Args)]
+struct SshConnectArgs {
+    #[arg(long)]
+    host: String,
+    #[arg(long)]
+    port: Option<u16>,
+    #[arg(long)]
+    username: String,
+    #[arg(long, value_enum)]
+    auth_method: Option<SshAuthMethod>,
+    #[arg(long)]
+    private_key_path: Option<String>,
+    #[arg(long)]
+    jump_profile_id: Option<String>,
+    #[arg(long, value_enum)]
+    encoding: Option<Encoding>,
+    #[arg(long, value_enum)]
+    terminal_mode: Option<TerminalMode>,
+    #[arg(long)]
+    cols: Option<u32>,
+    #[arg(long)]
+    rows: Option<u32>,
+}
+
+#[derive(Debug, Args)]
+struct TelnetArgs {
+    #[command(subcommand)]
+    command: TelnetCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum TelnetCommand {
+    Connect(TelnetConnectArgs),
+}
+
+#[derive(Debug, Args)]
+struct TelnetConnectArgs {
+    #[arg(long)]
+    host: String,
+    #[arg(long)]
+    port: Option<u16>,
+    #[arg(long, value_enum)]
+    encoding: Option<Encoding>,
+    #[arg(long, value_enum)]
+    terminal_mode: Option<TerminalMode>,
+    #[arg(long)]
+    cols: Option<u32>,
+    #[arg(long)]
+    rows: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SshAuthMethod {
+    Auto,
+    Password,
+    KeyboardInteractive,
+    PublicKey,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum Encoding {
+    Utf8,
+    ShiftJis,
+    EucJp,
 }
 
 #[derive(Debug, Args)]
@@ -314,6 +395,47 @@ fn build_request(
                 },
             ))
         }
+        RootCommand::Ssh(SshArgs {
+            command: SshCommand::Connect(args),
+        }) => {
+            let host = normalize_direct_host(&args.host)?;
+            require_non_empty("--username", &args.username)?;
+            validate_optional_range("--port", args.port, 1, u16::MAX)?;
+            validate_dimensions(args.cols, args.rows)?;
+            Ok(ExternalControlRequest::ConnectSsh(ConnectSshArgs {
+                host,
+                port: args.port,
+                username: args.username,
+                auth_method: args
+                    .auth_method
+                    .map(SshAuthMethod::into_request_auth_method),
+                private_key_path: args.private_key_path,
+                jump_profile_id: args.jump_profile_id,
+                encoding: args.encoding.map(Encoding::into_request_encoding),
+                terminal_mode: args
+                    .terminal_mode
+                    .map(TerminalMode::into_request_terminal_mode),
+                cols: args.cols,
+                rows: args.rows,
+            }))
+        }
+        RootCommand::Telnet(TelnetArgs {
+            command: TelnetCommand::Connect(args),
+        }) => {
+            let host = normalize_direct_host(&args.host)?;
+            validate_optional_range("--port", args.port, 1, u16::MAX)?;
+            validate_dimensions(args.cols, args.rows)?;
+            Ok(ExternalControlRequest::ConnectTelnet(ConnectTelnetArgs {
+                host,
+                port: args.port,
+                encoding: args.encoding.map(Encoding::into_request_encoding),
+                terminal_mode: args
+                    .terminal_mode
+                    .map(TerminalMode::into_request_terminal_mode),
+                cols: args.cols,
+                rows: args.rows,
+            }))
+        }
         RootCommand::Serial(SerialArgs {
             command: SerialCommand::Ports,
         }) => Ok(ExternalControlRequest::ListSerialPorts),
@@ -543,6 +665,27 @@ impl ProfileType {
     }
 }
 
+impl SshAuthMethod {
+    fn into_request_auth_method(self) -> ExternalControlSshAuthMethod {
+        match self {
+            Self::Auto => ExternalControlSshAuthMethod::Auto,
+            Self::Password => ExternalControlSshAuthMethod::Password,
+            Self::KeyboardInteractive => ExternalControlSshAuthMethod::KeyboardInteractive,
+            Self::PublicKey => ExternalControlSshAuthMethod::PublicKey,
+        }
+    }
+}
+
+impl Encoding {
+    fn into_request_encoding(self) -> ExternalControlEncoding {
+        match self {
+            Self::Utf8 => ExternalControlEncoding::Utf8,
+            Self::ShiftJis => ExternalControlEncoding::ShiftJis,
+            Self::EucJp => ExternalControlEncoding::EucJp,
+        }
+    }
+}
+
 impl Parity {
     fn into_request_parity(self) -> ExternalControlSerialParity {
         match self {
@@ -612,6 +755,122 @@ mod tests {
                 rows: None,
             })
         );
+    }
+
+    #[test]
+    fn direct_ssh_connect_builds_a_typed_request() {
+        let request = build_request(
+            parse(&[
+                "exaterm-cli",
+                "ssh",
+                "connect",
+                "--host",
+                "router.example.test",
+                "--port",
+                "2222",
+                "--username",
+                "admin",
+                "--auth-method",
+                "public-key",
+                "--private-key-path",
+                "id_ed25519",
+                "--jump-profile-id",
+                "bastion",
+                "--encoding",
+                "shift-jis",
+                "--terminal-mode",
+                "juniper-junos",
+                "--cols",
+                "132",
+                "--rows",
+                "43",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            ExternalControlRequest::ConnectSsh(ConnectSshArgs {
+                host: "router.example.test".into(),
+                port: Some(2222),
+                username: "admin".into(),
+                auth_method: Some(ExternalControlSshAuthMethod::PublicKey),
+                private_key_path: Some("id_ed25519".into()),
+                jump_profile_id: Some("bastion".into()),
+                encoding: Some(ExternalControlEncoding::ShiftJis),
+                terminal_mode: Some(ExternalControlTerminalMode::JuniperJunos),
+                cols: Some(132),
+                rows: Some(43),
+            })
+        );
+    }
+
+    #[test]
+    fn direct_telnet_connect_builds_a_typed_request() {
+        let request = build_request(
+            parse(&["exaterm-cli", "telnet", "connect", "--host", "192.0.2.10"]),
+            &mut io::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            ExternalControlRequest::ConnectTelnet(ConnectTelnetArgs {
+                host: "192.0.2.10".into(),
+                port: None,
+                encoding: None,
+                terminal_mode: None,
+                cols: None,
+                rows: None,
+            })
+        );
+    }
+
+    #[test]
+    fn direct_connect_rejects_zero_port_and_missing_username() {
+        let port_error = build_request(
+            parse(&[
+                "exaterm-cli",
+                "telnet",
+                "connect",
+                "--host",
+                "router.example.test",
+                "--port",
+                "0",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap_err();
+        assert!(port_error.contains("--port"));
+
+        let username_error = build_request(
+            parse(&[
+                "exaterm-cli",
+                "ssh",
+                "connect",
+                "--host",
+                "router.example.test",
+                "--username",
+                " ",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap_err();
+        assert!(username_error.contains("--username"));
+
+        let host_error = build_request(
+            parse(&[
+                "exaterm-cli",
+                "telnet",
+                "connect",
+                "--host",
+                "router.example.test:23",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap_err();
+        assert!(host_error.contains("port"));
     }
 
     #[test]

@@ -19,7 +19,10 @@ use crate::workspace::{WorkspaceConnectionInfo, WorkspaceTabRegisterInput};
 
 #[cfg(not(test))]
 use super::profiles::ssh_credential_required;
-use super::profiles::{prepare_saved_profile_connection, prepare_serial_console_connection};
+use super::profiles::{
+    prepare_direct_ssh_connection, prepare_direct_telnet_connection,
+    prepare_saved_profile_connection, prepare_serial_console_connection,
+};
 use super::ExternalControlConnectionCreatedPayload;
 #[cfg(not(test))]
 use super::ExternalControlCredentialRequestPayload;
@@ -27,9 +30,16 @@ use super::PreparedConnectionKind;
 #[cfg_attr(test, allow(unused_imports))]
 use super::{
     internal_error, invalid_params, load_app_config, load_serial_ports, ConnectSavedProfileArgs,
-    ConnectSerialConsoleArgs, ExternalControlError, ExternalControlRuntime, ExternalControlService,
-    PreparedConnection, PreparedSerialConnection,
+    ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs, ExternalControlError,
+    ExternalControlRuntime, ExternalControlService, PreparedConnection, PreparedSerialConnection,
 };
+
+#[derive(Clone, Copy)]
+enum ConnectionHostKeyHandling {
+    RequireTrusted,
+    PromptUnknown,
+}
+
 impl ExternalControlService {
     pub(crate) async fn connect_saved_profile(
         &self,
@@ -38,7 +48,45 @@ impl ExternalControlService {
         self.ensure_connect_enabled()?;
         let config = load_app_config(&self.runtime)?;
         let prepared = prepare_saved_profile_connection(&config, args).map_err(invalid_params)?;
-        connect_prepared_profile(&self.runtime, &config, prepared).await
+        connect_prepared_profile(
+            &self.runtime,
+            &config,
+            prepared,
+            ConnectionHostKeyHandling::RequireTrusted,
+        )
+        .await
+    }
+
+    pub(crate) async fn connect_ssh(
+        &self,
+        args: ConnectSshArgs,
+    ) -> Result<Value, ExternalControlError> {
+        self.ensure_direct_connect_enabled()?;
+        let config = load_app_config(&self.runtime)?;
+        let prepared = prepare_direct_ssh_connection(&config, args).map_err(invalid_params)?;
+        connect_prepared_profile(
+            &self.runtime,
+            &config,
+            prepared,
+            ConnectionHostKeyHandling::PromptUnknown,
+        )
+        .await
+    }
+
+    pub(crate) async fn connect_telnet(
+        &self,
+        args: ConnectTelnetArgs,
+    ) -> Result<Value, ExternalControlError> {
+        self.ensure_direct_connect_enabled()?;
+        let config = load_app_config(&self.runtime)?;
+        let prepared = prepare_direct_telnet_connection(args).map_err(invalid_params)?;
+        connect_prepared_profile(
+            &self.runtime,
+            &config,
+            prepared,
+            ConnectionHostKeyHandling::RequireTrusted,
+        )
+        .await
     }
 
     pub(crate) async fn list_serial_ports(&self) -> Result<Value, ExternalControlError> {
@@ -83,11 +131,14 @@ async fn connect_prepared_profile(
     runtime: &ExternalControlRuntime,
     config: &AppConfig,
     prepared: PreparedConnection,
+    host_key_handling: ConnectionHostKeyHandling,
 ) -> Result<Value, ExternalControlError> {
     let app = runtime.app.as_ref().ok_or_else(|| {
         internal_error("App handle required for external control connections is unavailable")
     })?;
-    let session_id = connect_prepared_profile_session(runtime, app, config, &prepared).await?;
+    let session_id =
+        connect_prepared_profile_session(runtime, app, config, &prepared, host_key_handling)
+            .await?;
     let connection_info = workspace_connection_info(&prepared);
 
     finish_created_session(
@@ -134,6 +185,7 @@ async fn connect_prepared_profile_session(
     app: &AppHandle,
     config: &AppConfig,
     prepared: &PreparedConnection,
+    host_key_handling: ConnectionHostKeyHandling,
 ) -> Result<String, ExternalControlError> {
     match &prepared.kind {
         PreparedConnectionKind::Ssh {
@@ -149,6 +201,7 @@ async fn connect_prepared_profile_session(
                 app,
                 config,
                 prepared,
+                host_key_handling,
                 PreparedSshProfileParts {
                     host,
                     port: *port,
@@ -182,6 +235,7 @@ async fn connect_prepared_ssh_profile(
     app: &AppHandle,
     config: &AppConfig,
     prepared: &PreparedConnection,
+    host_key_handling: ConnectionHostKeyHandling,
     parts: PreparedSshProfileParts<'_>,
 ) -> Result<String, ExternalControlError> {
     let credentials = runtime.credentials.as_ref().ok_or_else(|| {
@@ -212,7 +266,10 @@ async fn connect_prepared_ssh_profile(
         &runtime.workspace,
         runtime.logger.as_ref(),
         prompt_window_id,
-        ssh::HostKeyHandling::RequireTrusted,
+        match host_key_handling {
+            ConnectionHostKeyHandling::RequireTrusted => ssh::HostKeyHandling::RequireTrusted,
+            ConnectionHostKeyHandling::PromptUnknown => ssh::HostKeyHandling::PromptUnknown,
+        },
         options,
         None,
     )
@@ -492,6 +549,7 @@ async fn connect_prepared_profile(
     runtime: &ExternalControlRuntime,
     config: &AppConfig,
     prepared: PreparedConnection,
+    _host_key_handling: ConnectionHostKeyHandling,
 ) -> Result<Value, ExternalControlError> {
     let session_id = Uuid::new_v4().to_string();
     let connection_info = workspace_connection_info(&prepared);

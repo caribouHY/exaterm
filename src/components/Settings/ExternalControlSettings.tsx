@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { AppConfig } from "../../types";
 import { SettingsToggle } from "./SettingsToggle";
+import { isDirectConnectControlDisabled } from "./settingsModel";
 
 interface ExternalControlSettingsProps {
   config: AppConfig["external_control"];
@@ -45,6 +46,16 @@ export function ExternalControlSettings({ config, onChange }: ExternalControlSet
           onChange({ connect_enabled });
         }}
         disabled={childrenDisabled}
+      />
+      <SettingsToggle
+        id="settings-external-control-direct-connect-enabled"
+        label={t("settings.external_control_direct_connect_enabled")}
+        description={t("settings.external_control_direct_connect_enabled_desc")}
+        checked={Boolean(config.direct_connect_enabled)}
+        onChange={(direct_connect_enabled) => {
+          onChange({ direct_connect_enabled });
+        }}
+        disabled={isDirectConnectControlDisabled(config.enabled, config.connect_enabled)}
       />
       <div className="settings-section__title" style={{ marginTop: 20 }}>
         {t("settings.mcp_adapter_title")}

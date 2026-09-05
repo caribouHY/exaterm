@@ -49,7 +49,7 @@ fn test_runtime() -> ExternalControlRuntime {
 
 fn test_runtime_with_app_config(app_config: AppConfig) -> ExternalControlRuntime {
     let mut runtime = test_runtime();
-    runtime.config = ExternalControlPermissions::new(true);
+    runtime.config = ExternalControlPermissions::new(true, false);
     runtime.app_config = Some(app_config);
     runtime
 }
@@ -100,6 +100,176 @@ async fn connection_tools_require_connect_enabled() {
         .await
         .unwrap_err();
     assert!(error.message().contains("connect_enabled"));
+}
+
+#[tokio::test]
+async fn direct_connection_tools_require_the_additional_permission() {
+    let service = McpTerminalService::new(test_runtime_with_app_config(AppConfig::default()));
+
+    let error = service
+        .connect_ssh(ConnectSshArgs {
+            host: "router.example.test".into(),
+            port: None,
+            username: "admin".into(),
+            auth_method: None,
+            private_key_path: None,
+            jump_profile_id: None,
+            encoding: None,
+            terminal_mode: None,
+            cols: None,
+            rows: None,
+        })
+        .await
+        .unwrap_err();
+    assert!(error.message().contains("direct_connect_enabled"));
+
+    let error = service
+        .connect_telnet(ConnectTelnetArgs {
+            host: "router.example.test".into(),
+            port: None,
+            encoding: None,
+            terminal_mode: None,
+            cols: None,
+            rows: None,
+        })
+        .await
+        .unwrap_err();
+    assert!(error.message().contains("direct_connect_enabled"));
+}
+
+#[test]
+fn direct_connections_validate_and_normalize_targets() {
+    let ssh = prepare_direct_ssh_connection(
+        &AppConfig::default(),
+        ConnectSshArgs {
+            host: "2001:db8::1".into(),
+            port: None,
+            username: " admin ".into(),
+            auth_method: None,
+            private_key_path: None,
+            jump_profile_id: None,
+            encoding: Some(ExternalControlEncoding::ShiftJis),
+            terminal_mode: Some(ExternalControlTerminalMode::JuniperJunos),
+            cols: None,
+            rows: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(ssh.target, "admin@[2001:db8::1]:22");
+    assert_eq!(ssh.encoding, "shift-jis");
+    assert_eq!(ssh.terminal_mode, "juniper_junos");
+    assert_eq!(ssh.cols, 120);
+    assert_eq!(ssh.rows, 30);
+
+    let telnet = prepare_direct_telnet_connection(ConnectTelnetArgs {
+        host: "router.example.test".into(),
+        port: None,
+        encoding: None,
+        terminal_mode: None,
+        cols: Some(132),
+        rows: Some(43),
+    })
+    .unwrap();
+    assert_eq!(telnet.target, "router.example.test:23");
+    assert_eq!(telnet.cols, 132);
+    assert_eq!(telnet.rows, 43);
+
+    let error = prepare_direct_telnet_connection(ConnectTelnetArgs {
+        host: "router.example.test".into(),
+        port: None,
+        encoding: None,
+        terminal_mode: None,
+        cols: Some(0),
+        rows: None,
+    })
+    .unwrap_err();
+    assert!(error.contains("cols"));
+
+    for invalid in [
+        "ssh://router.example.test",
+        "admin@router.example.test",
+        "router.example.test:2222",
+        "router.example.test/path",
+        "[2001:db8::1]",
+        " router.example.test",
+        "router.example.test ",
+        "router_example.test",
+        "router..example.test",
+        "-router.example.test",
+    ] {
+        assert!(
+            normalize_direct_host(invalid).is_err(),
+            "accepted {invalid}"
+        );
+    }
+}
+
+#[test]
+fn direct_connection_requests_round_trip_through_the_control_protocol_shape() {
+    let request = ExternalControlRequest::ConnectSsh(ConnectSshArgs {
+        host: "router.example.test".into(),
+        port: Some(2222),
+        username: "admin".into(),
+        auth_method: Some(ExternalControlSshAuthMethod::PublicKey),
+        private_key_path: Some("id_ed25519".into()),
+        jump_profile_id: Some("jump".into()),
+        encoding: Some(ExternalControlEncoding::Utf8),
+        terminal_mode: Some(ExternalControlTerminalMode::General),
+        cols: Some(132),
+        rows: Some(43),
+    });
+
+    let value = serde_json::to_value(&request).unwrap();
+    assert_eq!(value["operation"], "connect_ssh");
+    assert_eq!(value["arguments"]["auth_method"], "public_key");
+    assert_eq!(value["arguments"]["encoding"], "utf8");
+    assert_eq!(
+        serde_json::from_value::<ExternalControlRequest>(value).unwrap(),
+        request
+    );
+}
+
+#[test]
+fn direct_ssh_requires_an_externally_enabled_single_jump_profile() {
+    let mut config = AppConfig::default();
+    config.saved_connections = vec![SavedConnection {
+        id: "jump".into(),
+        connection_type: "ssh".into(),
+        host: Some("jump.example.test".into()),
+        username: Some("operator".into()),
+        auth_method: Some("password".into()),
+        external_control_enabled: false,
+        ..SavedConnection::default()
+    }];
+    let args = ConnectSshArgs {
+        host: "target.example.test".into(),
+        port: None,
+        username: "admin".into(),
+        auth_method: None,
+        private_key_path: None,
+        jump_profile_id: Some("jump".into()),
+        encoding: None,
+        terminal_mode: None,
+        cols: None,
+        rows: None,
+    };
+
+    let error = prepare_direct_ssh_connection(&config, args.clone()).unwrap_err();
+    assert!(error.contains("disabled for external control"));
+
+    config.saved_connections[0].external_control_enabled = true;
+    config.saved_connections[0].jump_profile_id = Some("nested".into());
+    let error = prepare_direct_ssh_connection(&config, args.clone()).unwrap_err();
+    assert!(error.contains("Nested"));
+
+    config.saved_connections[0].jump_profile_id = None;
+    let prepared = prepare_direct_ssh_connection(&config, args).unwrap();
+    match prepared.kind {
+        PreparedConnectionKind::Ssh { jump_profile, .. } => {
+            assert_eq!(jump_profile.unwrap().id, "jump");
+        }
+        PreparedConnectionKind::Telnet { .. } => panic!("expected SSH"),
+    }
 }
 
 #[tokio::test]
@@ -175,7 +345,7 @@ async fn control_plane_rejects_unknown_protocol_version() {
     let response = read_json_line_for_test(&mut reader).await;
 
     assert_eq!(response["protocol_version"], CONTROL_PROTOCOL_VERSION);
-    assert_eq!(CONTROL_PROTOCOL_VERSION, 2);
+    assert_eq!(CONTROL_PROTOCOL_VERSION, 3);
     assert!(response["session_nonce"].is_null());
     assert!(response["error"]["message"]
         .as_str()
@@ -331,6 +501,8 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
         .map(|tool| tool["name"].as_str().unwrap())
         .collect::<Vec<_>>();
     assert!(tool_names.contains(&"list_terminal_sessions"));
+    assert!(tool_names.contains(&"connect_ssh"));
+    assert!(tool_names.contains(&"connect_telnet"));
     assert!(tool_names.contains(&"read_terminal_output"));
     assert!(!tool_names.contains(&"read_terminal_output_delta"));
     assert!(!tool_names.contains(&"wait_terminal_output"));
@@ -351,6 +523,17 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
     assert!(read_schema.contains("\"recent\""));
     assert!(read_schema.contains("\"delta\""));
     assert!(read_schema.contains("\"wait\""));
+
+    let ssh_connect_tool = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "connect_ssh")
+        .unwrap();
+    let ssh_schema = ssh_connect_tool["inputSchema"].to_string();
+    assert!(ssh_schema.contains("\"host\""));
+    assert!(ssh_schema.contains("\"username\""));
+    assert!(ssh_schema.contains("\"jump_profile_id\""));
 
     let serial_connect_tool = tools["result"]["tools"]
         .as_array()
@@ -797,6 +980,35 @@ async fn backend_requires_saved_profile_connection_type() {
 }
 
 #[tokio::test]
+async fn mcp_routes_typed_direct_connection_tools() {
+    let server = ExaTermMcpServer::with_service(ExternalControlService::new(
+        test_runtime_with_app_config(AppConfig::default()),
+    ));
+    let ssh_error = server
+        .call_tool_json(
+            "connect_ssh",
+            json!({
+                "host": "router.example.test",
+                "username": "admin"
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert!(ssh_error.message.contains("direct_connect_enabled"));
+
+    let telnet_error = server
+        .call_tool_json(
+            "connect_telnet",
+            json!({
+                "host": "router.example.test"
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert!(telnet_error.message.contains("direct_connect_enabled"));
+}
+
+#[tokio::test]
 async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
     let mut app_config = AppConfig::default();
     app_config.terminal.auto_session_log = true;
@@ -877,6 +1089,42 @@ async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
     assert_eq!(
         snapshot.tabs[0].manual_log_file_path.as_deref(),
         Some(log_session.file_path.as_str())
+    );
+}
+
+#[tokio::test]
+async fn service_connects_direct_telnet_and_registers_workspace_metadata() {
+    let mut runtime = test_runtime_with_app_config(AppConfig::default());
+    runtime.config.direct_connect_enabled = true;
+    let service = McpTerminalService::new(runtime.clone());
+
+    let result = service
+        .connect_telnet(ConnectTelnetArgs {
+            host: "router.example.test".into(),
+            port: Some(2323),
+            encoding: Some(ExternalControlEncoding::EucJp),
+            terminal_mode: Some(ExternalControlTerminalMode::JuniperJunos),
+            cols: Some(100),
+            rows: Some(40),
+        })
+        .await
+        .unwrap();
+
+    let session_id = result["session_id"].as_str().unwrap();
+    assert_eq!(result["connection_type"], "telnet");
+    assert_eq!(result["target"], "router.example.test:2323");
+    assert_eq!(result["encoding"], "euc-jp");
+    assert_eq!(result["terminal_mode"], "juniper_junos");
+
+    let snapshot = runtime.workspace.snapshot_for_window("main".into()).await;
+    assert_eq!(snapshot.tabs.len(), 1);
+    assert_eq!(snapshot.tabs[0].session_id, session_id);
+    assert_eq!(
+        snapshot.tabs[0].connection_info,
+        Some(WorkspaceConnectionInfo::Telnet {
+            host: "router.example.test".into(),
+            port: 2323,
+        })
     );
 }
 

@@ -68,12 +68,13 @@ pub async fn connect(
         prompt_window_id.clone(),
         options.request_id.clone(),
     );
-    let host_key_prompter = (host_key_handling == HostKeyHandling::Prompt).then(|| {
+    let host_key_prompter = (host_key_handling != HostKeyHandling::RequireTrusted).then(|| {
         SshHostKeyPrompter::new(
             app,
             state.host_key_prompts.clone(),
             prompt_window_id.clone(),
             options.request_id.clone(),
+            host_key_handling == HostKeyHandling::Prompt,
         )
     });
     let connect_timeout = if host_key_prompter.is_some() {

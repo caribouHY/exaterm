@@ -14,7 +14,8 @@ Enable the shared external-control service and CLI access in ExaTerm Settings, o
     "enabled": true,
     "cli_enabled": true,
     "mcp_enabled": false,
-    "connect_enabled": false
+    "connect_enabled": false,
+    "direct_connect_enabled": false
   }
 }
 ```
@@ -22,6 +23,7 @@ Enable the shared external-control service and CLI access in ExaTerm Settings, o
 - `external_control.enabled` is the master permission for CLI and MCP compatibility access.
 - `external_control.cli_enabled` permits CLI operations and is the recommended primary path.
 - `external_control.connect_enabled` additionally permits saved-profile and serial connections.
+- `external_control.direct_connect_enabled` additionally permits direct SSH/Telnet connections to explicitly specified hosts.
 - `external_control.mcp_enabled` affects `exaterm-mcp`, not `exaterm-cli`.
 
 Restart ExaTerm after changing these settings. Individual saved profiles must also allow MCP
@@ -33,6 +35,8 @@ access before the CLI can list or connect them.
 exaterm-cli sessions list
 exaterm-cli profiles list [--type <ssh|telnet>]
 exaterm-cli profiles connect --type <ssh|telnet> --profile-id <id> [--cols <n>] [--rows <n>]
+exaterm-cli ssh connect --host <host> --username <user> [options]
+exaterm-cli telnet connect --host <host> [options]
 exaterm-cli serial ports
 exaterm-cli serial connect --port <name> [options]
 exaterm-cli terminal output --session-id <id> --mode <recent|delta|wait> [options]
@@ -63,11 +67,34 @@ values from 1 through 1000. Profile connections require
 SSH passwords and encrypted private-key passphrases are entered through the visible ExaTerm
 UI and must never be supplied as CLI arguments.
 
+## Direct SSH and Telnet Connections
+
+Direct connections require `external_control.connect_enabled=true` and
+`external_control.direct_connect_enabled=true`. Use only a host name or IP address explicitly
+provided by the user. Never infer a host, SSH user name, port, authentication method,
+private-key path, or jump profile.
+
+```powershell
+exaterm-cli ssh connect --host $host --username $username
+exaterm-cli telnet connect --host $host
+```
+
+SSH supports `--port` (default `22`), `--auth-method`, `--private-key-path`,
+`--jump-profile-id`, `--encoding`, `--terminal-mode`, `--cols`, and `--rows`. Telnet supports
+`--port` (default `23`), `--encoding`, `--terminal-mode`, `--cols`, and `--rows`. Pass the host,
+port, and SSH user name separately; do not use URI, `user@host`, embedded-port, path, bracketed
+IPv6, or whitespace-containing syntax. A jump profile must be an externally enabled saved SSH
+profile and cannot use another jump profile.
+
+Unknown SSH host keys are confirmed in the visible ExaTerm UI. Host-key mismatches are
+rejected. Passwords and passphrases stay in the GUI and must not be passed through CLI
+arguments, environment variables, terminal input, or chat.
+
 ## Connection Readiness
 
-A successful `profiles connect` or `serial connect` result means that ExaTerm created a
-session. It does not guarantee that the initial banner, login exchange, or normal prompt has
-finished rendering.
+A successful `profiles connect`, direct `ssh connect`/`telnet connect`, or `serial connect`
+result means that ExaTerm created a session. It does not guarantee that the initial banner,
+login exchange, or normal prompt has finished rendering.
 
 After connecting:
 
@@ -311,6 +338,8 @@ active sessions and discard state.
 - `cli_disabled`: Enable `external_control.enabled` and `external_control.cli_enabled`, then restart ExaTerm.
 - Connection rejected: Enable `external_control.connect_enabled` and verify that the selected saved
   profile allows external control access.
+- Direct connection rejected: Also enable `external_control.direct_connect_enabled` and use
+  separate host, port, and SSH user-name arguments.
 - Session not found: Run `sessions list` again and select a current returned session ID.
 - Profile not found or ambiguous: Run `profiles list`, retain both ID and type, and retry
   only with an exact match.

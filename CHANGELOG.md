@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added opt-in CLI and MCP connections to explicitly specified SSH and Telnet hosts without saving a profile.
 - Added a configurable terminal shortcut for opening the terminal mode command palette.
 - Added the Juniper Junos terminal highlighting mode with configuration-context display.
 

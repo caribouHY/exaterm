@@ -83,6 +83,8 @@
   "settings.mcp_cli_enabled_desc": "Primary external-control path for trusted local processes using exaterm-cli",
   "settings.mcp_connect_enabled": "Allow External New Connections",
   "settings.mcp_connect_enabled_desc": "Lets trusted external-control clients open saved SSH/Telnet profiles and Serial consoles",
+  "settings.external_control_direct_connect_enabled": "Allow Direct Target Connections",
+  "settings.external_control_direct_connect_enabled_desc": "Lets trusted external-control clients open SSH or Telnet sessions for explicitly specified hosts",
   "settings.mcp_adapter_title": "MCP Compatibility Adapter",
   "settings.mcp_restart_notice": "Changes apply after restart.",
   "settings.mcp_loopback_warning": "",

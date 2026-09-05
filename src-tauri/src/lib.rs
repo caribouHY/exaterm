@@ -136,6 +136,7 @@ pub fn run() {
                         let runtime = ExternalControlRuntime {
                             config: external_control::service::ExternalControlPermissions::new(
                                 cfg.external_control.connect_enabled,
+                                cfg.external_control.direct_connect_enabled,
                             ),
                             #[cfg(test)]
                             app_config: None,

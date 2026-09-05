@@ -52,6 +52,10 @@ pub(super) fn request_from_tool(
         "connect_saved_profile" => Ok(ExternalControlRequest::ConnectSavedProfile(
             parse_tool_args(args)?,
         )),
+        "connect_ssh" => Ok(ExternalControlRequest::ConnectSsh(parse_tool_args(args)?)),
+        "connect_telnet" => Ok(ExternalControlRequest::ConnectTelnet(parse_tool_args(
+            args,
+        )?)),
         "list_serial_ports" => Ok(ExternalControlRequest::ListSerialPorts),
         "connect_serial_console" => Ok(ExternalControlRequest::ConnectSerialConsole(
             parse_tool_args(args)?,
