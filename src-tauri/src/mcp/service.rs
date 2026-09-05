@@ -8,8 +8,8 @@ use serde_json::{json, Value};
 
 use crate::external_control::{
     client::ExternalControlClient, ConnectSavedProfileArgs, ConnectSerialConsoleArgs,
-    ExternalControlService, ReadTerminalOutputArgs, RunTerminalCommandArgs, SendTerminalInputArgs,
-    StartTerminalLogArgs, StopTerminalLogArgs,
+    ConnectSshArgs, ConnectTelnetArgs, ExternalControlService, ReadTerminalOutputArgs,
+    RunTerminalCommandArgs, SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs,
 };
 use crate::mcp::backend::McpTarget;
 
@@ -84,6 +84,28 @@ impl ExaTermMcpServer {
     ) -> Result<CallToolResult, McpError> {
         self.call_tool_with_args("connect_saved_profile", args)
             .await
+    }
+
+    #[tool(
+        name = "connect_ssh",
+        description = "Open a new ExaTerm SSH session for an explicitly specified host when direct external connections are enabled. Passwords and passphrases are requested in the ExaTerm UI."
+    )]
+    async fn connect_ssh(
+        &self,
+        Parameters(args): Parameters<ConnectSshArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call_tool_with_args("connect_ssh", args).await
+    }
+
+    #[tool(
+        name = "connect_telnet",
+        description = "Open a new ExaTerm Telnet session for an explicitly specified host when direct external connections are enabled."
+    )]
+    async fn connect_telnet(
+        &self,
+        Parameters(args): Parameters<ConnectTelnetArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call_tool_with_args("connect_telnet", args).await
     }
 
     #[tool(

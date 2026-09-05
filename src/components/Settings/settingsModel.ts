@@ -103,11 +103,19 @@ export function normalizeExternalControlConfig(config: AppConfig): AppConfig {
     external_control: {
       enabled: false,
       connect_enabled: false,
+      direct_connect_enabled: false,
       mcp_enabled: false,
       cli_enabled: false,
       ...(externalControl ?? {}),
     },
   };
+}
+
+export function isDirectConnectControlDisabled(
+  externalControlEnabled: boolean,
+  connectEnabled: boolean
+): boolean {
+  return !externalControlEnabled || !connectEnabled;
 }
 
 export function areSecretEditsEqual(left: SecretEdits, right: SecretEdits): boolean {

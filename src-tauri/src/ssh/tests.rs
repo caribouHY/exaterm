@@ -64,8 +64,13 @@ fn progress_event_name_scopes_to_request_id() {
 }
 
 #[test]
-fn gui_and_external_control_use_distinct_host_key_handling() {
+fn gui_saved_profile_and_direct_control_use_distinct_host_key_handling() {
     assert_ne!(HostKeyHandling::Prompt, HostKeyHandling::RequireTrusted);
+    assert_ne!(HostKeyHandling::PromptUnknown, HostKeyHandling::Prompt);
+    assert_ne!(
+        HostKeyHandling::PromptUnknown,
+        HostKeyHandling::RequireTrusted
+    );
 }
 
 #[test]

@@ -50,6 +50,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
   "external_control": {
     "enabled": false,
     "connect_enabled": false,
+    "direct_connect_enabled": false,
     "mcp_enabled": false,
     "cli_enabled": false
   },
@@ -169,12 +170,13 @@ Set `ai.debug_log_enabled` to `true` only when you need to troubleshoot AI chat 
 
 ## external_control
 
-| Parameter                          | Type    | Default | Description                                                                                                                                                                                                                                                  |
-| ---------------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `external_control.enabled`         | boolean | `false` | Master permission for local external-control access. Setting it to `true` does not enable an interface by itself; enable `external_control.cli_enabled` or `external_control.mcp_enabled` separately.                                                        |
-| `external_control.connect_enabled` | boolean | `false` | When set to `true`, trusted external-control clients can list saved SSH/Telnet profiles, open new ExaTerm tabs from those profiles, list Serial ports, and open Serial consoles. SSH credentials are entered in the ExaTerm UI and are not exposed or saved. |
-| `external_control.mcp_enabled`     | boolean | `false` | When set to `true` with `external_control.enabled=true`, local MCP clients can use the `exaterm-mcp` compatibility adapter.                                                                                                                                  |
-| `external_control.cli_enabled`     | boolean | `false` | When set to `true` with `external_control.enabled=true`, trusted local programs can use `exaterm-cli` to call the shared terminal-control operations and receive JSON results. See the [CLI guide](CLI_GUIDE.en.md).                                         |
+| Parameter                                 | Type    | Default | Description                                                                                                                                                                                                                                                  |
+| ----------------------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `external_control.enabled`                | boolean | `false` | Master permission for local external-control access. Setting it to `true` does not enable an interface by itself; enable `external_control.cli_enabled` or `external_control.mcp_enabled` separately.                                                        |
+| `external_control.connect_enabled`        | boolean | `false` | When set to `true`, trusted external-control clients can list saved SSH/Telnet profiles, open new ExaTerm tabs from those profiles, list Serial ports, and open Serial consoles. SSH credentials are entered in the ExaTerm UI and are not exposed or saved. |
+| `external_control.direct_connect_enabled` | boolean | `false` | When set to `true` together with `connect_enabled`, trusted external-control clients can connect directly to an explicitly specified SSH or Telnet host.                                                                                                     |
+| `external_control.mcp_enabled`            | boolean | `false` | When set to `true` with `external_control.enabled=true`, local MCP clients can use the `exaterm-mcp` compatibility adapter.                                                                                                                                  |
+| `external_control.cli_enabled`            | boolean | `false` | When set to `true` with `external_control.enabled=true`, trusted local programs can use `exaterm-cli` to call the shared terminal-control operations and receive JSON results. See the [CLI guide](CLI_GUIDE.en.md).                                         |
 
 Older config files may still contain the legacy `mcp` object and `saved_connections[*].mcp_enabled`. ExaTerm migrates those fields automatically when loading the config. If both legacy and new settings are present, the new `external_control` fields take priority and the legacy values are used only to fill missing values. After ExaTerm saves the config, only the new `external_control` and `external_control_enabled` fields remain.
 
@@ -221,13 +223,19 @@ When `external_control.connect_enabled` is also `true`, external clients can cal
 - `list_serial_ports`: lists currently available Serial ports.
 - `connect_serial_console`: opens a new Serial console session from explicit port and line settings and shows it as a tab in ExaTerm. The port name must match an available Serial port exactly.
 
+When `external_control.direct_connect_enabled` is also `true`, clients can call `connect_ssh`
+and `connect_telnet` with an explicit host name or IP address. SSH user names and ports are
+separate fields. Passwords and passphrases are requested in the ExaTerm UI. Direct SSH can
+use one externally enabled saved SSH profile as a jump host. Unknown host keys require GUI
+confirmation, while host-key mismatches are rejected.
+
 `read_terminal_output` returns the selected `mode`. It and `run_terminal_command` also return `start_cursor`, `cursor`, and `truncated`. Pass the returned `cursor` to `read_terminal_output` with `mode: "delta"` or `mode: "wait"` to continue from the same point. If older output has been trimmed from the internal buffer, `truncated` is `true`. The `wait` result also returns `matched` and `timed_out`.
 
-The `wait` mode and `run_terminal_command` wait for up to 60 seconds. `run_terminal_command` targets only existing connected sessions; use `connect_saved_profile` for the opt-in saved-profile connection flow.
+The `wait` mode and `run_terminal_command` wait for up to 60 seconds. `run_terminal_command` targets only existing connected sessions; use `connect_saved_profile`, `connect_ssh`, or `connect_telnet` for the corresponding opt-in connection flow.
 
 The previous `read_terminal_output_delta` and `wait_terminal_output` tools were removed. Replace them with `read_terminal_output` using `mode: "delta"` and `mode: "wait"`, respectively.
 
-The MCP compatibility adapter and CLI do not read saved credentials, expose API keys, or read log files directly. External clients can explicitly start and stop session logs, but they receive only the log state and file path, not the log contents. New SSH/Telnet connections are limited to saved profiles, Serial connections require an explicit available port name, and all new external connections require `external_control.connect_enabled=true`. Saved profiles can opt out with `saved_connections[*].external_control_enabled=false`. SSH connections still enforce known-host checks and request required credentials in the ExaTerm UI. Terminal output and log files can contain sensitive information, so enable external control only for trusted local clients.
+The MCP compatibility adapter and CLI do not read saved credentials, expose API keys, or read log files directly. External clients can explicitly start and stop session logs, but they receive only the log state and file path, not the log contents. All new external connections require `external_control.connect_enabled=true`; direct SSH/Telnet targets additionally require `external_control.direct_connect_enabled=true`. Saved profiles can opt out with `saved_connections[*].external_control_enabled=false`, and the same permission is required when a saved SSH profile is used as a direct connection's jump host. SSH connections enforce known-host checks and request required credentials in the ExaTerm UI. Terminal output and log files can contain sensitive information, so enable external control only for trusted local clients.
 
 ## shortcuts
 

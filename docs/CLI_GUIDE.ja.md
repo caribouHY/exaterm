@@ -24,7 +24,8 @@ exaterm-cli --version
     "enabled": true,
     "cli_enabled": true,
     "mcp_enabled": false,
-    "connect_enabled": false
+    "connect_enabled": false,
+    "direct_connect_enabled": false
   }
 }
 ```
@@ -32,6 +33,7 @@ exaterm-cli --version
 - `external_control.enabled` は CLI と MCP 互換アクセスに共通するマスター許可です。
 - `external_control.cli_enabled` は推奨される主要経路である `exaterm-cli` を許可します。
 - `external_control.connect_enabled` はプロファイル接続とシリアル接続も許可します。
+- `external_control.direct_connect_enabled` は、明示指定したホストへの SSH/Telnet 直接接続も許可します。
 - `external_control.mcp_enabled` は `exaterm-mcp` 互換アダプターだけを制御します。
 
 設定の正本は[設定ガイド](CONFIG_JSON_GUIDE.ja.md#external_control)です。設定変更後は ExaTerm を再起動します。
@@ -42,6 +44,8 @@ exaterm-cli --version
 exaterm-cli sessions list
 exaterm-cli profiles list [--type <ssh|telnet>]
 exaterm-cli profiles connect --type <ssh|telnet> --profile-id <id> [--cols <n>] [--rows <n>]
+exaterm-cli ssh connect --host <host> --username <user> [options]
+exaterm-cli telnet connect --host <host> [options]
 exaterm-cli serial ports
 exaterm-cli serial connect --port <name> [options]
 exaterm-cli terminal output --session-id <id> --mode <recent|delta|wait> [options]
@@ -68,6 +72,28 @@ exaterm-cli profiles connect --type telnet --profile-id router
 ID と種別の両方が一致する必要があります。接続には `external_control.connect_enabled=true` と、
 対象プロファイルの外部制御許可が必要です。SSH パスワードや暗号化鍵のパスフレーズは
 CLI 引数では受け取らず、ExaTerm UI で入力します。
+
+### SSH/Telnet 直接接続
+
+直接接続には `external_control.connect_enabled=true` と
+`external_control.direct_connect_enabled=true` の両方が必要です。`--host` にはホスト名、
+IPv4 アドレス、または括弧なしの IPv6 アドレスを指定します。ユーザー名とポートは別の引数で
+指定し、URI、`user@host`、角括弧付き IPv6、`host:port`、パス、空白を含む形式は拒否されます。
+
+```powershell
+exaterm-cli ssh connect --host router.example.com --username admin
+exaterm-cli telnet connect --host 192.0.2.20
+```
+
+SSH は `--port`（既定値 `22`）、`--auth-method`、`--private-key-path`、
+`--jump-profile-id`、`--encoding`、`--terminal-mode`、`--cols`、`--rows` を受け付けます。
+認証方式は `auto`、`password`、`keyboard-interactive`、`public-key` です。踏み台には、
+外部制御を許可し、自身では踏み台を使用しない保存済み SSH プロファイルだけを指定できます。
+Telnet は `--port`（既定値 `23`）、`--encoding`、`--terminal-mode`、`--cols`、`--rows` を
+受け付けます。
+
+パスワードとパスフレーズは可視状態の ExaTerm UI で入力します。未知の SSH ホスト鍵は GUI で
+確認し、保存済みホスト鍵との不一致は拒否します。不一致は ExaTerm 側で解消してから再試行します。
 
 ### シリアル接続
 
@@ -150,8 +176,8 @@ JSON で出力します。
 ## GUI と認証情報
 
 ExaTerm が停止中の場合、CLI は通常の表示される GUI を起動し、ローカル制御プレーンを
-最大 30 秒待機します。セッションはGUIが所有し続けます。プロファイル接続は通常のタブとして
-表示され、必要な SSH 認証情報は GUI で入力します。
+最大 30 秒待機します。セッションはGUIが所有し続けます。外部制御からの新規接続は通常の
+タブとして表示され、必要な SSH 認証情報は GUI で入力します。
 
 ## セキュリティ
 
@@ -164,6 +190,7 @@ ExaTerm が停止中の場合、CLI は通常の表示される GUI を起動し
 
 - `cli_disabled`: `external_control.enabled` と `external_control.cli_enabled` を有効にして再起動します。
 - プロファイル/シリアル接続が拒否される: `external_control.connect_enabled` を有効にします。
+- 直接接続が拒否される: `external_control.direct_connect_enabled` も有効にします。
 - セッションが見つからない: `sessions list` の `session_id` を使用します。
 - 待機がタイムアウトする: `timed_out` と出力を確認し、返された `cursor` から継続します。
 - GUI を利用できない: `exaterm.exe` が CLI と同じインストール先にあり、起動できるか確認します。

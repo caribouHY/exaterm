@@ -50,6 +50,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
   "external_control": {
     "enabled": false,
     "connect_enabled": false,
+    "direct_connect_enabled": false,
     "mcp_enabled": false,
     "cli_enabled": false
   },
@@ -169,12 +170,13 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 
 ## external_control
 
-| パラメータ                         | 型      | 既定値  | 説明                                                                                                                                                                                                                        |
-| ---------------------------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `external_control.enabled`         | boolean | `false` | ローカル外部制御アクセスのマスター許可です。`true` にしても各インターフェースは自動で有効にならないため、`external_control.cli_enabled` または `external_control.mcp_enabled` を別途有効化します。                          |
-| `external_control.connect_enabled` | boolean | `false` | `true` にすると、信頼済み外部制御クライアントが保存済み SSH/Telnet プロファイルやシリアルコンソールを開けます。SSH 認証情報は ExaTerm UI で入力し、外部クライアントへは公開されず保存もされません。                         |
-| `external_control.mcp_enabled`     | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、ローカル MCP クライアントから `exaterm-mcp` 互換アダプターを使用できます。                                                                                      |
-| `external_control.cli_enabled`     | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、信頼済みローカルプログラムが `exaterm-cli` から共通のターミナル操作を呼び出し、JSON 結果を取得できます。詳細は[CLI ガイド](CLI_GUIDE.ja.md)を参照してください。 |
+| パラメータ                                | 型      | 既定値  | 説明                                                                                                                                                                                                                        |
+| ----------------------------------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `external_control.enabled`                | boolean | `false` | ローカル外部制御アクセスのマスター許可です。`true` にしても各インターフェースは自動で有効にならないため、`external_control.cli_enabled` または `external_control.mcp_enabled` を別途有効化します。                          |
+| `external_control.connect_enabled`        | boolean | `false` | `true` にすると、信頼済み外部制御クライアントが保存済み SSH/Telnet プロファイルやシリアルコンソールを開けます。SSH 認証情報は ExaTerm UI で入力し、外部クライアントへは公開されず保存もされません。                         |
+| `external_control.direct_connect_enabled` | boolean | `false` | `connect_enabled` とともに `true` にすると、信頼済み外部制御クライアントが明示指定した SSH/Telnet ホストへ直接接続できます。                                                                                                |
+| `external_control.mcp_enabled`            | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、ローカル MCP クライアントから `exaterm-mcp` 互換アダプターを使用できます。                                                                                      |
+| `external_control.cli_enabled`            | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、信頼済みローカルプログラムが `exaterm-cli` から共通のターミナル操作を呼び出し、JSON 結果を取得できます。詳細は[CLI ガイド](CLI_GUIDE.ja.md)を参照してください。 |
 
 古い設定ファイルには、従来の `mcp` オブジェクトや `saved_connections[*].mcp_enabled` が残っている場合があります。ExaTerm は読み込み時にそれらを自動移行します。新旧設定が併存する場合は、新しい `external_control` 側を優先し、旧設定は不足値の補完だけに使います。ExaTerm が設定を保存すると、新しい `external_control` と `external_control_enabled` だけが残ります。
 
@@ -221,13 +223,19 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
 - `list_serial_ports`: 現在利用可能なシリアルポートを一覧表示します。
 - `connect_serial_console`: MCP ツール引数で指定したポート名と通信設定から新しいシリアルコンソールセッションを開き、ExaTerm のタブとして表示します。ポート名は利用可能なシリアルポートと完全一致する必要があります。
 
+`external_control.direct_connect_enabled` も `true` の場合、ホスト名または IP アドレスを
+明示指定する `connect_ssh` と `connect_telnet` を呼び出せます。SSH のユーザー名とポートは
+別フィールドで指定し、パスワードとパスフレーズは ExaTerm UI で入力します。SSH 直接接続では、
+外部制御を許可した保存済み SSH プロファイルを 1 段の踏み台として利用できます。未知のホスト鍵は
+GUI で確認し、保存済み鍵との不一致は拒否します。
+
 `read_terminal_output` は選択された `mode` を返します。また、`read_terminal_output` と `run_terminal_command` は `start_cursor`、`cursor`、`truncated` も返します。返された `cursor` を `mode: "delta"` または `mode: "wait"` の `read_terminal_output` に渡すと、同じ位置から読み取りを継続できます。古い出力が内部バッファから切り詰められている場合、`truncated` は `true` になります。`wait` の結果には `matched` と `timed_out` も含まれます。
 
-`wait` モードと `run_terminal_command` の待機時間は最大 60 秒です。`run_terminal_command` は既存の接続済みセッションだけを対象とします。保存済みプロファイルからの新規接続には、明示的に有効化した `connect_saved_profile` を使用します。
+`wait` モードと `run_terminal_command` の待機時間は最大 60 秒です。`run_terminal_command` は既存の接続済みセッションだけを対象とします。新規接続には、用途に応じて明示的に有効化した `connect_saved_profile`、`connect_ssh`、`connect_telnet` を使用します。
 
 従来の `read_terminal_output_delta` と `wait_terminal_output` は削除されました。それぞれ `mode: "delta"` と `mode: "wait"` を指定した `read_terminal_output` に置き換えてください。
 
-MCP 互換アダプターと CLI は保存済み認証情報の読み取り、API キーの公開、ログファイル本文の直接読み取りを行いません。外部クライアントがログを開始・停止した場合も、受け取るのはログ状態とファイルパスだけです。SSH/Telnet 新規接続は保存済みプロファイルに限定され、シリアル接続は利用可能なポート名だけを対象にし、すべての外部新規接続には `external_control.connect_enabled=true` が必要です。プロファイルは `saved_connections[*].external_control_enabled=false` で除外できます。SSH の known_hosts 検証と ExaTerm UI での認証入力は維持されます。機密情報を含む可能性があるため、外部制御は信頼済みローカルクライアントに対してのみ有効化してください。
+MCP 互換アダプターと CLI は保存済み認証情報の読み取り、API キーの公開、ログファイル本文の直接読み取りを行いません。外部クライアントがログを開始・停止した場合も、受け取るのはログ状態とファイルパスだけです。すべての外部新規接続には `external_control.connect_enabled=true` が必要で、SSH/Telnet の直接接続にはさらに `external_control.direct_connect_enabled=true` が必要です。プロファイルは `saved_connections[*].external_control_enabled=false` で除外でき、直接接続の踏み台として使う場合も同じ許可が必要です。SSH の known_hosts 検証と ExaTerm UI での認証入力は維持されます。機密情報を含む可能性があるため、外部制御は信頼済みローカルクライアントに対してのみ有効化してください。
 
 ## shortcuts
 

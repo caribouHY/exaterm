@@ -83,6 +83,8 @@
   "settings.mcp_cli_enabled_desc": "信頼済みローカルプロセスが主要経路として exaterm-cli から ExaTerm ターミナルを制御できるようにします",
   "settings.mcp_connect_enabled": "外部からの新規接続を許可",
   "settings.mcp_connect_enabled_desc": "信頼済み外部制御クライアントが保存済み SSH/Telnet プロファイルとシリアルコンソールを開けるようにします",
+  "settings.external_control_direct_connect_enabled": "任意の接続先への直接接続を許可",
+  "settings.external_control_direct_connect_enabled_desc": "信頼済み外部制御クライアントが明示指定したホストへ SSH または Telnet 接続できるようにします",
   "settings.mcp_adapter_title": "MCP 互換アダプター",
   "settings.mcp_restart_notice": "変更は再起動後に反映されます。",
   "settings.mcp_loopback_warning": "",

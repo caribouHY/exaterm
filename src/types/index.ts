@@ -137,6 +137,7 @@ export interface ShortcutConfig {
 export interface ExternalControlConfig {
   enabled: boolean;
   connect_enabled: boolean;
+  direct_connect_enabled: boolean;
   mcp_enabled: boolean;
   cli_enabled: boolean;
 }

@@ -15,6 +15,8 @@ use crate::ssh_known_hosts::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HostKeyHandling {
     Prompt,
+    #[cfg_attr(test, allow(dead_code))]
+    PromptUnknown,
     RequireTrusted,
 }
 
@@ -135,6 +137,9 @@ pub(super) async fn verify_server_key(
     let Some(prompter) = prompter else {
         return Ok(false);
     };
+    if !prompter.allows_status(&result.status) {
+        return Ok(false);
+    }
     if let Err(error) = prompter
         .confirm(
             phase,

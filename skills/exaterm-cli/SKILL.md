@@ -1,6 +1,6 @@
 ---
 name: exaterm-cli
-description: Control ExaTerm SSH, Telnet, and serial terminal sessions through the Windows exaterm-cli JSON interface. Use when an agent needs to inspect active ExaTerm sessions, discover and connect approved saved profiles, open serial consoles, read terminal output, run commands, send interactive input, or control opt-in session logging through ExaTerm's recommended primary external-control path.
+description: Control ExaTerm SSH, Telnet, and serial terminal sessions through the Windows exaterm-cli JSON interface. Use when an agent needs to inspect active ExaTerm sessions, connect an explicitly supplied direct target or an approved saved profile, open serial consoles, read terminal output, run commands, send interactive input, or control opt-in session logging through ExaTerm's recommended primary external-control path.
 ---
 
 # ExaTerm CLI
@@ -32,14 +32,24 @@ option limits, result fields, setup, or troubleshooting details are needed.
    Match a session using returned identifiers and metadata. Do not guess a session ID.
    If more than one session plausibly matches the request, ask the user which one to use.
 
-3. When a requested session is not open, discover it before connecting:
+3. When a requested session is not open, use only connection details supplied by the user or
+   discover an approved saved target before connecting:
 
    ```powershell
    $profiles = exaterm-cli profiles list | ConvertFrom-Json
    ```
 
-   For SSH and Telnet, select only an exact profile ID and connection type returned by
-   `profiles list`. Never infer a host, username, credential, profile type, or profile ID.
+   When the user explicitly supplied an SSH/Telnet host and, for SSH, a username, a direct
+   connection may be used if it is enabled:
+
+   ```powershell
+   exaterm-cli ssh connect --host $host --username $username
+   exaterm-cli telnet connect --host $host
+   ```
+
+   Never infer a direct host, username, port, authentication method, private-key path, or jump
+   profile. Otherwise, select only an exact profile ID and connection type returned by
+   `profiles list`. Never infer a credential, profile type, or profile ID.
    For serial, select only an exact port returned by `serial ports`. Connection commands
    may require the user to enter credentials in the visible ExaTerm UI.
 
