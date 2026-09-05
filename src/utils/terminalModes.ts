@@ -18,6 +18,12 @@ const DEVICE_TERMINAL_MODE_DEFINITIONS = [
     sortName: "Arista EOS",
     value: "arista_eos",
   },
+  {
+    cliValue: "juniper-junos",
+    labelKey: "terminal_mode.juniper_junos",
+    sortName: "Juniper Junos",
+    value: "juniper_junos",
+  },
   { cliValue: "vyos", labelKey: "terminal_mode.vyos", sortName: "VyOS", value: "vyos" },
   {
     cliValue: "fujitsu-sir",

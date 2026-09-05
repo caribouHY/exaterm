@@ -1028,6 +1028,10 @@ mod tests {
                     "connection_type": "ssh",
                     "terminal_mode": "arista_eos"
                 }, {
+                    "id": "junos-router",
+                    "connection_type": "ssh",
+                    "terminal_mode": "juniper_junos"
+                }, {
                     "id": "vyos-router",
                     "connection_type": "ssh",
                     "terminal_mode": "vyos"
@@ -1058,18 +1062,22 @@ mod tests {
         );
         assert_eq!(
             cfg.saved_connections[2].terminal_mode.as_deref(),
-            Some("vyos")
+            Some("juniper_junos")
         );
         assert_eq!(
             cfg.saved_connections[3].terminal_mode.as_deref(),
-            Some("fujitsu_sir")
+            Some("vyos")
         );
         assert_eq!(
             cfg.saved_connections[4].terminal_mode.as_deref(),
-            Some("allied_telesis_awplus")
+            Some("fujitsu_sir")
         );
         assert_eq!(
             cfg.saved_connections[5].terminal_mode.as_deref(),
+            Some("allied_telesis_awplus")
+        );
+        assert_eq!(
+            cfg.saved_connections[6].terminal_mode.as_deref(),
             Some("furukawa_fitelnet")
         );
     }

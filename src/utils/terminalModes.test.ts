@@ -28,6 +28,11 @@ describe("terminal modes", () => {
         label: "Furukawa FITELnet",
         value: "furukawa_fitelnet",
       },
+      {
+        cliValue: "juniper-junos",
+        label: "Juniper Junos",
+        value: "juniper_junos",
+      },
       { cliValue: "vyos", label: "VyOS", value: "vyos" },
     ]);
   });

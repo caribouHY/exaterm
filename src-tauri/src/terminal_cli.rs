@@ -137,6 +137,7 @@ enum TerminalMode {
     General,
     CiscoIos,
     AristaEos,
+    JuniperJunos,
     Vyos,
     FujitsuSir,
     AlliedTelesisAwplus,
@@ -568,6 +569,7 @@ impl TerminalMode {
             Self::General => ExternalControlTerminalMode::General,
             Self::CiscoIos => ExternalControlTerminalMode::CiscoIos,
             Self::AristaEos => ExternalControlTerminalMode::AristaEos,
+            Self::JuniperJunos => ExternalControlTerminalMode::JuniperJunos,
             Self::Vyos => ExternalControlTerminalMode::Vyos,
             Self::FujitsuSir => ExternalControlTerminalMode::FujitsuSir,
             Self::AlliedTelesisAwplus => ExternalControlTerminalMode::AlliedTelesisAwplus,
@@ -851,6 +853,38 @@ mod tests {
                 stop_bits: None,
                 flow_control: None,
                 terminal_mode: Some(ExternalControlTerminalMode::AristaEos),
+                cols: None,
+                rows: None,
+            })
+        );
+    }
+
+    #[test]
+    fn serial_connect_accepts_juniper_junos_terminal_mode() {
+        let request = build_request(
+            parse(&[
+                "exaterm-cli",
+                "serial",
+                "connect",
+                "--port",
+                "COM3",
+                "--terminal-mode",
+                "juniper-junos",
+            ]),
+            &mut io::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            request,
+            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
+                port: "COM3".into(),
+                baud_rate: None,
+                data_bits: None,
+                parity: None,
+                stop_bits: None,
+                flow_control: None,
+                terminal_mode: Some(ExternalControlTerminalMode::JuniperJunos),
                 cols: None,
                 rows: None,
             })

@@ -360,6 +360,9 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
         .unwrap();
     assert!(serial_connect_tool["inputSchema"]
         .to_string()
+        .contains("\"juniper_junos\""));
+    assert!(serial_connect_tool["inputSchema"]
+        .to_string()
         .contains("\"vyos\""));
     assert!(serial_connect_tool["inputSchema"]
         .to_string()
@@ -1146,6 +1149,24 @@ fn prepare_serial_console_uses_defaults_and_line_settings() {
     assert_eq!(prepared.title, "COM3");
     assert_eq!(prepared.encoding, "utf-8");
     assert_eq!(prepared.terminal_mode, "fujitsu_sir");
+
+    let junos = prepare_serial_console_connection(
+        ConnectSerialConsoleArgs {
+            port: "COM3".into(),
+            baud_rate: None,
+            data_bits: None,
+            parity: None,
+            stop_bits: None,
+            flow_control: None,
+            terminal_mode: Some(McpTerminalMode::JuniperJunos),
+            cols: None,
+            rows: None,
+        },
+        &ports,
+    )
+    .unwrap();
+
+    assert_eq!(junos.terminal_mode, "juniper_junos");
 
     let awplus = prepare_serial_console_connection(
         ConnectSerialConsoleArgs {

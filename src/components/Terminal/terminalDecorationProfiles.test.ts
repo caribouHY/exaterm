@@ -5,6 +5,7 @@ import {
   CISCO_IOS_DECORATION_PROFILE,
   FUJITSU_SIR_DECORATION_PROFILE,
   FURUKAWA_FITELNET_DECORATION_PROFILE,
+  JUNIPER_JUNOS_DECORATION_PROFILE,
   VYOS_DECORATION_PROFILE,
   getTerminalDecorationProfile,
   parseAristaEosPrompt,
@@ -12,6 +13,8 @@ import {
   parseCiscoIosPrompt,
   parseFujitsuSirPrompt,
   parseFurukawaFitelnetPrompt,
+  parseJuniperJunosContextLine,
+  parseJuniperJunosPrompt,
   parseVyosContextLine,
   parseVyosPrompt,
 } from "./terminalDecorationProfiles";
@@ -267,11 +270,57 @@ describe("parseVyosContextLine", () => {
   });
 });
 
+describe("parseJuniperJunosPrompt", () => {
+  it.each([
+    ["admin@edge-router> show version", "default"],
+    ["root@r4-1.5# set system host-name edge", "configuration"],
+    ["operator@router>", "default"],
+  ] as const)("parses the standard Juniper Junos prompt %s", (line, variant) => {
+    expect(parseJuniperJunosPrompt(line)?.variant).toBe(variant);
+  });
+
+  it("separates the identity, prompt, separator, and command", () => {
+    expect(parseJuniperJunosPrompt("admin@edge-router# set system host-name edge")).toMatchObject({
+      username: "admin",
+      hostname: "edge-router",
+      promptText: "admin@edge-router#",
+      commandSeparator: " ",
+      commandText: "set system host-name edge",
+      variant: "configuration",
+    });
+  });
+
+  it("rejects custom, shell, and malformed prompts", () => {
+    expect(parseJuniperJunosPrompt("CUSTOM-PROMPT> show version")).toBeNull();
+    expect(parseJuniperJunosPrompt("root@router:~# cli")).toBeNull();
+    expect(parseJuniperJunosPrompt("@router> show version")).toBeNull();
+    expect(parseJuniperJunosPrompt("admin@> show version")).toBeNull();
+  });
+});
+
+describe("parseJuniperJunosContextLine", () => {
+  it("parses top-level and nested configuration contexts", () => {
+    expect(parseJuniperJunosContextLine("[edit]")?.contextText).toBe("[edit]");
+    expect(parseJuniperJunosContextLine("  [edit system services ssh]")).toEqual({
+      contextText: "[edit system services ssh]",
+      contextStart: 2,
+      variant: "configuration",
+    });
+  });
+
+  it("rejects unrelated and malformed context lines", () => {
+    expect(parseJuniperJunosContextLine("edit system services ssh")).toBeNull();
+    expect(parseJuniperJunosContextLine("[edit ]")).toBeNull();
+    expect(parseJuniperJunosContextLine("[editor]")).toBeNull();
+  });
+});
+
 describe("terminal decoration profile registry", () => {
   it("keeps general mode undecorated and resolves device profiles", () => {
     expect(getTerminalDecorationProfile("general")).toBeNull();
     expect(getTerminalDecorationProfile("cisco_ios")).toBe(CISCO_IOS_DECORATION_PROFILE);
     expect(getTerminalDecorationProfile("arista_eos")).toBe(ARISTA_EOS_DECORATION_PROFILE);
+    expect(getTerminalDecorationProfile("juniper_junos")).toBe(JUNIPER_JUNOS_DECORATION_PROFILE);
     expect(getTerminalDecorationProfile("vyos")).toBe(VYOS_DECORATION_PROFILE);
     expect(getTerminalDecorationProfile("fujitsu_sir")).toBe(FUJITSU_SIR_DECORATION_PROFILE);
     expect(getTerminalDecorationProfile("allied_telesis_awplus")).toBe(
@@ -315,6 +364,17 @@ describe("terminal decoration profile registry", () => {
       )
     ).toBe(true);
     expect(VYOS_DECORATION_PROFILE.isErrorLine("commit completed without error")).toBe(false);
+  });
+
+  it("uses conservative Juniper Junos error matching and the shared scan limit", () => {
+    expect(JUNIPER_JUNOS_DECORATION_PROFILE.decorationLookback).toBe(80);
+    expect(JUNIPER_JUNOS_DECORATION_PROFILE.isErrorLine("error: commit failed")).toBe(true);
+    expect(
+      JUNIPER_JUNOS_DECORATION_PROFILE.isErrorLine("Syntax error, expecting an identifier")
+    ).toBe(true);
+    expect(JUNIPER_JUNOS_DECORATION_PROFILE.isErrorLine("unknown command.")).toBe(true);
+    expect(JUNIPER_JUNOS_DECORATION_PROFILE.isErrorLine("error-free status")).toBe(false);
+    expect(JUNIPER_JUNOS_DECORATION_PROFILE.isErrorLine("syntax error-free result")).toBe(false);
   });
 
   it("uses Si-R-specific error matching and the shared scan limit", () => {
