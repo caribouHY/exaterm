@@ -478,7 +478,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           });
           break;
         case "terminal_mode_menu":
-          if (isActiveRef.current && isConnectedRef.current) {
+          if (isActiveRef.current) {
             onTerminalModeShortcutRef.current?.();
           }
           break;
