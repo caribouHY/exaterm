@@ -11,6 +11,7 @@
 ### Fixed
 
 - Improved terminal keyboard input compatibility.
+- Preserved unsaved Settings edits while switching to another tab.
 
 ## v0.9.1
 

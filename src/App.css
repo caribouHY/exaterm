@@ -47,6 +47,12 @@
   min-height: 0;
 }
 
+.app__utility-area {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
 .app__hidden {
   display: none !important;
 }
