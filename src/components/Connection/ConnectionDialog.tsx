@@ -28,7 +28,6 @@ import {
   getConnectionErrorMessage,
   normalizeEncoding,
   normalizeSshAuthMethod,
-  removeSavedProfile,
 } from "./connectionProfileUtils";
 import { useConnectionActions } from "./useConnectionActions";
 import { useConnectionDialogShortcuts } from "./useConnectionDialogShortcuts";
@@ -325,7 +324,7 @@ export default function ConnectionDialog({
     setSelectedHistoryIds((current) => ({ ...current, [connectionType]: "" }));
   };
 
-  const savedProfiles = useSavedConnectionProfiles({ config, loadConfig, setConfig, setError, t });
+  const savedProfiles = useSavedConnectionProfiles({ setConfig, setError, t });
 
   const handleSaveSshProfile = () => {
     void savedProfiles.saveProfile(
@@ -379,10 +378,11 @@ export default function ConnectionDialog({
 
     setError("");
     try {
-      const loaded = config ?? (await loadConfig());
-      const nextConfig = removeSavedProfile(loaded, connectionType, selectedProfileId);
-      await invoke("config_save", { config: nextConfig });
-      setConfig(nextConfig);
+      const savedConfig = await invoke<AppConfig>("config_saved_connection_delete", {
+        connectionType,
+        id: selectedProfileId,
+      });
+      setConfig(savedConfig);
       setSelectedProfileIds((current) => ({ ...current, [connectionType]: "" }));
       if (connectionType === "ssh") {
         profileSelection.resetSshProfileFields();

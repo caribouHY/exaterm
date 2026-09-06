@@ -12,6 +12,7 @@
 
 - Improved terminal keyboard input compatibility.
 - Preserved unsaved Settings edits while switching to another tab.
+- Preserved changes saved from other windows when saving Settings or connection profiles.
 
 ## v0.9.1
 
