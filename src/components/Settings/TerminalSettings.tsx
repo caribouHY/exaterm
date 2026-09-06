@@ -60,7 +60,9 @@ export function TerminalSettings({ config, onChange }: TerminalSettingsProps) {
             id="settings-font-size"
             type="number"
             value={fontSizeInput}
-            onFocus={() => setEditingField("font_size")}
+            onFocus={() => {
+              setEditingField("font_size");
+            }}
             onChange={(event) => {
               setFontSizeInput(event.target.value);
               handleNumberChange(event.target.value, FONT_SIZE_MIN, FONT_SIZE_MAX, (fontSize) => {
@@ -73,7 +75,9 @@ export function TerminalSettings({ config, onChange }: TerminalSettingsProps) {
                 config.font_size,
                 FONT_SIZE_MIN,
                 FONT_SIZE_MAX,
-                (fontSize) => onChange({ font_size: fontSize }),
+                (fontSize) => {
+                  onChange({ font_size: fontSize });
+                },
                 setFontSizeInput
               );
               setEditingField(null);
@@ -92,7 +96,9 @@ export function TerminalSettings({ config, onChange }: TerminalSettingsProps) {
             id="settings-scrollback"
             type="number"
             value={scrollbackInput}
-            onFocus={() => setEditingField("scrollback")}
+            onFocus={() => {
+              setEditingField("scrollback");
+            }}
             onChange={(event) => {
               setScrollbackInput(event.target.value);
               handleNumberChange(
@@ -110,7 +116,9 @@ export function TerminalSettings({ config, onChange }: TerminalSettingsProps) {
                 config.scrollback,
                 SCROLLBACK_MIN,
                 SCROLLBACK_MAX,
-                (scrollback) => onChange({ scrollback }),
+                (scrollback) => {
+                  onChange({ scrollback });
+                },
                 setScrollbackInput
               );
               setEditingField(null);
