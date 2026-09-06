@@ -118,14 +118,21 @@ export default function SettingsPanel() {
     !areSecretEditModesEqual(secretEditMode, initialSecretEditModeSnapshot);
 
   const handleSave = async () => {
-    if (!config || isSaving || !hasUnsavedChanges) return;
+    if (!config || !initialConfigSnapshot || isSaving || !hasUnsavedChanges) return;
     try {
       setIsSaving(true);
       setError("");
       clearSavedTimer();
       const normalizedConfig = normalizeExternalControlConfig(config);
       setConfig(normalizedConfig);
-      await invoke("config_save", { config: normalizedConfig });
+      const savedConfig = normalizeExternalControlConfig(
+        await invoke<AppConfig>("config_save", {
+          baseConfig: initialConfigSnapshot,
+          editedConfig: normalizedConfig,
+        })
+      );
+      setConfig(savedConfig);
+      setInitialConfigSnapshot(savedConfig);
 
       for (const { key, provider } of SECRET_FIELDS) {
         const value = getSecretEdit(secretEdits, key).trim();
@@ -138,7 +145,6 @@ export default function SettingsPanel() {
       setInitialSecretEditsSnapshot(emptySecretEdits);
       setSecretEditMode(emptySecretEditMode);
       setInitialSecretEditModeSnapshot(emptySecretEditMode);
-      setInitialConfigSnapshot(normalizedConfig);
       await refreshSecretStatus();
 
       setSaved(true);

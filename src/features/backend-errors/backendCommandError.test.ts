@@ -78,6 +78,21 @@ describe("backendCommandError", () => {
     ).toBe("translated:backend_errors.serial_connect_cancelled");
   });
 
+  it("translates saved connection mutation errors", () => {
+    const t = vi.fn((key: string) => `translated:${key}`);
+
+    expect(
+      translateBackendCommandError(
+        {
+          code: "config.saved_connection_duplicate",
+          message: "A saved connection profile with this name already exists",
+        },
+        t,
+        "fallback"
+      )
+    ).toBe("translated:backend_errors.config_saved_connection_duplicate");
+  });
+
   it("uses English message for an unknown future code", () => {
     const t = vi.fn();
     expect(

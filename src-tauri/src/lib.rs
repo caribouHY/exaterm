@@ -235,6 +235,8 @@ pub fn run() {
             // Config
             config::config_load,
             config::config_save,
+            config::config_saved_connection_upsert,
+            config::config_saved_connection_delete,
             // App updates
             app_update::app_update_check,
             app_update::app_update_install,
