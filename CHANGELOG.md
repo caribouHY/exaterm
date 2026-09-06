@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.9.2
+
 ### Added
 
 - Added opt-in CLI and MCP connections to explicitly specified SSH and Telnet hosts without saving a profile.
