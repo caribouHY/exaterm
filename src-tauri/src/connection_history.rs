@@ -130,6 +130,7 @@ fn normalize_input(
         "general"
             | "cisco_ios"
             | "arista_eos"
+            | "juniper_junos"
             | "vyos"
             | "fujitsu_sir"
             | "allied_telesis_awplus"
@@ -477,33 +478,39 @@ mod tests {
 
         assert_eq!(history.entries[0].terminal_mode, "arista_eos");
 
+        let mut junos_input = ssh_input("junos.example", "admin");
+        junos_input.terminal_mode = "juniper_junos".into();
+        upsert_history(&mut history, junos_input, at(2)).unwrap();
+
+        assert_eq!(history.entries[0].terminal_mode, "juniper_junos");
+
         let mut vyos_input = ssh_input("vyos.example", "vyos");
         vyos_input.terminal_mode = "vyos".into();
-        upsert_history(&mut history, vyos_input, at(2)).unwrap();
+        upsert_history(&mut history, vyos_input, at(3)).unwrap();
 
         assert_eq!(history.entries[0].terminal_mode, "vyos");
 
         let mut sir_input = ssh_input("sir.example", "admin");
         sir_input.terminal_mode = "fujitsu_sir".into();
-        upsert_history(&mut history, sir_input, at(3)).unwrap();
+        upsert_history(&mut history, sir_input, at(4)).unwrap();
 
         assert_eq!(history.entries[0].terminal_mode, "fujitsu_sir");
 
         let mut awplus_input = ssh_input("awplus.example", "manager");
         awplus_input.terminal_mode = "allied_telesis_awplus".into();
-        upsert_history(&mut history, awplus_input, at(4)).unwrap();
+        upsert_history(&mut history, awplus_input, at(5)).unwrap();
 
         assert_eq!(history.entries[0].terminal_mode, "allied_telesis_awplus");
 
         let mut fitelnet_input = ssh_input("fitelnet.example", "operator");
         fitelnet_input.terminal_mode = "furukawa_fitelnet".into();
-        upsert_history(&mut history, fitelnet_input, at(5)).unwrap();
+        upsert_history(&mut history, fitelnet_input, at(6)).unwrap();
 
         assert_eq!(history.entries[0].terminal_mode, "furukawa_fitelnet");
 
         let mut unknown_input = ssh_input("router.example", "admin");
         unknown_input.terminal_mode = "unknown".into();
-        assert!(upsert_history(&mut history, unknown_input, at(6)).is_err());
+        assert!(upsert_history(&mut history, unknown_input, at(7)).is_err());
     }
 
     #[test]

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v0.9.2
+
+### Added
+
+- Added opt-in CLI and MCP connections to explicitly specified SSH and Telnet hosts without saving a profile.
+- Added a configurable terminal shortcut for opening the terminal mode command palette.
+- Added the Juniper Junos terminal highlighting mode with configuration-context display.
+
+### Fixed
+
+- Improved terminal keyboard input compatibility.
+- Preserved unsaved Settings edits while switching to another tab.
+- Preserved changes saved from other windows when saving Settings or connection profiles.
+
 ## v0.9.1
 
 ### Changed

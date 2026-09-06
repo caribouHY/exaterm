@@ -126,6 +126,7 @@ export interface ShortcutConfig {
   terminal_paste: ShortcutBinding | null;
   terminal_clear_viewport: ShortcutBinding | null;
   terminal_clear_buffer: ShortcutBinding | null;
+  terminal_mode_menu: ShortcutBinding | null;
   terminal_log_start_overwrite: ShortcutBinding | null;
   terminal_log_start_append: ShortcutBinding | null;
   terminal_log_stop: ShortcutBinding | null;
@@ -136,6 +137,7 @@ export interface ShortcutConfig {
 export interface ExternalControlConfig {
   enabled: boolean;
   connect_enabled: boolean;
+  direct_connect_enabled: boolean;
   mcp_enabled: boolean;
   cli_enabled: boolean;
 }

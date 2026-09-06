@@ -112,6 +112,7 @@ export default function App() {
   const sshPrompts = useSshPrompts();
   const {
     tabs,
+    utilityTabs,
     appTabs,
     activeTabId,
     activeTab,
@@ -538,6 +539,15 @@ export default function App() {
     [updateWorkspaceTabMetadata]
   );
 
+  const handleTerminalModeShortcut = useCallback(
+    (tabId: string) => {
+      if (!activeTab || activeTab.id !== tabId) return;
+      restoreTerminalFocusAfterPaletteRef.current = true;
+      setOpenStatusBarMenu("terminalMode");
+    },
+    [activeTab]
+  );
+
   const buildManualLogFileName = useCallback((tab: TabInfo) => {
     const now = new Date();
     const stamp = [
@@ -902,6 +912,9 @@ export default function App() {
                         onTerminalData={(data) => {
                           handleTerminalData(tab.id, data);
                         }}
+                        onTerminalModeShortcut={() => {
+                          handleTerminalModeShortcut(tab.id);
+                        }}
                         onTerminalLogShortcut={(action) => {
                           handleTerminalLogShortcut(tab.id, action);
                         }}
@@ -917,10 +930,14 @@ export default function App() {
                   </Suspense>
                 )}
               </div>
-              {activeView === "settings" && (
-                <Suspense fallback={<div aria-hidden="true" />}>
-                  <SettingsPanel />
-                </Suspense>
+              {utilityTabs.includes("settings") && (
+                <div
+                  className={`app__utility-area ${activeView !== "settings" ? "app__hidden" : ""}`}
+                >
+                  <Suspense fallback={<div aria-hidden="true" />}>
+                    <SettingsPanel />
+                  </Suspense>
+                </div>
               )}
               {activeView === "logs" && (
                 <Suspense fallback={<div aria-hidden="true" />}>

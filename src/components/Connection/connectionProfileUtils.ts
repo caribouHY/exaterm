@@ -1,10 +1,4 @@
-import type {
-  AppConfig,
-  Encoding,
-  SavedConnection,
-  SshAuthMethod,
-  TerminalMode,
-} from "../../types";
+import type { Encoding, SavedConnection, SshAuthMethod, TerminalMode } from "../../types";
 import {
   translateBackendCommandError,
   type BackendErrorTranslator,
@@ -114,49 +108,6 @@ export const createTelnetProfile = (draft: TelnetProfileDraft): SavedConnection 
   terminal_mode: draft.terminalMode,
   memo: normalizeProfileMemo(draft.memo),
   external_control_enabled: draft.externalControlEnabled,
-});
-
-export const hasDuplicateProfile = (
-  connections: SavedConnection[],
-  profile: SavedConnection,
-  selectedProfileId: string
-) => {
-  return connections.some(
-    (entry) =>
-      entry.connection_type === profile.connection_type &&
-      entry.id === profile.id &&
-      entry.id !== selectedProfileId
-  );
-};
-
-export const upsertSavedProfile = (
-  config: AppConfig,
-  profile: SavedConnection,
-  selectedProfileId: string
-): AppConfig => {
-  const existingConnections = config.saved_connections;
-  const shouldUpdate = Boolean(selectedProfileId);
-  return {
-    ...config,
-    saved_connections: shouldUpdate
-      ? existingConnections.map((entry) =>
-          entry.connection_type === profile.connection_type && entry.id === selectedProfileId
-            ? profile
-            : entry
-        )
-      : [...existingConnections, profile],
-  };
-};
-
-export const removeSavedProfile = (
-  config: AppConfig,
-  connectionType: "ssh" | "telnet",
-  profileId: string
-): AppConfig => ({
-  ...config,
-  saved_connections: config.saved_connections.filter(
-    (entry) => entry.connection_type !== connectionType || entry.id !== profileId
-  ),
 });
 
 export const getConnectionErrorMessage = (

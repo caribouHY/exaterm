@@ -320,11 +320,14 @@ pub async fn connect(
     mut attempt: Option<ConnectAttempt>,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
-    let stream = run_with_attempt(attempt.as_ref(), async {
-        TcpStream::connect((host.as_str(), port))
-            .await
-            .map_err(|e| format!("Failed to connect over Telnet: {}", e))
-    })
+    let stream = run_with_attempt(
+        attempt.as_ref(),
+        Box::pin(async {
+            TcpStream::connect((host.as_str(), port))
+                .await
+                .map_err(|e| format!("Failed to connect over Telnet: {}", e))
+        }),
+    )
     .await?;
     if attempt
         .as_mut()

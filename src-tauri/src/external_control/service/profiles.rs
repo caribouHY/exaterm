@@ -1,13 +1,14 @@
 use serde_json::{json, Value};
+use std::net::IpAddr;
 
 use crate::config::{AppConfig, SavedConnection};
 use crate::serial;
 use crate::ssh;
 
 use super::{
-    load_app_config, ConnectSavedProfileArgs, ConnectSerialConsoleArgs,
-    ExternalControlConnectionProfile, ExternalControlError, ExternalControlService,
-    ListConnectionProfilesArgs, PreparedConnection, PreparedConnectionKind,
+    load_app_config, ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ConnectSshArgs,
+    ConnectTelnetArgs, ExternalControlConnectionProfile, ExternalControlError,
+    ExternalControlService, ListConnectionProfilesArgs, PreparedConnection, PreparedConnectionKind,
     PreparedSerialConnection, SavedProfileConnectionType, DEFAULT_CONNECT_COLS,
     DEFAULT_CONNECT_ROWS, DEFAULT_SERIAL_BAUD_RATE, DEFAULT_SERIAL_DATA_BITS,
     DEFAULT_SERIAL_STOP_BITS, MAX_CONNECT_DIMENSION,
@@ -51,6 +52,75 @@ pub(crate) fn normalize_profile_string(value: Option<&str>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+pub(crate) fn normalize_direct_host(value: &str) -> Result<String, String> {
+    if value.is_empty() {
+        return Err("Specify host".into());
+    }
+    if value.chars().any(char::is_whitespace)
+        || value.contains("://")
+        || value.contains('@')
+        || value.contains('/')
+        || value.contains('\\')
+        || value.starts_with('[')
+        || value.ends_with(']')
+    {
+        return Err(
+            "host must be a host name or IP address without a scheme, user name, port, path, or whitespace"
+                .into(),
+        );
+    }
+    if value.parse::<IpAddr>().is_ok() {
+        return Ok(value.to_string());
+    }
+    if value.contains(':') {
+        return Err("host must not include a port; specify port separately".into());
+    }
+    if !is_valid_hostname(value) {
+        return Err("host must be a valid host name or IP address".into());
+    }
+    Ok(value.to_string())
+}
+
+fn is_valid_hostname(value: &str) -> bool {
+    let hostname = value.strip_suffix('.').unwrap_or(value);
+    !hostname.is_empty()
+        && hostname.len() <= 253
+        && hostname.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+        })
+}
+
+fn format_host_port(host: &str, port: u16) -> String {
+    if host
+        .parse::<IpAddr>()
+        .is_ok_and(|address| address.is_ipv6())
+    {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
+fn direct_connect_dimension(
+    name: &str,
+    value: Option<u32>,
+    default_value: u32,
+) -> Result<u32, String> {
+    match value {
+        Some(value) if !(1..=MAX_CONNECT_DIMENSION).contains(&value) => Err(format!(
+            "{name} must be between 1 and {MAX_CONNECT_DIMENSION}"
+        )),
+        Some(value) => Ok(value),
+        None => Ok(default_value),
+    }
+}
+
 pub(crate) fn profile_external_control_enabled(profile: &SavedConnection) -> bool {
     profile.external_control_enabled
 }
@@ -67,6 +137,7 @@ pub(crate) fn normalize_profile_terminal_mode(value: Option<&str>) -> String {
     match value.map(str::trim) {
         Some("cisco_ios") => "cisco_ios".into(),
         Some("arista_eos") => "arista_eos".into(),
+        Some("juniper_junos") => "juniper_junos".into(),
         Some("vyos") => "vyos".into(),
         Some("fujitsu_sir") => "fujitsu_sir".into(),
         Some("allied_telesis_awplus") => "allied_telesis_awplus".into(),
@@ -81,6 +152,10 @@ mod terminal_mode_tests {
 
     #[test]
     fn terminal_mode_normalization_accepts_device_modes_and_preserves_the_fallback() {
+        assert_eq!(
+            normalize_profile_terminal_mode(Some("juniper_junos")),
+            "juniper_junos"
+        );
         assert_eq!(normalize_profile_terminal_mode(Some("vyos")), "vyos");
         assert_eq!(
             normalize_profile_terminal_mode(Some("fujitsu_sir")),
@@ -309,6 +384,91 @@ pub(crate) fn prepare_saved_profile_connection(
             "New external control connections only support saved SSH and Telnet profiles".into(),
         ),
     }
+}
+
+pub(crate) fn prepare_direct_ssh_connection(
+    config: &AppConfig,
+    args: ConnectSshArgs,
+) -> Result<PreparedConnection, String> {
+    let host = normalize_direct_host(&args.host)?;
+    let username = normalize_profile_string(Some(&args.username))
+        .ok_or_else(|| "Specify username".to_string())?;
+    let port = args.port.unwrap_or(22);
+    if port == 0 {
+        return Err("port must be at least 1".into());
+    }
+    let auth_method = args.auth_method.unwrap_or_default().as_str().to_string();
+    let private_key_path = normalize_profile_string(args.private_key_path.as_deref());
+    if auth_method == "public_key" && private_key_path.is_none() {
+        return Err("public_key authentication requires private_key_path".into());
+    }
+    let jump_profile = resolve_external_jump_profile(config, args.jump_profile_id.as_deref())?;
+    let encoding = args.encoding.unwrap_or_default().as_str().to_string();
+    let terminal_mode = args.terminal_mode.unwrap_or_default().as_str().to_string();
+
+    Ok(PreparedConnection {
+        kind: PreparedConnectionKind::Ssh {
+            host: host.clone(),
+            port,
+            username: username.clone(),
+            auth_method,
+            private_key_path,
+            jump_profile,
+        },
+        profile_id: "direct".into(),
+        connection_type: "ssh".into(),
+        target: format!("{username}@{}", format_host_port(&host, port)),
+        title: format!("{username}@{host}"),
+        encoding,
+        terminal_mode,
+        cols: direct_connect_dimension("cols", args.cols, DEFAULT_CONNECT_COLS)?,
+        rows: direct_connect_dimension("rows", args.rows, DEFAULT_CONNECT_ROWS)?,
+    })
+}
+
+pub(crate) fn prepare_direct_telnet_connection(
+    args: ConnectTelnetArgs,
+) -> Result<PreparedConnection, String> {
+    let host = normalize_direct_host(&args.host)?;
+    let port = args.port.unwrap_or(23);
+    if port == 0 {
+        return Err("port must be at least 1".into());
+    }
+    Ok(PreparedConnection {
+        kind: PreparedConnectionKind::Telnet {
+            host: host.clone(),
+            port,
+        },
+        profile_id: "direct".into(),
+        connection_type: "telnet".into(),
+        target: format_host_port(&host, port),
+        title: format_host_port(&host, port),
+        encoding: args.encoding.unwrap_or_default().as_str().to_string(),
+        terminal_mode: args.terminal_mode.unwrap_or_default().as_str().to_string(),
+        cols: direct_connect_dimension("cols", args.cols, DEFAULT_CONNECT_COLS)?,
+        rows: direct_connect_dimension("rows", args.rows, DEFAULT_CONNECT_ROWS)?,
+    })
+}
+
+fn resolve_external_jump_profile(
+    config: &AppConfig,
+    jump_profile_id: Option<&str>,
+) -> Result<Option<ssh::SshJumpProfile>, String> {
+    let Some(jump_profile_id) = normalize_profile_string(jump_profile_id) else {
+        return Ok(None);
+    };
+    let profile = config
+        .saved_connections
+        .iter()
+        .find(|profile| {
+            profile.id == jump_profile_id
+                && normalize_profile_type(&profile.connection_type) == "ssh"
+        })
+        .ok_or_else(|| "Externally enabled saved SSH jump profile not found".to_string())?;
+    if !profile_external_control_enabled(profile) {
+        return Err("This SSH jump profile is disabled for external control".into());
+    }
+    ssh::resolve_jump_profile(config, Some(&jump_profile_id), None)
 }
 
 fn find_saved_profile<'a>(

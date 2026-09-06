@@ -1,5 +1,6 @@
 use std::collections::{hash_map::Entry, HashMap};
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use tokio::sync::watch;
@@ -20,7 +21,7 @@ pub struct ConnectAttempt {
 
 pub async fn run_with_attempt<F, T>(
     attempt: Option<&ConnectAttempt>,
-    operation: F,
+    operation: Pin<Box<F>>,
 ) -> Result<T, String>
 where
     F: Future<Output = Result<T, String>>,
@@ -81,7 +82,7 @@ impl ConnectAttemptState {
 }
 
 impl ConnectAttempt {
-    pub async fn run<F, T>(&self, operation: F) -> Result<T, String>
+    pub async fn run<F, T>(&self, operation: Pin<Box<F>>) -> Result<T, String>
     where
         F: Future<Output = Result<T, String>>,
     {
@@ -151,7 +152,7 @@ mod tests {
 
         assert!(state.cancel("request-1"));
         let error = attempt
-            .run(std::future::pending::<Result<(), String>>())
+            .run(Box::pin(std::future::pending::<Result<(), String>>()))
             .await
             .unwrap_err();
 
@@ -175,7 +176,7 @@ mod tests {
             .await
             .map_err(|error| error.to_string())?
         };
-        let run_task = tokio::spawn(async move { attempt.run(operation).await });
+        let run_task = tokio::spawn(async move { attempt.run(Box::pin(operation)).await });
 
         started_rx.await.unwrap();
         assert!(state.cancel("request-1"));

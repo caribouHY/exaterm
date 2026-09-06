@@ -81,6 +81,92 @@ pub(crate) struct ConnectSavedProfileArgs {
     pub(crate) rows: Option<u32>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub(crate) struct ConnectSshArgs {
+    /// SSH host name, IPv4 address, or IPv6 address. Do not include a scheme, user name, or port.
+    pub(crate) host: String,
+    /// SSH port. Defaults to 22.
+    #[schemars(range(min = 1, max = 65535))]
+    pub(crate) port: Option<u16>,
+    /// SSH user name.
+    pub(crate) username: String,
+    /// SSH authentication method. Defaults to auto.
+    pub(crate) auth_method: Option<ExternalControlSshAuthMethod>,
+    /// Optional private key file path for auto or public-key authentication.
+    pub(crate) private_key_path: Option<String>,
+    /// Optional externally enabled saved SSH profile to use as a single jump host.
+    pub(crate) jump_profile_id: Option<String>,
+    /// Terminal character encoding. Defaults to UTF-8.
+    pub(crate) encoding: Option<ExternalControlEncoding>,
+    /// Initial terminal mode. Defaults to general.
+    pub(crate) terminal_mode: Option<ExternalControlTerminalMode>,
+    /// Requested terminal columns. Defaults to 120.
+    #[schemars(range(min = 1, max = MAX_CONNECT_DIMENSION))]
+    pub(crate) cols: Option<u32>,
+    /// Requested terminal rows. Defaults to 30.
+    #[schemars(range(min = 1, max = MAX_CONNECT_DIMENSION))]
+    pub(crate) rows: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub(crate) struct ConnectTelnetArgs {
+    /// Telnet host name, IPv4 address, or IPv6 address. Do not include a scheme or port.
+    pub(crate) host: String,
+    /// Telnet port. Defaults to 23.
+    #[schemars(range(min = 1, max = 65535))]
+    pub(crate) port: Option<u16>,
+    /// Terminal character encoding. Defaults to UTF-8.
+    pub(crate) encoding: Option<ExternalControlEncoding>,
+    /// Initial terminal mode. Defaults to general.
+    pub(crate) terminal_mode: Option<ExternalControlTerminalMode>,
+    /// Requested terminal columns. Defaults to 120.
+    #[schemars(range(min = 1, max = MAX_CONNECT_DIMENSION))]
+    pub(crate) cols: Option<u32>,
+    /// Requested terminal rows. Defaults to 30.
+    #[schemars(range(min = 1, max = MAX_CONNECT_DIMENSION))]
+    pub(crate) rows: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ExternalControlSshAuthMethod {
+    #[default]
+    Auto,
+    Password,
+    KeyboardInteractive,
+    PublicKey,
+}
+
+impl ExternalControlSshAuthMethod {
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Password => "password",
+            Self::KeyboardInteractive => "keyboard_interactive",
+            Self::PublicKey => "public_key",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ExternalControlEncoding {
+    #[default]
+    Utf8,
+    ShiftJis,
+    EucJp,
+}
+
+impl ExternalControlEncoding {
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            Self::Utf8 => "utf-8",
+            Self::ShiftJis => "shift-jis",
+            Self::EucJp => "euc-jp",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub(crate) struct ListConnectionProfilesArgs {
     pub(crate) connection_type: Option<SavedProfileConnectionType>,
@@ -147,6 +233,7 @@ pub(crate) enum ExternalControlTerminalMode {
     General,
     CiscoIos,
     AristaEos,
+    JuniperJunos,
     Vyos,
     FujitsuSir,
     AlliedTelesisAwplus,
@@ -159,6 +246,7 @@ impl ExternalControlTerminalMode {
             Self::General => "general",
             Self::CiscoIos => "cisco_ios",
             Self::AristaEos => "arista_eos",
+            Self::JuniperJunos => "juniper_junos",
             Self::Vyos => "vyos",
             Self::FujitsuSir => "fujitsu_sir",
             Self::AlliedTelesisAwplus => "allied_telesis_awplus",
@@ -319,6 +407,8 @@ pub enum ExternalControlRequest {
     ListTerminalSessions,
     ListConnectionProfiles(ListConnectionProfilesArgs),
     ConnectSavedProfile(ConnectSavedProfileArgs),
+    ConnectSsh(ConnectSshArgs),
+    ConnectTelnet(ConnectTelnetArgs),
     ListSerialPorts,
     ConnectSerialConsole(ConnectSerialConsoleArgs),
     ReadTerminalOutput(ReadTerminalOutputArgs),
@@ -339,6 +429,8 @@ macro_rules! result_type {
 result_type!(ListTerminalSessionsResult);
 result_type!(ListConnectionProfilesResult);
 result_type!(ConnectSavedProfileResult);
+result_type!(ConnectSshResult);
+result_type!(ConnectTelnetResult);
 result_type!(ListSerialPortsResult);
 result_type!(ConnectSerialConsoleResult);
 result_type!(ReadTerminalOutputResult);
@@ -353,6 +445,8 @@ pub enum ExternalControlResponse {
     ListTerminalSessions(ListTerminalSessionsResult),
     ListConnectionProfiles(ListConnectionProfilesResult),
     ConnectSavedProfile(ConnectSavedProfileResult),
+    ConnectSsh(ConnectSshResult),
+    ConnectTelnet(ConnectTelnetResult),
     ListSerialPorts(ListSerialPortsResult),
     ConnectSerialConsole(ConnectSerialConsoleResult),
     ReadTerminalOutput(ReadTerminalOutputResult),
@@ -368,6 +462,8 @@ impl ExternalControlResponse {
             Self::ListTerminalSessions(result) => result.0,
             Self::ListConnectionProfiles(result) => result.0,
             Self::ConnectSavedProfile(result) => result.0,
+            Self::ConnectSsh(result) => result.0,
+            Self::ConnectTelnet(result) => result.0,
             Self::ListSerialPorts(result) => result.0,
             Self::ConnectSerialConsole(result) => result.0,
             Self::ReadTerminalOutput(result) => result.0,

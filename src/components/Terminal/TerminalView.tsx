@@ -29,6 +29,7 @@ import { getTerminalDecorationProfile } from "./terminalDecorationProfiles";
 import { getTerminalPromptColor, TERMINAL_DECORATION_COLORS } from "./terminalDecorationTheme";
 import type { TerminalPinnedCommand } from "./terminalDecorationTypes";
 import { clearTerminalBuffer, clearTerminalViewport } from "./terminalClearActions";
+import { getTerminalControlInput } from "./terminalControlInput";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
@@ -44,6 +45,7 @@ interface TerminalViewProps {
   shortcuts: ShortcutConfig;
   terminalMode: TerminalMode;
   onTerminalData?: (data: string) => void;
+  onTerminalModeShortcut?: () => void;
   onTerminalLogShortcut?: (action: TerminalLogShortcutAction) => void;
   onTerminalSelectionChange?: (hasSelection: boolean) => void;
 }
@@ -103,6 +105,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     shortcuts,
     terminalMode,
     onTerminalData,
+    onTerminalModeShortcut,
     onTerminalLogShortcut,
     onTerminalSelectionChange,
   },
@@ -119,6 +122,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const isManualLoggingRef = useRef(isManualLogging);
   const isManualLoggingPausedRef = useRef(isManualLoggingPaused);
   const shortcutsRef = useRef(shortcuts);
+  const onTerminalModeShortcutRef = useRef(onTerminalModeShortcut);
   const onTerminalLogShortcutRef = useRef(onTerminalLogShortcut);
   const onTerminalSelectionChangeRef = useRef(onTerminalSelectionChange);
   const clipboardActionInProgressRef = useRef(false);
@@ -161,6 +165,10 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   useEffect(() => {
     isActiveRef.current = isActive;
   }, [isActive]);
+
+  useEffect(() => {
+    onTerminalModeShortcutRef.current = onTerminalModeShortcut;
+  }, [onTerminalModeShortcut]);
 
   useEffect(() => {
     onTerminalLogShortcutRef.current = onTerminalLogShortcut;
@@ -430,7 +438,17 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
       const action = findShortcutAction(shortcutsRef.current, event, "terminal");
       if (!action) {
-        return true;
+        const controlInput = getTerminalControlInput(event);
+        if (!controlInput) {
+          return true;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.type === "keydown") {
+          term.input(controlInput);
+        }
+        return false;
       }
 
       event.preventDefault();
@@ -458,6 +476,11 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           clearTerminalBuffer(term, () => {
             refreshDecorationsAfterClear(term);
           });
+          break;
+        case "terminal_mode_menu":
+          if (isActiveRef.current) {
+            onTerminalModeShortcutRef.current?.();
+          }
           break;
         case "terminal_log_start_overwrite":
         case "terminal_log_start_append":

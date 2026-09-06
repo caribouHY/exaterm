@@ -19,13 +19,15 @@ mod profiles;
 mod terminal;
 mod types;
 
+pub(crate) use profiles::normalize_direct_host;
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use profiles::{
     available_serial_port_names, list_connection_profiles_from_config, normalize_connect_dimension,
     normalize_profile_auth_method, normalize_profile_encoding, normalize_profile_host,
     normalize_profile_string, normalize_profile_terminal_mode, normalize_profile_type,
-    normalize_serial_data_bits, normalize_serial_stop_bits, prepare_saved_profile_connection,
+    normalize_serial_data_bits, normalize_serial_stop_bits, prepare_direct_ssh_connection,
+    prepare_direct_telnet_connection, prepare_saved_profile_connection,
     prepare_serial_console_connection, profile_external_control_enabled, ssh_credential_required,
 };
 #[cfg(test)]
@@ -34,17 +36,19 @@ pub(crate) use terminal::{normalize_max_chars, normalize_timeout_ms};
 pub(crate) use types::ExternalControlConnectionCreatedPayload;
 pub(super) use types::{internal_error, invalid_params, not_found, permission_denied, unavailable};
 pub(crate) use types::{
-    ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ExternalControlConnectionProfile,
-    ExternalControlLogControlAck, ExternalControlSerialFlowControl, ExternalControlSerialParity,
+    ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs,
+    ExternalControlConnectionProfile, ExternalControlEncoding, ExternalControlLogControlAck,
+    ExternalControlSerialFlowControl, ExternalControlSerialParity, ExternalControlSshAuthMethod,
     ExternalControlTerminalMode, ListConnectionProfilesArgs, PreparedConnection,
     PreparedConnectionKind, PreparedSerialConnection, ReadTerminalOutputArgs,
     RunTerminalCommandArgs, SavedProfileConnectionType, SendTerminalInputArgs,
     StartTerminalLogArgs, StopTerminalLogArgs,
 };
 use types::{
-    ConnectSavedProfileResult, ConnectSerialConsoleResult, ListConnectionProfilesResult,
-    ListSerialPortsResult, ReadTerminalOutputResult, RunTerminalCommandResult,
-    SendTerminalInputResult, StartTerminalLogResult, StopTerminalLogResult,
+    ConnectSavedProfileResult, ConnectSerialConsoleResult, ConnectSshResult, ConnectTelnetResult,
+    ListConnectionProfilesResult, ListSerialPortsResult, ReadTerminalOutputResult,
+    RunTerminalCommandResult, SendTerminalInputResult, StartTerminalLogResult,
+    StopTerminalLogResult,
 };
 #[cfg(not(test))]
 pub(crate) use types::{
@@ -96,11 +100,16 @@ pub struct ExternalControlRuntime {
 pub struct ExternalControlPermissions {
     #[cfg_attr(not(test), allow(dead_code))]
     pub connect_enabled: bool,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub direct_connect_enabled: bool,
 }
 
 impl ExternalControlPermissions {
-    pub fn new(connect_enabled: bool) -> Self {
-        Self { connect_enabled }
+    pub fn new(connect_enabled: bool, direct_connect_enabled: bool) -> Self {
+        Self {
+            connect_enabled,
+            direct_connect_enabled,
+        }
     }
 }
 
@@ -134,6 +143,16 @@ impl ExternalControlService {
                 .await
                 .map(ConnectSavedProfileResult)
                 .map(ExternalControlResponse::ConnectSavedProfile),
+            ExternalControlRequest::ConnectSsh(args) => self
+                .connect_ssh(args)
+                .await
+                .map(ConnectSshResult)
+                .map(ExternalControlResponse::ConnectSsh),
+            ExternalControlRequest::ConnectTelnet(args) => self
+                .connect_telnet(args)
+                .await
+                .map(ConnectTelnetResult)
+                .map(ExternalControlResponse::ConnectTelnet),
             ExternalControlRequest::ListSerialPorts => self
                 .list_serial_ports()
                 .await
@@ -182,6 +201,17 @@ impl ExternalControlService {
         }
     }
 
+    pub(super) fn ensure_direct_connect_enabled(&self) -> Result<(), ExternalControlError> {
+        self.ensure_connect_enabled()?;
+        if self.direct_connect_enabled_now()? {
+            Ok(())
+        } else {
+            Err(permission_denied(
+                "Direct SSH and Telnet connections from external control are disabled. Set external_control.direct_connect_enabled=true.",
+            ))
+        }
+    }
+
     fn connect_enabled_now(&self) -> Result<bool, ExternalControlError> {
         #[cfg(test)]
         {
@@ -192,6 +222,22 @@ impl ExternalControlService {
         {
             config::config_read()
                 .map(|config| config.external_control.connect_enabled)
+                .map_err(|error| {
+                    internal_error(format!("Failed to load the configuration: {error}"))
+                })
+        }
+    }
+
+    fn direct_connect_enabled_now(&self) -> Result<bool, ExternalControlError> {
+        #[cfg(test)]
+        {
+            Ok(self.runtime.config.direct_connect_enabled)
+        }
+
+        #[cfg(not(test))]
+        {
+            config::config_read()
+                .map(|config| config.external_control.direct_connect_enabled)
                 .map_err(|error| {
                     internal_error(format!("Failed to load the configuration: {error}"))
                 })

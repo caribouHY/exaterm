@@ -24,7 +24,7 @@ ExaTerm is a terminal app for SSH, Telnet, and serial communication with AI agen
 - A CLI tool and Agent Skill for AI agents
 - Built-in terminal AI chat
 - Session logging with manual and automatic modes
-- Network-device color highlighting with Cisco IOS, Arista EOS, VyOS, Fujitsu Si-R, Allied Telesis AW+, and Furukawa FITELnet support
+- Network-device color highlighting with Cisco IOS, Arista EOS, Juniper Junos, VyOS, Fujitsu Si-R, Allied Telesis AW+, and Furukawa FITELnet support
 
 ## Supported OS
 
@@ -56,7 +56,7 @@ exaterm.exe help
 
 The bundled `exaterm-cli` tool and dedicated Agent Skill let AI agents such as Claude and Codex control ExaTerm. To use `exaterm-cli`, enable **Enable External Control** and **Enable Terminal CLI** in Settings. See the [Terminal CLI guide](docs/CLI_GUIDE.en.md) for usage.
 
-To start a new SSH or Telnet connection through external control, enable **Allow External New Connections** and create a saved connection profile that allows external control.
+To connect through an approved saved profile, enable **Allow External New Connections**. To connect directly to a hostname or IP address, also enable **Allow Direct Target Connections**.
 
 ### Agent Skill
 
@@ -80,7 +80,7 @@ The Skill does not include ExaTerm itself. Install ExaTerm separately, then enab
 
 ExaTerm supports a stdio MCP compatibility adapter through `exaterm-mcp.exe`. To use it, enable **Enable External Control** and **Enable MCP Compatibility Adapter** in Settings.
 
-To start a new SSH or Telnet connection through external control, enable **Allow External New Connections** and create a saved connection profile that allows external control.
+To connect through an approved saved profile, enable **Allow External New Connections**. To connect directly to a hostname or IP address, also enable **Allow Direct Target Connections**.
 
 External control can read terminal output and send input or commands. Terminal content may contain sensitive information, so enable it only for trusted local clients.
 

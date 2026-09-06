@@ -56,7 +56,15 @@ fn find_saved_jump_profile<'a>(
     config
         .saved_connections
         .iter()
-        .find(|profile| profile.id == jump_profile_id)
+        .find(|profile| {
+            profile.id == jump_profile_id && normalize_connection_type(profile) == "ssh"
+        })
+        .or_else(|| {
+            config
+                .saved_connections
+                .iter()
+                .find(|profile| profile.id == jump_profile_id)
+        })
         .ok_or_else(|| "SSH jump profile not found".to_string())
 }
 

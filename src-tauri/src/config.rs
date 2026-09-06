@@ -2,14 +2,16 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, Emitter};
 
 use crate::ai::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
 use crate::terminal_control::TerminalControlState;
 
 const CURRENT_CONFIG_VERSION: u32 = 7;
+static CONFIG_FILE_LOCK: Mutex<()> = Mutex::new(());
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct AppConfig {
     pub config_version: u32,
     pub language: String,
@@ -95,6 +97,8 @@ pub struct ShortcutConfig {
     pub terminal_clear_viewport: Option<ShortcutBinding>,
     #[serde(default)]
     pub terminal_clear_buffer: Option<ShortcutBinding>,
+    #[serde(default = "default_terminal_mode_menu_shortcut")]
+    pub terminal_mode_menu: Option<ShortcutBinding>,
     #[serde(default = "default_terminal_log_start_overwrite_shortcut")]
     pub terminal_log_start_overwrite: Option<ShortcutBinding>,
     #[serde(default)]
@@ -140,6 +144,10 @@ fn default_terminal_paste_shortcut() -> Option<ShortcutBinding> {
     shortcut("v", true, false, true)
 }
 
+fn default_terminal_mode_menu_shortcut() -> Option<ShortcutBinding> {
+    shortcut("F8", true, false, true)
+}
+
 fn default_terminal_log_start_overwrite_shortcut() -> Option<ShortcutBinding> {
     shortcut("F9", true, false, true)
 }
@@ -160,6 +168,7 @@ impl Default for ShortcutConfig {
             terminal_paste: default_terminal_paste_shortcut(),
             terminal_clear_viewport: None,
             terminal_clear_buffer: None,
+            terminal_mode_menu: default_terminal_mode_menu_shortcut(),
             terminal_log_start_overwrite: default_terminal_log_start_overwrite_shortcut(),
             terminal_log_start_append: None,
             terminal_log_stop: default_terminal_log_stop_shortcut(),
@@ -193,6 +202,7 @@ impl ShortcutConfig {
             &mut self.terminal_paste,
             &mut self.terminal_clear_viewport,
             &mut self.terminal_clear_buffer,
+            &mut self.terminal_mode_menu,
             &mut self.terminal_log_start_overwrite,
             &mut self.terminal_log_start_append,
             &mut self.terminal_log_stop,
@@ -230,6 +240,7 @@ fn validate_shortcut_config(shortcuts: &ShortcutConfig) -> Result<(), String> {
             &shortcuts.terminal_clear_viewport,
         ),
         ("terminal_clear_buffer", &shortcuts.terminal_clear_buffer),
+        ("terminal_mode_menu", &shortcuts.terminal_mode_menu),
         (
             "terminal_log_start_overwrite",
             &shortcuts.terminal_log_start_overwrite,
@@ -269,12 +280,14 @@ fn validate_shortcut_config(shortcuts: &ShortcutConfig) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExternalControlConfig {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
     pub connect_enabled: bool,
+    #[serde(default)]
+    pub direct_connect_enabled: bool,
     #[serde(default)]
     pub mcp_enabled: bool,
     #[serde(default)]
@@ -286,6 +299,7 @@ impl Default for ExternalControlConfig {
         Self {
             enabled: false,
             connect_enabled: false,
+            direct_connect_enabled: false,
             mcp_enabled: false,
             cli_enabled: false,
         }
@@ -296,6 +310,7 @@ impl Default for ExternalControlConfig {
 struct ExternalControlConfigInput {
     enabled: Option<bool>,
     connect_enabled: Option<bool>,
+    direct_connect_enabled: Option<bool>,
     mcp_enabled: Option<bool>,
     cli_enabled: Option<bool>,
 }
@@ -312,7 +327,7 @@ struct LegacyMcpConfig {
     cli_enabled: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AiConfig {
     #[serde(default)]
     pub azure_openai_enabled: bool,
@@ -397,7 +412,7 @@ struct SshConfigInput {
     default_private_key_path: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SshConfig {
     pub algorithm_mode: String,
     pub algorithms: SshAlgorithmSelection,
@@ -444,7 +459,7 @@ impl<'de> Deserialize<'de> for SshConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TerminalConfig {
     #[serde(default = "default_terminal_font_size")]
     pub font_size: u32,
@@ -504,7 +519,7 @@ fn default_saved_connection_external_control_enabled() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SavedConnection {
     pub id: String,
     pub connection_type: String,
@@ -639,6 +654,7 @@ impl<'de> Deserialize<'de> for AppConfig {
                 connect_enabled: external_control
                     .connect_enabled
                     .unwrap_or(legacy_mcp.connect_enabled),
+                direct_connect_enabled: external_control.direct_connect_enabled.unwrap_or(false),
                 mcp_enabled: external_control
                     .mcp_enabled
                     .unwrap_or(legacy_mcp.stdio_enabled),
@@ -664,6 +680,69 @@ impl AppConfig {
     }
 }
 
+fn merge_edited_config(
+    base: &AppConfig,
+    edited: &AppConfig,
+    latest: &AppConfig,
+) -> Result<AppConfig, String> {
+    let base = serde_json::to_value(base).map_err(|error| error.to_string())?;
+    let edited = serde_json::to_value(edited).map_err(|error| error.to_string())?;
+    let mut merged = serde_json::to_value(latest).map_err(|error| error.to_string())?;
+    merge_changed_values(&base, &edited, &mut merged, &mut Vec::new());
+    serde_json::from_value::<AppConfig>(merged)
+        .map(AppConfig::migrate)
+        .map_err(|error| error.to_string())
+}
+
+fn merge_changed_values(
+    base: &serde_json::Value,
+    edited: &serde_json::Value,
+    latest: &mut serde_json::Value,
+    path: &mut Vec<String>,
+) {
+    if base == edited {
+        return;
+    }
+
+    if let (
+        serde_json::Value::Object(base),
+        serde_json::Value::Object(edited),
+        serde_json::Value::Object(latest),
+    ) = (base, edited, &mut *latest)
+    {
+        if !is_atomic_config_path(path) {
+            for (key, edited_value) in edited {
+                if path.is_empty() && matches!(key.as_str(), "config_version" | "saved_connections")
+                {
+                    continue;
+                }
+                let Some(base_value) = base.get(key) else {
+                    continue;
+                };
+                let Some(latest_value) = latest.get_mut(key) else {
+                    continue;
+                };
+                path.push(key.clone());
+                merge_changed_values(base_value, edited_value, latest_value, path);
+                path.pop();
+            }
+            return;
+        }
+    }
+
+    *latest = edited.clone();
+}
+
+fn is_atomic_config_path(path: &[String]) -> bool {
+    path.len() == 2 && path[0] == "shortcuts"
+}
+
+fn lock_config_file() -> Result<MutexGuard<'static, ()>, String> {
+    CONFIG_FILE_LOCK
+        .lock()
+        .map_err(|_| "The configuration file lock is unavailable".to_string())
+}
+
 fn config_path() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -673,10 +752,12 @@ fn config_path() -> PathBuf {
 
 #[tauri::command]
 pub fn config_load() -> Result<AppConfig, crate::command_error::BackendCommandError> {
+    let _guard = lock_config_file().map_err(crate::command_error::BackendCommandError::from)?;
     config_load_from_path(&config_path()).map_err(crate::command_error::BackendCommandError::from)
 }
 
 pub(crate) fn config_read() -> Result<AppConfig, String> {
+    let _guard = lock_config_file()?;
     config_read_from_path(&config_path()).map(|(config, _)| config)
 }
 
@@ -707,23 +788,183 @@ fn config_load_from_path(path: &Path) -> Result<AppConfig, String> {
 pub fn config_save(
     app: AppHandle,
     terminals: tauri::State<'_, TerminalControlState>,
-    config: AppConfig,
+    base_config: AppConfig,
+    edited_config: AppConfig,
+) -> Result<AppConfig, crate::command_error::BackendCommandError> {
+    let (config, changed) = {
+        let _guard = lock_config_file().map_err(crate::command_error::BackendCommandError::from)?;
+        let (latest, should_write) = config_read_from_path(&config_path())
+            .map_err(crate::command_error::BackendCommandError::from)?;
+        let config = merge_edited_config(&base_config.migrate(), &edited_config.migrate(), &latest)
+            .map_err(crate::command_error::BackendCommandError::from)?;
+        validate_config(&config)?;
+        let changed = should_write || config != latest;
+        if changed {
+            config_write_to_path(&config_path(), &config)
+                .map_err(crate::command_error::BackendCommandError::from)?;
+        }
+        (config, changed)
+    };
+
+    if changed {
+        terminals.set_output_limit_from_scrollback(config.terminal.scrollback);
+        emit_config_updated(&app);
+    }
+    Ok(config)
+}
+
+#[tauri::command]
+pub fn config_saved_connection_upsert(
+    app: AppHandle,
+    previous_id: Option<String>,
+    profile: SavedConnection,
+) -> Result<AppConfig, crate::command_error::BackendCommandError> {
+    validate_saved_connection_identity(&profile)?;
+
+    let (config, changed) = {
+        let _guard = lock_config_file().map_err(crate::command_error::BackendCommandError::from)?;
+        let (mut config, should_write) = config_read_from_path(&config_path())
+            .map_err(crate::command_error::BackendCommandError::from)?;
+
+        let changed = upsert_saved_connection(&mut config, previous_id.as_deref(), profile)?;
+        let changed = should_write || changed;
+        if changed {
+            validate_config(&config)?;
+            config_write_to_path(&config_path(), &config)
+                .map_err(crate::command_error::BackendCommandError::from)?;
+        }
+        (config, changed)
+    };
+
+    if changed {
+        emit_config_updated(&app);
+    }
+    Ok(config)
+}
+
+#[tauri::command]
+pub fn config_saved_connection_delete(
+    app: AppHandle,
+    connection_type: String,
+    id: String,
+) -> Result<AppConfig, crate::command_error::BackendCommandError> {
+    validate_saved_connection_key(&connection_type, &id)?;
+
+    let config = {
+        let _guard = lock_config_file().map_err(crate::command_error::BackendCommandError::from)?;
+        let (mut config, _) = config_read_from_path(&config_path())
+            .map_err(crate::command_error::BackendCommandError::from)?;
+        delete_saved_connection(&mut config, &connection_type, &id)?;
+        config_write_to_path(&config_path(), &config)
+            .map_err(crate::command_error::BackendCommandError::from)?;
+        config
+    };
+
+    emit_config_updated(&app);
+    Ok(config)
+}
+
+fn validate_saved_connection_identity(
+    profile: &SavedConnection,
 ) -> Result<(), crate::command_error::BackendCommandError> {
-    let config = config.migrate();
-    crate::ssh::validate_algorithm_config(&config.ssh)
-        .map_err(crate::command_error::BackendCommandError::from)?;
-    validate_shortcut_config(&config.shortcuts)
-        .map_err(crate::command_error::BackendCommandError::from)?;
-    config_write(&config).map_err(crate::command_error::BackendCommandError::from)?;
-    terminals.set_output_limit_from_scrollback(config.terminal.scrollback);
-    if let Err(error) = app.emit("config://updated", ()) {
-        eprintln!("Failed to emit config update: {error}");
+    validate_saved_connection_key(&profile.connection_type, &profile.id)?;
+    if profile.connection_type == "ssh"
+        && profile.jump_profile_id.as_deref() == Some(profile.id.as_str())
+    {
+        return Err(crate::command_error::BackendCommandError::new(
+            "ssh.jump_profile_self_reference",
+            "An SSH jump profile cannot reference itself",
+        ));
     }
     Ok(())
 }
 
-fn config_write(config: &AppConfig) -> Result<(), String> {
-    config_write_to_path(&config_path(), config)
+fn upsert_saved_connection(
+    config: &mut AppConfig,
+    previous_id: Option<&str>,
+    profile: SavedConnection,
+) -> Result<bool, crate::command_error::BackendCommandError> {
+    if config.saved_connections.iter().any(|entry| {
+        entry.connection_type == profile.connection_type
+            && entry.id == profile.id
+            && previous_id != Some(entry.id.as_str())
+    }) {
+        return Err(crate::command_error::BackendCommandError::new(
+            "config.saved_connection_duplicate",
+            "A saved connection profile with this name already exists",
+        ));
+    }
+
+    if let Some(previous_id) = previous_id {
+        let Some(existing) = config.saved_connections.iter_mut().find(|entry| {
+            entry.connection_type == profile.connection_type && entry.id == previous_id
+        }) else {
+            return Err(crate::command_error::BackendCommandError::new(
+                "config.saved_connection_not_found",
+                "The saved connection profile no longer exists",
+            ));
+        };
+        if existing == &profile {
+            return Ok(false);
+        }
+        *existing = profile;
+    } else {
+        config.saved_connections.push(profile);
+    }
+    Ok(true)
+}
+
+fn delete_saved_connection(
+    config: &mut AppConfig,
+    connection_type: &str,
+    id: &str,
+) -> Result<(), crate::command_error::BackendCommandError> {
+    let Some(index) = config
+        .saved_connections
+        .iter()
+        .position(|entry| entry.connection_type == connection_type && entry.id == id)
+    else {
+        return Err(crate::command_error::BackendCommandError::new(
+            "config.saved_connection_not_found",
+            "The saved connection profile no longer exists",
+        ));
+    };
+    config.saved_connections.remove(index);
+    Ok(())
+}
+
+fn validate_saved_connection_key(
+    connection_type: &str,
+    id: &str,
+) -> Result<(), crate::command_error::BackendCommandError> {
+    if id.trim().is_empty() {
+        return Err(crate::command_error::BackendCommandError::new(
+            "config.saved_connection_name_required",
+            "Enter a profile name",
+        ));
+    }
+    if !matches!(connection_type, "ssh" | "telnet") {
+        return Err(crate::command_error::BackendCommandError::new(
+            "connection.unknown_type",
+            format!("Unknown connection type: {connection_type}"),
+        )
+        .with_param("detail", connection_type));
+    }
+    Ok(())
+}
+
+fn emit_config_updated(app: &AppHandle) {
+    if let Err(error) = app.emit("config://updated", ()) {
+        eprintln!("Failed to emit config update: {error}");
+    }
+}
+
+fn validate_config(config: &AppConfig) -> Result<(), crate::command_error::BackendCommandError> {
+    crate::ssh::validate_algorithm_config(&config.ssh)
+        .map_err(crate::command_error::BackendCommandError::from)?;
+    validate_shortcut_config(&config.shortcuts)
+        .map_err(crate::command_error::BackendCommandError::from)?;
+    Ok(())
 }
 
 fn config_write_to_path(path: &Path, config: &AppConfig) -> Result<(), String> {
@@ -764,6 +1005,139 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.directory);
         }
+    }
+
+    fn saved_connection(connection_type: &str, id: &str) -> SavedConnection {
+        SavedConnection {
+            id: id.into(),
+            connection_type: connection_type.into(),
+            ..SavedConnection::default()
+        }
+    }
+
+    #[test]
+    fn edited_config_merges_only_changed_settings_into_latest() {
+        let base = AppConfig::default();
+        let mut edited = base.clone();
+        edited.terminal.scrollback = 20_000;
+
+        let mut latest = base.clone();
+        latest.language = "ja".into();
+        latest.terminal.font_size = 18;
+        latest
+            .saved_connections
+            .push(saved_connection("ssh", "latest profile"));
+
+        let merged = merge_edited_config(&base, &edited, &latest).unwrap();
+
+        assert_eq!(merged.language, "ja");
+        assert_eq!(merged.terminal.font_size, 18);
+        assert_eq!(merged.terminal.scrollback, 20_000);
+        assert_eq!(merged.saved_connections, latest.saved_connections);
+    }
+
+    #[test]
+    fn later_edit_wins_when_the_same_setting_changed() {
+        let base = AppConfig::default();
+        let mut edited = base.clone();
+        edited.terminal.scrollback = 20_000;
+        let mut latest = base.clone();
+        latest.terminal.scrollback = 5_000;
+
+        let merged = merge_edited_config(&base, &edited, &latest).unwrap();
+
+        assert_eq!(merged.terminal.scrollback, 20_000);
+    }
+
+    #[test]
+    fn shortcut_removal_is_applied_as_an_atomic_change() {
+        let base = AppConfig::default();
+        let mut edited = base.clone();
+        edited.shortcuts.open_settings = None;
+        let mut latest = base.clone();
+        latest.shortcuts.new_window = None;
+
+        let merged = merge_edited_config(&base, &edited, &latest).unwrap();
+
+        assert_eq!(merged.shortcuts.open_settings, None);
+        assert_eq!(merged.shortcuts.new_window, None);
+    }
+
+    #[test]
+    fn shortcut_binding_is_not_merged_from_individual_properties() {
+        let base = AppConfig::default();
+        let mut edited = base.clone();
+        let edited_binding = ShortcutBinding {
+            key: "s".into(),
+            ctrl: true,
+            alt: false,
+            shift: true,
+        };
+        edited.shortcuts.open_settings = Some(edited_binding.clone());
+        let mut latest = base.clone();
+        latest.shortcuts.open_settings = Some(ShortcutBinding {
+            key: ",".into(),
+            ctrl: false,
+            alt: true,
+            shift: false,
+        });
+
+        let merged = merge_edited_config(&base, &edited, &latest).unwrap();
+
+        assert_eq!(merged.shortcuts.open_settings, Some(edited_binding));
+    }
+
+    #[test]
+    fn saved_connection_mutations_preserve_unrelated_entries() {
+        let mut config = AppConfig::default();
+        config
+            .saved_connections
+            .push(saved_connection("ssh", "existing ssh"));
+        config
+            .saved_connections
+            .push(saved_connection("telnet", "existing telnet"));
+
+        assert!(
+            upsert_saved_connection(&mut config, None, saved_connection("ssh", "new ssh")).unwrap()
+        );
+        delete_saved_connection(&mut config, "ssh", "existing ssh").unwrap();
+
+        assert_eq!(config.saved_connections.len(), 2);
+        assert!(config
+            .saved_connections
+            .iter()
+            .any(|profile| profile.id == "existing telnet"));
+        assert!(config
+            .saved_connections
+            .iter()
+            .any(|profile| profile.id == "new ssh"));
+    }
+
+    #[test]
+    fn saved_connection_update_rejects_duplicates_and_missing_targets() {
+        let mut config = AppConfig::default();
+        config
+            .saved_connections
+            .push(saved_connection("ssh", "first"));
+        config
+            .saved_connections
+            .push(saved_connection("ssh", "second"));
+
+        let duplicate = upsert_saved_connection(
+            &mut config,
+            Some("first"),
+            saved_connection("ssh", "second"),
+        )
+        .unwrap_err();
+        let missing = upsert_saved_connection(
+            &mut config,
+            Some("missing"),
+            saved_connection("ssh", "renamed"),
+        )
+        .unwrap_err();
+
+        assert_eq!(duplicate.code, "config.saved_connection_duplicate");
+        assert_eq!(missing.code, "config.saved_connection_not_found");
     }
 
     #[test]
@@ -823,6 +1197,7 @@ mod tests {
         assert!(!cfg.ai.azure_openai_enabled);
         assert!(!cfg.external_control.enabled);
         assert!(!cfg.external_control.connect_enabled);
+        assert!(!cfg.external_control.direct_connect_enabled);
         assert!(!cfg.external_control.mcp_enabled);
         assert!(!cfg.external_control.cli_enabled);
         assert_eq!(cfg.shortcuts, ShortcutConfig::default());
@@ -1019,6 +1394,10 @@ mod tests {
                     "connection_type": "ssh",
                     "terminal_mode": "arista_eos"
                 }, {
+                    "id": "junos-router",
+                    "connection_type": "ssh",
+                    "terminal_mode": "juniper_junos"
+                }, {
                     "id": "vyos-router",
                     "connection_type": "ssh",
                     "terminal_mode": "vyos"
@@ -1049,18 +1428,22 @@ mod tests {
         );
         assert_eq!(
             cfg.saved_connections[2].terminal_mode.as_deref(),
-            Some("vyos")
+            Some("juniper_junos")
         );
         assert_eq!(
             cfg.saved_connections[3].terminal_mode.as_deref(),
-            Some("fujitsu_sir")
+            Some("vyos")
         );
         assert_eq!(
             cfg.saved_connections[4].terminal_mode.as_deref(),
-            Some("allied_telesis_awplus")
+            Some("fujitsu_sir")
         );
         assert_eq!(
             cfg.saved_connections[5].terminal_mode.as_deref(),
+            Some("allied_telesis_awplus")
+        );
+        assert_eq!(
+            cfg.saved_connections[6].terminal_mode.as_deref(),
             Some("furukawa_fitelnet")
         );
     }
@@ -1232,6 +1615,25 @@ mod tests {
     }
 
     #[test]
+    fn direct_external_connection_permission_round_trips() {
+        let cfg: AppConfig = serde_json::from_str(
+            r#"{
+                "external_control": {
+                    "enabled": true,
+                    "connect_enabled": true,
+                    "direct_connect_enabled": true,
+                    "cli_enabled": true
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert!(cfg.external_control.direct_connect_enabled);
+        let value = serde_json::to_value(cfg).unwrap();
+        assert_eq!(value["external_control"]["direct_connect_enabled"], true);
+    }
+
+    #[test]
     fn default_config_uses_system_language() {
         let cfg = AppConfig::default();
 
@@ -1280,6 +1682,10 @@ mod tests {
         );
         assert_eq!(cfg.shortcuts.terminal_clear_viewport, None);
         assert_eq!(cfg.shortcuts.terminal_clear_buffer, None);
+        assert_eq!(
+            cfg.shortcuts.terminal_mode_menu,
+            default_terminal_mode_menu_shortcut()
+        );
         assert_eq!(
             cfg.shortcuts.terminal_log_start_overwrite,
             default_terminal_log_start_overwrite_shortcut()
@@ -1348,6 +1754,15 @@ mod tests {
     }
 
     #[test]
+    fn shortcut_config_preserves_explicit_null_terminal_mode_menu() {
+        let cfg: AppConfig =
+            serde_json::from_str(r#"{"shortcuts":{"terminal_mode_menu":null}}"#).unwrap();
+
+        assert_eq!(cfg.shortcuts.terminal_mode_menu, None);
+        assert!(serde_json::to_value(cfg).unwrap()["shortcuts"]["terminal_mode_menu"].is_null());
+    }
+
+    #[test]
     fn shortcut_config_rejects_duplicate_assignments() {
         let duplicate = Some(ShortcutBinding {
             key: "n".into(),
@@ -1365,6 +1780,7 @@ mod tests {
             terminal_paste: None,
             terminal_clear_viewport: None,
             terminal_clear_buffer: duplicate,
+            terminal_mode_menu: None,
             terminal_log_start_overwrite: None,
             terminal_log_start_append: None,
             terminal_log_stop: None,
@@ -1395,6 +1811,7 @@ mod tests {
             terminal_paste: None,
             terminal_clear_viewport: None,
             terminal_clear_buffer: None,
+            terminal_mode_menu: None,
             terminal_log_start_overwrite: None,
             terminal_log_start_append: None,
             terminal_log_stop: None,

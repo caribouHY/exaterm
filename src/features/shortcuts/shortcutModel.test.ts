@@ -135,6 +135,25 @@ describe("shortcutModel", () => {
     ).toBe("new_connection");
   });
 
+  it("defines the terminal mode menu shortcut in terminal scope", () => {
+    expect(SHORTCUT_ACTIONS.find(({ id }) => id === "terminal_mode_menu")).toMatchObject({
+      scope: "terminal",
+    });
+    expect(DEFAULT_SHORTCUT_CONFIG.terminal_mode_menu).toEqual({
+      key: "F8",
+      ctrl: true,
+      alt: false,
+      shift: true,
+    });
+    expect(
+      findShortcutAction(
+        DEFAULT_SHORTCUT_CONFIG,
+        keyEvent("F8", { ctrlKey: true, shiftKey: true }),
+        "terminal"
+      )
+    ).toBe("terminal_mode_menu");
+  });
+
   it("defines all log actions in terminal scope with only start and stop assigned by default", () => {
     expect(
       SHORTCUT_ACTIONS.filter(({ id }) => id.startsWith("terminal_log_")).map(({ id, scope }) => ({
@@ -228,6 +247,7 @@ describe("shortcutModel", () => {
     expect(normalized.terminal_paste).toEqual(DEFAULT_SHORTCUT_CONFIG.terminal_paste);
     expect(normalized.terminal_clear_viewport).toBeNull();
     expect(normalized.terminal_clear_buffer).toBeNull();
+    expect(normalized.terminal_mode_menu).toEqual(DEFAULT_SHORTCUT_CONFIG.terminal_mode_menu);
     expect(normalized.terminal_log_start_overwrite).toEqual(
       DEFAULT_SHORTCUT_CONFIG.terminal_log_start_overwrite
     );
@@ -245,6 +265,18 @@ describe("shortcutModel", () => {
 
     expect(normalized.terminal_clear_viewport).toBeNull();
     expect(normalized.terminal_clear_buffer).toBeNull();
+  });
+
+  it("preserves an explicit null terminal mode menu shortcut and detects conflicts with its default", () => {
+    expect(normalizeShortcutConfig({ terminal_mode_menu: null }).terminal_mode_menu).toBeNull();
+    expect(
+      findShortcutConflict(DEFAULT_SHORTCUT_CONFIG, "terminal_clear_viewport", {
+        key: "f8",
+        ctrl: true,
+        alt: false,
+        shift: true,
+      })
+    ).toBe("terminal_mode_menu");
   });
 
   it("preserves explicit null log shortcuts and detects conflicts with their defaults", () => {

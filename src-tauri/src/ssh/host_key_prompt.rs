@@ -53,6 +53,7 @@ pub(super) struct SshHostKeyPrompter {
     state: SshHostKeyPromptState,
     window_id: String,
     connect_request_id: Option<String>,
+    allow_mismatch: bool,
 }
 
 impl SshHostKeyPrompter {
@@ -61,13 +62,19 @@ impl SshHostKeyPrompter {
         state: SshHostKeyPromptState,
         window_id: String,
         connect_request_id: Option<String>,
+        allow_mismatch: bool,
     ) -> Self {
         Self {
             app: app.clone(),
             state,
             window_id,
             connect_request_id,
+            allow_mismatch,
         }
+    }
+
+    pub(super) fn allows_status(&self, status: &HostKeyCheckStatus) -> bool {
+        can_prompt_host_key_status(status, self.allow_mismatch)
     }
 
     pub(super) async fn confirm(
@@ -119,6 +126,11 @@ impl SshHostKeyPrompter {
 
         trust_prompted_host_key(&result, key, known_hosts_path)
     }
+}
+
+fn can_prompt_host_key_status(status: &HostKeyCheckStatus, allow_mismatch: bool) -> bool {
+    *status == HostKeyCheckStatus::Unknown
+        || (*status == HostKeyCheckStatus::Mismatch && allow_mismatch)
 }
 
 fn trust_prompted_host_key(
@@ -206,6 +218,22 @@ impl SshHostKeyPromptState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn direct_external_connections_prompt_only_for_unknown_host_keys() {
+        assert!(can_prompt_host_key_status(
+            &HostKeyCheckStatus::Unknown,
+            false
+        ));
+        assert!(!can_prompt_host_key_status(
+            &HostKeyCheckStatus::Mismatch,
+            false
+        ));
+        assert!(can_prompt_host_key_status(
+            &HostKeyCheckStatus::Mismatch,
+            true
+        ));
+    }
     use std::fs;
     use std::path::{Path, PathBuf};
 

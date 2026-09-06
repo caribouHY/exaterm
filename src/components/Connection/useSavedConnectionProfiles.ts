@@ -1,22 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AppConfig, SavedConnection } from "../../types";
-import {
-  getConnectionErrorMessage,
-  hasDuplicateProfile,
-  upsertSavedProfile,
-} from "./connectionProfileUtils";
+import { getConnectionErrorMessage } from "./connectionProfileUtils";
 
 interface UseSavedConnectionProfilesParams {
-  config: AppConfig | null;
-  loadConfig: () => Promise<AppConfig>;
   setConfig: (config: AppConfig) => void;
   setError: (value: string) => void;
   t: (key: string) => string;
 }
 
 export const useSavedConnectionProfiles = ({
-  config,
-  loadConfig,
   setConfig,
   setError,
   t,
@@ -28,7 +20,6 @@ export const useSavedConnectionProfiles = ({
   ) => {
     setError("");
     try {
-      const loaded = config ?? (await loadConfig());
       const nextProfile = createProfile();
       if (Number.isNaN(nextProfile.port)) {
         throw new Error(t("connection.error"));
@@ -40,14 +31,11 @@ export const useSavedConnectionProfiles = ({
         throw new Error(t("connection.jump_profile_self"));
       }
 
-      const existingConnections = loaded.saved_connections;
-      if (hasDuplicateProfile(existingConnections, nextProfile, selectedProfileId)) {
-        throw new Error(t("connection.profile_duplicate"));
-      }
-
-      const nextConfig = upsertSavedProfile(loaded, nextProfile, selectedProfileId);
-      await invoke("config_save", { config: nextConfig });
-      setConfig(nextConfig);
+      const savedConfig = await invoke<AppConfig>("config_saved_connection_upsert", {
+        previousId: selectedProfileId || null,
+        profile: nextProfile,
+      });
+      setConfig(savedConfig);
       onSaved(nextProfile);
     } catch (caught: unknown) {
       setError(getConnectionErrorMessage(caught, t, t("connection.error")));

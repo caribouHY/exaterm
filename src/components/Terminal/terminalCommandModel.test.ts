@@ -6,6 +6,7 @@ import {
   CISCO_IOS_DECORATION_PROFILE,
   FUJITSU_SIR_DECORATION_PROFILE,
   FURUKAWA_FITELNET_DECORATION_PROFILE,
+  JUNIPER_JUNOS_DECORATION_PROFILE,
   VYOS_DECORATION_PROFILE,
 } from "./terminalDecorationProfiles";
 import type {
@@ -183,6 +184,26 @@ describe("findTerminalPinnedCommand", () => {
     });
   });
 
+  it("pins a Juniper Junos configuration command with its immediate edit context", () => {
+    const buffer = createBuffer(
+      [
+        "[edit system services ssh]",
+        "admin@edge-router# set root-login allow",
+        "output",
+        "more output",
+      ],
+      3
+    );
+
+    expect(findTerminalPinnedCommand(buffer, JUNIPER_JUNOS_DECORATION_PROFILE)).toMatchObject({
+      displayText: "admin@edge-router# set root-login allow",
+      contextText: "[edit system services ssh]",
+      promptText: "admin@edge-router#",
+      commandText: " set root-login allow",
+      promptVariant: "configuration",
+    });
+  });
+
   it("pins a Fujitsu Si-R config2 command without dropping its configuration name", () => {
     const buffer = createBuffer(
       ["Si-R G121 config2(config)# lan 0 vlan 1", "output", "more output"],
@@ -234,6 +255,17 @@ describe("findTerminalPinnedCommand", () => {
     );
 
     expect(findTerminalPinnedCommand(buffer, VYOS_DECORATION_PROFILE)).not.toHaveProperty(
+      "contextText"
+    );
+  });
+
+  it("does not associate a stale Juniper Junos edit context", () => {
+    const buffer = createBuffer(
+      ["[edit system]", "unrelated output", "admin@router# commit", "output"],
+      3
+    );
+
+    expect(findTerminalPinnedCommand(buffer, JUNIPER_JUNOS_DECORATION_PROFILE)).not.toHaveProperty(
       "contextText"
     );
   });

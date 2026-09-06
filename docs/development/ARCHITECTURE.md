@@ -74,7 +74,7 @@ Settings and Logs are window-local utility views. Rust owns terminal placement; 
 5. User input is sent to the matching backend write command.
 6. Disconnect state is projected through the workspace without discarding the visible terminal buffer.
 
-GUI SSH connections verify and, when necessary, confirm the host key within the active handshake so authentication continues on the same TCP connection. External-control SSH connections require an already trusted key because they cannot open a GUI host-key prompt in that flow.
+GUI SSH connections verify and, when necessary, confirm the host key within the active handshake so authentication continues on the same TCP connection. Saved-profile external-control SSH connections require an already trusted key. Direct external-control SSH connections may confirm an unknown key in the preferred GUI window, but reject a mismatch with an existing known-hosts entry.
 
 ## Logging
 
@@ -98,7 +98,7 @@ Plaintext logs can contain commands, output, prompts, hostnames, usernames, devi
 - Windows uses a current-user named pipe and protocol handshake. The non-Windows fallback uses a local TCP transport.
 - HTTP MCP has been removed and is not a compatibility target.
 
-External control requires `external_control.enabled`. The CLI and MCP compatibility adapter additionally require their respective `cli_enabled` or `mcp_enabled` flags. Creating new connections also requires `connect_enabled`, and saved profiles must individually allow external-control access.
+External control requires `external_control.enabled`. The CLI and MCP compatibility adapter additionally require their respective `cli_enabled` or `mcp_enabled` flags. Creating new connections also requires `connect_enabled`, and saved profiles must individually allow external-control access. Direct SSH/Telnet targets additionally require `direct_connect_enabled`; a saved SSH profile used as a direct connection's jump host must also allow external control.
 
 The local control plane rejects invalid protocol versions and requests without the negotiated nonce. MCP stdout is reserved for JSON-RPC; diagnostics belong on stderr or in privacy-safe logs.
 
