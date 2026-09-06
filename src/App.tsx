@@ -112,6 +112,7 @@ export default function App() {
   const sshPrompts = useSshPrompts();
   const {
     tabs,
+    utilityTabs,
     appTabs,
     activeTabId,
     activeTab,
@@ -929,10 +930,14 @@ export default function App() {
                   </Suspense>
                 )}
               </div>
-              {activeView === "settings" && (
-                <Suspense fallback={<div aria-hidden="true" />}>
-                  <SettingsPanel />
-                </Suspense>
+              {utilityTabs.includes("settings") && (
+                <div
+                  className={`app__utility-area ${activeView !== "settings" ? "app__hidden" : ""}`}
+                >
+                  <Suspense fallback={<div aria-hidden="true" />}>
+                    <SettingsPanel />
+                  </Suspense>
+                </div>
               )}
               {activeView === "logs" && (
                 <Suspense fallback={<div aria-hidden="true" />}>
