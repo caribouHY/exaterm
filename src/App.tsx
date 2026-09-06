@@ -540,7 +540,7 @@ export default function App() {
 
   const handleTerminalModeShortcut = useCallback(
     (tabId: string) => {
-      if (!activeTab || activeTab.id !== tabId || !activeTab.isConnected) return;
+      if (!activeTab || activeTab.id !== tabId) return;
       restoreTerminalFocusAfterPaletteRef.current = true;
       setOpenStatusBarMenu("terminalMode");
     },
