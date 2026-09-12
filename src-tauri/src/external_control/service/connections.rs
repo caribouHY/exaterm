@@ -284,18 +284,22 @@ async fn connect_prepared_ssh_profile(
 
     let options = build_ssh_connect_options(prepared, parts, profile_credential, jump_credential);
     ssh::connect(
-        app,
-        &runtime.ssh,
-        &runtime.terminals,
-        &runtime.workspace,
-        runtime.logger.as_ref(),
-        prompt_window_id,
-        match host_key_handling {
-            ConnectionHostKeyHandling::RequireTrusted => ssh::HostKeyHandling::RequireTrusted,
-            ConnectionHostKeyHandling::PromptUnknown => ssh::HostKeyHandling::PromptUnknown,
+        ssh::SshConnectRuntime {
+            app,
+            state: &runtime.ssh,
+            terminals: &runtime.terminals,
+            workspace: &runtime.workspace,
+            logger: runtime.logger.as_ref(),
         },
-        options,
-        None,
+        ssh::SshConnectRequest {
+            prompt_window_id,
+            host_key_handling: match host_key_handling {
+                ConnectionHostKeyHandling::RequireTrusted => ssh::HostKeyHandling::RequireTrusted,
+                ConnectionHostKeyHandling::PromptUnknown => ssh::HostKeyHandling::PromptUnknown,
+            },
+            options,
+            attempt: None,
+        },
     )
     .await
     .map_err(invalid_params)

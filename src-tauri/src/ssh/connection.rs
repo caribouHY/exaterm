@@ -51,31 +51,47 @@ struct ConnectCompletion {
     read_rx: mpsc::Receiver<SshReadRequest>,
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "SSH setup keeps runtime owners and credential prompters explicit"
-)]
-pub async fn connect(
-    app: &AppHandle,
-    state: &SshState,
-    terminals: &TerminalControlState,
-    workspace: &WorkspaceState,
-    logger_state: Option<&LoggerState>,
-    prompt_window_id: String,
-    host_key_handling: HostKeyHandling,
-    options: SshConnectOptions,
-    mut attempt: Option<ConnectAttempt>,
+pub(crate) struct SshConnectRuntime<'a> {
+    pub app: &'a AppHandle,
+    pub state: &'a SshState,
+    pub terminals: &'a TerminalControlState,
+    pub workspace: &'a WorkspaceState,
+    pub logger: Option<&'a LoggerState>,
+}
+
+pub(crate) struct SshConnectRequest {
+    pub prompt_window_id: String,
+    pub host_key_handling: HostKeyHandling,
+    pub options: SshConnectOptions,
+    pub attempt: Option<ConnectAttempt>,
+}
+
+struct ConnectedTarget {
+    handle: TargetHandle,
+    jump_handle: Option<JumpHandle>,
+    channel: TargetSessionChannel,
+}
+
+pub(crate) async fn connect(
+    runtime: SshConnectRuntime<'_>,
+    request: SshConnectRequest,
 ) -> Result<SshConnectResult, String> {
+    let SshConnectRequest {
+        prompt_window_id,
+        host_key_handling,
+        options,
+        mut attempt,
+    } = request;
     let authentication_prompter = SshAuthenticationPrompter::new(
-        app,
-        state.authentication_prompts.clone(),
+        runtime.app,
+        runtime.state.authentication_prompts.clone(),
         prompt_window_id.clone(),
         options.request_id.clone(),
     );
     let host_key_prompter = (host_key_handling != HostKeyHandling::RequireTrusted).then(|| {
         SshHostKeyPrompter::new(
-            app,
-            state.host_key_prompts.clone(),
+            runtime.app,
+            runtime.state.host_key_prompts.clone(),
             prompt_window_id.clone(),
             options.request_id.clone(),
             host_key_handling == HostKeyHandling::Prompt,
@@ -87,11 +103,7 @@ pub async fn connect(
         SSH_CONNECT_TIMEOUT
     };
     let prepared = prepare_connect(
-        app,
-        state,
-        terminals,
-        workspace,
-        logger_state,
+        &runtime,
         &prompt_window_id,
         &options,
         host_key_prompter.clone(),
@@ -152,45 +164,37 @@ pub async fn connect(
         diagnostic,
         read_rx,
     };
-
-    finish_connected_session(
-        app,
-        state,
-        terminals,
-        completion,
+    let connected_target = ConnectedTarget {
         handle,
         jump_handle,
-        &options,
         channel,
-    )
-    .await
+    };
+
+    finish_connected_session(&runtime, completion, connected_target, &options).await
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "session registration needs explicit runtime owners and negotiated handles"
-)]
 async fn finish_connected_session(
-    app: &AppHandle,
-    state: &SshState,
-    terminals: &TerminalControlState,
+    runtime: &SshConnectRuntime<'_>,
     completion: ConnectCompletion,
-    handle: TargetHandle,
-    jump_handle: Option<JumpHandle>,
+    connected_target: ConnectedTarget,
     options: &SshConnectOptions,
-    channel: TargetSessionChannel,
 ) -> Result<SshConnectResult, String> {
+    let ConnectedTarget {
+        handle,
+        jump_handle,
+        channel,
+    } = connected_target;
     let (mut channel_read_half, channel_write_half) = channel.split();
     tokio::spawn(async move { while channel_read_half.wait().await.is_some() {} });
     spawn_ssh_read_processor(
-        app,
+        runtime.app,
         &completion.session_id,
-        terminals.clone(),
+        runtime.terminals.clone(),
         completion.read_rx,
     );
     register_connected_session(
-        state,
-        terminals,
+        runtime.state,
+        runtime.terminals,
         &completion.session_id,
         handle,
         channel_write_half,
@@ -198,7 +202,7 @@ async fn finish_connected_session(
         options,
     )
     .await;
-    let _ = app.emit("ssh://connected", &completion.session_id);
+    let _ = runtime.app.emit("ssh://connected", &completion.session_id);
     completion.diagnostic.info("target: session ready");
     Ok(SshConnectResult {
         session_id: completion.session_id,
@@ -237,23 +241,15 @@ async fn establish_target_shell(
     Ok(channel)
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "connection preparation combines distinct runtime owners without transferring ownership"
-)]
 fn prepare_connect(
-    app: &AppHandle,
-    state: &SshState,
-    terminals: &TerminalControlState,
-    workspace: &WorkspaceState,
-    logger_state: Option<&LoggerState>,
+    runtime: &SshConnectRuntime<'_>,
     prompt_window_id: &str,
     options: &SshConnectOptions,
     host_key_prompter: Option<SshHostKeyPrompter>,
 ) -> Result<ConnectPreparation, String> {
     let session_id = Uuid::new_v4().to_string();
     let diagnostic = SshDiagnostic::new(
-        app,
+        runtime.app,
         options.request_id.clone(),
         prompt_window_id.to_string(),
     );
@@ -270,15 +266,15 @@ fn prepare_connect(
     let host_verifier = HostKeyVerifier::new(options.host.clone(), options.port);
     let (read_tx, read_rx) = mpsc::channel::<SshReadRequest>(SSH_READ_QUEUE_CAPACITY);
     let handler = SshClientHandler {
-        app: app.clone(),
+        app: runtime.app.clone(),
         session_id: session_id.clone(),
-        sessions: state.sessions.clone(),
+        sessions: runtime.state.sessions.clone(),
         host_verifier: host_verifier.clone(),
         host_key_prompter,
         diagnostic: diagnostic.clone(),
-        terminals: terminals.clone(),
-        workspace: workspace.clone(),
-        logger: logger_state.cloned(),
+        terminals: runtime.terminals.clone(),
+        workspace: runtime.workspace.clone(),
+        logger: runtime.logger.cloned(),
         read_tx,
         read_drop_state: Arc::new(StdMutex::new(SshReadDropState::default())),
     };
