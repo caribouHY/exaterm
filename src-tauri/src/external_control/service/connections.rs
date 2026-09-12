@@ -230,6 +230,13 @@ struct PreparedSshProfileParts<'a> {
 }
 
 #[cfg(not(test))]
+struct ProfileCredentialRequest<'a> {
+    payload: ExternalControlCredentialRequestPayload,
+    private_key_path: Option<&'a str>,
+    default_private_key_path: Option<&'a str>,
+}
+
+#[cfg(not(test))]
 async fn connect_prepared_ssh_profile(
     runtime: &ExternalControlRuntime,
     app: &AppHandle,
@@ -246,15 +253,20 @@ async fn connect_prepared_ssh_profile(
     let profile_credential = request_profile_credential(
         credentials,
         app,
-        &prepared.profile_id,
-        parts.host,
-        parts.port,
-        parts.username,
-        parts.auth_method,
-        parts.private_key_path,
-        Some(&config.ssh.default_private_key_path),
-        &prepared.target,
-        &prepared.title,
+        ProfileCredentialRequest {
+            payload: ExternalControlCredentialRequestPayload {
+                request_id: String::new(),
+                profile_id: prepared.profile_id.clone(),
+                host: parts.host.to_string(),
+                port: parts.port,
+                username: parts.username.to_string(),
+                auth_method: parts.auth_method.to_string(),
+                target: prepared.target.clone(),
+                title: prepared.title.clone(),
+            },
+            private_key_path: parts.private_key_path,
+            default_private_key_path: Some(&config.ssh.default_private_key_path),
+        },
     )
     .await?;
 
@@ -315,18 +327,23 @@ async fn request_jump_credential(
     request_profile_credential(
         credentials,
         app,
-        &jump_profile.id,
-        &jump_profile.host,
-        jump_profile.port,
-        &jump_profile.username,
-        &jump_profile.auth_method,
-        jump_profile.private_key_path.as_deref(),
-        None,
-        &format!(
-            "{}@{}:{}",
-            jump_profile.username, jump_profile.host, jump_profile.port
-        ),
-        &format!("{}@{}", jump_profile.username, jump_profile.host),
+        ProfileCredentialRequest {
+            payload: ExternalControlCredentialRequestPayload {
+                request_id: String::new(),
+                profile_id: jump_profile.id.clone(),
+                host: jump_profile.host.clone(),
+                port: jump_profile.port,
+                username: jump_profile.username.clone(),
+                auth_method: jump_profile.auth_method.clone(),
+                target: format!(
+                    "{}@{}:{}",
+                    jump_profile.username, jump_profile.host, jump_profile.port
+                ),
+                title: format!("{}@{}", jump_profile.username, jump_profile.host),
+            },
+            private_key_path: jump_profile.private_key_path.as_deref(),
+            default_private_key_path: None,
+        },
     )
     .await
 }
@@ -390,40 +407,23 @@ fn split_optional_ssh_credential(
 }
 
 #[cfg(not(test))]
-#[allow(clippy::too_many_arguments)]
 async fn request_profile_credential(
     credentials: &ExternalControlCredentialState,
     app: &AppHandle,
-    profile_id: &str,
-    host: &str,
-    port: u16,
-    username: &str,
-    auth_method: &str,
-    private_key_path: Option<&str>,
-    default_private_key_path: Option<&str>,
-    target: &str,
-    title: &str,
+    request: ProfileCredentialRequest<'_>,
 ) -> Result<Option<String>, ExternalControlError> {
-    if !ssh_credential_required(auth_method, private_key_path, default_private_key_path)
-        .map_err(invalid_params)?
+    if !ssh_credential_required(
+        &request.payload.auth_method,
+        request.private_key_path,
+        request.default_private_key_path,
+    )
+    .map_err(invalid_params)?
     {
         return Ok(None);
     }
 
     credentials
-        .request_ssh_credential(
-            app,
-            ExternalControlCredentialRequestPayload {
-                request_id: String::new(),
-                profile_id: profile_id.to_string(),
-                host: host.to_string(),
-                port,
-                username: username.to_string(),
-                auth_method: auth_method.to_string(),
-                target: target.to_string(),
-                title: title.to_string(),
-            },
-        )
+        .request_ssh_credential(app, request.payload)
         .await
         .map_err(invalid_params)?
         .map(Some)
