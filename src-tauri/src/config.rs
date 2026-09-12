@@ -281,6 +281,7 @@ fn validate_shortcut_config(shortcuts: &ShortcutConfig) -> Result<(), String> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default)]
 pub struct ExternalControlConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -294,17 +295,6 @@ pub struct ExternalControlConfig {
     pub cli_enabled: bool,
 }
 
-impl Default for ExternalControlConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            connect_enabled: false,
-            direct_connect_enabled: false,
-            mcp_enabled: false,
-            cli_enabled: false,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Default, Deserialize)]
 struct ExternalControlConfigInput {
@@ -375,6 +365,7 @@ fn default_ollama_url() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default)]
 pub struct SshAlgorithmSelection {
     #[serde(default)]
     pub kex: Vec<String>,
@@ -388,17 +379,6 @@ pub struct SshAlgorithmSelection {
     pub compression: Vec<String>,
 }
 
-impl Default for SshAlgorithmSelection {
-    fn default() -> Self {
-        Self {
-            kex: Vec::new(),
-            host_key: Vec::new(),
-            cipher: Vec::new(),
-            mac: Vec::new(),
-            compression: Vec::new(),
-        }
-    }
-}
 
 fn default_ssh_algorithm_mode() -> String {
     "default".into()
