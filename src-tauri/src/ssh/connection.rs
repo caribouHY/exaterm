@@ -51,6 +51,10 @@ struct ConnectCompletion {
     read_rx: mpsc::Receiver<SshReadRequest>,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "SSH setup keeps runtime owners and credential prompters explicit"
+)]
 pub async fn connect(
     app: &AppHandle,
     state: &SshState,
@@ -162,6 +166,10 @@ pub async fn connect(
     .await
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "session registration needs explicit runtime owners and negotiated handles"
+)]
 async fn finish_connected_session(
     app: &AppHandle,
     state: &SshState,
@@ -229,6 +237,10 @@ async fn establish_target_shell(
     Ok(channel)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "connection preparation combines distinct runtime owners without transferring ownership"
+)]
 fn prepare_connect(
     app: &AppHandle,
     state: &SshState,
@@ -282,6 +294,10 @@ fn prepare_connect(
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "target connection dispatch preserves explicit authentication and cancellation context"
+)]
 async fn connect_target_handle(
     config: Arc<russh::client::Config>,
     handler: SshClientHandler,
@@ -325,6 +341,10 @@ async fn connect_target_handle(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "jump-host setup preserves separate target and authentication contexts"
+)]
 async fn connect_target_via_jump(
     config: Arc<russh::client::Config>,
     handler: SshClientHandler,
