@@ -170,5 +170,5 @@ pub(super) async fn verify_server_key(
 }
 
 fn string_to_russh_error(error: String) -> russh::Error {
-    russh::Error::IO(std::io::Error::new(std::io::ErrorKind::Other, error))
+    russh::Error::IO(std::io::Error::other(error))
 }
