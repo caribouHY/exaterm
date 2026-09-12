@@ -261,6 +261,10 @@ async fn mark_disconnected(
 }
 
 #[tauri::command]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Tauri commands expose serialized connection fields as individual parameters"
+)]
 pub async fn telnet_connect(
     app: AppHandle,
     state: tauri::State<'_, TelnetState>,
@@ -306,6 +310,10 @@ pub async fn telnet_connect(
     .map_err(Into::into)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Telnet setup keeps runtime owners and negotiated terminal fields explicit"
+)]
 pub async fn connect(
     app: &AppHandle,
     state: &TelnetState,
