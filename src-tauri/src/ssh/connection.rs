@@ -22,7 +22,7 @@ use crate::ssh::io::{
     SSH_PTY_TIMEOUT, SSH_PTY_TIMEOUT_ERROR, SSH_READ_QUEUE_CAPACITY, SSH_SHELL_TIMEOUT,
     SSH_SHELL_TIMEOUT_ERROR,
 };
-use crate::ssh::jump::connect_jump_profile;
+use crate::ssh::jump::{connect_jump_profile, JumpAttemptContext, JumpConnectInputs};
 use crate::ssh::profiles::resolve_jump_profile;
 use crate::ssh::types::{SshAuthRequest, SshConnectOptions, SshConnectResult, SshJumpProfile};
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
@@ -330,17 +330,21 @@ async fn connect_target_via_jump(
     context: &TargetAttemptContext<'_>,
 ) -> Result<(TargetHandle, Option<JumpHandle>), String> {
     let (jump_handle, jump_channel) = connect_jump_profile(
-        config.clone(),
-        jump_profile,
-        &context.options.host,
-        context.options.port,
-        context.options.jump_password.clone(),
-        context.options.jump_key_passphrase.clone(),
-        Some(context.diagnostic),
-        context.authentication_prompter,
-        context.host_key_prompter,
-        context.connect_timeout,
-        context.attempt,
+        JumpConnectInputs {
+            config: config.clone(),
+            profile: jump_profile,
+            target_host: &context.options.host,
+            target_port: context.options.port,
+            password: context.options.jump_password.clone(),
+            key_passphrase: context.options.jump_key_passphrase.clone(),
+        },
+        JumpAttemptContext {
+            diagnostic: Some(context.diagnostic),
+            authentication_prompter: context.authentication_prompter,
+            host_key_prompter: context.host_key_prompter,
+            connect_timeout: context.connect_timeout,
+            attempt: context.attempt,
+        },
     )
     .await?;
     let stream = jump_channel.into_stream();

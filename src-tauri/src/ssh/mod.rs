@@ -74,15 +74,15 @@ pub async fn ssh_connect(
     // Keep the large SSH connection future off Tauri's command-dispatch stack. In optimized
     // builds, embedding it in the generated IPC future can overflow the Windows main thread.
     command_result(
-        Box::pin(connection::connect(
-            connection::SshConnectRuntime {
+        Box::pin(connect(
+            SshConnectRuntime {
                 app: &app,
                 state: &state,
                 terminals: &terminals,
                 workspace: &workspace,
                 logger: Some(&logger),
             },
-            connection::SshConnectRequest {
+            SshConnectRequest {
                 prompt_window_id: window.label().to_string(),
                 host_key_handling: HostKeyHandling::Prompt,
                 options,
