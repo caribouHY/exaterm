@@ -280,8 +280,7 @@ fn validate_shortcut_config(shortcuts: &ShortcutConfig) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ExternalControlConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -294,7 +293,6 @@ pub struct ExternalControlConfig {
     #[serde(default)]
     pub cli_enabled: bool,
 }
-
 
 #[derive(Debug, Clone, Default, Deserialize)]
 struct ExternalControlConfigInput {
@@ -364,8 +362,7 @@ fn default_ollama_url() -> String {
     "http://localhost:11434".into()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct SshAlgorithmSelection {
     #[serde(default)]
     pub kex: Vec<String>,
@@ -378,7 +375,6 @@ pub struct SshAlgorithmSelection {
     #[serde(default)]
     pub compression: Vec<String>,
 }
-
 
 fn default_ssh_algorithm_mode() -> String {
     "default".into()
