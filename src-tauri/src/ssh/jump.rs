@@ -15,18 +15,26 @@ use crate::ssh::io::{
 };
 use crate::ssh::types::SshJumpProfile;
 
+pub(super) struct JumpConnectInputs<'a> {
+    pub config: Arc<russh::client::Config>,
+    pub profile: SshJumpProfile,
+    pub target_host: &'a str,
+    pub target_port: u16,
+    pub password: Option<String>,
+    pub key_passphrase: Option<String>,
+}
+
+pub(super) struct JumpAttemptContext<'a> {
+    pub diagnostic: Option<&'a SshDiagnostic>,
+    pub authentication_prompter: &'a SshAuthenticationPrompter,
+    pub host_key_prompter: Option<&'a SshHostKeyPrompter>,
+    pub connect_timeout: Duration,
+    pub attempt: Option<&'a ConnectAttempt>,
+}
+
 pub(super) async fn connect_jump_profile(
-    config: Arc<russh::client::Config>,
-    jump_profile: SshJumpProfile,
-    target_host: &str,
-    target_port: u16,
-    jump_password: Option<String>,
-    jump_key_passphrase: Option<String>,
-    diagnostic: Option<&SshDiagnostic>,
-    authentication_prompter: &SshAuthenticationPrompter,
-    host_key_prompter: Option<&SshHostKeyPrompter>,
-    connect_timeout: Duration,
-    attempt: Option<&ConnectAttempt>,
+    inputs: JumpConnectInputs<'_>,
+    context: JumpAttemptContext<'_>,
 ) -> Result<
     (
         russh::client::Handle<SshHostKeyHandler>,
@@ -34,39 +42,47 @@ pub(super) async fn connect_jump_profile(
     ),
     String,
 > {
+    let JumpConnectInputs {
+        config,
+        profile,
+        target_host,
+        target_port,
+        password,
+        key_passphrase,
+    } = inputs;
     let auth = build_auth_request(
-        Some(jump_profile.auth_method.clone()),
-        jump_password.unwrap_or_default(),
-        jump_profile.private_key_path.clone(),
-        jump_key_passphrase,
+        Some(profile.auth_method.clone()),
+        password.unwrap_or_default(),
+        profile.private_key_path.clone(),
+        key_passphrase,
         None,
     )?;
-    let jump_verifier = HostKeyVerifier::new(jump_profile.host.clone(), jump_profile.port);
+    let jump_verifier = HostKeyVerifier::new(profile.host.clone(), profile.port);
     let mut handle = run_with_attempt(
-        attempt,
+        context.attempt,
         Box::pin(connect_jump_ssh(
             config,
-            &jump_profile,
+            &profile,
             &jump_verifier,
-            diagnostic,
-            host_key_prompter,
-            connect_timeout,
+            context.diagnostic,
+            context.host_key_prompter,
+            context.connect_timeout,
         )),
     )
     .await?;
-    let auth_context = authentication_prompter.context(
+    let auth_context = context.authentication_prompter.context(
         "jump",
-        &jump_profile.host,
-        jump_profile.port,
-        &jump_profile.username,
+        &profile.host,
+        profile.port,
+        &profile.username,
     );
     if let Err(error) = run_with_attempt(
-        attempt,
+        context.attempt,
         Box::pin(authenticate_jump(
             &mut handle,
-            &jump_profile.username,
+            &profile.username,
             auth,
-            diagnostic,
+            context.diagnostic,
             &auth_context,
         )),
     )
@@ -78,12 +94,12 @@ pub(super) async fn connect_jump_profile(
         return Err(error);
     }
     let channel = match run_with_attempt(
-        attempt,
+        context.attempt,
         Box::pin(open_jump_direct_tcpip(
             &mut handle,
             target_host,
             target_port,
-            diagnostic,
+            context.diagnostic,
         )),
     )
     .await
@@ -127,14 +143,13 @@ async fn connect_jump_ssh(
         .map_err(|error| map_connect_error(error, jump_verifier))
     })
     .await
-    .map_err(|error| {
+    .inspect_err(|error| {
         emit_jump_error(
             diagnostic,
-            &error,
+            error,
             SSH_CONNECT_TIMEOUT_ERROR,
             "SSH handshake",
         );
-        error
     })
 }
 

@@ -49,6 +49,29 @@ pub struct SerialConfig {
     pub flow_control: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SerialConnectInput {
+    pub port: String,
+    pub config: SerialConfig,
+    pub encoding: Option<String>,
+    pub request_id: Option<String>,
+}
+
+pub(crate) struct SerialConnectRuntime<'a> {
+    pub app: &'a AppHandle,
+    pub state: &'a SerialState,
+    pub terminals: &'a TerminalControlState,
+    pub workspace: &'a WorkspaceState,
+    pub logger: Option<&'a LoggerState>,
+}
+
+pub(crate) struct SerialConnectRequest {
+    pub port: String,
+    pub config: SerialConfig,
+    pub encoding: Option<String>,
+}
+
 impl Default for SerialConfig {
     fn default() -> Self {
         Self {
@@ -188,11 +211,14 @@ pub async fn serial_connect(
     terminals: tauri::State<'_, TerminalControlState>,
     workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
-    port: String,
-    config: SerialConfig,
-    encoding: Option<String>,
-    request_id: Option<String>,
+    input: SerialConnectInput,
 ) -> Result<String, crate::command_error::BackendCommandError> {
+    let SerialConnectInput {
+        port,
+        config,
+        encoding,
+        request_id,
+    } = input;
     let request_id = request_id
         .as_deref()
         .map(str::trim)
@@ -209,31 +235,41 @@ pub async fn serial_connect(
         .register(request_id)
         .map_err(crate::command_error::BackendCommandError::from)?;
     connect(
-        &app,
-        &state,
-        &terminals,
-        &workspace,
-        Some(&logger),
-        port,
-        config,
-        encoding,
+        SerialConnectRuntime {
+            app: &app,
+            state: &state,
+            terminals: &terminals,
+            workspace: &workspace,
+            logger: Some(&logger),
+        },
+        SerialConnectRequest {
+            port,
+            config,
+            encoding,
+        },
         Some(attempt),
     )
     .await
     .map_err(Into::into)
 }
 
-pub async fn connect(
-    app: &AppHandle,
-    state: &SerialState,
-    terminals: &TerminalControlState,
-    workspace: &WorkspaceState,
-    logger_state: Option<&LoggerState>,
-    port: String,
-    config: SerialConfig,
-    encoding: Option<String>,
+pub(crate) async fn connect(
+    runtime: SerialConnectRuntime<'_>,
+    request: SerialConnectRequest,
     mut attempt: Option<ConnectAttempt>,
 ) -> Result<String, String> {
+    let SerialConnectRuntime {
+        app,
+        state,
+        terminals,
+        workspace,
+        logger: logger_state,
+    } = runtime;
+    let SerialConnectRequest {
+        port,
+        config,
+        encoding,
+    } = request;
     let session_id = Uuid::new_v4().to_string();
     let running = Arc::new(AtomicBool::new(true));
 
@@ -370,16 +406,12 @@ pub async fn connect(
     Ok(session_id)
 }
 
-fn open_serial_port_pair(
-    port: String,
-    config: SerialConfig,
-) -> Result<
-    (
-        Box<dyn serialport::SerialPort>,
-        Box<dyn serialport::SerialPort>,
-    ),
-    String,
-> {
+type SerialPortPair = (
+    Box<dyn serialport::SerialPort>,
+    Box<dyn serialport::SerialPort>,
+);
+
+fn open_serial_port_pair(port: String, config: SerialConfig) -> Result<SerialPortPair, String> {
     let serial_port = serialport::new(&port, config.baud_rate)
         .data_bits(to_data_bits(config.data_bits))
         .parity(to_parity(&config.parity))

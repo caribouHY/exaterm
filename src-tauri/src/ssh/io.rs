@@ -102,7 +102,10 @@ pub(super) fn record_ssh_read_drop(
     state.dropped_chunks = state.dropped_chunks.saturating_add(1);
     state.dropped_bytes = state.dropped_bytes.saturating_add(dropped_bytes);
 
-    if state.dropped_chunks == 1 || state.dropped_chunks % SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS == 0
+    if state.dropped_chunks == 1
+        || state
+            .dropped_chunks
+            .is_multiple_of(SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS)
     {
         Some(SshReadDropNotice {
             dropped_chunks: state.dropped_chunks,
@@ -168,11 +171,13 @@ where
 
 #[derive(Clone)]
 pub struct SshState {
-    pub(super) sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
+    pub(super) sessions: SshSessions,
     pub(super) connect_attempts: crate::connect_attempt::ConnectAttemptState,
     pub(crate) authentication_prompts: SshAuthenticationPromptState,
     pub(crate) host_key_prompts: SshHostKeyPromptState,
 }
+
+pub(super) type SshSessions = Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>;
 
 impl SshState {
     pub fn new() -> Self {
@@ -191,7 +196,7 @@ impl SshState {
 pub(super) struct SshClientHandler {
     pub(super) app: AppHandle,
     pub(super) session_id: String,
-    pub(super) sessions: Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
+    pub(super) sessions: SshSessions,
     pub(super) host_verifier: HostKeyVerifier,
     pub(super) host_key_prompter: Option<SshHostKeyPrompter>,
     pub(super) diagnostic: SshDiagnostic,
@@ -334,7 +339,7 @@ impl russh::client::Handler for SshClientHandler {
 async fn mark_disconnected_impl(
     app: &AppHandle,
     session_id: &str,
-    sessions: &Arc<Mutex<HashMap<String, Arc<Mutex<SshSession>>>>>,
+    sessions: &SshSessions,
     terminals: &TerminalControlState,
     workspace: &WorkspaceState,
     logger: Option<&LoggerState>,

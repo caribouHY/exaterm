@@ -280,7 +280,7 @@ fn validate_shortcut_config(shortcuts: &ShortcutConfig) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ExternalControlConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -292,18 +292,6 @@ pub struct ExternalControlConfig {
     pub mcp_enabled: bool,
     #[serde(default)]
     pub cli_enabled: bool,
-}
-
-impl Default for ExternalControlConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            connect_enabled: false,
-            direct_connect_enabled: false,
-            mcp_enabled: false,
-            cli_enabled: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -374,7 +362,7 @@ fn default_ollama_url() -> String {
     "http://localhost:11434".into()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct SshAlgorithmSelection {
     #[serde(default)]
     pub kex: Vec<String>,
@@ -386,18 +374,6 @@ pub struct SshAlgorithmSelection {
     pub mac: Vec<String>,
     #[serde(default)]
     pub compression: Vec<String>,
-}
-
-impl Default for SshAlgorithmSelection {
-    fn default() -> Self {
-        Self {
-            kex: Vec::new(),
-            host_key: Vec::new(),
-            cipher: Vec::new(),
-            mac: Vec::new(),
-            compression: Vec::new(),
-        }
-    }
 }
 
 fn default_ssh_algorithm_mode() -> String {
@@ -763,7 +739,7 @@ pub(crate) fn config_read() -> Result<AppConfig, String> {
 
 fn config_read_from_path(path: &Path) -> Result<(AppConfig, bool), String> {
     if path.exists() {
-        let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        let data = fs::read_to_string(path).map_err(|e| e.to_string())?;
         let stored: serde_json::Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
         let cfg: AppConfig = serde_json::from_value(stored.clone()).map_err(|e| e.to_string())?;
         let cfg = cfg.migrate();
@@ -972,7 +948,7 @@ fn config_write_to_path(path: &Path, config: &AppConfig) -> Result<(), String> {
         let _ = fs::create_dir_all(parent);
     }
     let data = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    fs::write(&path, data).map_err(|e| e.to_string())
+    fs::write(path, data).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

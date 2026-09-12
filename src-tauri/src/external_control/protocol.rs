@@ -332,9 +332,12 @@ pub async fn external_control_credential_submit(
 
 #[derive(Clone, Default)]
 pub struct ExternalControlLogControlState {
-    pending:
-        Arc<Mutex<HashMap<String, oneshot::Sender<Result<ExternalControlLogControlAck, String>>>>>,
+    pending: PendingLogControlRequests,
 }
+
+type PendingLogControlResult = Result<ExternalControlLogControlAck, String>;
+type PendingLogControlRequests =
+    Arc<Mutex<HashMap<String, oneshot::Sender<PendingLogControlResult>>>>;
 
 impl ExternalControlLogControlState {
     pub fn new() -> Self {

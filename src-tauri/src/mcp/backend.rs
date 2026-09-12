@@ -11,7 +11,7 @@ use crate::external_control::{
 pub(super) enum McpTarget {
     #[cfg_attr(not(test), allow(dead_code))]
     Service {
-        service: ExternalControlService,
+        service: Box<ExternalControlService>,
     },
     Client {
         client: ExternalControlClient,
@@ -21,7 +21,9 @@ pub(super) enum McpTarget {
 impl McpTarget {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn with_service(service: ExternalControlService) -> Self {
-        Self::Service { service }
+        Self::Service {
+            service: Box::new(service),
+        }
     }
 
     pub(super) fn with_client(client: ExternalControlClient) -> Self {
