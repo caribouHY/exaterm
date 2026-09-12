@@ -430,6 +430,10 @@ async fn request_profile_credential(
         .ok_or_else(|| invalid_params("The external control credential prompt was cancelled"))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "session completion receives explicit protocol metadata from multiple connection paths"
+)]
 async fn finish_created_session(
     runtime: &ExternalControlRuntime,
     config: &AppConfig,
