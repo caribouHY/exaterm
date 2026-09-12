@@ -285,6 +285,10 @@ pub async fn workspace_snapshot_get(
 }
 
 #[tauri::command]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the Tauri IPC contract exposes serialized tab metadata as individual parameters"
+)]
 pub async fn workspace_tab_register(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
