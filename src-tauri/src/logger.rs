@@ -297,6 +297,10 @@ fn write_log_start_header(
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "log creation keeps persisted session metadata explicit at the file boundary"
+)]
 fn create_log_session(
     log_dir: &Path,
     session_id: String,
