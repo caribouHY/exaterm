@@ -15,6 +15,10 @@ use crate::ssh::io::{
 };
 use crate::ssh::types::SshJumpProfile;
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "jump-host setup keeps target, credentials, prompts, timeout, and cancellation distinct"
+)]
 pub(super) async fn connect_jump_profile(
     config: Arc<russh::client::Config>,
     jump_profile: SshJumpProfile,
