@@ -126,6 +126,10 @@ async fn send_json_request(
     response_json(resp, provider, language, operation).await
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "provider dispatch keeps the shared chat request fields explicit"
+)]
 pub async fn send_chat_request(
     client: &reqwest::Client,
     provider: AiProvider,
@@ -344,6 +348,10 @@ async fn send_ollama_chat(
     extract_chat_text(&body, &provider, language, ChatResponseFormat::Ollama)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "OpenAI-compatible request fields map directly to provider-specific calls"
+)]
 async fn send_openai_compatible_chat(
     client: &reqwest::Client,
     provider: AiProvider,
