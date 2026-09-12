@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -298,7 +298,7 @@ fn write_log_start_header(
 }
 
 fn create_log_session(
-    log_dir: &PathBuf,
+    log_dir: &Path,
     session_id: String,
     connection_type: String,
     target: String,
