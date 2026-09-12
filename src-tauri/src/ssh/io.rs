@@ -102,7 +102,7 @@ pub(super) fn record_ssh_read_drop(
     state.dropped_chunks = state.dropped_chunks.saturating_add(1);
     state.dropped_bytes = state.dropped_bytes.saturating_add(dropped_bytes);
 
-    if state.dropped_chunks == 1 || state.dropped_chunks % SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS == 0
+    if state.dropped_chunks == 1 || state.dropped_chunks.is_multiple_of(SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS)
     {
         Some(SshReadDropNotice {
             dropped_chunks: state.dropped_chunks,
