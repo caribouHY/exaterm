@@ -206,7 +206,7 @@ fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<Pri
 }
 
 pub(super) async fn authenticate_ssh(
-    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
     username: &str,
     auth: SshAuthRequest,
     context: &SshAuthenticationContext<'_>,
@@ -269,7 +269,7 @@ pub(super) async fn authenticate_ssh(
 }
 
 async fn authenticate_auto(
-    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
     username: &str,
     private_key_path: Option<String>,
     key_passphrase: Option<String>,
@@ -357,7 +357,7 @@ fn automatic_auth_diagnostic(diagnostic: Option<&SshDiagnostic>, phase: &str, me
 }
 
 async fn authenticate_none(
-    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
     username: &str,
 ) -> Result<AuthResult, String> {
     run_ssh_operation_with_timeout(SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR, async {
@@ -370,7 +370,7 @@ async fn authenticate_none(
 }
 
 async fn authenticate_public_key(
-    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
     username: &str,
     key: PrivateKey,
 ) -> Result<AuthResult, String> {
@@ -388,7 +388,7 @@ fn should_continue_public_key(remaining_methods: &MethodSet, partial_success: bo
 }
 
 async fn authenticate_password(
-    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
     username: &str,
     password: String,
 ) -> Result<AuthResult, String> {
@@ -402,7 +402,7 @@ async fn authenticate_password(
 }
 
 async fn authenticate_keyboard_interactive(
-    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
     username: &str,
     context: &SshAuthenticationContext<'_>,
 ) -> Result<AuthResult, String> {
