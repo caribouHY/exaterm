@@ -72,6 +72,22 @@ struct ConnectedTarget {
     channel: TargetSessionChannel,
 }
 
+struct TargetConnectInputs {
+    config: Arc<russh::client::Config>,
+    handler: SshClientHandler,
+    jump_profile: Option<SshJumpProfile>,
+}
+
+struct TargetAttemptContext<'a> {
+    options: &'a SshConnectOptions,
+    host_verifier: &'a HostKeyVerifier,
+    diagnostic: &'a SshDiagnostic,
+    authentication_prompter: &'a SshAuthenticationPrompter,
+    host_key_prompter: Option<&'a SshHostKeyPrompter>,
+    connect_timeout: Duration,
+    attempt: Option<&'a ConnectAttempt>,
+}
+
 pub(crate) async fn connect(
     runtime: SshConnectRuntime<'_>,
     request: SshConnectRequest,
@@ -118,19 +134,21 @@ pub(crate) async fn connect(
         handler,
         read_rx,
     } = prepared;
-    let (mut handle, jump_handle) = connect_target_handle(
+    let target_inputs = TargetConnectInputs {
         config,
         handler,
         jump_profile,
-        &options,
-        &host_verifier,
-        &diagnostic,
-        &authentication_prompter,
-        host_key_prompter.as_ref(),
+    };
+    let target_context = TargetAttemptContext {
+        options: &options,
+        host_verifier: &host_verifier,
+        diagnostic: &diagnostic,
+        authentication_prompter: &authentication_prompter,
+        host_key_prompter: host_key_prompter.as_ref(),
         connect_timeout,
-        attempt.as_ref(),
-    )
-    .await?;
+        attempt: attempt.as_ref(),
+    };
+    let (mut handle, jump_handle) = connect_target_handle(target_inputs, &target_context).await?;
     let channel = match run_with_attempt(
         attempt.as_ref(),
         Box::pin(establish_target_shell(
@@ -290,95 +308,53 @@ fn prepare_connect(
     })
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "target connection dispatch preserves explicit authentication and cancellation context"
-)]
 async fn connect_target_handle(
-    config: Arc<russh::client::Config>,
-    handler: SshClientHandler,
-    jump_profile: Option<SshJumpProfile>,
-    options: &SshConnectOptions,
-    host_verifier: &HostKeyVerifier,
-    diagnostic: &SshDiagnostic,
-    authentication_prompter: &SshAuthenticationPrompter,
-    host_key_prompter: Option<&SshHostKeyPrompter>,
-    connect_timeout: Duration,
-    attempt: Option<&ConnectAttempt>,
+    inputs: TargetConnectInputs,
+    context: &TargetAttemptContext<'_>,
 ) -> Result<(TargetHandle, Option<JumpHandle>), String> {
+    let TargetConnectInputs {
+        config,
+        handler,
+        jump_profile,
+    } = inputs;
     match jump_profile {
-        Some(jump_profile) => {
-            connect_target_via_jump(
-                config,
-                handler,
-                jump_profile,
-                options,
-                host_verifier,
-                diagnostic,
-                authentication_prompter,
-                host_key_prompter,
-                connect_timeout,
-                attempt,
-            )
-            .await
-        }
-        None => {
-            connect_target_direct(
-                config,
-                handler,
-                options,
-                host_verifier,
-                diagnostic,
-                connect_timeout,
-                attempt,
-            )
-            .await
-        }
+        Some(jump_profile) => connect_target_via_jump(config, handler, jump_profile, context).await,
+        None => connect_target_direct(config, handler, context).await,
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "jump-host setup preserves separate target and authentication contexts"
-)]
 async fn connect_target_via_jump(
     config: Arc<russh::client::Config>,
     handler: SshClientHandler,
     jump_profile: SshJumpProfile,
-    options: &SshConnectOptions,
-    host_verifier: &HostKeyVerifier,
-    diagnostic: &SshDiagnostic,
-    authentication_prompter: &SshAuthenticationPrompter,
-    host_key_prompter: Option<&SshHostKeyPrompter>,
-    connect_timeout: Duration,
-    attempt: Option<&ConnectAttempt>,
+    context: &TargetAttemptContext<'_>,
 ) -> Result<(TargetHandle, Option<JumpHandle>), String> {
     let (jump_handle, jump_channel) = connect_jump_profile(
         config.clone(),
         jump_profile,
-        &options.host,
-        options.port,
-        options.jump_password.clone(),
-        options.jump_key_passphrase.clone(),
-        Some(diagnostic),
-        authentication_prompter,
-        host_key_prompter,
-        connect_timeout,
-        attempt,
+        &context.options.host,
+        context.options.port,
+        context.options.jump_password.clone(),
+        context.options.jump_key_passphrase.clone(),
+        Some(context.diagnostic),
+        context.authentication_prompter,
+        context.host_key_prompter,
+        context.connect_timeout,
+        context.attempt,
     )
     .await?;
     let stream = jump_channel.into_stream();
-    diagnostic.progress("target", "connecting");
-    diagnostic.info("target: starting SSH handshake");
+    context.diagnostic.progress("target", "connecting");
+    context.diagnostic.info("target: starting SSH handshake");
     let handle = run_with_attempt(
-        attempt,
+        context.attempt,
         Box::pin(run_ssh_operation_with_timeout(
-            connect_timeout,
+            context.connect_timeout,
             SSH_CONNECT_TIMEOUT_ERROR,
             async {
                 russh::client::connect_stream(config, stream, handler)
                     .await
-                    .map_err(|error| map_connect_error(error, host_verifier))
+                    .map_err(|error| map_connect_error(error, context.host_verifier))
             },
         )),
     )
@@ -388,7 +364,7 @@ async fn connect_target_via_jump(
         Err(error) => {
             if error != SSH_CONNECT_CANCELLED {
                 emit_target_timeout_or_failure(
-                    diagnostic,
+                    context.diagnostic,
                     &error,
                     "SSH handshake",
                     "SSH handshake",
@@ -405,30 +381,35 @@ async fn connect_target_via_jump(
 async fn connect_target_direct(
     config: Arc<russh::client::Config>,
     handler: SshClientHandler,
-    options: &SshConnectOptions,
-    host_verifier: &HostKeyVerifier,
-    diagnostic: &SshDiagnostic,
-    connect_timeout: Duration,
-    attempt: Option<&ConnectAttempt>,
+    context: &TargetAttemptContext<'_>,
 ) -> Result<(TargetHandle, Option<JumpHandle>), String> {
-    diagnostic.progress("target", "connecting");
-    diagnostic.info("target: starting SSH handshake");
+    context.diagnostic.progress("target", "connecting");
+    context.diagnostic.info("target: starting SSH handshake");
     let handle = run_with_attempt(
-        attempt,
+        context.attempt,
         Box::pin(run_ssh_operation_with_timeout(
-            connect_timeout,
+            context.connect_timeout,
             SSH_CONNECT_TIMEOUT_ERROR,
             async {
-                russh::client::connect(config, (options.host.as_str(), options.port), handler)
-                    .await
-                    .map_err(|error| map_connect_error(error, host_verifier))
+                russh::client::connect(
+                    config,
+                    (context.options.host.as_str(), context.options.port),
+                    handler,
+                )
+                .await
+                .map_err(|error| map_connect_error(error, context.host_verifier))
             },
         )),
     )
     .await
     .map_err(|error| {
         if error != SSH_CONNECT_CANCELLED {
-            emit_target_timeout_or_failure(diagnostic, &error, "SSH handshake", "SSH handshake");
+            emit_target_timeout_or_failure(
+                context.diagnostic,
+                &error,
+                "SSH handshake",
+                "SSH handshake",
+            );
         }
         error
     })?;
