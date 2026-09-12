@@ -40,6 +40,16 @@ enum ConnectionHostKeyHandling {
     PromptUnknown,
 }
 
+struct CreatedSessionMetadata {
+    session_id: String,
+    connection_type: String,
+    target: String,
+    title: String,
+    encoding: String,
+    terminal_mode: String,
+    connection_info: Option<WorkspaceConnectionInfo>,
+}
+
 impl ExternalControlService {
     pub(crate) async fn connect_saved_profile(
         &self,
@@ -144,13 +154,15 @@ async fn connect_prepared_profile(
     finish_created_session(
         runtime,
         config,
-        session_id,
-        prepared.connection_type,
-        prepared.target,
-        prepared.title,
-        prepared.encoding,
-        prepared.terminal_mode,
-        Some(connection_info),
+        CreatedSessionMetadata {
+            session_id,
+            connection_type: prepared.connection_type,
+            target: prepared.target,
+            title: prepared.title,
+            encoding: prepared.encoding,
+            terminal_mode: prepared.terminal_mode,
+            connection_info: Some(connection_info),
+        },
     )
     .await
 }
@@ -430,21 +442,20 @@ async fn request_profile_credential(
         .ok_or_else(|| invalid_params("The external control credential prompt was cancelled"))
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "session completion receives explicit protocol metadata from multiple connection paths"
-)]
 async fn finish_created_session(
     runtime: &ExternalControlRuntime,
     config: &AppConfig,
-    session_id: String,
-    connection_type: String,
-    target: String,
-    title: String,
-    encoding: String,
-    terminal_mode: String,
-    connection_info: Option<WorkspaceConnectionInfo>,
+    metadata: CreatedSessionMetadata,
 ) -> Result<Value, ExternalControlError> {
+    let CreatedSessionMetadata {
+        session_id,
+        connection_type,
+        target,
+        title,
+        encoding,
+        terminal_mode,
+        connection_info,
+    } = metadata;
     let auto_log_file_path = if config.terminal.auto_session_log {
         match &runtime.logger {
             Some(logger_state) => logger::start_log_on_connection(
@@ -537,13 +548,15 @@ async fn connect_prepared_serial_console(
     finish_created_session(
         runtime,
         config,
-        session_id,
-        "serial".into(),
-        prepared.target,
-        prepared.title,
-        prepared.encoding,
-        prepared.terminal_mode,
-        None,
+        CreatedSessionMetadata {
+            session_id,
+            connection_type: "serial".into(),
+            target: prepared.target,
+            title: prepared.title,
+            encoding: prepared.encoding,
+            terminal_mode: prepared.terminal_mode,
+            connection_info: None,
+        },
     )
     .await
 }
@@ -571,13 +584,15 @@ async fn connect_prepared_profile(
     finish_created_session(
         runtime,
         config,
-        session_id,
-        prepared.connection_type,
-        prepared.target,
-        prepared.title,
-        prepared.encoding,
-        prepared.terminal_mode,
-        Some(connection_info),
+        CreatedSessionMetadata {
+            session_id,
+            connection_type: prepared.connection_type,
+            target: prepared.target,
+            title: prepared.title,
+            encoding: prepared.encoding,
+            terminal_mode: prepared.terminal_mode,
+            connection_info: Some(connection_info),
+        },
     )
     .await
 }
@@ -601,13 +616,15 @@ async fn connect_prepared_serial_console(
     finish_created_session(
         runtime,
         config,
-        session_id,
-        "serial".into(),
-        prepared.target,
-        prepared.title,
-        prepared.encoding,
-        prepared.terminal_mode,
-        None,
+        CreatedSessionMetadata {
+            session_id,
+            connection_type: "serial".into(),
+            target: prepared.target,
+            title: prepared.title,
+            encoding: prepared.encoding,
+            terminal_mode: prepared.terminal_mode,
+            connection_info: None,
+        },
     )
     .await
 }
