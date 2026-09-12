@@ -311,16 +311,20 @@ async fn connect_prepared_telnet_profile(
     port: u16,
 ) -> Result<String, ExternalControlError> {
     telnet::connect(
-        app,
-        &runtime.telnet,
-        &runtime.terminals,
-        &runtime.workspace,
-        runtime.logger.as_ref(),
-        host.to_string(),
-        port,
-        prepared.cols,
-        prepared.rows,
-        Some(prepared.encoding.clone()),
+        telnet::TelnetConnectRuntime {
+            app,
+            state: &runtime.telnet,
+            terminals: &runtime.terminals,
+            workspace: &runtime.workspace,
+            logger: runtime.logger.as_ref(),
+        },
+        telnet::TelnetConnectRequest {
+            host: host.to_string(),
+            port,
+            cols: prepared.cols,
+            rows: prepared.rows,
+            encoding: Some(prepared.encoding.clone()),
+        },
         None,
     )
     .await

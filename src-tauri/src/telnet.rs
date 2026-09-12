@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use std::collections::HashMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -32,6 +33,33 @@ const TERMINAL_TYPE_SEND: u8 = 1;
 const TELNET_CONNECT_CANCELLED: &str = "The Telnet connection attempt was cancelled";
 const TELNET_CONNECT_DUPLICATE: &str =
     "A Telnet connection attempt with this request ID already exists";
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelnetConnectInput {
+    pub host: String,
+    pub port: u16,
+    pub cols: u32,
+    pub rows: u32,
+    pub encoding: Option<String>,
+    pub request_id: Option<String>,
+}
+
+pub(crate) struct TelnetConnectRuntime<'a> {
+    pub app: &'a AppHandle,
+    pub state: &'a TelnetState,
+    pub terminals: &'a TerminalControlState,
+    pub workspace: &'a WorkspaceState,
+    pub logger: Option<&'a LoggerState>,
+}
+
+pub(crate) struct TelnetConnectRequest {
+    pub host: String,
+    pub port: u16,
+    pub cols: u32,
+    pub rows: u32,
+    pub encoding: Option<String>,
+}
 
 struct TelnetSession {
     writer: mpsc::Sender<Vec<u8>>,
@@ -261,23 +289,22 @@ async fn mark_disconnected(
 }
 
 #[tauri::command]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Tauri commands expose serialized connection fields as individual parameters"
-)]
 pub async fn telnet_connect(
     app: AppHandle,
     state: tauri::State<'_, TelnetState>,
     terminals: tauri::State<'_, TerminalControlState>,
     workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
-    host: String,
-    port: u16,
-    cols: u32,
-    rows: u32,
-    encoding: Option<String>,
-    request_id: Option<String>,
+    input: TelnetConnectInput,
 ) -> Result<String, crate::command_error::BackendCommandError> {
+    let TelnetConnectInput {
+        host,
+        port,
+        cols,
+        rows,
+        encoding,
+        request_id,
+    } = input;
     let request_id = request_id
         .as_deref()
         .map(str::trim)
@@ -294,39 +321,45 @@ pub async fn telnet_connect(
         .register(request_id)
         .map_err(crate::command_error::BackendCommandError::from)?;
     connect(
-        &app,
-        &state,
-        &terminals,
-        &workspace,
-        Some(&logger),
-        host,
-        port,
-        cols,
-        rows,
-        encoding,
+        TelnetConnectRuntime {
+            app: &app,
+            state: &state,
+            terminals: &terminals,
+            workspace: &workspace,
+            logger: Some(&logger),
+        },
+        TelnetConnectRequest {
+            host,
+            port,
+            cols,
+            rows,
+            encoding,
+        },
         Some(attempt),
     )
     .await
     .map_err(Into::into)
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Telnet setup keeps runtime owners and negotiated terminal fields explicit"
-)]
-pub async fn connect(
-    app: &AppHandle,
-    state: &TelnetState,
-    terminals: &TerminalControlState,
-    workspace: &WorkspaceState,
-    logger_state: Option<&LoggerState>,
-    host: String,
-    port: u16,
-    cols: u32,
-    rows: u32,
-    encoding: Option<String>,
+pub(crate) async fn connect(
+    runtime: TelnetConnectRuntime<'_>,
+    request: TelnetConnectRequest,
     mut attempt: Option<ConnectAttempt>,
 ) -> Result<String, String> {
+    let TelnetConnectRuntime {
+        app,
+        state,
+        terminals,
+        workspace,
+        logger: logger_state,
+    } = runtime;
+    let TelnetConnectRequest {
+        host,
+        port,
+        cols,
+        rows,
+        encoding,
+    } = request;
     let session_id = Uuid::new_v4().to_string();
     let stream = run_with_attempt(
         attempt.as_ref(),

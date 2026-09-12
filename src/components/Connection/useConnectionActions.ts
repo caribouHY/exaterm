@@ -523,12 +523,14 @@ export const useConnectionActions = ({
         const parsedTelnetPort = validatedTelnetPort;
         connectionAttemptRef.current.connectInvoked = true;
         const sessionId = await invoke<string>("telnet_connect", {
-          host: telnet.host,
-          port: parsedTelnetPort,
-          cols: 120,
-          rows: 30,
-          encoding: telnet.encoding,
-          requestId: connectionRequestId,
+          input: {
+            host: telnet.host,
+            port: parsedTelnetPort,
+            cols: 120,
+            rows: 30,
+            encoding: telnet.encoding,
+            requestId: connectionRequestId,
+          },
         });
         const logState = await startConfiguredConnectionLog(
           startLogOnConnection,
