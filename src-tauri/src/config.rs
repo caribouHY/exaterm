@@ -743,7 +743,7 @@ pub(crate) fn config_read() -> Result<AppConfig, String> {
 
 fn config_read_from_path(path: &Path) -> Result<(AppConfig, bool), String> {
     if path.exists() {
-        let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        let data = fs::read_to_string(path).map_err(|e| e.to_string())?;
         let stored: serde_json::Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
         let cfg: AppConfig = serde_json::from_value(stored.clone()).map_err(|e| e.to_string())?;
         let cfg = cfg.migrate();
@@ -952,7 +952,7 @@ fn config_write_to_path(path: &Path, config: &AppConfig) -> Result<(), String> {
         let _ = fs::create_dir_all(parent);
     }
     let data = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    fs::write(&path, data).map_err(|e| e.to_string())
+    fs::write(path, data).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
