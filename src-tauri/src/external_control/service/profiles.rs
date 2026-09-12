@@ -228,7 +228,7 @@ pub(crate) fn available_serial_port_names(ports: &[serial::PortInfo]) -> String 
 pub(crate) fn normalize_serial_data_bits(value: Option<u8>) -> Result<u8, String> {
     let value = value.unwrap_or(DEFAULT_SERIAL_DATA_BITS);
     match value {
-        5 | 6 | 7 | 8 => Ok(value),
+        5..=8 => Ok(value),
         _ => Err("data_bits must be 5, 6, 7, or 8".into()),
     }
 }
