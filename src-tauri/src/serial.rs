@@ -182,6 +182,10 @@ pub fn serial_list_ports() -> Result<Vec<PortInfo>, crate::command_error::Backen
 }
 
 #[tauri::command]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Tauri commands expose serialized connection fields as individual parameters"
+)]
 pub async fn serial_connect(
     app: AppHandle,
     state: tauri::State<'_, SerialState>,
@@ -223,6 +227,10 @@ pub async fn serial_connect(
     .map_err(Into::into)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "serial connection setup keeps runtime owners and request fields explicit"
+)]
 pub async fn connect(
     app: &AppHandle,
     state: &SerialState,
