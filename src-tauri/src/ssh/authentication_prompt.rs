@@ -392,10 +392,7 @@ impl SshAuthenticationPromptState {
         let mut pending = self.pending.lock().await;
         let request_ids = pending
             .iter()
-            .filter_map(|(request_id, prompt)| {
-                (prompt.connect_request_id.as_deref() == Some(connect_request_id))
-                    .then(|| request_id.clone())
-            })
+            .filter(|&(request_id, prompt)| (prompt.connect_request_id.as_deref() == Some(connect_request_id))).map(|(request_id, prompt)| request_id.clone())
             .collect::<Vec<_>>();
         for request_id in request_ids {
             if let Some(prompt) = pending.remove(&request_id) {
@@ -448,9 +445,7 @@ impl SshAuthenticationPromptState {
         let mut pending = self.pending.lock().await;
         let request_ids = pending
             .iter()
-            .filter_map(|(request_id, prompt)| {
-                (prompt.window_id == window_id).then(|| request_id.clone())
-            })
+            .filter(|&(request_id, prompt)| (prompt.window_id == window_id)).map(|(request_id, prompt)| request_id.clone())
             .collect::<Vec<_>>();
         for request_id in request_ids {
             if let Some(prompt) = pending.remove(&request_id) {
