@@ -127,14 +127,13 @@ async fn connect_jump_ssh(
         .map_err(|error| map_connect_error(error, jump_verifier))
     })
     .await
-    .map_err(|error| {
+    .inspect_err(|error| {
         emit_jump_error(
             diagnostic,
-            &error,
+            error,
             SSH_CONNECT_TIMEOUT_ERROR,
             "SSH handshake",
         );
-        error
     })
 }
 
