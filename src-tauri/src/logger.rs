@@ -228,6 +228,16 @@ enum LogWriteMode {
     Append,
 }
 
+struct LogSessionCreateOptions {
+    session_id: String,
+    connection_type: String,
+    target: String,
+    file_path: Option<String>,
+    log_mode: String,
+    include_header: bool,
+    write_mode: LogWriteMode,
+}
+
 impl LogWriteMode {
     fn from_optional_str(value: Option<&str>) -> Result<Self, String> {
         match value.unwrap_or("overwrite") {
@@ -297,20 +307,19 @@ fn write_log_start_header(
     Ok(())
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "log creation keeps persisted session metadata explicit at the file boundary"
-)]
 fn create_log_session(
     log_dir: &Path,
-    session_id: String,
-    connection_type: String,
-    target: String,
-    file_path: Option<String>,
-    log_mode: &str,
-    include_header: bool,
-    write_mode: LogWriteMode,
+    options: LogSessionCreateOptions,
 ) -> Result<LogSession, String> {
+    let LogSessionCreateOptions {
+        session_id,
+        connection_type,
+        target,
+        file_path,
+        log_mode,
+        include_header,
+        write_mode,
+    } = options;
     let now = Local::now();
     let started_at = now.format("%Y-%m-%d %H:%M:%S").to_string();
     let session_prefix = session_id.chars().take(8).collect::<String>();
@@ -331,7 +340,7 @@ fn create_log_session(
         &file_path,
         &connection_type,
         &target,
-        log_mode,
+        &log_mode,
         include_header,
         write_mode,
         &started_at,
@@ -343,7 +352,7 @@ fn create_log_session(
         target,
         started_at: now.to_rfc3339(),
         file_path: file_path.to_string_lossy().to_string(),
-        log_mode: log_mode.into(),
+        log_mode,
     })
 }
 
@@ -450,13 +459,15 @@ async fn start_log(
         .unwrap_or(true);
     let session = create_log_session(
         &state.log_dir,
-        session_id.clone(),
-        connection_type,
-        target,
-        file_path,
-        start_method,
-        include_header,
-        write_mode,
+        LogSessionCreateOptions {
+            session_id: session_id.clone(),
+            connection_type,
+            target,
+            file_path,
+            log_mode: start_method.into(),
+            include_header,
+            write_mode,
+        },
     )?;
     let mut sessions = state.sessions.lock().await;
     sessions.insert(session_id, session.clone());
@@ -684,13 +695,15 @@ mod tests {
 
         let session = create_log_session(
             &dir,
-            "session-1".into(),
-            "ssh".into(),
-            "user@host:22".into(),
-            None,
-            "auto",
-            true,
-            LogWriteMode::Overwrite,
+            LogSessionCreateOptions {
+                session_id: "session-1".into(),
+                connection_type: "ssh".into(),
+                target: "user@host:22".into(),
+                file_path: None,
+                log_mode: "auto".into(),
+                include_header: true,
+                write_mode: LogWriteMode::Overwrite,
+            },
         )
         .expect("log session should be created");
         let data = fs::read_to_string(&session.file_path).expect("log should read");
@@ -709,13 +722,15 @@ mod tests {
 
         let session = create_log_session(
             &dir,
-            "session-1".into(),
-            "ssh".into(),
-            "user@host:22".into(),
-            None,
-            "auto",
-            false,
-            LogWriteMode::Overwrite,
+            LogSessionCreateOptions {
+                session_id: "session-1".into(),
+                connection_type: "ssh".into(),
+                target: "user@host:22".into(),
+                file_path: None,
+                log_mode: "auto".into(),
+                include_header: false,
+                write_mode: LogWriteMode::Overwrite,
+            },
         )
         .expect("log session should be created");
         let data = fs::read_to_string(&session.file_path).expect("log should read");
@@ -812,13 +827,15 @@ mod tests {
 
         let session = create_log_session(
             &dir,
-            "session-1".into(),
-            "ssh".into(),
-            "user@host:22".into(),
-            Some(path.to_string_lossy().to_string()),
-            "manual",
-            true,
-            LogWriteMode::Overwrite,
+            LogSessionCreateOptions {
+                session_id: "session-1".into(),
+                connection_type: "ssh".into(),
+                target: "user@host:22".into(),
+                file_path: Some(path.to_string_lossy().to_string()),
+                log_mode: "manual".into(),
+                include_header: true,
+                write_mode: LogWriteMode::Overwrite,
+            },
         )
         .expect("log session should be created");
         let data = fs::read_to_string(&session.file_path).expect("log should read");
@@ -838,13 +855,15 @@ mod tests {
 
         let session = create_log_session(
             &dir,
-            "session-1".into(),
-            "ssh".into(),
-            "user@host:22".into(),
-            Some(path.to_string_lossy().to_string()),
-            "manual",
-            true,
-            LogWriteMode::Append,
+            LogSessionCreateOptions {
+                session_id: "session-1".into(),
+                connection_type: "ssh".into(),
+                target: "user@host:22".into(),
+                file_path: Some(path.to_string_lossy().to_string()),
+                log_mode: "manual".into(),
+                include_header: true,
+                write_mode: LogWriteMode::Append,
+            },
         )
         .expect("log session should be created");
         let data = fs::read_to_string(&session.file_path).expect("log should read");
@@ -863,13 +882,15 @@ mod tests {
 
         let session = create_log_session(
             &dir,
-            "session-1".into(),
-            "ssh".into(),
-            "user@host:22".into(),
-            Some(path.to_string_lossy().to_string()),
-            "manual",
-            false,
-            LogWriteMode::Append,
+            LogSessionCreateOptions {
+                session_id: "session-1".into(),
+                connection_type: "ssh".into(),
+                target: "user@host:22".into(),
+                file_path: Some(path.to_string_lossy().to_string()),
+                log_mode: "manual".into(),
+                include_header: false,
+                write_mode: LogWriteMode::Append,
+            },
         )
         .expect("log session should be created");
         append_to_log_sessions(&[session.clone()], "new content\n")
