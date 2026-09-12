@@ -370,16 +370,12 @@ pub async fn connect(
     Ok(session_id)
 }
 
-fn open_serial_port_pair(
-    port: String,
-    config: SerialConfig,
-) -> Result<
-    (
-        Box<dyn serialport::SerialPort>,
-        Box<dyn serialport::SerialPort>,
-    ),
-    String,
-> {
+type SerialPortPair = (
+    Box<dyn serialport::SerialPort>,
+    Box<dyn serialport::SerialPort>,
+);
+
+fn open_serial_port_pair(port: String, config: SerialConfig) -> Result<SerialPortPair, String> {
     let serial_port = serialport::new(&port, config.baud_rate)
         .data_bits(to_data_bits(config.data_bits))
         .parity(to_parity(&config.parity))
