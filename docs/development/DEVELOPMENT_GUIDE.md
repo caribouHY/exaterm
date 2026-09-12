@@ -52,6 +52,12 @@ Run Rust tests:
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
+Run Rust lint checks, treating every Clippy warning as an error:
+
+```powershell
+cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+```
+
 Run Cargo validation commands from the repository root with an explicit manifest path.
 
 ### Optimized Tauri Runtime Checks
@@ -89,7 +95,9 @@ Keep commits reviewable and focused. As a rule, each commit should contain one l
 
 Open pull requests against the `dev` branch.
 
-Pull requests run the GitHub Actions CI workflow on `windows-latest`. The workflow installs dependencies, checks formatting, builds the frontend, and runs Rust tests.
+Pull requests run the GitHub Actions CI workflow on `windows-latest`. The workflow installs dependencies, checks formatting, builds the frontend, runs frontend and Rust tests, and treats Clippy warnings as errors. New pushes to the same pull request cancel older in-progress CI runs.
+
+After `Required checks` has run at least once, configure the GitHub `dev` branch rule or ruleset manually to require that GitHub Actions check before merging.
 
 ## Updater Signing
 
