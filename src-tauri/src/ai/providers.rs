@@ -26,6 +26,48 @@ enum ChatResponseFormat {
     Ollama,
 }
 
+pub(super) struct ChatRequest<'a> {
+    provider: AiProvider,
+    model: &'a str,
+    messages: &'a [ChatMessage],
+    system_prompt: &'a str,
+    language: &'a str,
+    ollama_base_url: Option<&'a str>,
+    azure_openai_endpoint: Option<&'a str>,
+}
+
+impl<'a> ChatRequest<'a> {
+    pub(super) fn new(
+        provider: AiProvider,
+        model: &'a str,
+        messages: &'a [ChatMessage],
+        system_prompt: &'a str,
+        language: &'a str,
+        ollama_base_url: Option<&'a str>,
+        azure_openai_endpoint: Option<&'a str>,
+    ) -> Self {
+        Self {
+            provider,
+            model,
+            messages,
+            system_prompt,
+            language,
+            ollama_base_url,
+            azure_openai_endpoint,
+        }
+    }
+}
+
+struct OpenAiCompatibleChatRequest<'a> {
+    provider: AiProvider,
+    url: &'a str,
+    model: &'a str,
+    messages: &'a [ChatMessage],
+    system_prompt: &'a str,
+    language: &'a str,
+    extra_headers: &'a [(&'a str, &'a str)],
+}
+
 pub async fn fetch_provider_models(
     client: &reqwest::Client,
     provider: &AiProvider,
@@ -126,52 +168,70 @@ async fn send_json_request(
     response_json(resp, provider, language, operation).await
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "provider dispatch keeps the shared chat request fields explicit"
-)]
-pub async fn send_chat_request(
+pub(super) async fn send_chat_request(
     client: &reqwest::Client,
-    provider: AiProvider,
-    model: &str,
-    messages: &[ChatMessage],
-    system_prompt: &str,
-    language: &str,
-    ollama_base_url: Option<&str>,
-    azure_openai_endpoint: Option<&str>,
+    request: ChatRequest<'_>,
 ) -> Result<String, String> {
-    match provider {
+    match request.provider {
         AiProvider::OpenAi => {
-            send_openai_chat(client, model, messages, system_prompt, language).await
+            send_openai_chat(
+                client,
+                request.model,
+                request.messages,
+                request.system_prompt,
+                request.language,
+            )
+            .await
         }
         AiProvider::AzureOpenAi => {
             send_azure_openai_chat(
                 client,
-                model,
-                messages,
-                system_prompt,
-                language,
-                azure_openai_endpoint,
+                request.model,
+                request.messages,
+                request.system_prompt,
+                request.language,
+                request.azure_openai_endpoint,
             )
             .await
         }
         AiProvider::Anthropic => {
-            send_anthropic_chat(client, model, messages, system_prompt, language).await
+            send_anthropic_chat(
+                client,
+                request.model,
+                request.messages,
+                request.system_prompt,
+                request.language,
+            )
+            .await
         }
         AiProvider::Gemini => {
-            send_gemini_chat(client, model, messages, system_prompt, language).await
+            send_gemini_chat(
+                client,
+                request.model,
+                request.messages,
+                request.system_prompt,
+                request.language,
+            )
+            .await
         }
         AiProvider::OpenRouter => {
-            send_openrouter_chat(client, model, messages, system_prompt, language).await
+            send_openrouter_chat(
+                client,
+                request.model,
+                request.messages,
+                request.system_prompt,
+                request.language,
+            )
+            .await
         }
         AiProvider::Ollama => {
             send_ollama_chat(
                 client,
-                model,
-                messages,
-                system_prompt,
-                language,
-                ollama_base_url,
+                request.model,
+                request.messages,
+                request.system_prompt,
+                request.language,
+                request.ollama_base_url,
             )
             .await
         }
@@ -224,13 +284,15 @@ async fn send_openai_chat(
 ) -> Result<String, String> {
     send_openai_compatible_chat(
         client,
-        AiProvider::OpenAi,
-        OPENAI_CHAT_URL,
-        model,
-        messages,
-        system_prompt,
-        language,
-        &[],
+        OpenAiCompatibleChatRequest {
+            provider: AiProvider::OpenAi,
+            url: OPENAI_CHAT_URL,
+            model,
+            messages,
+            system_prompt,
+            language,
+            extra_headers: &[],
+        },
     )
     .await
 }
@@ -307,16 +369,18 @@ async fn send_openrouter_chat(
 ) -> Result<String, String> {
     send_openai_compatible_chat(
         client,
-        AiProvider::OpenRouter,
-        OPENROUTER_CHAT_URL,
-        model,
-        messages,
-        system_prompt,
-        language,
-        &[
-            ("content-type", "application/json"),
-            ("X-OpenRouter-Title", "ExaTerm"),
-        ],
+        OpenAiCompatibleChatRequest {
+            provider: AiProvider::OpenRouter,
+            url: OPENROUTER_CHAT_URL,
+            model,
+            messages,
+            system_prompt,
+            language,
+            extra_headers: &[
+                ("content-type", "application/json"),
+                ("X-OpenRouter-Title", "ExaTerm"),
+            ],
+        },
     )
     .await
 }
@@ -348,20 +412,19 @@ async fn send_ollama_chat(
     extract_chat_text(&body, &provider, language, ChatResponseFormat::Ollama)
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "OpenAI-compatible request fields map directly to provider-specific calls"
-)]
 async fn send_openai_compatible_chat(
     client: &reqwest::Client,
-    provider: AiProvider,
-    url: &str,
-    model: &str,
-    messages: &[ChatMessage],
-    system_prompt: &str,
-    language: &str,
-    extra_headers: &[(&str, &str)],
+    request: OpenAiCompatibleChatRequest<'_>,
 ) -> Result<String, String> {
+    let OpenAiCompatibleChatRequest {
+        provider,
+        url,
+        model,
+        messages,
+        system_prompt,
+        language,
+        extra_headers,
+    } = request;
     let api_key = load_provider_secret(&provider, language)?;
     ensure_model_selected(model, language)?;
 
