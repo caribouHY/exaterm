@@ -563,16 +563,18 @@ export const useConnectionActions = ({
 
       connectionAttemptRef.current.connectInvoked = true;
       const sessionId = await invoke<string>("serial_connect", {
-        port: serial.selectedPort,
-        config: {
-          baud_rate: Number.parseInt(serial.baudRate, 10),
-          data_bits: Number.parseInt(serial.dataBits, 10),
-          parity: serial.parity,
-          stop_bits: Number.parseInt(serial.stopBits, 10),
-          flow_control: "none",
+        input: {
+          port: serial.selectedPort,
+          config: {
+            baud_rate: Number.parseInt(serial.baudRate, 10),
+            data_bits: Number.parseInt(serial.dataBits, 10),
+            parity: serial.parity,
+            stop_bits: Number.parseInt(serial.stopBits, 10),
+            flow_control: "none",
+          },
+          encoding: "utf-8",
+          requestId: connectionRequestId,
         },
-        encoding: "utf-8",
-        requestId: connectionRequestId,
       });
       const logState = await startConfiguredConnectionLog(
         startLogOnConnection,

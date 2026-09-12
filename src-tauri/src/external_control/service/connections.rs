@@ -532,14 +532,18 @@ async fn connect_prepared_serial_console(
     })?;
 
     let session_id = crate::serial::connect(
-        app,
-        &runtime.serial,
-        &runtime.terminals,
-        &runtime.workspace,
-        runtime.logger.as_ref(),
-        prepared.port.clone(),
-        prepared.config,
-        Some(prepared.encoding.clone()),
+        crate::serial::SerialConnectRuntime {
+            app,
+            state: &runtime.serial,
+            terminals: &runtime.terminals,
+            workspace: &runtime.workspace,
+            logger: runtime.logger.as_ref(),
+        },
+        crate::serial::SerialConnectRequest {
+            port: prepared.port.clone(),
+            config: prepared.config,
+            encoding: Some(prepared.encoding.clone()),
+        },
         None,
     )
     .await
