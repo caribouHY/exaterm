@@ -5,9 +5,7 @@ import type {
   SshDiagnosticEntry,
   SshDiagnosticEvent,
 } from "./connectionDialogTypes";
-import type { SshConnectionProgressEvent } from "./sshConnectionAttemptModel";
-
-const createRequestId = () => globalThis.crypto.randomUUID();
+import type { SshConnectionProgressEvent } from "./connectionAttemptModel";
 
 export const useSshDiagnostics = () => {
   const requestIdRef = useRef<string | null>(null);
@@ -26,52 +24,64 @@ export const useSshDiagnostics = () => {
     unlistenRefs.current = [];
   }, []);
 
-  const start = useCallback(async () => {
-    stop();
-    const listenerGeneration = listenerGenerationRef.current;
-    const requestId = createRequestId();
-    requestIdRef.current = requestId;
-    entryIdRef.current = 0;
-    setLogs([]);
-    setCopied(false);
-    setProgress(null);
+  const start = useCallback(
+    async (requestId: string) => {
+      stop();
+      const listenerGeneration = listenerGenerationRef.current;
+      requestIdRef.current = requestId;
+      entryIdRef.current = 0;
+      setLogs([]);
+      setCopied(false);
+      setProgress(null);
 
-    const unlistenDiagnostics = await listen<SshDiagnosticEvent>(
-      `ssh://connect-diagnostic/${requestId}`,
-      (event) => {
-        const entryId = entryIdRef.current + 1;
-        entryIdRef.current = entryId;
-        setLogs((current) => [
-          ...current,
-          {
-            id: entryId,
-            level: event.payload.level,
-            message: event.payload.message,
-            time: new Date().toLocaleTimeString(),
-          },
-        ]);
-      }
-    );
-    let unlistenProgress: UnlistenFn;
-    try {
-      unlistenProgress = await listen<SshConnectionProgressEvent>(
-        `ssh://connect-progress/${requestId}`,
+      const unlistenDiagnostics = await listen<SshDiagnosticEvent>(
+        `ssh://connect-diagnostic/${requestId}`,
         (event) => {
-          setProgress({ requestId, progress: event.payload });
+          if (
+            listenerGeneration !== listenerGenerationRef.current ||
+            requestIdRef.current !== requestId
+          )
+            return;
+          const entryId = entryIdRef.current + 1;
+          entryIdRef.current = entryId;
+          setLogs((current) => [
+            ...current,
+            {
+              id: entryId,
+              level: event.payload.level,
+              message: event.payload.message,
+              time: new Date().toLocaleTimeString(),
+            },
+          ]);
         }
       );
-    } catch (error) {
-      unlistenDiagnostics();
-      throw error;
-    }
-    if (listenerGeneration !== listenerGenerationRef.current) {
-      unlistenDiagnostics();
-      unlistenProgress();
+      let unlistenProgress: UnlistenFn;
+      try {
+        unlistenProgress = await listen<SshConnectionProgressEvent>(
+          `ssh://connect-progress/${requestId}`,
+          (event) => {
+            if (
+              listenerGeneration !== listenerGenerationRef.current ||
+              requestIdRef.current !== requestId
+            )
+              return;
+            setProgress({ requestId, progress: event.payload });
+          }
+        );
+      } catch (error) {
+        unlistenDiagnostics();
+        throw error;
+      }
+      if (listenerGeneration !== listenerGenerationRef.current) {
+        unlistenDiagnostics();
+        unlistenProgress();
+        return requestId;
+      }
+      unlistenRefs.current = [unlistenDiagnostics, unlistenProgress];
       return requestId;
-    }
-    unlistenRefs.current = [unlistenDiagnostics, unlistenProgress];
-    return requestId;
-  }, [stop]);
+    },
+    [stop]
+  );
 
   const copy = useCallback(async () => {
     if (logs.length === 0) return;
@@ -91,6 +101,5 @@ export const useSshDiagnostics = () => {
     start,
     stop,
     copy,
-    currentRequestId: () => requestIdRef.current,
   };
 };

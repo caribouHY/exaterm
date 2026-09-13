@@ -18,7 +18,9 @@ interface ConnectionProgressDialogProps {
   target: string;
   statusLabel: string;
   cancelling: boolean;
-  cancelError: string;
+  cancelDisabled?: boolean;
+  error: string;
+  retryingFinalization?: boolean;
   roleLabel?: string;
   diagnostics?: {
     logs: SshDiagnosticEntry[];
@@ -28,6 +30,7 @@ interface ConnectionProgressDialogProps {
     onCopy: () => void;
   };
   onCancel: () => void;
+  onRetry?: () => void;
 }
 
 export function ConnectionProgressDialog({
@@ -35,10 +38,13 @@ export function ConnectionProgressDialog({
   target,
   statusLabel,
   cancelling,
-  cancelError,
+  cancelDisabled = false,
+  error,
+  retryingFinalization = false,
   roleLabel,
   diagnostics,
   onCancel,
+  onRetry,
 }: ConnectionProgressDialogProps) {
   const { t } = useTranslation();
   const titleId = `${connectionType}-connection-progress-title`;
@@ -62,17 +68,28 @@ export function ConnectionProgressDialog({
             {roleLabel && <span className="connection-progress-dialog__role">{roleLabel}</span>}
             <ModalBusy>{statusLabel}</ModalBusy>
           </div>
-          {cancelError && (
+          {error && (
             <div role="alert">
-              <FeedbackMessage tone="error">{cancelError}</FeedbackMessage>
+              <FeedbackMessage tone="error">{error}</FeedbackMessage>
             </div>
           )}
           {diagnostics && <SshDiagnosticsPanel {...diagnostics} />}
         </ModalBody>
         <ModalFooter className="connection-dialog__footer">
-          <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={cancelling}>
-            {cancelling ? t("connection.progress_cancelling") : t("connection.cancel")}
-          </button>
+          {retryingFinalization ? (
+            <button type="button" className="btn btn-primary" onClick={onRetry}>
+              {t("connection.retry_session_registration")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={onCancel}
+              disabled={cancelling || cancelDisabled}
+            >
+              {cancelling ? t("connection.progress_cancelling") : t("connection.cancel")}
+            </button>
+          )}
         </ModalFooter>
       </ModalFrame>
     </div>

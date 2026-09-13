@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useRef,
-  type Dispatch,
-  type MutableRefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppConfig,
@@ -28,30 +22,22 @@ import {
   usesPrivateKeyAuthentication,
 } from "./connectionProfileUtils";
 import {
+  consumeSshCredential,
   createConnectionRequestId,
   isConnectionCancellation,
   isCurrentConnectionAttempt,
-  type BasicConnectionType,
   type ConnectionAttemptAction,
 } from "./connectionAttemptModel";
-import {
-  consumeSshCredential,
-  isCurrentSshConnectionAttempt,
-  isSshConnectionCancellation,
-  type SshConnectionAttemptAction,
-} from "./sshConnectionAttemptModel";
 import { parseConnectionPort } from "./connectionFormValidation";
+import { finalizeConnectionSession } from "./connectionFinalization";
 
 interface UseConnectionActionsParams {
   tab: ConnectionType;
   canConnect: boolean;
-  connectingRef: MutableRefObject<boolean>;
-  setConnecting: (value: boolean) => void;
   setError: (value: string) => void;
   credentialPrompt: SshCredentialPrompt | null;
   setCredentialPrompt: Dispatch<SetStateAction<SshCredentialPrompt | null>>;
-  sshAttemptDispatch: Dispatch<SshConnectionAttemptAction>;
-  connectionAttemptDispatch: Dispatch<ConnectionAttemptAction>;
+  attemptDispatch: Dispatch<ConnectionAttemptAction>;
   selectedProfileIds: ProfileSelectionState;
   sshProfiles: SavedConnection[];
   ssh: {
@@ -80,9 +66,8 @@ interface UseConnectionActionsParams {
     terminalMode: TerminalMode;
   };
   diagnostics: {
-    start: () => Promise<string>;
+    start: (requestId: string) => Promise<string>;
     stop: () => void;
-    currentRequestId: () => string | null;
   };
   onConnect: (
     type: ConnectionType,
@@ -124,16 +109,13 @@ const recordConnectionHistory = (input: ConnectionHistoryRecordInput) => {
   });
 };
 
-export const useConnectionActions = ({
+export const useConnectionAttemptController = ({
   tab,
   canConnect,
-  connectingRef,
-  setConnecting,
   setError,
   credentialPrompt,
   setCredentialPrompt,
-  sshAttemptDispatch,
-  connectionAttemptDispatch,
+  attemptDispatch,
   selectedProfileIds,
   sshProfiles,
   ssh,
@@ -144,24 +126,27 @@ export const useConnectionActions = ({
   t,
 }: UseConnectionActionsParams) => {
   const jumpCredentialRef = useRef("");
-  const sshConnectInvokedRef = useRef(false);
-  const cancellingRequestIdRef = useRef<string | null>(null);
   const connectionAttemptRef = useRef<{
-    connectionType: BasicConnectionType;
+    connectionType: ConnectionType;
     requestId: string;
     cancelPending: boolean;
     connectInvoked: boolean;
+    finalizationPending: boolean;
+    connectedSession: {
+      type: ConnectionType;
+      sessionId: string;
+      title: string;
+      logState: ConnectionLogState;
+      encoding: Encoding;
+      terminalMode: TerminalMode;
+      connectionInfo?: WorkspaceConnectionInfo;
+      history?: ConnectionHistoryRecordInput;
+    } | null;
   } | null>(null);
-  const setBusy = useCallback(
-    (value: boolean) => {
-      connectingRef.current = value;
-      setConnecting(value);
-    },
-    [connectingRef, setConnecting]
-  );
 
   const openCredentialPrompt = useCallback(
     (
+      requestId: string,
       phase: "jump" | "target",
       promptHost: string,
       sshPort: number,
@@ -171,6 +156,7 @@ export const useConnectionActions = ({
       targetPort?: number
     ) => {
       setCredentialPrompt({
+        requestId,
         phase,
         host: promptHost,
         port: sshPort,
@@ -181,9 +167,67 @@ export const useConnectionActions = ({
         value: "",
         error: "",
       });
-      sshAttemptDispatch({ type: "credential" });
+      attemptDispatch({ type: "credential", requestId });
     },
-    [setCredentialPrompt, sshAttemptDispatch]
+    [attemptDispatch, setCredentialPrompt]
+  );
+
+  const finishAttempt = useCallback(
+    (requestId: string) => {
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
+      const connectionType = connectionAttemptRef.current?.connectionType;
+      jumpCredentialRef.current = "";
+      connectionAttemptRef.current = null;
+      setCredentialPrompt(null);
+      if (connectionType === "ssh") diagnostics.stop();
+      attemptDispatch({ type: "finish", requestId });
+    },
+    [attemptDispatch, diagnostics, setCredentialPrompt]
+  );
+
+  const finalizeConnectedSession = useCallback(
+    async (
+      requestId: string,
+      connectedSession: NonNullable<
+        NonNullable<typeof connectionAttemptRef.current>["connectedSession"]
+      >
+    ) => {
+      const attempt = connectionAttemptRef.current;
+      if (attempt?.requestId !== requestId || attempt.finalizationPending) return;
+      attempt.connectedSession = connectedSession;
+      attempt.cancelPending = false;
+      attempt.finalizationPending = true;
+      attemptDispatch({ type: "finalize", requestId });
+      const history = connectedSession.history;
+      try {
+        await finalizeConnectionSession({
+          registerSession: async () => {
+            await onConnect(
+              connectedSession.type,
+              connectedSession.sessionId,
+              connectedSession.title,
+              connectedSession.logState,
+              connectedSession.encoding,
+              connectedSession.terminalMode,
+              connectedSession.connectionInfo
+            );
+          },
+          recordHistory: history ? () => recordConnectionHistory(history) : undefined,
+        });
+        if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
+        finishAttempt(requestId);
+      } catch (error: unknown) {
+        const currentAttempt = connectionAttemptRef.current;
+        if (currentAttempt?.requestId !== requestId) return;
+        currentAttempt.finalizationPending = false;
+        attemptDispatch({
+          type: "finalize_failed",
+          requestId,
+          error: getConnectionErrorMessage(error, t, t("connection.session_registration_failed")),
+        });
+      }
+    },
+    [attemptDispatch, finishAttempt, onConnect, t]
   );
 
   const performSshConnect = useCallback(
@@ -198,7 +242,9 @@ export const useConnectionActions = ({
     ) => {
       const jumpProfile = sshProfiles.find((profile) => profile.id === ssh.jumpProfileId);
       const jumpAuthMethod = normalizeSshAuthMethod(jumpProfile?.auth_method);
-      sshConnectInvokedRef.current = true;
+      const attempt = connectionAttemptRef.current;
+      if (attempt?.requestId !== requestId) return;
+      attempt.connectInvoked = true;
       const result = await invoke<{ session_id: string }>("ssh_connect", {
         options: {
           host: ssh.host,
@@ -219,6 +265,7 @@ export const useConnectionActions = ({
           requestId,
         },
       });
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
       const logState = await startConfiguredConnectionLog(
         startLogOnConnection,
         result.session_id,
@@ -236,24 +283,24 @@ export const useConnectionActions = ({
           : null,
         jump_profile_id: ssh.jumpProfileId || null,
       };
-      await onConnect(
-        "ssh",
-        result.session_id,
-        `${ssh.username}@${ssh.host}`,
+      await finalizeConnectedSession(requestId, {
+        type: "ssh",
+        sessionId: result.session_id,
+        title: `${ssh.username}@${ssh.host}`,
         logState,
-        ssh.encoding,
-        ssh.terminalMode,
-        connectionInfo
-      );
-      if (shouldRecordConnectionHistory(selectedProfileIds.ssh)) {
-        recordConnectionHistory({
-          connection_info: connectionInfo,
-          encoding: ssh.encoding,
-          terminal_mode: ssh.terminalMode,
-        });
-      }
+        encoding: ssh.encoding,
+        terminalMode: ssh.terminalMode,
+        connectionInfo,
+        history: shouldRecordConnectionHistory(selectedProfileIds.ssh)
+          ? {
+              connection_info: connectionInfo,
+              encoding: ssh.encoding,
+              terminal_mode: ssh.terminalMode,
+            }
+          : undefined,
+      });
     },
-    [onConnect, selectedProfileIds.ssh, ssh, sshProfiles]
+    [finalizeConnectedSession, selectedProfileIds.ssh, ssh, sshProfiles]
   );
 
   const continueSshConnect = useCallback(
@@ -269,7 +316,7 @@ export const useConnectionActions = ({
         (ssh.authMethod === "auto" && !effectivePrivateKeyPath)
       ) {
         const startLogOnConnection = await getStartLogOnConnectionPreference();
-        if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+        if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
         jumpCredentialRef.current = "";
         await performSshConnect(
           startLogOnConnection,
@@ -291,7 +338,7 @@ export const useConnectionActions = ({
       } catch (error: unknown) {
         if (ssh.authMethod !== "auto") throw error;
         const startLogOnConnection = await getStartLogOnConnectionPreference();
-        if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+        if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
         jumpCredentialRef.current = "";
         await performSshConnect(
           startLogOnConnection,
@@ -304,9 +351,10 @@ export const useConnectionActions = ({
         );
         return;
       }
-      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
       if (requiresPassphrase) {
         openCredentialPrompt(
+          requestId,
           "target",
           ssh.host,
           sshPort,
@@ -314,12 +362,11 @@ export const useConnectionActions = ({
           ssh.authMethod,
           effectivePrivateKeyPath
         );
-        setBusy(false);
         return;
       }
 
       const startLogOnConnection = await getStartLogOnConnectionPreference();
-      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
       jumpCredentialRef.current = "";
       await performSshConnect(
         startLogOnConnection,
@@ -331,7 +378,7 @@ export const useConnectionActions = ({
         requestId
       );
     },
-    [diagnostics, openCredentialPrompt, performSshConnect, setBusy, ssh]
+    [openCredentialPrompt, performSshConnect, ssh]
   );
 
   const prepareJumpCredentialAndConnect = useCallback(
@@ -357,6 +404,7 @@ export const useConnectionActions = ({
 
       const promptForJumpCredential = () => {
         openCredentialPrompt(
+          requestId,
           "jump",
           jumpProfile.host ?? "",
           jumpPort,
@@ -365,7 +413,6 @@ export const useConnectionActions = ({
           effectiveJumpPrivateKeyPath,
           sshPort
         );
-        setBusy(false);
       };
 
       if (
@@ -386,7 +433,7 @@ export const useConnectionActions = ({
         await continueSshConnect(sshPort, requestId, "");
         return;
       }
-      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
       if (requiresPassphrase) {
         promptForJumpCredential();
         return;
@@ -394,42 +441,18 @@ export const useConnectionActions = ({
 
       await continueSshConnect(sshPort, requestId, "");
     },
-    [continueSshConnect, diagnostics, openCredentialPrompt, setBusy, ssh, sshProfiles, t]
-  );
-
-  const finishSshAttempt = useCallback(() => {
-    jumpCredentialRef.current = "";
-    sshConnectInvokedRef.current = false;
-    cancellingRequestIdRef.current = null;
-    setCredentialPrompt(null);
-    diagnostics.stop();
-    sshAttemptDispatch({ type: "finish" });
-    setBusy(false);
-  }, [diagnostics, setBusy, setCredentialPrompt, sshAttemptDispatch]);
-
-  const finishConnectionAttempt = useCallback(
-    (requestId: string) => {
-      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
-      connectionAttemptRef.current = null;
-      connectionAttemptDispatch({ type: "finish", requestId });
-      setBusy(false);
-    },
-    [connectionAttemptDispatch, setBusy]
+    [continueSshConnect, openCredentialPrompt, ssh, sshProfiles, t]
   );
 
   const handleCredentialSubmit = useCallback(async () => {
-    if (!credentialPrompt || connectingRef.current) return;
-    const requestId = diagnostics.currentRequestId();
-    if (!requestId) {
-      finishSshAttempt();
-      return;
-    }
+    if (!credentialPrompt) return;
+    const requestId = credentialPrompt.requestId;
+    if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
 
     const credential = consumeSshCredential(credentialPrompt.value, () => {
       setCredentialPrompt(null);
     });
-    sshAttemptDispatch({ type: "resume" });
-    setBusy(true);
+    attemptDispatch({ type: "resume", requestId });
     try {
       if (credentialPrompt.phase === "jump") {
         jumpCredentialRef.current = credential;
@@ -442,7 +465,7 @@ export const useConnectionActions = ({
       }
 
       const startLogOnConnection = await getStartLogOnConnectionPreference();
-      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
       const jumpCredential = jumpCredentialRef.current;
       jumpCredentialRef.current = "";
       await performSshConnect(
@@ -455,69 +478,53 @@ export const useConnectionActions = ({
         requestId
       );
     } catch (error: unknown) {
-      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
       const message = getConnectionErrorMessage(error, t, t("connection.error"));
-      finishSshAttempt();
-      if (!isSshConnectionCancellation(error)) setError(message);
+      finishAttempt(requestId);
+      if (!isConnectionCancellation(error)) setError(message);
     }
   }, [
-    connectingRef,
+    attemptDispatch,
     credentialPrompt,
     continueSshConnect,
-    diagnostics,
     performSshConnect,
-    finishSshAttempt,
-    setBusy,
+    finishAttempt,
     setCredentialPrompt,
     setError,
-    sshAttemptDispatch,
     t,
   ]);
 
   const handleConnect = useCallback(async () => {
-    if (connectingRef.current || !canConnect) return;
+    if (connectionAttemptRef.current || !canConnect) return;
 
     const validatedSshPort = tab === "ssh" ? parseConnectionPort(ssh.port) : 22;
     const validatedTelnetPort = tab === "telnet" ? parseConnectionPort(telnet.port) : 23;
     if (validatedSshPort === null || validatedTelnetPort === null) return;
 
     setError("");
-    setBusy(true);
-    let sshRequestId: string | null = null;
-    let connectionRequestId: string | null = null;
+    const requestId = createConnectionRequestId();
+    connectionAttemptRef.current = {
+      connectionType: tab,
+      requestId,
+      cancelPending: false,
+      connectInvoked: false,
+      finalizationPending: false,
+      connectedSession: null,
+    };
+    attemptDispatch({ type: "begin", connectionType: tab, requestId });
     try {
       if (tab === "ssh") {
-        sshConnectInvokedRef.current = false;
-        cancellingRequestIdRef.current = null;
         jumpCredentialRef.current = "";
-        sshAttemptDispatch({ type: "begin" });
-        const diagnosticsStart = diagnostics.start();
-        sshRequestId = diagnostics.currentRequestId();
-        const requestId = await diagnosticsStart;
-        if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
-        sshAttemptDispatch({ type: "started", requestId });
-        const sshPort = validatedSshPort;
-
-        await prepareJumpCredentialAndConnect(sshPort, requestId);
+        await diagnostics.start(requestId);
+        if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
+        attemptDispatch({ type: "connected", requestId });
+        await prepareJumpCredentialAndConnect(validatedSshPort, requestId);
         return;
       }
 
       diagnostics.stop();
-      const connectionType: BasicConnectionType = tab === "telnet" ? "telnet" : "serial";
-      connectionRequestId = createConnectionRequestId();
-      connectionAttemptRef.current = {
-        connectionType,
-        requestId: connectionRequestId,
-        cancelPending: false,
-        connectInvoked: false,
-      };
-      connectionAttemptDispatch({
-        type: "begin",
-        connectionType,
-        requestId: connectionRequestId,
-      });
       const startLogOnConnection = await getStartLogOnConnectionPreference();
-      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, connectionRequestId)) return;
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
 
       if (tab === "telnet") {
         const parsedTelnetPort = validatedTelnetPort;
@@ -529,9 +536,10 @@ export const useConnectionActions = ({
             cols: 120,
             rows: 30,
             encoding: telnet.encoding,
-            requestId: connectionRequestId,
+            requestId,
           },
         });
+        if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
         const logState = await startConfiguredConnectionLog(
           startLogOnConnection,
           sessionId,
@@ -543,23 +551,22 @@ export const useConnectionActions = ({
           host: telnet.host,
           port: parsedTelnetPort,
         };
-        await onConnect(
-          "telnet",
+        await finalizeConnectedSession(requestId, {
+          type: "telnet",
           sessionId,
-          `${telnet.host}:${parsedTelnetPort}`,
+          title: `${telnet.host}:${parsedTelnetPort}`,
           logState,
-          telnet.encoding,
-          telnet.terminalMode,
-          connectionInfo
-        );
-        if (shouldRecordConnectionHistory(selectedProfileIds.telnet)) {
-          recordConnectionHistory({
-            connection_info: connectionInfo,
-            encoding: telnet.encoding,
-            terminal_mode: telnet.terminalMode,
-          });
-        }
-        finishConnectionAttempt(connectionRequestId);
+          encoding: telnet.encoding,
+          terminalMode: telnet.terminalMode,
+          connectionInfo,
+          history: shouldRecordConnectionHistory(selectedProfileIds.telnet)
+            ? {
+                connection_info: connectionInfo,
+                encoding: telnet.encoding,
+                terminal_mode: telnet.terminalMode,
+              }
+            : undefined,
+        });
         return;
       }
 
@@ -575,135 +582,104 @@ export const useConnectionActions = ({
             flow_control: "none",
           },
           encoding: "utf-8",
-          requestId: connectionRequestId,
+          requestId,
         },
       });
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
       const logState = await startConfiguredConnectionLog(
         startLogOnConnection,
         sessionId,
         "serial",
         serial.selectedPort
       );
-      await onConnect(
-        "serial",
+      await finalizeConnectedSession(requestId, {
+        type: "serial",
         sessionId,
-        serial.selectedPort,
+        title: serial.selectedPort,
         logState,
-        "utf-8",
-        serial.terminalMode
-      );
-      finishConnectionAttempt(connectionRequestId);
+        encoding: "utf-8",
+        terminalMode: serial.terminalMode,
+      });
     } catch (error: unknown) {
-      const staleSshAttempt =
-        tab === "ssh" &&
-        sshRequestId !== null &&
-        !isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), sshRequestId);
-      if (staleSshAttempt) return;
-      const staleConnectionAttempt =
-        tab !== "ssh" &&
-        connectionRequestId !== null &&
-        !isCurrentConnectionAttempt(connectionAttemptRef.current, connectionRequestId);
-      if (staleConnectionAttempt) return;
-      const cancelled =
-        tab === "ssh" ? isSshConnectionCancellation(error) : isConnectionCancellation(error);
+      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
+      const cancelled = isConnectionCancellation(error);
       const message = getConnectionErrorMessage(error, t, t("connection.error"));
-      if (tab === "ssh") finishSshAttempt();
-      else if (connectionRequestId) finishConnectionAttempt(connectionRequestId);
-      else setBusy(false);
+      finishAttempt(requestId);
       if (!cancelled) setError(message);
     }
   }, [
+    attemptDispatch,
     canConnect,
-    connectingRef,
-    connectionAttemptDispatch,
     diagnostics,
-    finishConnectionAttempt,
-    finishSshAttempt,
-    onConnect,
+    finalizeConnectedSession,
+    finishAttempt,
     prepareJumpCredentialAndConnect,
     selectedProfileIds.telnet,
     serial,
-    setBusy,
     setError,
     ssh,
-    sshAttemptDispatch,
-    sshProfiles,
     tab,
     telnet,
     t,
   ]);
 
   const handleCredentialCancel = useCallback(() => {
-    if (connectingRef.current) return;
-    finishSshAttempt();
-  }, [connectingRef, finishSshAttempt]);
-
-  const handleCancelSshConnect = useCallback(async () => {
-    const requestId = diagnostics.currentRequestId();
-    if (!requestId) {
-      finishSshAttempt();
-      return;
-    }
-    if (cancellingRequestIdRef.current === requestId) return;
-    if (!sshConnectInvokedRef.current) {
-      finishSshAttempt();
-      return;
-    }
-
-    cancellingRequestIdRef.current = requestId;
-    sshAttemptDispatch({ type: "cancel" });
-    try {
-      const accepted = await invoke<boolean>("ssh_connect_cancel", { requestId });
-      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
-      if (!accepted) {
-        cancellingRequestIdRef.current = null;
-        sshAttemptDispatch({ type: "resume" });
-      }
-    } catch (error: unknown) {
-      if (!isCurrentSshConnectionAttempt(diagnostics.currentRequestId(), requestId)) return;
-      cancellingRequestIdRef.current = null;
-      sshAttemptDispatch({
-        type: "cancel_failed",
-        error: getConnectionErrorMessage(error, t, t("connection.ssh_cancel_failed")),
-      });
-    }
-  }, [diagnostics, finishSshAttempt, sshAttemptDispatch, t]);
+    if (!credentialPrompt) return;
+    finishAttempt(credentialPrompt.requestId);
+  }, [credentialPrompt, finishAttempt]);
 
   const handleCancelConnection = useCallback(async () => {
     const attempt = connectionAttemptRef.current;
-    if (!attempt || attempt.cancelPending) return;
+    if (!attempt || attempt.cancelPending || attempt.connectedSession) return;
     if (!attempt.connectInvoked) {
-      finishConnectionAttempt(attempt.requestId);
+      finishAttempt(attempt.requestId);
       return;
     }
 
     attempt.cancelPending = true;
-    connectionAttemptDispatch({ type: "cancel", requestId: attempt.requestId });
-    const command =
-      attempt.connectionType === "telnet" ? "telnet_connect_cancel" : "serial_connect_cancel";
+    attemptDispatch({ type: "cancel", requestId: attempt.requestId });
+    const command = `${attempt.connectionType}_connect_cancel`;
     try {
       const accepted = await invoke<boolean>(command, { requestId: attempt.requestId });
-      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, attempt.requestId)) return;
+      const currentAttempt = connectionAttemptRef.current;
+      if (currentAttempt?.requestId !== attempt.requestId || currentAttempt.connectedSession)
+        return;
       if (!accepted) {
-        attempt.cancelPending = false;
-        connectionAttemptDispatch({ type: "resume", requestId: attempt.requestId });
+        currentAttempt.cancelPending = false;
+        attemptDispatch({ type: "resume", requestId: attempt.requestId });
       }
     } catch (error: unknown) {
-      if (!isCurrentConnectionAttempt(connectionAttemptRef.current, attempt.requestId)) return;
-      attempt.cancelPending = false;
-      connectionAttemptDispatch({
+      const currentAttempt = connectionAttemptRef.current;
+      if (currentAttempt?.requestId !== attempt.requestId || currentAttempt.connectedSession)
+        return;
+      currentAttempt.cancelPending = false;
+      attemptDispatch({
         type: "cancel_failed",
         requestId: attempt.requestId,
-        error: getConnectionErrorMessage(error, t, t("connection.cancel_failed")),
+        error: getConnectionErrorMessage(
+          error,
+          t,
+          t(
+            attempt.connectionType === "ssh"
+              ? "connection.ssh_cancel_failed"
+              : "connection.cancel_failed"
+          )
+        ),
       });
     }
-  }, [connectionAttemptDispatch, finishConnectionAttempt, t]);
+  }, [attemptDispatch, finishAttempt, t]);
+
+  const handleRetryFinalization = useCallback(async () => {
+    const attempt = connectionAttemptRef.current;
+    if (!attempt?.connectedSession) return;
+    await finalizeConnectedSession(attempt.requestId, attempt.connectedSession);
+  }, [finalizeConnectedSession]);
 
   return {
     handleConnect,
     handleCredentialSubmit,
     handleCredentialCancel,
-    handleCancelSshConnect,
     handleCancelConnection,
+    handleRetryFinalization,
   };
 };

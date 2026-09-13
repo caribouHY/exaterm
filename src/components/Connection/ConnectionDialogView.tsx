@@ -22,7 +22,7 @@ import type {
   TelnetFormActions,
   TelnetFormState,
 } from "./connectionDialogTypes";
-import type { useConnectionActions } from "./useConnectionActions";
+import type { useConnectionAttemptController } from "./useConnectionAttemptController";
 import type { useSshDiagnostics } from "./useSshDiagnostics";
 
 interface ConnectionDialogViewProps {
@@ -60,7 +60,7 @@ interface ConnectionDialogViewProps {
     onToggleExpanded: () => void;
     onCopy: () => void;
   };
-  connectionActions: ReturnType<typeof useConnectionActions>;
+  connectionActions: ReturnType<typeof useConnectionAttemptController>;
   onClose: () => void;
   onOverlayMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
   onOverlayClick: (event: React.MouseEvent<HTMLDivElement>) => void;

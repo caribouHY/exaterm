@@ -39,6 +39,8 @@ Major frontend areas are:
 
 Terminal views may remount when a tab moves between windows, but a move must not disconnect or recreate the backend session. The destination restores bounded recent output from the backend and resumes live output handling.
 
+The connection dialog owns one active GUI connection attempt through a shared attempt controller. The controller issues the request ID, rejects overlapping starts, coordinates cancellation, and retains a connected session while terminal-tab registration is retried. SSH-specific credential preparation and diagnostics remain protocol-specific, while SSH host-key and handshake authentication prompts remain owned by the backend and the application-level prompt queue.
+
 ## Backend Runtime
 
 Backend state is created in `src-tauri/src/lib.rs` and managed through Tauri `State` values.
