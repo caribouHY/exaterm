@@ -212,7 +212,11 @@ export const useConnectionAttemptController = ({
               connectedSession.connectionInfo
             );
           },
-          recordHistory: history ? () => recordConnectionHistory(history) : undefined,
+          recordHistory: history
+            ? () => {
+                recordConnectionHistory(history);
+              }
+            : undefined,
         });
         if (!isCurrentConnectionAttempt(connectionAttemptRef.current, requestId)) return;
         finishAttempt(requestId);
