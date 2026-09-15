@@ -39,6 +39,18 @@ Major frontend areas are:
 
 Terminal views may remount when a tab moves between windows, but a move must not disconnect or recreate the backend session. The destination restores bounded recent output from the backend and resumes live output handling.
 
+### GUI Connection Attempts
+
+The connection-attempt controller owns the authoritative state of one GUI connection attempt. It applies transitions synchronously and publishes a read-only snapshot to React. The dialog owns editable form values and renders the snapshot; it does not maintain a second attempt reducer or execution flags. Connection inputs are captured when an attempt starts.
+
+The controller issues request IDs and coordinates preparation, credential submission, cancellation, and session registration. Each pre-connection credential prompt also has its own ID, and submission consumes that prompt synchronously before asynchronous work starts. Secret values are excluded from the attempt snapshot and reducer; they remain in the credential input and short-lived execution state.
+
+SSH credential preparation and protocol command construction remain separate from common attempt orchestration. Diagnostics subscribe using the controller's request ID and reject callbacks from obsolete subscriptions. Handshake authentication and host-key confirmation remain owned by Rust and the application-level SSH prompt queue.
+
+Backend connection success starts finalization. A late cancellation response cannot reverse that transition. Logging starts at most once for the new session, terminal registration can retry using that same session, and history is recorded only after successful registration. A logging or history failure does not discard a successful connection. Existing sessions, terminal buffers, and logs are not reset by attempt transitions.
+
+When the dialog is disposed, pending preparation is abandoned and an in-flight connection is cancelled where possible. A late successful connection that has not entered terminal registration is released individually. If registration is already pending, the controller waits for its result: successful registration transfers ownership to the workspace, while failure releases the attempt's session after disposal. Normal dialog closure caused by successful registration does not disconnect that session.
+
 ## Backend Runtime
 
 Backend state is created in `src-tauri/src/lib.rs` and managed through Tauri `State` values.
