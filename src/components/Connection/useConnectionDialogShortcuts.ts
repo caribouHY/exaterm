@@ -7,7 +7,7 @@ interface UseConnectionDialogShortcutsParams {
   credentialPrompt: SshCredentialPrompt | null;
   onClose: () => void;
   onCloseCredentialPrompt: () => void;
-  onCredentialSubmit: () => void;
+
   onConnect: () => void;
 }
 
@@ -17,13 +17,13 @@ export const useConnectionDialogShortcuts = ({
   credentialPrompt,
   onClose,
   onCloseCredentialPrompt,
-  onCredentialSubmit,
+
   onConnect,
 }: UseConnectionDialogShortcutsParams) => {
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
       event.preventDefault();
-      if (connecting) return;
+      if (connecting && !credentialPrompt) return;
       if (credentialPrompt) {
         onCloseCredentialPrompt();
         return;
@@ -33,9 +33,8 @@ export const useConnectionDialogShortcuts = ({
 
     const handleSubmitShortcut = (event: KeyboardEvent) => {
       event.preventDefault();
-      if (connecting) return;
+      if (connecting && !credentialPrompt) return;
       if (credentialPrompt) {
-        onCredentialSubmit();
         return;
       }
       if (!canConnect) return;
@@ -56,13 +55,5 @@ export const useConnectionDialogShortcuts = ({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [
-    canConnect,
-    connecting,
-    credentialPrompt,
-    onClose,
-    onCloseCredentialPrompt,
-    onConnect,
-    onCredentialSubmit,
-  ]);
+  }, [canConnect, connecting, credentialPrompt, onClose, onCloseCredentialPrompt, onConnect]);
 };

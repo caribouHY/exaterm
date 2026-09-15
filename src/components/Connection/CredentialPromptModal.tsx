@@ -1,7 +1,7 @@
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
-  FeedbackMessage,
   ModalBody,
   ModalBusy,
   ModalDescription,
@@ -26,8 +26,7 @@ interface CredentialPromptModalProps {
     onCopy: () => void;
   };
   onClose: () => void;
-  onSubmit: () => void;
-  onValueChange: (value: string) => void;
+  onSubmit: (value: string) => void;
 }
 
 export function CredentialPromptModal({
@@ -36,9 +35,24 @@ export function CredentialPromptModal({
   diagnostics,
   onClose,
   onSubmit,
-  onValueChange,
 }: CredentialPromptModalProps) {
   const { t } = useTranslation();
+  const [value, setValue] = useState("");
+  const submit = () => {
+    const credential = value;
+    setValue("");
+    onSubmit(credential);
+  };
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        submit();
+      }
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  });
   const promptsForKeyPassphrase =
     credentialPrompt.authMethod === "auto" || credentialPrompt.authMethod === "public_key";
   const credentialTitle = promptsForKeyPassphrase
@@ -90,23 +104,19 @@ export function CredentialPromptModal({
               autoFocus
               autoComplete="off"
               disabled={connecting}
-              value={credentialPrompt.value}
+              value={value}
               onChange={(event) => {
-                onValueChange(event.target.value);
+                setValue(event.target.value);
               }}
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
+                if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
                   e.preventDefault();
-                  onSubmit();
+                  submit();
                 }
               }}
             />
           </div>
-          {credentialPrompt.error && (
-            <FeedbackMessage tone="error" className="connection-dialog__error">
-              {credentialPrompt.error}
-            </FeedbackMessage>
-          )}
+
           <SshDiagnosticsPanel
             logs={diagnostics.logs}
             expanded={diagnostics.expanded}
@@ -125,7 +135,7 @@ export function CredentialPromptModal({
               <button className="btn btn-ghost" onClick={onClose}>
                 {t("connection.cancel")}
               </button>
-              <button className="btn btn-primary" onClick={onSubmit}>
+              <button className="btn btn-primary" onClick={submit}>
                 {t("connection.connect")}
               </button>
             </>

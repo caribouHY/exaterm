@@ -18,6 +18,8 @@ interface ConnectionProgressDialogProps {
   target: string;
   statusLabel: string;
   cancelling: boolean;
+  finalizing?: boolean;
+  onRetry?: () => void;
   cancelError: string;
   roleLabel?: string;
   diagnostics?: {
@@ -35,6 +37,8 @@ export function ConnectionProgressDialog({
   target,
   statusLabel,
   cancelling,
+  finalizing = false,
+  onRetry,
   cancelError,
   roleLabel,
   diagnostics,
@@ -70,8 +74,17 @@ export function ConnectionProgressDialog({
           {diagnostics && <SshDiagnosticsPanel {...diagnostics} />}
         </ModalBody>
         <ModalFooter className="connection-dialog__footer">
-          <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={cancelling}>
-            {cancelling ? t("connection.progress_cancelling") : t("connection.cancel")}
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={onRetry ?? onCancel}
+            disabled={cancelling || finalizing}
+          >
+            {onRetry
+              ? t("connection.retry_registration")
+              : cancelling
+                ? t("connection.progress_cancelling")
+                : t("connection.cancel")}
           </button>
         </ModalFooter>
       </ModalFrame>

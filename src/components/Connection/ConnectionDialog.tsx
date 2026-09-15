@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
@@ -16,7 +16,6 @@ import { ConnectionProgressDialog } from "./ConnectionProgressDialog";
 import { CredentialPromptModal } from "./CredentialPromptModal";
 import type {
   ConnectionDialogProps,
-  SshCredentialPrompt,
   SshFormActions,
   SshFormState,
   TelnetFormActions,
@@ -37,11 +36,7 @@ import { useConnectionProfileSelection } from "./useConnectionProfileSelection";
 import { useSavedConnectionProfiles } from "./useSavedConnectionProfiles";
 import { useSshDiagnostics } from "./useSshDiagnostics";
 import { useStartupConnectionRequest } from "./useStartupConnectionRequest";
-import {
-  initialSshConnectionAttemptState,
-  sshConnectionAttemptReducer,
-} from "./sshConnectionAttemptModel";
-import { connectionAttemptReducer, initialConnectionAttemptState } from "./connectionAttemptModel";
+
 import {
   isActiveConnectionFormValid,
   validateSerialConnectionForm,
@@ -59,21 +54,11 @@ export default function ConnectionDialog({
 }: ConnectionDialogProps) {
   const { t, i18n } = useTranslation();
   const overlayMouseDownStartedRef = useRef(false);
-  const connectingRef = useRef(false);
+
   const startupRequestHandledRef = useRef(false);
   const initialValuesAppliedRef = useRef(false);
   const [tab, setTab] = useState<ConnectionType>("ssh");
-  const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
-  const [credentialPrompt, setCredentialPrompt] = useState<SshCredentialPrompt | null>(null);
-  const [sshAttempt, dispatchSshAttempt] = useReducer(
-    sshConnectionAttemptReducer,
-    initialSshConnectionAttemptState
-  );
-  const [connectionAttempt, dispatchConnectionAttempt] = useReducer(
-    connectionAttemptReducer,
-    initialConnectionAttemptState
-  );
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [selectedProfileIds, setSelectedProfileIds] = useState({ ssh: "", telnet: "" });
   const [selectedHistoryIds, setSelectedHistoryIds] = useState({ ssh: "", telnet: "" });
@@ -121,10 +106,6 @@ export default function ConnectionDialog({
       return ssh === current.ssh && telnet === current.telnet ? current : { ssh, telnet };
     });
   }, [connectionHistory.sshEntries, connectionHistory.telnetEntries]);
-
-  useEffect(() => {
-    connectingRef.current = connecting;
-  }, [connecting]);
 
   const loadConfig = useCallback(async () => {
     const loaded = await invoke<AppConfig>("config_load");
@@ -412,16 +393,10 @@ export default function ConnectionDialog({
   };
   const canConnect = isActiveConnectionFormValid(tab, formValidation);
 
-  const connectionActions = useConnectionActions({
+  const connectionController = useConnectionActions({
     tab,
     canConnect,
-    connectingRef,
-    setConnecting,
-    setError,
-    credentialPrompt,
-    setCredentialPrompt,
-    sshAttemptDispatch: dispatchSshAttempt,
-    connectionAttemptDispatch: dispatchConnectionAttempt,
+
     selectedProfileIds,
     sshProfiles,
     ssh: {
@@ -453,6 +428,17 @@ export default function ConnectionDialog({
     onConnect,
     t,
   });
+
+  const connectionActions = {
+    ...connectionController,
+    handleConnect: () => {
+      setError("");
+      return connectionController.handleConnect();
+    },
+  };
+  const attempt = connectionController.snapshot;
+  const credentialPrompt = attempt.prompt;
+  const connecting = attempt.status !== "editing";
 
   const resetDirectSsh = useCallback(
     (request: Extract<NonNullable<typeof startupRequest>, { kind: "ssh" }>) => {
@@ -512,20 +498,13 @@ export default function ConnectionDialog({
     void connectionActions.handleConnect();
   }, [connectionActions, pendingStartupConnect]);
 
-  useEffect(() => {
-    if (!diagnostics.progress) return;
-    dispatchSshAttempt({ type: "progress", ...diagnostics.progress });
-  }, [diagnostics.progress]);
-
   useConnectionDialogShortcuts({
     connecting,
     canConnect,
     credentialPrompt,
     onClose,
     onCloseCredentialPrompt: connectionActions.handleCredentialCancel,
-    onCredentialSubmit: () => {
-      void connectionActions.handleCredentialSubmit();
-    },
+
     onConnect: () => {
       void connectionActions.handleConnect();
     },
@@ -557,70 +536,66 @@ export default function ConnectionDialog({
   if (credentialPrompt) {
     return (
       <CredentialPromptModal
+        key={credentialPrompt.promptId}
         credentialPrompt={credentialPrompt}
-        connecting={connecting}
+        connecting={false}
         diagnostics={diagnosticsPanelProps}
-        onClose={connectionActions.handleCredentialCancel}
-        onSubmit={() => {
-          void connectionActions.handleCredentialSubmit();
+        onClose={() => {
+          void connectionActions.handleCredentialCancel();
         }}
-        onValueChange={(value) => {
-          setCredentialPrompt({
-            ...credentialPrompt,
-            value,
-            error: "",
-          });
-        }}
+        onSubmit={(value) =>
+          connectionActions.handleCredentialSubmit(
+            credentialPrompt.requestId,
+            credentialPrompt.promptId,
+            value
+          )
+        }
       />
     );
   }
 
-  if (tab === "ssh" && sshAttempt.status !== "editing") {
-    const sshProgressLabelKey =
-      sshAttempt.status === "cancelling"
-        ? "connection.progress_cancelling"
-        : sshAttempt.status === "preparing" || sshAttempt.progress === null
-          ? "connection.progress_preparing"
-          : `connection.ssh_progress_${sshAttempt.progress.phase}`;
-    return (
-      <ConnectionProgressDialog
-        connectionType="ssh"
-        target={`${username}@${host}:${port}`}
-        statusLabel={t(sshProgressLabelKey)}
-        cancelling={sshAttempt.status === "cancelling"}
-        cancelError={sshAttempt.cancelError}
-        roleLabel={sshAttempt.progress?.target === "jump" ? t("connection.ssh_progress_jump") : ""}
-        diagnostics={diagnosticsPanelProps}
-        onCancel={() => {
-          void connectionActions.handleCancelSshConnect();
-        }}
-      />
-    );
-  }
-
-  if (connectionAttempt.status !== "editing" && connectionAttempt.connectionType) {
-    const connectionType = connectionAttempt.connectionType;
-    const target = connectionType === "telnet" ? `${telnetHost}:${telnetPort}` : selectedPort;
-    const statusLabelKey =
-      connectionAttempt.status === "cancelling"
-        ? "connection.progress_cancelling"
-        : connectionType === "serial"
-          ? "connection.serial_progress_opening"
-          : "connection.progress_connecting";
+  if (attempt.status !== "editing" && attempt.connectionType) {
+    const connectionType = attempt.connectionType;
+    const progress =
+      diagnostics.progress?.requestId === attempt.requestId ? diagnostics.progress.progress : null;
+    const finalizing = attempt.status === "finalizing" || attempt.status === "complete";
+    const failed = attempt.status === "finalization_failed";
+    const statusKey = failed
+      ? "connection.registration_failed"
+      : finalizing
+        ? "connection.progress_finalizing"
+        : attempt.status === "cancelling"
+          ? "connection.progress_cancelling"
+          : attempt.status === "preparing"
+            ? "connection.progress_preparing"
+            : connectionType === "ssh" && progress
+              ? `connection.ssh_progress_${progress.phase}`
+              : connectionType === "serial"
+                ? "connection.serial_progress_opening"
+                : "connection.progress_connecting";
     return (
       <ConnectionProgressDialog
         connectionType={connectionType}
-        target={target}
-        statusLabel={t(statusLabelKey)}
-        cancelling={connectionAttempt.status === "cancelling"}
-        cancelError={connectionAttempt.cancelError}
+        target={attempt.target}
+        statusLabel={t(statusKey)}
+        cancelling={attempt.status === "cancelling"}
+        finalizing={finalizing}
+        cancelError={attempt.error || attempt.cancelError}
+        roleLabel={progress?.target === "jump" ? t("connection.ssh_progress_jump") : ""}
+        diagnostics={connectionType === "ssh" ? diagnosticsPanelProps : undefined}
+        onRetry={
+          failed
+            ? () => {
+                void connectionActions.retryRegistration();
+              }
+            : undefined
+        }
         onCancel={() => {
           void connectionActions.handleCancelConnection();
         }}
       />
     );
   }
-
   const sshFormState: SshFormState = {
     selectedProfileId: selectedProfileIds.ssh,
     selectedHistoryId: selectedHistoryIds.ssh,
@@ -755,7 +730,7 @@ export default function ConnectionDialog({
       }}
       connecting={connecting}
       canConnect={canConnect}
-      error={error}
+      error={error || attempt.error}
       historyError={
         connectionHistory.error
           ? t(
