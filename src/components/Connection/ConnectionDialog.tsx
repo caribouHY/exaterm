@@ -302,7 +302,9 @@ export default function ConnectionDialog({
   const handleDeleteHistory = async (connectionType: "ssh" | "telnet") => {
     const entryId = connectionType === "ssh" ? selectedHistoryIds.ssh : selectedHistoryIds.telnet;
     if (!entryId || !(await connectionHistory.deleteEntry(entryId))) return;
-    setSelectedHistoryIds((current) => ({ ...current, [connectionType]: "" }));
+    setSelectedHistoryIds((current) =>
+      connectionType === "ssh" ? { ...current, ssh: "" } : { ...current, telnet: "" }
+    );
   };
 
   const savedProfiles = useSavedConnectionProfiles({ setConfig, setError, t });
@@ -354,7 +356,8 @@ export default function ConnectionDialog({
   };
 
   const handleDeleteProfile = async (connectionType: "ssh" | "telnet") => {
-    const selectedProfileId = selectedProfileIds[connectionType];
+    const selectedProfileId =
+      connectionType === "ssh" ? selectedProfileIds.ssh : selectedProfileIds.telnet;
     if (!selectedProfileId) return;
 
     setError("");
@@ -364,7 +367,9 @@ export default function ConnectionDialog({
         id: selectedProfileId,
       });
       setConfig(savedConfig);
-      setSelectedProfileIds((current) => ({ ...current, [connectionType]: "" }));
+      setSelectedProfileIds((current) =>
+        connectionType === "ssh" ? { ...current, ssh: "" } : { ...current, telnet: "" }
+      );
       if (connectionType === "ssh") {
         profileSelection.resetSshProfileFields();
       } else {
@@ -543,13 +548,13 @@ export default function ConnectionDialog({
         onClose={() => {
           void connectionActions.handleCredentialCancel();
         }}
-        onSubmit={(value) =>
+        onSubmit={(value) => {
           connectionActions.handleCredentialSubmit(
             credentialPrompt.requestId,
             credentialPrompt.promptId,
             value
-          )
-        }
+          );
+        }}
       />
     );
   }

@@ -3,10 +3,13 @@ import { createConnectionAttemptController } from "./connectionAttemptController
 import { createConnectionDependencies, type ConnectionInput } from "./connectionAttemptServices";
 import type { ConnectionDialogProps } from "./connectionDialogTypes";
 import type { ConnectionInvoke } from "./sshConnectionPreparation";
-import { connectionHistoryClient } from "../../features/connection-history/connectionHistoryClient";
+import type { ConnectionHistoryRecordInput } from "../../types";
 
+const { recordHistoryMock } = vi.hoisted(() => ({
+  recordHistoryMock: vi.fn(async (_input: ConnectionHistoryRecordInput) => {}),
+}));
 vi.mock("../../features/connection-history/connectionHistoryClient", () => ({
-  connectionHistoryClient: { record: vi.fn(async () => {}) },
+  connectionHistoryClient: { record: recordHistoryMock },
 }));
 const tick = async () => {
   for (let i = 0; i < 24; i++) await Promise.resolve();
@@ -70,6 +73,18 @@ function setup() {
   );
   return { connection, call, onConnect, diagnostics, controller };
 }
+function currentPrompt(h: ReturnType<typeof setup>) {
+  const current = h.controller.getSnapshot().prompt;
+  expect(current).not.toBeNull();
+  if (current === null) throw new Error("Expected a pending credential prompt.");
+  return current;
+}
+function defaultCall(h: ReturnType<typeof setup>) {
+  const implementation = h.call.getMockImplementation();
+  expect(implementation).toBeDefined();
+  if (!implementation) throw new Error("Expected the default invoke mock implementation.");
+  return implementation;
+}
 const commandCalls = (h: ReturnType<typeof setup>, command: string) =>
   h.call.mock.calls.filter(([name]) => name === command);
 
@@ -79,7 +94,7 @@ describe("production connection services with the real controller", () => {
     const h = setup();
     const pending = h.controller.start("ssh", input());
     await tick();
-    const prompt = h.controller.getSnapshot().prompt!;
+    const prompt = currentPrompt(h);
     h.controller.submitCredential(prompt.requestId, prompt.promptId, "passphrase");
     h.controller.submitCredential(prompt.requestId, prompt.promptId, "duplicate");
     await tick();
@@ -121,7 +136,7 @@ describe("production connection services with the real controller", () => {
         jump_profile_id: null,
       }
     );
-    expect(vi.mocked(connectionHistoryClient.record)).toHaveBeenCalledTimes(1);
+    expect(recordHistoryMock).toHaveBeenCalledTimes(1);
   });
   it("fixes target and jump credential preparation to the input at start", async () => {
     const h = setup();
@@ -142,11 +157,11 @@ describe("production connection services with the real controller", () => {
     data.sshProfiles[0].host = "changed-jump.invalid";
     data.sshProfiles[0].auth_method = "password";
     await tick();
-    const jump = h.controller.getSnapshot().prompt!;
+    const jump = currentPrompt(h);
     expect(jump.host).toBe("jump.invalid");
     h.controller.submitCredential(jump.requestId, jump.promptId, "jump-secret");
     await tick();
-    const target = h.controller.getSnapshot().prompt!;
+    const target = currentPrompt(h);
     expect(target.host).toBe("target.invalid");
     h.controller.submitCredential(jump.requestId, jump.promptId, "stale");
     expect(commandCalls(h, "ssh_connect")).toHaveLength(0);
@@ -162,9 +177,7 @@ describe("production connection services with the real controller", () => {
     });
     h.connection.resolve({ session_id: "session" });
     await pending;
-    expect(vi.mocked(connectionHistoryClient.record).mock.calls[0][0]).not.toHaveProperty(
-      "password"
-    );
+    expect(recordHistoryMock.mock.calls[0][0]).not.toHaveProperty("password");
   });
   for (const authMethod of ["password", "keyboard_interactive", "auto"] as const) {
     it(`keeps backend authentication prompts for ${authMethod}`, async () => {
@@ -182,7 +195,7 @@ describe("production connection services with the real controller", () => {
   }
   it("allows auto authentication to proceed after key probing fails", async () => {
     const h = setup();
-    const original = h.call.getMockImplementation()!;
+    const original = defaultCall(h);
     h.call.mockImplementation(async (command, args) => {
       if (command === "ssh_private_key_requires_passphrase") throw new Error("key");
       return original(command, args);
@@ -197,7 +210,7 @@ describe("production connection services with the real controller", () => {
   });
   it("returns to editing after explicit key probing fails", async () => {
     const h = setup();
-    const original = h.call.getMockImplementation()!;
+    const original = defaultCall(h);
     h.call.mockImplementation(async (command, args) => {
       if (command === "ssh_private_key_requires_passphrase") throw new Error("key");
       return original(command, args);
@@ -209,7 +222,7 @@ describe("production connection services with the real controller", () => {
   it("cancels while the key probe is unresolved", async () => {
     const h = setup();
     const probe = deferred<boolean>();
-    const original = h.call.getMockImplementation()!;
+    const original = defaultCall(h);
     h.call.mockImplementation(async (command, args) =>
       command === "ssh_private_key_requires_passphrase" ? probe.promise : original(command, args)
     );
@@ -234,9 +247,7 @@ describe("production connection services with the real controller", () => {
         ([name]) => name === "logger_start_on_connection"
       );
       expect(logOrder).toBeGreaterThan(connectOrder);
-      expect(vi.mocked(connectionHistoryClient.record)).toHaveBeenCalledTimes(
-        protocol === "telnet" ? 1 : 0
-      );
+      expect(recordHistoryMock).toHaveBeenCalledTimes(protocol === "telnet" ? 1 : 0);
     });
   }
 });

@@ -51,7 +51,9 @@ export function CredentialPromptModal({
       }
     };
     window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
+    return () => {
+      window.removeEventListener("keydown", keydown);
+    };
   });
   const promptsForKeyPassphrase =
     credentialPrompt.authMethod === "auto" || credentialPrompt.authMethod === "public_key";

@@ -48,7 +48,9 @@ export function createSshDiagnosticSubscription(
       if (generation !== current) return requestId;
       await subscribe<SshConnectionProgressEvent>(
         `ssh://connect-progress/${requestId}`,
-        (progress) => onProgress(requestId, progress)
+        (progress) => {
+          onProgress(requestId, progress);
+        }
       );
       return requestId;
     } catch (error) {

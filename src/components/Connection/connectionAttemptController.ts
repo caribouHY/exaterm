@@ -225,7 +225,9 @@ export function createConnectionAttemptController<Input>(deps: AttemptDependenci
       if (snapshot.status === "connecting")
         void deps.cancel(attempt.type, attempt.requestId).catch(() => {});
       if (snapshot.status === "finalization_failed")
-        void disconnect(attempt).then(() => release(attempt));
+        void disconnect(attempt).then(() => {
+          release(attempt);
+        });
     },
   };
 }

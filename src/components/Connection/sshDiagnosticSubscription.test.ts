@@ -14,7 +14,14 @@ function harness() {
   const listen: DiagnosticEventListener = (event, handler) =>
     new Promise((resolve, reject) => {
       const receive = handler as (event: { payload: unknown }) => void;
-      pending.push({ event, emit: (payload) => receive({ payload }), resolve, reject });
+      pending.push({
+        event,
+        emit: (payload) => {
+          receive({ payload });
+        },
+        resolve,
+        reject,
+      });
     });
   const diagnostic = vi.fn();
   const progress = vi.fn();

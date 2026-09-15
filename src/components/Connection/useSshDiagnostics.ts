@@ -25,7 +25,9 @@ export const useSshDiagnostics = () => {
           },
         ]);
       },
-      (requestId, value) => setProgress({ requestId, progress: value })
+      (requestId, value) => {
+        setProgress({ requestId, progress: value });
+      }
     )
   );
   const stop = subscription.stop;

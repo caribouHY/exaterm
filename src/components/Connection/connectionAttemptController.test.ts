@@ -56,6 +56,13 @@ function setup(prepare?: (context: PreparationContext) => Promise<void>) {
   return { controller, deps, plan, connection, cancellation, start };
 }
 
+function currentPrompt(h: ReturnType<typeof setup>) {
+  const current = h.controller.getSnapshot().prompt;
+  expect(current).not.toBeNull();
+  if (current === null) throw new Error("Expected a pending credential prompt.");
+  return current;
+}
+
 describe("connection attempt controller", () => {
   it("synchronously owns a single attempt across start clicks and publishes snapshots", async () => {
     const h = setup();
@@ -72,7 +79,7 @@ describe("connection attempt controller", () => {
     expect(listener).toHaveBeenCalled();
   });
   it("copies connection input before any asynchronous preparation", async () => {
-    const gate = deferred<void>();
+    const gate = deferred<undefined>();
     let target = "";
     const h = setup();
     h.deps.prepare.mockImplementation(async (input) => {
@@ -83,27 +90,27 @@ describe("connection attempt controller", () => {
     const input = { target: "original" };
     const pending = h.controller.start("ssh", input);
     input.target = "changed";
-    gate.resolve();
+    gate.resolve(undefined);
     await tick();
     expect(target).toBe("original");
     h.connection.resolve("session");
     await pending;
   });
   it("consumes a credential prompt synchronously and rejects duplicate submit and new start", async () => {
-    let secret = "";
+    let receivedValue: string | undefined;
     const h = setup(async (context) => {
-      secret = await context.credential(prompt);
+      receivedValue = await context.credential(prompt);
     });
     const pending = h.start();
     await tick();
-    const p = h.controller.getSnapshot().prompt!;
+    const p = currentPrompt(h);
     void h.start();
     h.controller.submitCredential(p.requestId, p.promptId, "secret");
     h.controller.submitCredential(p.requestId, p.promptId, "duplicate");
     expect(h.controller.getSnapshot().prompt).toBeNull();
     expect(JSON.stringify(h.controller.getSnapshot())).not.toContain("secret");
     await tick();
-    expect(secret).toBe("secret");
+    expect(receivedValue).toBe("secret");
     expect(h.plan.connect).toHaveBeenCalledTimes(1);
     h.connection.resolve("session");
     await pending;
@@ -117,10 +124,10 @@ describe("connection attempt controller", () => {
     });
     const pending = h.start();
     await tick();
-    const first = h.controller.getSnapshot().prompt!;
+    const first = currentPrompt(h);
     h.controller.submitCredential(first.requestId, first.promptId, "jump");
     await tick();
-    const second = h.controller.getSnapshot().prompt!;
+    const second = currentPrompt(h);
     expect(second.promptId).not.toBe(first.promptId);
     h.controller.submitCredential(first.requestId, first.promptId, "stale");
     await tick();
@@ -137,12 +144,12 @@ describe("connection attempt controller", () => {
     });
     const firstRun = h.start();
     await tick();
-    const old = h.controller.getSnapshot().prompt!;
+    const old = currentPrompt(h);
     await h.controller.cancel();
     await firstRun;
     const pending = h.start();
     await tick();
-    const current = h.controller.getSnapshot().prompt!;
+    const current = currentPrompt(h);
     h.controller.submitCredential(old.requestId, old.promptId, "stale");
     expect(h.controller.getSnapshot().prompt).toEqual(current);
     h.controller.submitCredential(current.requestId, current.promptId, "new");
@@ -158,7 +165,7 @@ describe("connection attempt controller", () => {
     });
     const pending = h.start();
     await tick();
-    const p = h.controller.getSnapshot().prompt!;
+    const p = currentPrompt(h);
     h.controller.submitCredential(p.requestId, p.promptId, "secret");
     await h.controller.cancel();
     await pending;
@@ -166,11 +173,11 @@ describe("connection attempt controller", () => {
     expect(h.controller.getSnapshot().status).toBe("editing");
   });
   it("cancels pending preparation without a backend cancellation and releases its eventual plan", async () => {
-    const gate = deferred<void>();
+    const gate = deferred<undefined>();
     const h = setup(async () => gate.promise);
     const pending = h.start();
     await h.controller.cancel();
-    gate.resolve();
+    gate.resolve(undefined);
     await pending;
     expect(h.deps.cancel).not.toHaveBeenCalled();
     expect(h.plan.connect).not.toHaveBeenCalled();
@@ -325,7 +332,7 @@ describe("connection attempt controller", () => {
     expect(h.plan.recordHistory).toHaveBeenCalledTimes(1);
   });
   it("waits for pending registration before cleaning up on dispose", async () => {
-    const registration = deferred<void>();
+    const registration = deferred<undefined>();
     const h = setup();
     vi.mocked(h.plan.register).mockReturnValue(registration.promise);
     const pending = h.start();

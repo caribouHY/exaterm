@@ -48,8 +48,12 @@ export function createConnectionDependencies(
   return {
     createRequestId: () => globalThis.crypto.randomUUID(),
     cancel: (type, requestId) => invoke<boolean>(`${type}_connect_cancel`, { requestId }),
-    disconnect: (type, sessionId) => invoke<void>(`${type}_disconnect`, { sessionId }),
-    stopDiagnostics: () => services.diagnostics.stop(),
+    disconnect: async (type, sessionId) => {
+      await invoke(`${type}_disconnect`, { sessionId });
+    },
+    stopDiagnostics: () => {
+      services.diagnostics.stop();
+    },
     errorMessage: (error) =>
       getConnectionErrorMessage(error, services.t, services.t("connection.error")),
     isCancellation: (error) => isConnectionCancellation(error),
@@ -139,11 +143,13 @@ export function createConnectionDependencies(
           await services.onConnect(tab, sessionId, title, log, encoding, terminalMode, info);
         },
         recordHistory: async () => {
-          if (
-            info &&
-            tab !== "serial" &&
-            shouldRecordConnectionHistory(input.selectedProfileIds[tab])
-          )
+          const selectedProfileId =
+            tab === "ssh"
+              ? input.selectedProfileIds.ssh
+              : tab === "telnet"
+                ? input.selectedProfileIds.telnet
+                : "";
+          if (info && shouldRecordConnectionHistory(selectedProfileId))
             await connectionHistoryClient.record({
               connection_info: info,
               encoding,

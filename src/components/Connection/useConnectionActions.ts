@@ -18,7 +18,9 @@ export const useConnectionActions = (
         invoke,
         diagnostics: {
           start: (requestId) => servicesRef.current.diagnostics.start(requestId),
-          stop: () => servicesRef.current.diagnostics.stop(),
+          stop: () => {
+            servicesRef.current.diagnostics.stop();
+          },
         },
         onConnect: (...args) => servicesRef.current.onConnect(...args),
         t: (...args) => servicesRef.current.t(...args),
