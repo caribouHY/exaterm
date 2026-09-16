@@ -354,11 +354,14 @@ pub(crate) async fn connect(
     let read_logger = logger_state.cloned();
     let read_runtime = tokio::runtime::Handle::current();
     let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    let output_app = app.clone();
     let output_terminals = terminals.clone();
     let output_sid = session_id.clone();
     tokio::spawn(async move {
         while let Some(data) = output_rx.recv().await {
+            // Initial sync relies on the snapshot cursor advancing before its live event is visible.
             output_terminals.append_output(&output_sid, &data).await;
+            let _ = output_app.emit(&format!("serial://data/{}", output_sid), data);
         }
     });
 
@@ -372,8 +375,7 @@ pub(crate) async fn connect(
             match port.read(&mut buf) {
                 Ok(n) if n > 0 => {
                     let data = buf[..n].to_vec();
-                    let _ = output_tx.send(data.clone());
-                    let _ = app_clone.emit(&format!("serial://data/{}", sid), data);
+                    let _ = output_tx.send(data);
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
                 Err(e) => {
