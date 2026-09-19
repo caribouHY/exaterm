@@ -134,8 +134,8 @@ describe("terminal output sync controller", () => {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const text = String(attempt + 1);
       h.listeners[0].handler({ payload: bytes(text) });
+      expect(h.deltas).toHaveLength(attempt + 1);
       const [pendingDelta] = h.deltas.slice(attempt, attempt + 1);
-      if (!pendingDelta) throw new Error(`Missing delta request ${attempt}`);
       pendingDelta.result.resolve(outputSnapshot(text, 5 + attempt));
       await tick();
     }
