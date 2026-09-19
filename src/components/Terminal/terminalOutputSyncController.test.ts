@@ -124,7 +124,9 @@ describe("terminal output sync controller", () => {
   it("bounds a continuous initial drain and then handles empty and continuing live output", async () => {
     const h = createHarness();
     const started = h.controller.start();
-    h.listeners.forEach(({ registration }) => registration.resolve(vi.fn()));
+    h.listeners.forEach(({ registration }) => {
+      registration.resolve(vi.fn());
+    });
     await tick();
     h.snapshots[0].resolve(outputSnapshot("base", 4));
     await tick();
@@ -132,7 +134,9 @@ describe("terminal output sync controller", () => {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const text = String(attempt + 1);
       h.listeners[0].handler({ payload: bytes(text) });
-      h.deltas[attempt].result.resolve(outputSnapshot(text, 5 + attempt));
+      const [pendingDelta] = h.deltas.slice(attempt, attempt + 1);
+      if (!pendingDelta) throw new Error(`Missing delta request ${attempt}`);
+      pendingDelta.result.resolve(outputSnapshot(text, 5 + attempt));
       await tick();
     }
     await started;
@@ -146,7 +150,9 @@ describe("terminal output sync controller", () => {
   it("delivers non-replayable string errors after a successful restore", async () => {
     const h = createHarness();
     const started = h.controller.start();
-    h.listeners.forEach(({ registration }) => registration.resolve(vi.fn()));
+    h.listeners.forEach(({ registration }) => {
+      registration.resolve(vi.fn());
+    });
     await tick();
     h.snapshots[0].resolve(outputSnapshot("base", 4));
     await tick();
@@ -178,7 +184,9 @@ describe("terminal output sync controller", () => {
   it("falls back to buffered events in arrival order when snapshot or delta retrieval fails", async () => {
     const snapshotFailure = createHarness();
     const snapshotStart = snapshotFailure.controller.start();
-    snapshotFailure.listeners.forEach(({ registration }) => registration.resolve(vi.fn()));
+    snapshotFailure.listeners.forEach(({ registration }) => {
+      registration.resolve(vi.fn());
+    });
     await tick();
     snapshotFailure.listeners[0].handler({ payload: bytes("data") });
     snapshotFailure.listeners[1].handler({ payload: "error" });
@@ -188,7 +196,9 @@ describe("terminal output sync controller", () => {
 
     const deltaFailure = createHarness();
     const deltaStart = deltaFailure.controller.start();
-    deltaFailure.listeners.forEach(({ registration }) => registration.resolve(vi.fn()));
+    deltaFailure.listeners.forEach(({ registration }) => {
+      registration.resolve(vi.fn());
+    });
     await tick();
     deltaFailure.snapshots[0].resolve(outputSnapshot("history", 7));
     await tick();
@@ -221,8 +231,11 @@ describe("terminal output sync controller", () => {
   it("ignores late restore results and old callbacks after dispose", async () => {
     const h = createHarness();
     const started = h.controller.start();
-    const unlisteners = [vi.fn(), vi.fn()];
-    h.listeners.forEach(({ registration }, index) => registration.resolve(unlisteners[index]));
+    const unlisteners = h.listeners.map(({ registration }) => {
+      const unlisten = vi.fn();
+      registration.resolve(unlisten);
+      return unlisten;
+    });
     await tick();
 
     h.controller.dispose();
@@ -238,7 +251,9 @@ describe("terminal output sync controller", () => {
   it("preserves split UTF-8 characters across live events", async () => {
     const h = createHarness();
     const started = h.controller.start();
-    h.listeners.forEach(({ registration }) => registration.resolve(vi.fn()));
+    h.listeners.forEach(({ registration }) => {
+      registration.resolve(vi.fn());
+    });
     await tick();
     h.snapshots[0].resolve(outputSnapshot("", 0));
     await tick();
@@ -255,7 +270,9 @@ describe("terminal output sync controller", () => {
   it("switches the streaming decoder without restarting the session sync", async () => {
     const h = createHarness();
     const started = h.controller.start();
-    h.listeners.forEach(({ registration }) => registration.resolve(vi.fn()));
+    h.listeners.forEach(({ registration }) => {
+      registration.resolve(vi.fn());
+    });
     await tick();
     h.snapshots[0].resolve(outputSnapshot("", 0));
     await tick();
@@ -275,7 +292,9 @@ describe("terminal output sync controller", () => {
   it("forwards the bounded text returned by truncated snapshots and deltas", async () => {
     const h = createHarness();
     const started = h.controller.start();
-    h.listeners.forEach(({ registration }) => registration.resolve(vi.fn()));
+    h.listeners.forEach(({ registration }) => {
+      registration.resolve(vi.fn());
+    });
     await tick();
     h.snapshots[0].resolve(
       outputSnapshot("tail", 20, { truncated: true, available_chars: 20, start_cursor: 16 })

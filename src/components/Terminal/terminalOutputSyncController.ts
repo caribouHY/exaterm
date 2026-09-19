@@ -59,7 +59,7 @@ export function createTerminalOutputSyncController(
   let phase: "idle" | "subscribing" | "syncing" | "live" | "disposed" = "idle";
   let decoder = new TextDecoder(options.encoding);
   let startPromise: Promise<void> | null = null;
-  let retainedOutputSeen = false;
+  const retainedOutput = { version: 0 };
   let bufferedOutput: string[] = [];
   let bufferedNonReplayableOutput: string[] = [];
   const subscriptions: Subscription[] = [];
@@ -98,7 +98,7 @@ export function createTerminalOutputSyncController(
 
     // Retained events only trigger another cursor-based read because live events carry no cursor.
     if (channel.replayedBySnapshot) {
-      retainedOutputSeen = true;
+      retainedOutput.version += 1;
     } else if (text.length > 0) {
       bufferedNonReplayableOutput.push(text);
     }
@@ -151,7 +151,7 @@ export function createTerminalOutputSyncController(
       let cursor = snapshot.cursor;
       const drainLimit = options.maxInitialDeltaDrains ?? DEFAULT_MAX_INITIAL_DELTA_DRAINS;
       for (let attempt = 0; attempt < drainLimit; attempt += 1) {
-        retainedOutputSeen = false;
+        const retainedOutputVersion = retainedOutput.version;
         const delta = await options.dependencies.getDelta(
           options.sessionId,
           cursor,
@@ -160,7 +160,7 @@ export function createTerminalOutputSyncController(
         if (isDisposed()) return;
         write(delta.output);
         cursor = delta.cursor;
-        if (!retainedOutputSeen) break;
+        if (retainedOutput.version === retainedOutputVersion) break;
       }
 
       enterLiveAfterRestore();

@@ -114,6 +114,17 @@ const CONNECTION_COMMANDS: Record<
   },
 };
 
+const getConnectionCommands = (connectionType: ConnectionType) => {
+  switch (connectionType) {
+    case "ssh":
+      return CONNECTION_COMMANDS.ssh;
+    case "serial":
+      return CONNECTION_COMMANDS.serial;
+    case "telnet":
+      return CONNECTION_COMMANDS.telnet;
+  }
+};
+
 function normalizeCursorStyle(cursorStyle: string | undefined): "block" | "bar" | "underline" {
   if (cursorStyle === "bar" || cursorStyle === "underline") {
     return cursorStyle;
@@ -349,7 +360,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     fitRef.current = fitAddon;
 
     // Terminal input -> backend
-    const protocol = CONNECTION_COMMANDS[connectionType];
+    const protocol = getConnectionCommands(connectionType);
     term.onData((data) => {
       if (!isConnectedRef.current) return;
       invoke(protocol.write, { sessionId, data }).catch(console.error);
