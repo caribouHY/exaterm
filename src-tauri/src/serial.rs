@@ -345,21 +345,39 @@ pub(crate) async fn connect(
     });
 
     // Background read loop
-    let sid = session_id.clone();
-    let app_clone = app.clone();
     let run_flag = running.clone();
     let read_sessions = state.sessions.clone();
-    let read_terminals = terminals.clone();
     let read_workspace = workspace.clone();
     let read_logger = logger_state.cloned();
-    let read_runtime = tokio::runtime::Handle::current();
-    let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    let (output_tx, output_rx) = tokio::sync::mpsc::unbounded_channel();
+    let output_app = app.clone();
     let output_terminals = terminals.clone();
     let output_sid = session_id.clone();
     tokio::spawn(async move {
-        while let Some(data) = output_rx.recv().await {
-            output_terminals.append_output(&output_sid, &data).await;
-        }
+        let app = &output_app;
+        let terminals = &output_terminals;
+        let sid = &output_sid;
+        process_serial_output(
+            output_rx,
+            |data| async move {
+                // Initial sync relies on the snapshot cursor advancing before its live event is visible.
+                terminals.append_output(sid, &data).await;
+                let _ = app.emit(&format!("serial://data/{}", sid), data);
+            },
+            |error| async move {
+                let _ = app.emit(&format!("serial://error/{}", sid), error);
+                mark_disconnected(
+                    app,
+                    terminals,
+                    &read_workspace,
+                    read_logger.as_ref(),
+                    &read_sessions,
+                    sid,
+                )
+                .await;
+            },
+        )
+        .await;
     });
 
     tokio::task::spawn_blocking(move || {
@@ -372,29 +390,11 @@ pub(crate) async fn connect(
             match port.read(&mut buf) {
                 Ok(n) if n > 0 => {
                     let data = buf[..n].to_vec();
-                    let _ = output_tx.send(data.clone());
-                    let _ = app_clone.emit(&format!("serial://data/{}", sid), data);
+                    let _ = output_tx.send(SerialReadEvent::Data(data));
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
                 Err(e) => {
-                    let _ = app_clone.emit(&format!("serial://error/{}", sid), e.to_string());
-                    let disconnect_app = app_clone.clone();
-                    let disconnect_sessions = read_sessions.clone();
-                    let disconnect_terminals = read_terminals.clone();
-                    let disconnect_workspace = read_workspace.clone();
-                    let disconnect_logger = read_logger.clone();
-                    let disconnect_sid = sid.clone();
-                    read_runtime.spawn(async move {
-                        mark_disconnected(
-                            &disconnect_app,
-                            &disconnect_terminals,
-                            &disconnect_workspace,
-                            disconnect_logger.as_ref(),
-                            &disconnect_sessions,
-                            &disconnect_sid,
-                        )
-                        .await;
-                    });
+                    let _ = output_tx.send(SerialReadEvent::Error(e.to_string()));
                     break;
                 }
                 _ => {}
@@ -404,6 +404,33 @@ pub(crate) async fn connect(
 
     let _ = app.emit("serial://connected", &session_id);
     Ok(session_id)
+}
+
+enum SerialReadEvent {
+    Data(Vec<u8>),
+    Error(String),
+}
+
+async fn process_serial_output<Data, DataFuture, Error, ErrorFuture>(
+    mut output: tokio::sync::mpsc::UnboundedReceiver<SerialReadEvent>,
+    mut on_data: Data,
+    on_error: Error,
+) where
+    Data: FnMut(Vec<u8>) -> DataFuture,
+    DataFuture: std::future::Future<Output = ()>,
+    Error: FnOnce(String) -> ErrorFuture,
+    ErrorFuture: std::future::Future<Output = ()>,
+{
+    while let Some(event) = output.recv().await {
+        match event {
+            SerialReadEvent::Data(data) => on_data(data).await,
+            SerialReadEvent::Error(error) => {
+                // Finish queued output before error notification and session/log teardown.
+                on_error(error).await;
+                break;
+            }
+        }
+    }
 }
 
 type SerialPortPair = (
@@ -512,6 +539,90 @@ mod tests {
             .await;
 
         (session_id, running)
+    }
+
+    #[tokio::test]
+    async fn read_error_waits_for_pending_output_before_disconnect() {
+        let state = SerialState::new();
+        let terminals = TerminalControlState::new();
+        let (session_id, running) = register_fake_session(&state, &terminals).await;
+        let events = Mutex::new(Vec::new());
+        let entered = tokio::sync::Notify::new();
+        let resume = tokio::sync::Notify::new();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        tx.send(SerialReadEvent::Data(b"first".to_vec())).unwrap();
+        tx.send(SerialReadEvent::Data(b"last".to_vec())).unwrap();
+        tx.send(SerialReadEvent::Error("read failed".into()))
+            .unwrap();
+        drop(tx);
+
+        let terminals_ref = &terminals;
+        let session_ref = &session_id;
+        let events_ref = &events;
+        let entered_ref = &entered;
+        let resume_ref = &resume;
+        let sessions_ref = &state.sessions;
+        let processing = process_serial_output(
+            rx,
+            |data| async move {
+                if data == b"first" {
+                    entered_ref.notify_one();
+                    resume_ref.notified().await;
+                }
+                terminals_ref.append_output(session_ref, &data).await;
+                events_ref
+                    .lock()
+                    .await
+                    .push(String::from_utf8(data).unwrap());
+            },
+            |error| async move {
+                events_ref.lock().await.push(error);
+                remove_session_from_state(terminals_ref, None, sessions_ref, session_ref).await;
+                events_ref.lock().await.push("disconnected".into());
+            },
+        );
+        tokio::pin!(processing);
+        tokio::select! {
+            _ = &mut processing => panic!("output should still be blocked"),
+            _ = entered.notified() => {}
+        }
+        assert!(events.lock().await.is_empty());
+        assert!(running.load(Ordering::SeqCst));
+        assert_eq!(
+            terminals.session_info(&session_id).await.unwrap().status,
+            TerminalStatus::Connected
+        );
+
+        resume.notify_one();
+        processing.await;
+        assert_eq!(
+            *events.lock().await,
+            ["first", "last", "read failed", "disconnected"]
+        );
+        assert_eq!(
+            terminals
+                .read_output(&session_id, 100)
+                .await
+                .unwrap()
+                .output,
+            "firstlast"
+        );
+        assert!(!running.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn closing_output_channel_drains_data_without_reporting_read_error() {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        tx.send(SerialReadEvent::Data(b"last".to_vec())).unwrap();
+        drop(tx);
+        let output = Mutex::new(Vec::new());
+        process_serial_output(
+            rx,
+            |data| async { output.lock().await.extend(data) },
+            |_| async { panic!("channel closure is not a read error") },
+        )
+        .await;
+        assert_eq!(*output.lock().await, b"last");
     }
 
     #[tokio::test]
