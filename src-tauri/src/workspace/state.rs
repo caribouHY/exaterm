@@ -17,6 +17,15 @@ impl WorkspaceState {
         last_focused_existing_window(&model).unwrap_or_else(|| "main".to_string())
     }
 
+    pub async fn owner_window_id_for_session(&self, session_id: &str) -> Option<String> {
+        let model = self.model.lock().await;
+        model
+            .tabs
+            .values()
+            .find(|tab| tab.session_id == session_id)
+            .map(|tab| tab.owner_window_id.clone())
+    }
+
     pub async fn register_window(
         &self,
         window_id: String,

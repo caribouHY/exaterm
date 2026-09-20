@@ -140,15 +140,9 @@ impl ExternalControlService {
         let logger_state = self.runtime.logger.as_ref().ok_or_else(|| {
             internal_error("Logger state required to start external control logging is unavailable")
         })?;
-        if let Some(session) = logger::manual_log_session(logger_state, &args.session_id).await {
-            return Ok(json!({
-                "session_id": args.session_id,
-                "started": false,
-                "already_active": true,
-                "file_path": session.file_path,
-                "log_mode": "manual",
-            }));
-        }
+        let already_active = logger::manual_log_session(logger_state, &args.session_id)
+            .await
+            .is_some();
 
         let file_path = request_manual_log_start(&self.runtime, &info)
             .await
@@ -156,8 +150,8 @@ impl ExternalControlService {
 
         Ok(json!({
             "session_id": args.session_id,
-            "started": true,
-            "already_active": false,
+            "started": !already_active,
+            "already_active": already_active,
             "file_path": file_path,
             "log_mode": "manual",
         }))
@@ -177,16 +171,9 @@ impl ExternalControlService {
         let logger_state = self.runtime.logger.as_ref().ok_or_else(|| {
             internal_error("Logger state required to stop external control logging is unavailable")
         })?;
-        if logger::manual_log_session(logger_state, &args.session_id)
+        let already_inactive = logger::manual_log_session(logger_state, &args.session_id)
             .await
-            .is_none()
-        {
-            return Ok(json!({
-                "session_id": args.session_id,
-                "stopped": false,
-                "already_inactive": true,
-            }));
-        }
+            .is_none();
 
         request_manual_log_stop(&self.runtime, &info)
             .await
@@ -194,8 +181,8 @@ impl ExternalControlService {
 
         Ok(json!({
             "session_id": args.session_id,
-            "stopped": true,
-            "already_inactive": false,
+            "stopped": !already_inactive,
+            "already_inactive": already_inactive,
         }))
     }
 
@@ -279,9 +266,15 @@ async fn request_manual_log_start(
     let log_control = runtime.log_control.as_ref().ok_or_else(|| {
         "Log control state required to start external control logging is unavailable".to_string()
     })?;
+    let owner_window_id = runtime
+        .workspace
+        .owner_window_id_for_session(&info.session_id)
+        .await
+        .ok_or_else(|| "The session does not have an owner window".to_string())?;
     let ack = log_control
         .request(
             app,
+            &owner_window_id,
             "external-control://log-start-request",
             ExternalControlLogControlRequestPayload {
                 request_id: Uuid::new_v4().to_string(),
@@ -326,9 +319,15 @@ async fn request_manual_log_stop(
     let log_control = runtime.log_control.as_ref().ok_or_else(|| {
         "Log control state required to stop external control logging is unavailable".to_string()
     })?;
+    let owner_window_id = runtime
+        .workspace
+        .owner_window_id_for_session(&info.session_id)
+        .await
+        .ok_or_else(|| "The session does not have an owner window".to_string())?;
     log_control
         .request(
             app,
+            &owner_window_id,
             "external-control://log-stop-request",
             ExternalControlLogControlRequestPayload {
                 request_id: Uuid::new_v4().to_string(),

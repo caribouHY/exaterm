@@ -1,4 +1,12 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -20,6 +28,7 @@ import {
   type TerminalLogShortcutAction,
 } from "../../features/shortcuts/shortcutModel";
 import { shouldAppendManualLog } from "../../features/terminal-logging/terminalLoggingModel";
+import { createManualLogBufferWriter } from "../../features/terminal-logging/manualLogBufferWriter";
 import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
 import {
   createTerminalDecorationController,
@@ -221,6 +230,16 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const manualLogSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
+  const manualLogBufferWriter = useMemo(
+    () =>
+      createManualLogBufferWriter((data) =>
+        invoke("logger_append", {
+          sessionId,
+          data,
+        })
+      ),
+    [sessionId]
+  );
 
   useEffect(() => {
     isConnectedRef.current = isConnected;
@@ -238,12 +257,10 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       isManualLoggingRef.current
     ) {
       const logText = manualLogSanitizerRef.current.flush();
-      if (logText) {
-        invoke("logger_append", { sessionId, data: logText }).catch(() => {});
-      }
+      void manualLogBufferWriter.flush(logText).catch(() => {});
     }
     isManualLoggingPausedRef.current = isManualLoggingPaused;
-  }, [isManualLoggingPaused, sessionId]);
+  }, [isManualLoggingPaused, manualLogBufferWriter, sessionId]);
 
   useImperativeHandle(
     ref,
@@ -278,20 +295,15 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       flushManualLogBuffer: async () => {
         if (!sessionId) return;
         const logText = manualLogSanitizerRef.current.flush();
-        if (!logText) return;
-        await invoke("logger_append", {
-          sessionId,
-          data: logText,
-        });
+        await manualLogBufferWriter.flush(logText);
       },
       flushLogBuffersForMove: async () => {
         if (!sessionId || !isManualLoggingRef.current) return;
         const logText = manualLogSanitizerRef.current.flush();
-        if (!logText) return;
-        await invoke("logger_append", { sessionId, data: logText });
+        await manualLogBufferWriter.flush(logText);
       },
     }),
-    [clearBuffer, clearViewport, sessionId]
+    [clearBuffer, clearViewport, manualLogBufferWriter, sessionId]
   );
 
   useEffect(() => {
@@ -529,7 +541,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       if (shouldAppendManualLog(isManualLoggingRef.current, isManualLoggingPausedRef.current)) {
         const logText = manualLogSanitizerRef.current.push(text);
         if (logText) {
-          invoke("logger_append", { sessionId, data: logText }).catch(() => {});
+          void manualLogBufferWriter.append(logText).catch(() => {});
         }
       }
     };
@@ -585,9 +597,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       }
       if (isManualLoggingRef.current) {
         const logText = manualLogSanitizerRef.current.flush();
-        if (logText) {
-          invoke("logger_append", { sessionId, data: logText }).catch(() => {});
-        }
+        void manualLogBufferWriter.flush(logText).catch(() => {});
       }
       resizeObserver.disconnect();
       scrollDecorationDisposable.dispose();
@@ -601,7 +611,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [sessionId, connectionType, refreshDecorationsAfterClear]);
+  }, [sessionId, connectionType, manualLogBufferWriter, refreshDecorationsAfterClear]);
 
   // Re-fit the terminal whenever this tab becomes active (container goes from display:none to visible)
   useEffect(() => {
