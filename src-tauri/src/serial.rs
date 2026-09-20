@@ -84,7 +84,7 @@ impl Default for SerialConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PortInfo {
     pub name: String,
     pub port_type: String,

@@ -1,4 +1,3 @@
-use serde_json::{json, Value};
 use std::net::IpAddr;
 
 use crate::config::{AppConfig, SavedConnection};
@@ -8,21 +7,22 @@ use crate::ssh;
 use super::{
     load_app_config, ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ConnectSshArgs,
     ConnectTelnetArgs, ExternalControlConnectionProfile, ExternalControlError,
-    ExternalControlService, ListConnectionProfilesArgs, PreparedConnection, PreparedConnectionKind,
-    PreparedSerialConnection, SavedProfileConnectionType, DEFAULT_CONNECT_COLS,
-    DEFAULT_CONNECT_ROWS, DEFAULT_SERIAL_BAUD_RATE, DEFAULT_SERIAL_DATA_BITS,
-    DEFAULT_SERIAL_STOP_BITS, MAX_CONNECT_DIMENSION,
+    ExternalControlService, ListConnectionProfilesArgs, ListConnectionProfilesResult,
+    PreparedConnection, PreparedConnectionKind, PreparedSerialConnection,
+    SavedProfileConnectionType, DEFAULT_CONNECT_COLS, DEFAULT_CONNECT_ROWS,
+    DEFAULT_SERIAL_BAUD_RATE, DEFAULT_SERIAL_DATA_BITS, DEFAULT_SERIAL_STOP_BITS,
+    MAX_CONNECT_DIMENSION,
 };
 impl ExternalControlService {
     pub(crate) async fn list_connection_profiles(
         &self,
         args: ListConnectionProfilesArgs,
-    ) -> Result<Value, ExternalControlError> {
+    ) -> Result<ListConnectionProfilesResult, ExternalControlError> {
         self.ensure_connect_enabled()?;
         let config = load_app_config(&self.runtime)?;
-        Ok(json!({
-            "profiles": list_connection_profiles_from_config(&config, args.connection_type),
-        }))
+        Ok(ListConnectionProfilesResult {
+            profiles: list_connection_profiles_from_config(&config, args.connection_type),
+        })
     }
 }
 
@@ -184,10 +184,25 @@ pub(crate) fn normalize_profile_auth_method(value: Option<&str>) -> Result<Strin
     }
 }
 
+#[cfg(test)]
 pub(crate) fn ssh_credential_required(
     auth_method: &str,
     private_key_path: Option<&str>,
     default_private_key_path: Option<&str>,
+) -> Result<bool, String> {
+    ssh_credential_required_with(
+        auth_method,
+        private_key_path,
+        default_private_key_path,
+        ssh::private_key_requires_passphrase,
+    )
+}
+
+pub(crate) fn ssh_credential_required_with(
+    auth_method: &str,
+    private_key_path: Option<&str>,
+    default_private_key_path: Option<&str>,
+    private_key_requires_passphrase: impl FnOnce(&str) -> Result<bool, String>,
 ) -> Result<bool, String> {
     match auth_method {
         "password" => Ok(false),
@@ -198,7 +213,7 @@ pub(crate) fn ssh_credential_required(
             let Some(private_key_path) = private_key_path else {
                 return Ok(false);
             };
-            Ok(ssh::private_key_requires_passphrase(&private_key_path).unwrap_or(false))
+            Ok(private_key_requires_passphrase(&private_key_path).unwrap_or(false))
         }
         "public_key" => {
             let private_key_path = private_key_path
@@ -207,7 +222,7 @@ pub(crate) fn ssh_credential_required(
                 .ok_or_else(|| {
                     "The saved SSH profile does not have a private key file configured".to_string()
                 })?;
-            ssh::private_key_requires_passphrase(private_key_path)
+            private_key_requires_passphrase(private_key_path)
         }
         _ => Err("The SSH authentication method is invalid".into()),
     }

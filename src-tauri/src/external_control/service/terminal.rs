@@ -1,39 +1,34 @@
 use std::time::Duration;
 
-use serde_json::{json, Value};
 use tokio::time;
-#[cfg(not(test))]
 use uuid::Uuid;
 
-use crate::logger::{self};
-use crate::serial;
-use crate::ssh;
-use crate::telnet;
-use crate::terminal_control::{TerminalControlState, TerminalProtocol, TerminalStatus};
+use crate::terminal_control::{TerminalControlState, TerminalStatus};
 
 use super::connections::terminal_protocol_log_type;
-#[cfg(not(test))]
-use super::ExternalControlLogControlRequestPayload;
 use super::{
     internal_error, invalid_params, not_found, unavailable, ExternalControlError,
-    ExternalControlRuntime, ExternalControlService, ReadTerminalOutputArgs, RunTerminalCommandArgs,
-    SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs, DEFAULT_READ_CHARS,
+    ExternalControlLogControlRequestPayload, ExternalControlRuntime, ExternalControlService,
+    ListTerminalSessionsResult, ReadTerminalOutputArgs, ReadTerminalOutputResult,
+    RunTerminalCommandArgs, RunTerminalCommandResult, SendTerminalInputArgs,
+    SendTerminalInputResult, StartTerminalLogArgs, StartTerminalLogResult, StopTerminalLogArgs,
+    StopTerminalLogResult, TerminalOutputResult, WaitTerminalOutputResult, DEFAULT_READ_CHARS,
     DEFAULT_SETTLE_MS, DEFAULT_WAIT_TIMEOUT_MS, MAX_INPUT_CHARS, MAX_READ_CHARS, MAX_SETTLE_MS,
     MAX_WAIT_TIMEOUT_MS,
 };
 
 impl ExternalControlService {
-    pub(crate) async fn list_terminal_sessions(&self) -> Result<Value, ExternalControlError> {
+    pub(crate) async fn list_terminal_sessions(
+        &self,
+    ) -> Result<ListTerminalSessionsResult, ExternalControlError> {
         let sessions = self.runtime.terminals.list_sessions().await;
-        Ok(json!({
-            "sessions": sessions,
-        }))
+        Ok(ListTerminalSessionsResult { sessions })
     }
 
     pub(crate) async fn read_terminal_output(
         &self,
         args: ReadTerminalOutputArgs,
-    ) -> Result<Value, ExternalControlError> {
+    ) -> Result<ReadTerminalOutputResult, ExternalControlError> {
         match args {
             ReadTerminalOutputArgs::Recent {
                 session_id,
@@ -46,15 +41,9 @@ impl ExternalControlService {
                     .await
                     .map_err(invalid_params)?;
 
-                Ok(json!({
-                    "session_id": snapshot.session_id,
-                    "mode": "recent",
-                    "output": snapshot.output,
-                    "truncated": snapshot.truncated,
-                    "available_chars": snapshot.available_chars,
-                    "start_cursor": snapshot.start_cursor,
-                    "cursor": snapshot.cursor,
-                }))
+                Ok(ReadTerminalOutputResult::Recent(
+                    TerminalOutputResult::from(snapshot),
+                ))
             }
             ReadTerminalOutputArgs::Delta {
                 session_id,
@@ -68,15 +57,9 @@ impl ExternalControlService {
                     .await
                     .map_err(invalid_params)?;
 
-                Ok(json!({
-                    "session_id": snapshot.session_id,
-                    "mode": "delta",
-                    "output": snapshot.output,
-                    "truncated": snapshot.truncated,
-                    "available_chars": snapshot.available_chars,
-                    "start_cursor": snapshot.start_cursor,
-                    "cursor": snapshot.cursor,
-                }))
+                Ok(ReadTerminalOutputResult::Delta(TerminalOutputResult::from(
+                    snapshot,
+                )))
             }
             ReadTerminalOutputArgs::Wait {
                 session_id,
@@ -95,7 +78,7 @@ impl ExternalControlService {
                         .map_err(invalid_params)?,
                 };
                 let contains = contains.filter(|value| !value.is_empty());
-                let mut result = wait_for_terminal_output(
+                let result = wait_for_terminal_output(
                     &self.runtime.terminals,
                     &session_id,
                     start_cursor,
@@ -104,8 +87,7 @@ impl ExternalControlService {
                     normalize_timeout_ms(timeout_ms),
                 )
                 .await?;
-                result["mode"] = json!("wait");
-                Ok(result)
+                Ok(ReadTerminalOutputResult::Wait(result))
             }
         }
     }
@@ -113,19 +95,19 @@ impl ExternalControlService {
     pub(crate) async fn send_terminal_input(
         &self,
         args: SendTerminalInputArgs,
-    ) -> Result<Value, ExternalControlError> {
+    ) -> Result<SendTerminalInputResult, ExternalControlError> {
         send_terminal_input_to_runtime(&self.runtime, &args.session_id, args.data).await?;
 
-        Ok(json!({
-            "session_id": args.session_id,
-            "sent": true,
-        }))
+        Ok(SendTerminalInputResult {
+            session_id: args.session_id,
+            sent: true,
+        })
     }
 
     pub(crate) async fn start_terminal_log(
         &self,
         args: StartTerminalLogArgs,
-    ) -> Result<Value, ExternalControlError> {
+    ) -> Result<StartTerminalLogResult, ExternalControlError> {
         let info = self
             .runtime
             .terminals
@@ -137,10 +119,16 @@ impl ExternalControlService {
             return Err(unavailable("The session is already disconnected"));
         }
 
-        let logger_state = self.runtime.logger.as_ref().ok_or_else(|| {
-            internal_error("Logger state required to start external control logging is unavailable")
-        })?;
-        let already_active = logger::manual_log_session(logger_state, &args.session_id)
+        if !self.runtime.io.logger.is_available() {
+            return Err(internal_error(
+                "Logger state required to start external control logging is unavailable",
+            ));
+        }
+        let already_active = self
+            .runtime
+            .io
+            .logger
+            .active_log_file(&args.session_id)
             .await
             .is_some();
 
@@ -148,19 +136,19 @@ impl ExternalControlService {
             .await
             .map_err(internal_error)?;
 
-        Ok(json!({
-            "session_id": args.session_id,
-            "started": !already_active,
-            "already_active": already_active,
-            "file_path": file_path,
-            "log_mode": "manual",
-        }))
+        Ok(StartTerminalLogResult {
+            session_id: args.session_id,
+            started: !already_active,
+            already_active,
+            file_path,
+            log_mode: "manual".into(),
+        })
     }
 
     pub(crate) async fn stop_terminal_log(
         &self,
         args: StopTerminalLogArgs,
-    ) -> Result<Value, ExternalControlError> {
+    ) -> Result<StopTerminalLogResult, ExternalControlError> {
         let info = self
             .runtime
             .terminals
@@ -168,10 +156,16 @@ impl ExternalControlService {
             .await
             .ok_or_else(|| not_found("Session not found"))?;
 
-        let logger_state = self.runtime.logger.as_ref().ok_or_else(|| {
-            internal_error("Logger state required to stop external control logging is unavailable")
-        })?;
-        let already_inactive = logger::manual_log_session(logger_state, &args.session_id)
+        if !self.runtime.io.logger.is_available() {
+            return Err(internal_error(
+                "Logger state required to stop external control logging is unavailable",
+            ));
+        }
+        let already_inactive = self
+            .runtime
+            .io
+            .logger
+            .active_log_file(&args.session_id)
             .await
             .is_none();
 
@@ -179,17 +173,17 @@ impl ExternalControlService {
             .await
             .map_err(internal_error)?;
 
-        Ok(json!({
-            "session_id": args.session_id,
-            "stopped": !already_inactive,
-            "already_inactive": already_inactive,
-        }))
+        Ok(StopTerminalLogResult {
+            session_id: args.session_id,
+            stopped: !already_inactive,
+            already_inactive,
+        })
     }
 
     pub(crate) async fn run_terminal_command(
         &self,
         args: RunTerminalCommandArgs,
-    ) -> Result<Value, ExternalControlError> {
+    ) -> Result<RunTerminalCommandResult, ExternalControlError> {
         if args.command.trim().is_empty() {
             return Err(invalid_params("The command to send must not be empty"));
         }
@@ -230,7 +224,7 @@ impl ExternalControlService {
             .settle_ms
             .unwrap_or(DEFAULT_SETTLE_MS)
             .clamp(0, MAX_SETTLE_MS);
-        if wait_result["timed_out"] == false && settle_ms > 0 {
+        if !wait_result.timed_out && settle_ms > 0 {
             time::sleep(Duration::from_millis(settle_ms)).await;
         }
 
@@ -241,39 +235,33 @@ impl ExternalControlService {
             .await
             .map_err(invalid_params)?;
 
-        Ok(json!({
-            "session_id": args.session_id,
-            "sent": true,
-            "matched": wait_result["matched"],
-            "timed_out": wait_result["timed_out"],
-            "output": snapshot.output,
-            "truncated": snapshot.truncated,
-            "available_chars": snapshot.available_chars,
-            "start_cursor": snapshot.start_cursor,
-            "cursor": snapshot.cursor,
-        }))
+        Ok(RunTerminalCommandResult {
+            session_id: args.session_id,
+            sent: true,
+            matched: wait_result.matched,
+            timed_out: wait_result.timed_out,
+            output: snapshot.output,
+            truncated: snapshot.truncated,
+            available_chars: snapshot.available_chars,
+            start_cursor: snapshot.start_cursor,
+            cursor: snapshot.cursor,
+        })
     }
 }
 
-#[cfg(not(test))]
 async fn request_manual_log_start(
     runtime: &ExternalControlRuntime,
     info: &crate::terminal_control::TerminalSessionInfo,
 ) -> Result<String, String> {
-    let app = runtime.app.as_ref().ok_or_else(|| {
-        "App handle required to start external control logging is unavailable".to_string()
-    })?;
-    let log_control = runtime.log_control.as_ref().ok_or_else(|| {
-        "Log control state required to start external control logging is unavailable".to_string()
-    })?;
     let owner_window_id = runtime
         .workspace
         .owner_window_id_for_session(&info.session_id)
         .await
         .ok_or_else(|| "The session does not have an owner window".to_string())?;
-    let ack = log_control
-        .request(
-            app,
+    let ack = runtime
+        .io
+        .ui
+        .request_log_control(
             &owner_window_id,
             "external-control://log-start-request",
             ExternalControlLogControlRequestPayload {
@@ -289,44 +277,19 @@ async fn request_manual_log_start(
     })
 }
 
-#[cfg(test)]
-async fn request_manual_log_start(
-    runtime: &ExternalControlRuntime,
-    info: &crate::terminal_control::TerminalSessionInfo,
-) -> Result<String, String> {
-    let logger_state = runtime.logger.as_ref().ok_or_else(|| {
-        "Logger state required to start external control logging is unavailable".to_string()
-    })?;
-    logger::start_manual_log(
-        logger_state,
-        info.session_id.clone(),
-        terminal_protocol_log_type(info.protocol).into(),
-        info.target.clone(),
-        None,
-        None,
-    )
-    .await
-}
-
-#[cfg(not(test))]
 async fn request_manual_log_stop(
     runtime: &ExternalControlRuntime,
     info: &crate::terminal_control::TerminalSessionInfo,
 ) -> Result<(), String> {
-    let app = runtime.app.as_ref().ok_or_else(|| {
-        "App handle required to stop external control logging is unavailable".to_string()
-    })?;
-    let log_control = runtime.log_control.as_ref().ok_or_else(|| {
-        "Log control state required to stop external control logging is unavailable".to_string()
-    })?;
     let owner_window_id = runtime
         .workspace
         .owner_window_id_for_session(&info.session_id)
         .await
         .ok_or_else(|| "The session does not have an owner window".to_string())?;
-    log_control
-        .request(
-            app,
+    runtime
+        .io
+        .ui
+        .request_log_control(
             &owner_window_id,
             "external-control://log-stop-request",
             ExternalControlLogControlRequestPayload {
@@ -338,17 +301,6 @@ async fn request_manual_log_stop(
         )
         .await
         .map(|_| ())
-}
-
-#[cfg(test)]
-async fn request_manual_log_stop(
-    runtime: &ExternalControlRuntime,
-    info: &crate::terminal_control::TerminalSessionInfo,
-) -> Result<(), String> {
-    let logger_state = runtime.logger.as_ref().ok_or_else(|| {
-        "Logger state required to stop external control logging is unavailable".to_string()
-    })?;
-    logger::stop_manual_log(logger_state, &info.session_id).await
 }
 
 async fn send_terminal_input_to_runtime(
@@ -373,18 +325,12 @@ async fn send_terminal_input_to_runtime(
         return Err(unavailable("The session is already disconnected"));
     }
 
-    match info.protocol {
-        TerminalProtocol::Ssh => {
-            ssh::write_data(&runtime.ssh, &runtime.terminals, session_id, data).await
-        }
-        TerminalProtocol::Serial => {
-            serial::write_data(&runtime.serial, &runtime.terminals, session_id, data).await
-        }
-        TerminalProtocol::Telnet => {
-            telnet::write_data(&runtime.telnet, &runtime.terminals, session_id, data).await
-        }
-    }
-    .map_err(internal_error)
+    runtime
+        .io
+        .protocol
+        .write_terminal(info.protocol, session_id, data)
+        .await
+        .map_err(internal_error)
 }
 
 async fn wait_for_terminal_output(
@@ -394,7 +340,7 @@ async fn wait_for_terminal_output(
     contains: Option<&str>,
     max_chars: usize,
     timeout_ms: u64,
-) -> Result<Value, ExternalControlError> {
+) -> Result<WaitTerminalOutputResult, ExternalControlError> {
     let deadline = time::Instant::now() + Duration::from_millis(timeout_ms);
 
     loop {
@@ -411,30 +357,30 @@ async fn wait_for_terminal_output(
         };
 
         if matched {
-            return Ok(json!({
-                "session_id": snapshot.session_id,
-                "matched": true,
-                "timed_out": false,
-                "output": snapshot.output,
-                "truncated": snapshot.truncated,
-                "available_chars": snapshot.available_chars,
-                "start_cursor": snapshot.start_cursor,
-                "cursor": snapshot.cursor,
-            }));
+            return Ok(WaitTerminalOutputResult {
+                session_id: snapshot.session_id,
+                matched: true,
+                timed_out: false,
+                output: snapshot.output,
+                truncated: snapshot.truncated,
+                available_chars: snapshot.available_chars,
+                start_cursor: snapshot.start_cursor,
+                cursor: snapshot.cursor,
+            });
         }
 
         let now = time::Instant::now();
         if now >= deadline {
-            return Ok(json!({
-                "session_id": snapshot.session_id,
-                "matched": false,
-                "timed_out": true,
-                "output": snapshot.output,
-                "truncated": snapshot.truncated,
-                "available_chars": snapshot.available_chars,
-                "start_cursor": snapshot.start_cursor,
-                "cursor": snapshot.cursor,
-            }));
+            return Ok(WaitTerminalOutputResult {
+                session_id: snapshot.session_id,
+                matched: false,
+                timed_out: true,
+                output: snapshot.output,
+                truncated: snapshot.truncated,
+                available_chars: snapshot.available_chars,
+                start_cursor: snapshot.start_cursor,
+                cursor: snapshot.cursor,
+            });
         }
 
         let remaining = deadline - now;

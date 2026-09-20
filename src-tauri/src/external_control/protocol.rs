@@ -1,11 +1,8 @@
-#[cfg(not(test))]
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-#[cfg(not(test))]
 use tauri::{AppHandle, Emitter};
-#[cfg(not(test))]
 use tokio::time;
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
@@ -13,7 +10,6 @@ use tokio::{
 };
 use uuid::Uuid;
 
-#[cfg(not(test))]
 use crate::external_control::service::{
     ExternalControlCredentialRequestPayload, ExternalControlLogControlRequestPayload,
 };
@@ -22,9 +18,7 @@ use crate::external_control::service::{
     ExternalControlResponse, ExternalControlService,
 };
 
-#[cfg(not(test))]
 const CREDENTIAL_REQUEST_TIMEOUT_MS: u64 = 5 * 60 * 1_000;
-#[cfg(not(test))]
 const LOG_CONTROL_REQUEST_TIMEOUT_MS: u64 = 30_000;
 
 pub const CONTROL_PROTOCOL_VERSION: u32 = 3;
@@ -271,7 +265,6 @@ impl ExternalControlCredentialState {
         Self::default()
     }
 
-    #[cfg(not(test))]
     pub(crate) async fn request_ssh_credential(
         &self,
         app: &AppHandle,
@@ -344,7 +337,6 @@ impl ExternalControlLogControlState {
         Self::default()
     }
 
-    #[cfg(not(test))]
     pub(crate) async fn request(
         &self,
         app: &AppHandle,
@@ -352,23 +344,37 @@ impl ExternalControlLogControlState {
         event: &str,
         payload: ExternalControlLogControlRequestPayload,
     ) -> Result<ExternalControlLogControlAck, String> {
+        self.request_with_sender(
+            payload,
+            Duration::from_millis(LOG_CONTROL_REQUEST_TIMEOUT_MS),
+            |payload| {
+                app.emit_to(window_id, event, payload).map_err(|error| {
+                    format!("Failed to send the external control log control request: {error}")
+                })
+            },
+        )
+        .await
+    }
+
+    pub(crate) async fn request_with_sender<F>(
+        &self,
+        payload: ExternalControlLogControlRequestPayload,
+        timeout: Duration,
+        send: F,
+    ) -> Result<ExternalControlLogControlAck, String>
+    where
+        F: FnOnce(&ExternalControlLogControlRequestPayload) -> Result<(), String>,
+    {
         let request_id = payload.request_id.clone();
         let (sender, receiver) = oneshot::channel();
         self.pending.lock().await.insert(request_id.clone(), sender);
 
-        if let Err(error) = app.emit_to(window_id, event, &payload) {
+        if let Err(error) = send(&payload) {
             self.pending.lock().await.remove(&request_id);
-            return Err(format!(
-                "Failed to send the external control log control request: {error}"
-            ));
+            return Err(error);
         }
 
-        match time::timeout(
-            Duration::from_millis(LOG_CONTROL_REQUEST_TIMEOUT_MS),
-            receiver,
-        )
-        .await
-        {
+        match time::timeout(timeout, receiver).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err("The external control log control request did not complete".into()),
             Err(_) => {
@@ -378,7 +384,7 @@ impl ExternalControlLogControlState {
         }
     }
 
-    async fn submit(
+    pub(crate) async fn submit(
         &self,
         request_id: String,
         file_path: Option<String>,
@@ -408,4 +414,100 @@ pub async fn external_control_log_control_submit(
     error: Option<String>,
 ) -> Result<(), String> {
     state.submit(request_id, file_path, error).await
+}
+
+#[cfg(test)]
+mod log_control_tests {
+    use super::*;
+
+    fn payload(request_id: &str) -> ExternalControlLogControlRequestPayload {
+        ExternalControlLogControlRequestPayload {
+            request_id: request_id.into(),
+            session_id: "s1".into(),
+            connection_type: "ssh".into(),
+            target: "admin@example.test:22".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn coordinator_routes_payload_and_returns_success_ack() {
+        let state = ExternalControlLogControlState::new();
+        let submit_state = state.clone();
+        let ack = state
+            .request_with_sender(payload("success"), Duration::from_secs(1), move |sent| {
+                assert_eq!(sent.request_id, "success");
+                assert_eq!(sent.session_id, "s1");
+                tokio::spawn(async move {
+                    submit_state
+                        .submit("success".into(), Some("C:\\logs\\s1.log".into()), None)
+                        .await
+                        .unwrap();
+                });
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(ack.file_path.as_deref(), Some("C:\\logs\\s1.log"));
+    }
+
+    #[tokio::test]
+    async fn coordinator_preserves_negative_ack() {
+        let state = ExternalControlLogControlState::new();
+        let submit_state = state.clone();
+        let error = state
+            .request_with_sender(payload("negative"), Duration::from_secs(1), move |_| {
+                tokio::spawn(async move {
+                    submit_state
+                        .submit("negative".into(), None, Some("GUI rejected request".into()))
+                        .await
+                        .unwrap();
+                });
+                Ok(())
+            })
+            .await
+            .unwrap_err();
+
+        assert_eq!(error, "GUI rejected request");
+    }
+
+    #[tokio::test]
+    async fn coordinator_cleans_up_after_send_failure() {
+        let state = ExternalControlLogControlState::new();
+        let error = state
+            .request_with_sender(payload("send-failed"), Duration::from_secs(1), |_| {
+                Err("send failed".into())
+            })
+            .await
+            .unwrap_err();
+
+        assert_eq!(error, "send failed");
+        let late = state
+            .submit("send-failed".into(), None, None)
+            .await
+            .unwrap_err();
+        assert!(late.contains("was not found"));
+    }
+
+    #[tokio::test]
+    async fn coordinator_times_out_and_rejects_delayed_ack_after_cleanup() {
+        let state = ExternalControlLogControlState::new();
+        let submit_state = state.clone();
+        let (late_sender, late_receiver) = oneshot::channel();
+        let error = state
+            .request_with_sender(payload("timeout"), Duration::from_millis(1), move |_| {
+                tokio::spawn(async move {
+                    time::sleep(Duration::from_millis(20)).await;
+                    let result = submit_state.submit("timeout".into(), None, None).await;
+                    let _ = late_sender.send(result);
+                });
+                Ok(())
+            })
+            .await
+            .unwrap_err();
+
+        assert_eq!(error, "The external control log control request timed out");
+        let late_error = late_receiver.await.unwrap().unwrap_err();
+        assert!(late_error.contains("was not found"));
+    }
 }

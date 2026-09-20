@@ -26,7 +26,7 @@ use external_control::{
 use logger::LoggerState;
 use serial::SerialState;
 use ssh::SshState;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use telnet::TelnetState;
 use terminal_control::TerminalControlState;
@@ -133,26 +133,35 @@ pub fn run() {
                     terminal_control_state
                         .set_output_limit_from_scrollback(cfg.terminal.scrollback);
                     if cfg.external_control.enabled {
-                        let runtime = ExternalControlRuntime {
-                            config: external_control::service::ExternalControlPermissions::new(
-                                cfg.external_control.connect_enabled,
-                                cfg.external_control.direct_connect_enabled,
+                        let app_handle = app.handle().clone();
+                        let io = external_control::service::ExternalControlIo::new(
+                            Arc::new(
+                                external_control::service::SystemExternalControlConfigIo,
                             ),
-                            #[cfg(test)]
-                            app_config: None,
-                            #[cfg(test)]
-                            available_serial_ports: None,
-                            #[cfg(not(test))]
-                            app: Some(app.handle().clone()),
+                            Arc::new(
+                                external_control::service::TauriExternalControlProtocolIo::new(
+                                    app_handle.clone(),
+                                    terminal_control_state.clone(),
+                                    workspace_state.clone(),
+                                    ssh_state.clone(),
+                                    serial_state.clone(),
+                                    telnet_state.clone(),
+                                    Some(logger_state.clone()),
+                                ),
+                            ),
+                            Arc::new(external_control::service::TauriExternalControlUiIo::new(
+                                app_handle,
+                                Some(external_control_credential_state.clone()),
+                                Some(external_control_log_control_state.clone()),
+                            )),
+                            Arc::new(external_control::service::LoggerExternalControlIo::new(
+                                Some(logger_state.clone()),
+                            )),
+                        );
+                        let runtime = ExternalControlRuntime {
+                            io,
                             terminals: terminal_control_state.clone(),
                             workspace: workspace_state.clone(),
-                            ssh: ssh_state.clone(),
-                            serial: serial_state.clone(),
-                            telnet: telnet_state.clone(),
-                            logger: Some(logger_state.clone()),
-                            log_control: Some(external_control_log_control_state.clone()),
-                            #[cfg(not(test))]
-                            credentials: Some(external_control_credential_state.clone()),
                         };
                         spawn_gui_control_plane(runtime);
                     }
