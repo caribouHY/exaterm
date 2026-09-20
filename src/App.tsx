@@ -23,10 +23,7 @@ import type { ConnectionDialogInitialValues } from "./components/Connection/conn
 import type { ConnectionLogState } from "./features/terminal-logging/connectionLogModel";
 import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  backendCommandErrorMessage,
-  translateBackendCommandError,
-} from "./features/backend-errors/backendCommandError";
+import { translateBackendCommandError } from "./features/backend-errors/backendCommandError";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
@@ -384,33 +381,11 @@ export default function App() {
           }, 0);
         });
       });
-    const externalErrorMessage = (error: unknown, action: "start" | "stop") => {
-      if (error instanceof ManualLogOperationError) {
-        switch (error.code) {
-          case "session_not_found":
-          case "session_changed":
-            return "セッションが見つかりません";
-          case "session_disconnected":
-            return "セッションは切断済みです";
-          case "operation_in_progress":
-            return "同じセッションのログ操作を処理中です";
-          case "logging_not_active":
-            return "手動ログは開始されていません";
-        }
-      }
-      return backendCommandErrorMessage(
-        manualLogOperationCause(error),
-        action === "start"
-          ? "Failed to start the external control log."
-          : "Failed to stop the external control log."
-      );
-    };
     const handlers = createExternalLogControlHandlers({
       controller: manualLogController,
       waitForUiUpdate,
       submit: ({ requestId, filePath, error }) =>
         invoke("external_control_log_control_submit", { requestId, filePath, error }),
-      errorMessage: externalErrorMessage,
       onSubmitError: (error) => {
         console.error("Failed to submit MCP log control response:", error);
       },

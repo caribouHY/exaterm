@@ -1,5 +1,10 @@
 import type { ConnectionType } from "../../types";
-import type { ManualLogController } from "./manualLogController";
+import { backendCommandErrorMessage } from "../backend-errors/backendCommandError";
+import {
+  manualLogOperationCause,
+  ManualLogOperationError,
+  type ManualLogController,
+} from "./manualLogController";
 
 export interface ExternalLogControlRequestPayload {
   request_id: string;
@@ -18,13 +23,34 @@ interface ExternalLogControlHandlersDependencies {
   controller: ManualLogController;
   waitForUiUpdate(): Promise<void>;
   submit(response: ExternalLogControlResponse): Promise<void>;
-  errorMessage(error: unknown, action: "start" | "stop"): string;
   onSubmitError(error: unknown): void;
 }
 
 export interface ExternalLogControlHandlers {
   start(payload: ExternalLogControlRequestPayload): Promise<void>;
   stop(payload: ExternalLogControlRequestPayload): Promise<void>;
+}
+
+export function externalLogControlErrorMessage(error: unknown, action: "start" | "stop"): string {
+  if (error instanceof ManualLogOperationError) {
+    switch (error.code) {
+      case "session_not_found":
+      case "session_changed":
+        return "Session not found.";
+      case "session_disconnected":
+        return "Session is disconnected.";
+      case "operation_in_progress":
+        return "A log operation is already in progress for this session.";
+      case "logging_not_active":
+        return "Manual logging is not active.";
+    }
+  }
+  return backendCommandErrorMessage(
+    manualLogOperationCause(error),
+    action === "start"
+      ? "Failed to start the external control log."
+      : "Failed to stop the external control log."
+  );
 }
 
 export function createExternalLogControlHandlers(
@@ -61,7 +87,7 @@ export function createExternalLogControlHandlers(
         await respond({
           requestId: payload.request_id,
           filePath: null,
-          error: dependencies.errorMessage(error, "start"),
+          error: externalLogControlErrorMessage(error, "start"),
         });
       }
     },
@@ -76,7 +102,7 @@ export function createExternalLogControlHandlers(
         await respond({
           requestId: payload.request_id,
           filePath: null,
-          error: dependencies.errorMessage(error, "stop"),
+          error: externalLogControlErrorMessage(error, "stop"),
         });
       }
     },

@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ManualLogController } from "./manualLogController";
+import { ManualLogOperationError, type ManualLogController } from "./manualLogController";
 import {
   createExternalLogControlHandlers,
+  externalLogControlErrorMessage,
   subscribeExternalLogControl,
   type ExternalLogControlRequestPayload,
   type ExternalLogControlResponse,
@@ -51,13 +52,24 @@ function setup() {
     controller,
     submit,
     waitForUiUpdate,
-    errorMessage: (error, action) => `${action}:${String(error)}`,
     onSubmitError,
   });
   return { handlers, controller, submit, waitForUiUpdate, onSubmitError, order };
 }
 
 describe("externalLogControl", () => {
+  it.each([
+    ["session_not_found", "Session not found."],
+    ["session_changed", "Session not found."],
+    ["session_disconnected", "Session is disconnected."],
+    ["operation_in_progress", "A log operation is already in progress for this session."],
+    ["logging_not_active", "Manual logging is not active."],
+  ] as const)("maps %s to a stable external-control message", (code, expected) => {
+    expect(
+      externalLogControlErrorMessage(new ManualLogOperationError("session", code, null), "start")
+    ).toBe(expected);
+  });
+
   it("acks a start only after the shared operation and UI reflection", async () => {
     const h = setup();
     await h.handlers.start(payload);
