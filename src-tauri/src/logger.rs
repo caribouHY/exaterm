@@ -238,6 +238,15 @@ struct LogSessionCreateOptions {
     write_mode: LogWriteMode,
 }
 
+struct LogStartOptions {
+    session_id: String,
+    connection_type: String,
+    target: String,
+    file_path: Option<String>,
+    log_mode: String,
+    write_mode: LogWriteMode,
+}
+
 impl LogWriteMode {
     fn from_optional_str(value: Option<&str>) -> Result<Self, String> {
         match value.unwrap_or("overwrite") {
@@ -382,12 +391,15 @@ pub async fn start_log_on_connection(
 ) -> Result<String, String> {
     start_log(
         state,
-        session_id,
-        connection_type,
-        target,
-        None,
-        "auto",
-        LogWriteMode::Overwrite,
+        LogStartOptions {
+            session_id,
+            connection_type,
+            target,
+            file_path: None,
+            log_mode: "auto".into(),
+            write_mode: LogWriteMode::Overwrite,
+        },
+        false,
     )
     .await
 }
@@ -435,43 +447,50 @@ pub async fn start_manual_log(
     let write_mode = LogWriteMode::from_optional_str(write_mode.as_deref())?;
     start_log(
         state,
-        session_id,
-        connection_type,
-        target,
-        file_path,
-        "manual",
-        write_mode,
+        LogStartOptions {
+            session_id,
+            connection_type,
+            target,
+            file_path,
+            log_mode: "manual".into(),
+            write_mode,
+        },
+        true,
     )
     .await
 }
 
 async fn start_log(
     state: &LoggerState,
-    session_id: String,
-    connection_type: String,
-    target: String,
-    file_path: Option<String>,
-    start_method: &str,
-    write_mode: LogWriteMode,
+    options: LogStartOptions,
+    reuse_existing: bool,
 ) -> Result<String, String> {
+    let mut sessions = state.sessions.lock().await;
+    if reuse_existing {
+        if let Some(session) = sessions.get(&options.session_id) {
+            if session.log_mode == "manual" {
+                return Ok(session.file_path.clone());
+            }
+        }
+    }
     let include_header = crate::config::config_read()
         .map(|cfg| cfg.terminal.include_log_header)
         .unwrap_or(true);
+    let session_id = options.session_id.clone();
     let session = create_log_session(
         &state.log_dir,
         LogSessionCreateOptions {
-            session_id: session_id.clone(),
-            connection_type,
-            target,
-            file_path,
-            log_mode: start_method.into(),
+            session_id: options.session_id,
+            connection_type: options.connection_type,
+            target: options.target,
+            file_path: options.file_path,
+            log_mode: options.log_mode,
             include_header,
-            write_mode,
+            write_mode: options.write_mode,
         },
     )?;
-    let mut sessions = state.sessions.lock().await;
-    sessions.insert(session_id, session.clone());
     upsert_log_session(&state.index_path, session.clone())?;
+    sessions.insert(session_id, session.clone());
     Ok(session.file_path)
 }
 
@@ -765,6 +784,47 @@ mod tests {
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].log_mode, "manual");
         assert_eq!(loaded[0].file_path, file_path);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn repeated_manual_start_reuses_the_active_file_without_overwriting_it() {
+        let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        let index_path = dir.join("index.json");
+        let first_path = dir.join("first.log");
+        let second_path = dir.join("second.log");
+        let state = LoggerState::with_paths(dir.clone(), index_path);
+
+        let active_path = start_manual_log(
+            &state,
+            "session-1".into(),
+            "ssh".into(),
+            "host".into(),
+            Some(first_path.to_string_lossy().to_string()),
+            Some("overwrite".into()),
+        )
+        .await
+        .expect("first manual log should start");
+        fs::write(&first_path, "preserved content\n").expect("active log should be writable");
+
+        let repeated_path = start_manual_log(
+            &state,
+            "session-1".into(),
+            "ssh".into(),
+            "host".into(),
+            Some(second_path.to_string_lossy().to_string()),
+            Some("overwrite".into()),
+        )
+        .await
+        .expect("repeated manual log start should be idempotent");
+
+        assert_eq!(repeated_path, active_path);
+        assert_eq!(
+            fs::read_to_string(first_path).unwrap(),
+            "preserved content\n"
+        );
+        assert!(!second_path.exists());
         let _ = fs::remove_dir_all(&dir);
     }
 

@@ -98,6 +98,8 @@ Logging is opt-in. A terminal session has at most one active log, regardless of 
 - Moving a tab preserves the backend log state and does not stop logging.
 - MCP and the terminal CLI can control an allowed session log but cannot read log files directly.
 
+`src/features/terminal-logging/` owns session-scoped manual-log operation coordination for GUI and external-control entry points. It resolves the current owner tab, serializes start, stop, pause, and resume per session, flushes frontend buffers before pause or stop, invokes the logger backend, and then updates workspace metadata. GUI entry points retain save-dialog and status-message behavior; external-control entry points retain request acknowledgements and wait for changed metadata to reach the UI before replying. External log-control events are delivered only to the session's current owner window.
+
 Plaintext logs can contain commands, output, prompts, hostnames, usernames, device data, and accidental secrets. Changes to capture, storage, or control behavior must preserve the existing privacy boundary.
 
 ## External Control, MCP, and CLI

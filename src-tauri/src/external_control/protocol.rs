@@ -348,6 +348,7 @@ impl ExternalControlLogControlState {
     pub(crate) async fn request(
         &self,
         app: &AppHandle,
+        window_id: &str,
         event: &str,
         payload: ExternalControlLogControlRequestPayload,
     ) -> Result<ExternalControlLogControlAck, String> {
@@ -355,7 +356,7 @@ impl ExternalControlLogControlState {
         let (sender, receiver) = oneshot::channel();
         self.pending.lock().await.insert(request_id.clone(), sender);
 
-        if let Err(error) = app.emit(event, &payload) {
+        if let Err(error) = app.emit_to(window_id, event, &payload) {
             self.pending.lock().await.remove(&request_id);
             return Err(format!(
                 "Failed to send the external control log control request: {error}"
