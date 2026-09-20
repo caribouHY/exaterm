@@ -37,7 +37,7 @@ impl McpTarget {
             Self::Client { client } => client.call(request).await,
         };
         response
-            .map(ExternalControlResponse::into_value)
+            .and_then(ExternalControlResponse::into_value)
             .map_err(external_error_to_mcp)
     }
 }

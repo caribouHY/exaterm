@@ -7,7 +7,7 @@ use crate::ssh;
 
 use super::{MAX_CONNECT_DIMENSION, MAX_READ_CHARS, MAX_SETTLE_MS, MAX_WAIT_TIMEOUT_MS};
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub(crate) struct ExternalControlConnectionProfile {
     pub(crate) id: String,
     pub(crate) connection_type: String,
@@ -30,18 +30,6 @@ pub(crate) struct ExternalControlConnectionProfile {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub(crate) struct ExternalControlConnectionCreatedPayload {
-    pub(crate) session_id: String,
-    pub(crate) connection_type: String,
-    pub(crate) target: String,
-    pub(crate) title: String,
-    pub(crate) encoding: String,
-    pub(crate) terminal_mode: String,
-    pub(crate) auto_logging: bool,
-}
-
-#[cfg(not(test))]
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) struct ExternalControlCredentialRequestPayload {
     pub(crate) request_id: String,
     pub(crate) profile_id: String,
@@ -53,7 +41,6 @@ pub(crate) struct ExternalControlCredentialRequestPayload {
     pub(crate) title: String,
 }
 
-#[cfg_attr(test, allow(dead_code))]
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) struct ExternalControlLogControlRequestPayload {
     pub(crate) request_id: String,
@@ -418,26 +405,114 @@ pub enum ExternalControlRequest {
     RunTerminalCommand(RunTerminalCommandArgs),
 }
 
-macro_rules! result_type {
-    ($name:ident) => {
-        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-        #[serde(transparent)]
-        pub struct $name(pub Value);
-    };
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ListTerminalSessionsResult {
+    pub sessions: Vec<crate::terminal_control::TerminalSessionInfo>,
 }
 
-result_type!(ListTerminalSessionsResult);
-result_type!(ListConnectionProfilesResult);
-result_type!(ConnectSavedProfileResult);
-result_type!(ConnectSshResult);
-result_type!(ConnectTelnetResult);
-result_type!(ListSerialPortsResult);
-result_type!(ConnectSerialConsoleResult);
-result_type!(ReadTerminalOutputResult);
-result_type!(SendTerminalInputResult);
-result_type!(StartTerminalLogResult);
-result_type!(StopTerminalLogResult);
-result_type!(RunTerminalCommandResult);
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ListConnectionProfilesResult {
+    pub(crate) profiles: Vec<ExternalControlConnectionProfile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ConnectionCreatedResult {
+    pub session_id: String,
+    pub connection_type: String,
+    pub target: String,
+    pub title: String,
+    pub encoding: String,
+    pub terminal_mode: String,
+    pub auto_logging: bool,
+}
+
+pub type ConnectSavedProfileResult = ConnectionCreatedResult;
+pub type ConnectSshResult = ConnectionCreatedResult;
+pub type ConnectTelnetResult = ConnectionCreatedResult;
+pub type ConnectSerialConsoleResult = ConnectionCreatedResult;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ListSerialPortsResult {
+    pub ports: Vec<serial::PortInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TerminalOutputResult {
+    pub session_id: String,
+    pub output: String,
+    pub truncated: bool,
+    pub available_chars: usize,
+    pub start_cursor: usize,
+    pub cursor: usize,
+}
+
+impl From<crate::terminal_control::TerminalOutputSnapshot> for TerminalOutputResult {
+    fn from(snapshot: crate::terminal_control::TerminalOutputSnapshot) -> Self {
+        Self {
+            session_id: snapshot.session_id,
+            output: snapshot.output,
+            truncated: snapshot.truncated,
+            available_chars: snapshot.available_chars,
+            start_cursor: snapshot.start_cursor,
+            cursor: snapshot.cursor,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WaitTerminalOutputResult {
+    pub session_id: String,
+    pub matched: bool,
+    pub timed_out: bool,
+    pub output: String,
+    pub truncated: bool,
+    pub available_chars: usize,
+    pub start_cursor: usize,
+    pub cursor: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum ReadTerminalOutputResult {
+    Recent(TerminalOutputResult),
+    Delta(TerminalOutputResult),
+    Wait(WaitTerminalOutputResult),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SendTerminalInputResult {
+    pub session_id: String,
+    pub sent: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StartTerminalLogResult {
+    pub session_id: String,
+    pub started: bool,
+    pub already_active: bool,
+    pub file_path: String,
+    pub log_mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StopTerminalLogResult {
+    pub session_id: String,
+    pub stopped: bool,
+    pub already_inactive: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RunTerminalCommandResult {
+    pub session_id: String,
+    pub sent: bool,
+    pub matched: bool,
+    pub timed_out: bool,
+    pub output: String,
+    pub truncated: bool,
+    pub available_chars: usize,
+    pub start_cursor: usize,
+    pub cursor: usize,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "operation", content = "result", rename_all = "snake_case")]
@@ -457,21 +532,26 @@ pub enum ExternalControlResponse {
 }
 
 impl ExternalControlResponse {
-    pub fn into_value(self) -> Value {
-        match self {
-            Self::ListTerminalSessions(result) => result.0,
-            Self::ListConnectionProfiles(result) => result.0,
-            Self::ConnectSavedProfile(result) => result.0,
-            Self::ConnectSsh(result) => result.0,
-            Self::ConnectTelnet(result) => result.0,
-            Self::ListSerialPorts(result) => result.0,
-            Self::ConnectSerialConsole(result) => result.0,
-            Self::ReadTerminalOutput(result) => result.0,
-            Self::SendTerminalInput(result) => result.0,
-            Self::StartTerminalLog(result) => result.0,
-            Self::StopTerminalLog(result) => result.0,
-            Self::RunTerminalCommand(result) => result.0,
-        }
+    pub fn into_value(self) -> Result<Value, ExternalControlError> {
+        let value = match self {
+            Self::ListTerminalSessions(result) => serde_json::to_value(result),
+            Self::ListConnectionProfiles(result) => serde_json::to_value(result),
+            Self::ConnectSavedProfile(result) => serde_json::to_value(result),
+            Self::ConnectSsh(result) => serde_json::to_value(result),
+            Self::ConnectTelnet(result) => serde_json::to_value(result),
+            Self::ListSerialPorts(result) => serde_json::to_value(result),
+            Self::ConnectSerialConsole(result) => serde_json::to_value(result),
+            Self::ReadTerminalOutput(result) => serde_json::to_value(result),
+            Self::SendTerminalInput(result) => serde_json::to_value(result),
+            Self::StartTerminalLog(result) => serde_json::to_value(result),
+            Self::StopTerminalLog(result) => serde_json::to_value(result),
+            Self::RunTerminalCommand(result) => serde_json::to_value(result),
+        };
+        value.map_err(|error| {
+            internal_error(format!(
+                "Failed to serialize the external control result: {error}"
+            ))
+        })
     }
 }
 

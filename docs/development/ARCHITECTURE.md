@@ -106,6 +106,10 @@ Plaintext logs can contain commands, output, prompts, hostnames, usernames, devi
 
 `src-tauri/src/external_control/` owns the transport-neutral terminal-operation service, local control protocol, GUI discovery, and connection permissions used by external clients.
 
+The service keeps each operation result as a concrete Rust struct or state-specific enum through permission checks, connection preparation, terminal operations, and response assembly. Serialization to dynamic JSON occurs only in the CLI and MCP adapter boundary; the local control protocol serializes the typed response envelope directly.
+
+Configuration and port discovery, protocol connection and writes, GUI credential/log requests and workspace notifications, and logger access are narrow runtime I/O boundaries. Production adapters call the existing Tauri, protocol, configuration, workspace, credential, host-key, and logger APIs. Tests replace only those boundary effects, while permission evaluation, credential policy, host-key mode selection, connection finalization, workspace registration, and result construction follow the production service path.
+
 - The normal ExaTerm GUI process remains the single owner of sessions, logs, credentials, and UI prompts.
 - `exaterm-cli` exposes typed subcommands and JSON output for local automation.
 - `exaterm-mcp` is a bundled stdio MCP proxy. It discovers or launches the GUI and forwards tool calls over the current-user local control plane.

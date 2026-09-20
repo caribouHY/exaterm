@@ -1,44 +1,22 @@
-use serde_json::{json, Value};
-#[cfg(not(test))]
-use tauri::AppHandle;
-#[cfg(test)]
-use uuid::Uuid;
-
 use crate::config::AppConfig;
-#[cfg(not(test))]
-use crate::external_control::protocol::ExternalControlCredentialState;
-use crate::logger;
-#[cfg(not(test))]
 use crate::ssh;
-#[cfg(not(test))]
-use crate::telnet;
 use crate::terminal_control::TerminalProtocol;
-#[cfg(not(test))]
-use crate::workspace::emit_workspace_updated;
 use crate::workspace::{WorkspaceConnectionInfo, WorkspaceTabRegisterInput};
 
-#[cfg(not(test))]
-use super::profiles::ssh_credential_required;
 use super::profiles::{
     prepare_direct_ssh_connection, prepare_direct_telnet_connection,
     prepare_saved_profile_connection, prepare_serial_console_connection,
+    ssh_credential_required_with,
 };
-use super::ExternalControlConnectionCreatedPayload;
-#[cfg(not(test))]
-use super::ExternalControlCredentialRequestPayload;
 use super::PreparedConnectionKind;
-#[cfg_attr(test, allow(unused_imports))]
 use super::{
-    internal_error, invalid_params, load_app_config, load_serial_ports, ConnectSavedProfileArgs,
-    ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs, ExternalControlError,
-    ExternalControlRuntime, ExternalControlService, PreparedConnection, PreparedSerialConnection,
+    invalid_params, load_app_config, load_serial_ports, ConnectSavedProfileArgs,
+    ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs, ConnectionCreatedResult,
+    ExternalControlCredentialRequestPayload, ExternalControlError, ExternalControlHostKeyHandling,
+    ExternalControlRuntime, ExternalControlSerialConnectRequest, ExternalControlService,
+    ExternalControlSshConnectRequest, ExternalControlTelnetConnectRequest, ListSerialPortsResult,
+    PreparedConnection, PreparedSerialConnection,
 };
-
-#[derive(Clone, Copy)]
-enum ConnectionHostKeyHandling {
-    RequireTrusted,
-    PromptUnknown,
-}
 
 struct CreatedSessionMetadata {
     session_id: String,
@@ -54,7 +32,7 @@ impl ExternalControlService {
     pub(crate) async fn connect_saved_profile(
         &self,
         args: ConnectSavedProfileArgs,
-    ) -> Result<Value, ExternalControlError> {
+    ) -> Result<ConnectionCreatedResult, ExternalControlError> {
         self.ensure_connect_enabled()?;
         let config = load_app_config(&self.runtime)?;
         let prepared = prepare_saved_profile_connection(&config, args).map_err(invalid_params)?;
@@ -62,7 +40,7 @@ impl ExternalControlService {
             &self.runtime,
             &config,
             prepared,
-            ConnectionHostKeyHandling::RequireTrusted,
+            ExternalControlHostKeyHandling::RequireTrusted,
         )
         .await
     }
@@ -70,7 +48,7 @@ impl ExternalControlService {
     pub(crate) async fn connect_ssh(
         &self,
         args: ConnectSshArgs,
-    ) -> Result<Value, ExternalControlError> {
+    ) -> Result<ConnectionCreatedResult, ExternalControlError> {
         self.ensure_direct_connect_enabled()?;
         let config = load_app_config(&self.runtime)?;
         let prepared = prepare_direct_ssh_connection(&config, args).map_err(invalid_params)?;
@@ -78,7 +56,7 @@ impl ExternalControlService {
             &self.runtime,
             &config,
             prepared,
-            ConnectionHostKeyHandling::PromptUnknown,
+            ExternalControlHostKeyHandling::PromptUnknown,
         )
         .await
     }
@@ -86,7 +64,7 @@ impl ExternalControlService {
     pub(crate) async fn connect_telnet(
         &self,
         args: ConnectTelnetArgs,
-    ) -> Result<Value, ExternalControlError> {
+    ) -> Result<ConnectionCreatedResult, ExternalControlError> {
         self.ensure_direct_connect_enabled()?;
         let config = load_app_config(&self.runtime)?;
         let prepared = prepare_direct_telnet_connection(args).map_err(invalid_params)?;
@@ -94,23 +72,23 @@ impl ExternalControlService {
             &self.runtime,
             &config,
             prepared,
-            ConnectionHostKeyHandling::RequireTrusted,
+            ExternalControlHostKeyHandling::RequireTrusted,
         )
         .await
     }
 
-    pub(crate) async fn list_serial_ports(&self) -> Result<Value, ExternalControlError> {
+    pub(crate) async fn list_serial_ports(
+        &self,
+    ) -> Result<ListSerialPortsResult, ExternalControlError> {
         self.ensure_connect_enabled()?;
         let ports = load_serial_ports(&self.runtime)?;
-        Ok(json!({
-            "ports": ports,
-        }))
+        Ok(ListSerialPortsResult { ports })
     }
 
     pub(crate) async fn connect_serial_console(
         &self,
         args: ConnectSerialConsoleArgs,
-    ) -> Result<Value, ExternalControlError> {
+    ) -> Result<ConnectionCreatedResult, ExternalControlError> {
         self.ensure_connect_enabled()?;
         let ports = load_serial_ports(&self.runtime)?;
         let prepared = prepare_serial_console_connection(args, &ports).map_err(invalid_params)?;
@@ -136,19 +114,14 @@ fn terminal_protocol_from_log_type(value: &str) -> Result<TerminalProtocol, Stri
     }
 }
 
-#[cfg(not(test))]
 async fn connect_prepared_profile(
     runtime: &ExternalControlRuntime,
     config: &AppConfig,
     prepared: PreparedConnection,
-    host_key_handling: ConnectionHostKeyHandling,
-) -> Result<Value, ExternalControlError> {
-    let app = runtime.app.as_ref().ok_or_else(|| {
-        internal_error("App handle required for external control connections is unavailable")
-    })?;
+    host_key_handling: ExternalControlHostKeyHandling,
+) -> Result<ConnectionCreatedResult, ExternalControlError> {
     let session_id =
-        connect_prepared_profile_session(runtime, app, config, &prepared, host_key_handling)
-            .await?;
+        connect_prepared_profile_session(runtime, config, &prepared, host_key_handling).await?;
     let connection_info = workspace_connection_info(&prepared);
 
     finish_created_session(
@@ -191,13 +164,11 @@ fn workspace_connection_info(prepared: &PreparedConnection) -> WorkspaceConnecti
     }
 }
 
-#[cfg(not(test))]
 async fn connect_prepared_profile_session(
     runtime: &ExternalControlRuntime,
-    app: &AppHandle,
     config: &AppConfig,
     prepared: &PreparedConnection,
-    host_key_handling: ConnectionHostKeyHandling,
+    host_key_handling: ExternalControlHostKeyHandling,
 ) -> Result<String, ExternalControlError> {
     match &prepared.kind {
         PreparedConnectionKind::Ssh {
@@ -210,7 +181,6 @@ async fn connect_prepared_profile_session(
         } => {
             connect_prepared_ssh_profile(
                 runtime,
-                app,
                 config,
                 prepared,
                 host_key_handling,
@@ -226,12 +196,11 @@ async fn connect_prepared_profile_session(
             .await
         }
         PreparedConnectionKind::Telnet { host, port } => {
-            connect_prepared_telnet_profile(runtime, app, prepared, host, *port).await
+            connect_prepared_telnet_profile(runtime, prepared, host, *port).await
         }
     }
 }
 
-#[cfg(not(test))]
 struct PreparedSshProfileParts<'a> {
     host: &'a str,
     port: u16,
@@ -241,30 +210,23 @@ struct PreparedSshProfileParts<'a> {
     jump_profile: Option<&'a ssh::SshJumpProfile>,
 }
 
-#[cfg(not(test))]
 struct ProfileCredentialRequest<'a> {
     payload: ExternalControlCredentialRequestPayload,
     private_key_path: Option<&'a str>,
     default_private_key_path: Option<&'a str>,
 }
 
-#[cfg(not(test))]
 async fn connect_prepared_ssh_profile(
     runtime: &ExternalControlRuntime,
-    app: &AppHandle,
     config: &AppConfig,
     prepared: &PreparedConnection,
-    host_key_handling: ConnectionHostKeyHandling,
+    host_key_handling: ExternalControlHostKeyHandling,
     parts: PreparedSshProfileParts<'_>,
 ) -> Result<String, ExternalControlError> {
-    let credentials = runtime.credentials.as_ref().ok_or_else(|| {
-        internal_error("Credential prompt state required for external control is unavailable")
-    })?;
     let prompt_window_id = runtime.workspace.preferred_window_id().await;
-    let jump_credential = request_jump_credential(credentials, app, parts.jump_profile).await?;
+    let jump_credential = request_jump_credential(runtime, parts.jump_profile).await?;
     let profile_credential = request_profile_credential(
-        credentials,
-        app,
+        runtime,
         ProfileCredentialRequest {
             payload: ExternalControlCredentialRequestPayload {
                 request_id: String::new(),
@@ -283,70 +245,47 @@ async fn connect_prepared_ssh_profile(
     .await?;
 
     let options = build_ssh_connect_options(prepared, parts, profile_credential, jump_credential);
-    ssh::connect(
-        ssh::SshConnectRuntime {
-            app,
-            state: &runtime.ssh,
-            terminals: &runtime.terminals,
-            workspace: &runtime.workspace,
-            logger: runtime.logger.as_ref(),
-        },
-        ssh::SshConnectRequest {
+    runtime
+        .io
+        .protocol
+        .connect_ssh(ExternalControlSshConnectRequest {
             prompt_window_id,
-            host_key_handling: match host_key_handling {
-                ConnectionHostKeyHandling::RequireTrusted => ssh::HostKeyHandling::RequireTrusted,
-                ConnectionHostKeyHandling::PromptUnknown => ssh::HostKeyHandling::PromptUnknown,
-            },
+            host_key_handling,
             options,
-            attempt: None,
-        },
-    )
-    .await
-    .map_err(invalid_params)
-    .map(|result| result.session_id)
+        })
+        .await
+        .map_err(invalid_params)
 }
 
-#[cfg(not(test))]
 async fn connect_prepared_telnet_profile(
     runtime: &ExternalControlRuntime,
-    app: &AppHandle,
     prepared: &PreparedConnection,
     host: &str,
     port: u16,
 ) -> Result<String, ExternalControlError> {
-    telnet::connect(
-        telnet::TelnetConnectRuntime {
-            app,
-            state: &runtime.telnet,
-            terminals: &runtime.terminals,
-            workspace: &runtime.workspace,
-            logger: runtime.logger.as_ref(),
-        },
-        telnet::TelnetConnectRequest {
+    runtime
+        .io
+        .protocol
+        .connect_telnet(ExternalControlTelnetConnectRequest {
             host: host.to_string(),
             port,
             cols: prepared.cols,
             rows: prepared.rows,
-            encoding: Some(prepared.encoding.clone()),
-        },
-        None,
-    )
-    .await
-    .map_err(invalid_params)
+            encoding: prepared.encoding.clone(),
+        })
+        .await
+        .map_err(invalid_params)
 }
 
-#[cfg(not(test))]
 async fn request_jump_credential(
-    credentials: &ExternalControlCredentialState,
-    app: &AppHandle,
+    runtime: &ExternalControlRuntime,
     jump_profile: Option<&ssh::SshJumpProfile>,
 ) -> Result<Option<String>, ExternalControlError> {
     let Some(jump_profile) = jump_profile else {
         return Ok(None);
     };
     request_profile_credential(
-        credentials,
-        app,
+        runtime,
         ProfileCredentialRequest {
             payload: ExternalControlCredentialRequestPayload {
                 request_id: String::new(),
@@ -368,7 +307,6 @@ async fn request_jump_credential(
     .await
 }
 
-#[cfg(not(test))]
 fn build_ssh_connect_options(
     prepared: &PreparedConnection,
     parts: PreparedSshProfileParts<'_>,
@@ -402,7 +340,6 @@ fn build_ssh_connect_options(
     }
 }
 
-#[cfg(not(test))]
 fn split_required_ssh_credential(
     auth_method: &str,
     credential: Option<String>,
@@ -414,7 +351,6 @@ fn split_required_ssh_credential(
     }
 }
 
-#[cfg(not(test))]
 fn split_optional_ssh_credential(
     auth_method: &str,
     credential: Option<String>,
@@ -426,24 +362,25 @@ fn split_optional_ssh_credential(
     }
 }
 
-#[cfg(not(test))]
 async fn request_profile_credential(
-    credentials: &ExternalControlCredentialState,
-    app: &AppHandle,
+    runtime: &ExternalControlRuntime,
     request: ProfileCredentialRequest<'_>,
 ) -> Result<Option<String>, ExternalControlError> {
-    if !ssh_credential_required(
+    if !ssh_credential_required_with(
         &request.payload.auth_method,
         request.private_key_path,
         request.default_private_key_path,
+        |path| runtime.io.ui.private_key_requires_passphrase(path),
     )
     .map_err(invalid_params)?
     {
         return Ok(None);
     }
 
-    credentials
-        .request_ssh_credential(app, request.payload)
+    runtime
+        .io
+        .ui
+        .request_ssh_credential(request.payload)
         .await
         .map_err(invalid_params)?
         .map(Some)
@@ -454,7 +391,7 @@ async fn finish_created_session(
     runtime: &ExternalControlRuntime,
     config: &AppConfig,
     metadata: CreatedSessionMetadata,
-) -> Result<Value, ExternalControlError> {
+) -> Result<ConnectionCreatedResult, ExternalControlError> {
     let CreatedSessionMetadata {
         session_id,
         connection_type,
@@ -465,24 +402,16 @@ async fn finish_created_session(
         connection_info,
     } = metadata;
     let auto_log_file_path = if config.terminal.auto_session_log {
-        match &runtime.logger {
-            Some(logger_state) => logger::start_log_on_connection(
-                logger_state,
-                session_id.clone(),
-                connection_type.clone(),
-                target.clone(),
-            )
+        match runtime
+            .io
+            .logger
+            .start_auto_log(session_id.clone(), connection_type.clone(), target.clone())
             .await
-            .map(Some)
-            .unwrap_or_else(|error| {
+        {
+            Ok(file_path) => Some(file_path),
+            Err(error) => {
                 log::warn!(
                     "External control connection log start failed for session {session_id}: {error}"
-                );
-                None
-            }),
-            None => {
-                log::warn!(
-                    "External control connection log start skipped because logger state is unavailable"
                 );
                 None
             }
@@ -493,7 +422,7 @@ async fn finish_created_session(
     let auto_logging = auto_log_file_path.is_some();
 
     let protocol = terminal_protocol_from_log_type(&connection_type).map_err(invalid_params)?;
-    let payload = ExternalControlConnectionCreatedPayload {
+    let result = ConnectionCreatedResult {
         session_id: session_id.clone(),
         connection_type: connection_type.clone(),
         target,
@@ -503,7 +432,7 @@ async fn finish_created_session(
         auto_logging,
     };
 
-    let _workspace_snapshot = runtime
+    let workspace_snapshot = runtime
         .workspace
         .register_tab(WorkspaceTabRegisterInput {
             window_id: None,
@@ -518,113 +447,27 @@ async fn finish_created_session(
             manual_log_file_path: auto_log_file_path,
         })
         .await;
-    #[cfg(not(test))]
-    {
-        let app = runtime.app.as_ref().ok_or_else(|| {
-            internal_error("App handle required for external control connections is unavailable")
-        })?;
-        emit_workspace_updated(app, &_workspace_snapshot);
-    }
+    runtime.io.ui.emit_workspace_updated(&workspace_snapshot);
 
-    Ok(json!(payload))
+    Ok(result)
 }
 
-#[cfg(not(test))]
 async fn connect_prepared_serial_console(
     runtime: &ExternalControlRuntime,
     config: &AppConfig,
     prepared: PreparedSerialConnection,
-) -> Result<Value, ExternalControlError> {
-    let app = runtime.app.as_ref().ok_or_else(|| {
-        internal_error("App handle required for external control connections is unavailable")
-    })?;
-
-    let session_id = crate::serial::connect(
-        crate::serial::SerialConnectRuntime {
-            app,
-            state: &runtime.serial,
-            terminals: &runtime.terminals,
-            workspace: &runtime.workspace,
-            logger: runtime.logger.as_ref(),
-        },
-        crate::serial::SerialConnectRequest {
+) -> Result<ConnectionCreatedResult, ExternalControlError> {
+    let session_id = runtime
+        .io
+        .protocol
+        .connect_serial(ExternalControlSerialConnectRequest {
             port: prepared.port.clone(),
             config: prepared.config,
-            encoding: Some(prepared.encoding.clone()),
-        },
-        None,
-    )
-    .await
-    .map_err(invalid_params)?;
+            encoding: prepared.encoding.clone(),
+        })
+        .await
+        .map_err(invalid_params)?;
 
-    finish_created_session(
-        runtime,
-        config,
-        CreatedSessionMetadata {
-            session_id,
-            connection_type: "serial".into(),
-            target: prepared.target,
-            title: prepared.title,
-            encoding: prepared.encoding,
-            terminal_mode: prepared.terminal_mode,
-            connection_info: None,
-        },
-    )
-    .await
-}
-
-#[cfg(test)]
-async fn connect_prepared_profile(
-    runtime: &ExternalControlRuntime,
-    config: &AppConfig,
-    prepared: PreparedConnection,
-    _host_key_handling: ConnectionHostKeyHandling,
-) -> Result<Value, ExternalControlError> {
-    let session_id = Uuid::new_v4().to_string();
-    let connection_info = workspace_connection_info(&prepared);
-    let protocol =
-        terminal_protocol_from_log_type(&prepared.connection_type).map_err(invalid_params)?;
-    runtime
-        .terminals
-        .register_session_with_encoding(
-            session_id.clone(),
-            protocol,
-            prepared.target.clone(),
-            Some(prepared.encoding.clone()),
-        )
-        .await;
-    finish_created_session(
-        runtime,
-        config,
-        CreatedSessionMetadata {
-            session_id,
-            connection_type: prepared.connection_type,
-            target: prepared.target,
-            title: prepared.title,
-            encoding: prepared.encoding,
-            terminal_mode: prepared.terminal_mode,
-            connection_info: Some(connection_info),
-        },
-    )
-    .await
-}
-
-#[cfg(test)]
-async fn connect_prepared_serial_console(
-    runtime: &ExternalControlRuntime,
-    config: &AppConfig,
-    prepared: PreparedSerialConnection,
-) -> Result<Value, ExternalControlError> {
-    let session_id = Uuid::new_v4().to_string();
-    runtime
-        .terminals
-        .register_session_with_encoding(
-            session_id.clone(),
-            TerminalProtocol::Serial,
-            prepared.target.clone(),
-            Some(prepared.encoding.clone()),
-        )
-        .await;
     finish_created_session(
         runtime,
         config,

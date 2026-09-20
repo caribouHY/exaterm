@@ -632,10 +632,12 @@ fn validate_input_length(value: &str) -> Result<(), String> {
 }
 
 fn print_response(response: ExternalControlResponse) {
-    println!(
-        "{}",
-        serde_json::to_string(&response.into_value()).unwrap_or_else(|_| "{}".into())
-    );
+    let output = response
+        .into_value()
+        .ok()
+        .and_then(|value| serde_json::to_string(&value).ok())
+        .unwrap_or_else(|| "{}".into());
+    println!("{output}");
 }
 
 fn print_error(code: &str, message: &str) {
@@ -1473,17 +1475,14 @@ mod tests {
 
     #[test]
     fn print_response_serializes_result_value() {
-        let response =
-            ExternalControlResponse::ListTerminalSessions(ListTerminalSessionsResult(json!({
-                "sessions": [{"session_id": "s1"}]
-            })));
+        let response = ExternalControlResponse::ListTerminalSessions(ListTerminalSessionsResult {
+            sessions: Vec::new(),
+        });
 
-        let serialized = serde_json::to_string(&response.into_value()).unwrap();
+        let serialized = serde_json::to_string(&response.into_value().unwrap()).unwrap();
         assert_eq!(
             serde_json::from_str::<Value>(&serialized).unwrap(),
-            json!({
-                "sessions": [{"session_id": "s1"}]
-            })
+            json!({ "sessions": [] })
         );
     }
 }

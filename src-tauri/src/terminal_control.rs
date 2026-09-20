@@ -19,14 +19,14 @@ pub enum TerminalProtocol {
     Telnet,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TerminalStatus {
     Connected,
     Disconnected,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct TerminalSessionInfo {
     pub session_id: String,
     pub protocol: TerminalProtocol,
@@ -35,7 +35,7 @@ pub struct TerminalSessionInfo {
     pub status: TerminalStatus,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct TerminalOutputSnapshot {
     pub session_id: String,
     pub output: String,
