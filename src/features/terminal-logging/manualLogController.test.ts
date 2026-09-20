@@ -35,23 +35,23 @@ function terminalTab(overrides: Partial<TabInfo> = {}): TabInfo {
 function setup(initialTabs = [terminalTab()]) {
   let tabs = initialTabs;
   const calls: string[] = [];
-  const dependencies: ManualLogControllerDependencies = {
-    getTabBySessionId: vi.fn((sessionId) => {
-      calls.push(`resolve:${sessionId}`);
-      return tabs.find((tab) => tab.sessionId === sessionId) ?? null;
-    }),
-    startBackend: vi.fn(async ({ sessionId }) => {
-      calls.push(`start:${sessionId}`);
-      return `C:\\logs\\${sessionId}.log`;
-    }),
-    stopBackend: vi.fn(async (sessionId) => {
-      calls.push(`stop:${sessionId}`);
-    }),
-    isBackendActive: vi.fn(async () => false),
-    flush: vi.fn(async (tabId) => {
-      calls.push(`flush:${tabId}`);
-    }),
-    updateMetadata: vi.fn(async (tabId, patch) => {
+  const getTabBySessionId = vi.fn((sessionId: string) => {
+    calls.push(`resolve:${sessionId}`);
+    return tabs.find((tab) => tab.sessionId === sessionId) ?? null;
+  });
+  const startBackend = vi.fn(async ({ sessionId }: { sessionId: string }) => {
+    calls.push(`start:${sessionId}`);
+    return `C:\\logs\\${sessionId}.log`;
+  });
+  const stopBackend = vi.fn(async (sessionId: string) => {
+    calls.push(`stop:${sessionId}`);
+  });
+  const isBackendActive = vi.fn(async () => false);
+  const flush = vi.fn(async (tabId: string) => {
+    calls.push(`flush:${tabId}`);
+  });
+  const updateMetadata = vi.fn<ManualLogControllerDependencies["updateMetadata"]>(
+    async (tabId, patch) => {
       calls.push(`metadata:${tabId}:${String(patch.isManualLogging)}`);
       tabs = tabs.map((tab) =>
         tab.id === tabId
@@ -61,12 +61,25 @@ function setup(initialTabs = [terminalTab()]) {
             }
           : tab
       );
-    }),
+    }
+  );
+  const dependencies: ManualLogControllerDependencies = {
+    getTabBySessionId,
+    startBackend,
+    stopBackend,
+    isBackendActive,
+    flush,
+    updateMetadata,
   };
   const controller = createManualLogController(dependencies);
   return {
     controller,
     dependencies,
+    startBackend,
+    stopBackend,
+    isBackendActive,
+    flush,
+    updateMetadata,
     calls,
     setTabs(nextTabs: TabInfo[]) {
       tabs = nextTabs;
@@ -93,14 +106,14 @@ describe("manualLogController", () => {
     ).resolves.toMatchObject({ alreadyActive: false, metadataChanged: true });
     lease.release();
 
-    expect(gui.dependencies.startBackend).toHaveBeenCalledWith({
+    expect(gui.startBackend).toHaveBeenCalledWith({
       sessionId: "session-1",
       connectionType: "ssh",
       target: "Terminal",
       filePath: "C:\\chosen.log",
       writeMode: "append",
     });
-    expect(gui.dependencies.updateMetadata).toHaveBeenCalledWith("tab-1", {
+    expect(gui.updateMetadata).toHaveBeenCalledWith("tab-1", {
       isManualLogging: true,
       isManualLoggingPaused: false,
       manualLogFilePath: "C:\\logs\\session-1.log",
@@ -111,8 +124,8 @@ describe("manualLogController", () => {
       { ...startTarget, expectedTabId: undefined },
       { filePath: null, writeMode: "overwrite" }
     );
-    expect(external.dependencies.startBackend).toHaveBeenCalledTimes(1);
-    expect(external.dependencies.updateMetadata).toHaveBeenCalledTimes(1);
+    expect(external.startBackend).toHaveBeenCalledTimes(1);
+    expect(external.updateMetadata).toHaveBeenCalledTimes(1);
   });
 
   it("orders flush, backend stop, and metadata using tab id rather than session id", async () => {
@@ -150,8 +163,8 @@ describe("manualLogController", () => {
       alreadyActive: true,
       metadataChanged: true,
     });
-    expect(h.dependencies.startBackend).not.toHaveBeenCalled();
-    expect(h.dependencies.updateMetadata).toHaveBeenCalledWith("tab-1", {
+    expect(h.startBackend).not.toHaveBeenCalled();
+    expect(h.updateMetadata).toHaveBeenCalledWith("tab-1", {
       isManualLoggingPaused: false,
     });
   });
@@ -163,8 +176,8 @@ describe("manualLogController", () => {
       alreadyInactive: true,
       metadataChanged: false,
     });
-    expect(h.dependencies.flush).not.toHaveBeenCalled();
-    expect(h.dependencies.stopBackend).not.toHaveBeenCalled();
+    expect(h.flush).not.toHaveBeenCalled();
+    expect(h.stopBackend).not.toHaveBeenCalled();
   });
 
   it("holds a synchronous reservation across the dialog and releases it on cancel", async () => {
@@ -174,7 +187,7 @@ describe("manualLogController", () => {
     await expect(
       h.controller.start(startTarget, { filePath: null, writeMode: "overwrite" })
     ).rejects.toMatchObject({ stage: "busy", code: "operation_in_progress" });
-    expect(h.dependencies.startBackend).not.toHaveBeenCalled();
+    expect(h.startBackend).not.toHaveBeenCalled();
 
     lease.release();
     await expect(
@@ -185,15 +198,15 @@ describe("manualLogController", () => {
   it("stops a backend log after failed start metadata and transfer to another controller", async () => {
     const h = setup();
     let backendActive = false;
-    vi.mocked(h.dependencies.startBackend).mockImplementation(async () => {
+    h.startBackend.mockImplementation(async () => {
       backendActive = true;
       return "C:\\logs\\active.log";
     });
-    vi.mocked(h.dependencies.isBackendActive).mockImplementation(async () => backendActive);
-    vi.mocked(h.dependencies.stopBackend).mockImplementation(async () => {
+    h.isBackendActive.mockImplementation(async () => backendActive);
+    h.stopBackend.mockImplementation(async () => {
       backendActive = false;
     });
-    vi.mocked(h.dependencies.updateMetadata).mockRejectedValueOnce(new Error("metadata failed"));
+    h.updateMetadata.mockRejectedValueOnce(new Error("metadata failed"));
     await expect(
       h.controller.start(startTarget, { filePath: null, writeMode: "overwrite" })
     ).rejects.toMatchObject({ stage: "metadata" });
@@ -205,23 +218,23 @@ describe("manualLogController", () => {
       metadataChanged: true,
     });
     expect(backendActive).toBe(false);
-    expect(h.dependencies.stopBackend).toHaveBeenCalledOnce();
+    expect(h.stopBackend).toHaveBeenCalledOnce();
   });
 
   it("reports a backend state lookup failure instead of acknowledging an inactive stop", async () => {
     const h = setup();
-    vi.mocked(h.dependencies.isBackendActive).mockRejectedValueOnce(new Error("lookup failed"));
+    h.isBackendActive.mockRejectedValueOnce(new Error("lookup failed"));
     await expect(h.controller.stop({ sessionId: "session-1" })).rejects.toMatchObject({
       stage: "backend",
     });
     expect(h.controller.isBusy("session-1")).toBe(false);
-    expect(h.dependencies.stopBackend).not.toHaveBeenCalled();
+    expect(h.stopBackend).not.toHaveBeenCalled();
   });
 
   it("rejects same-session overlap while allowing a different session to run", async () => {
     const firstStart = deferred<string>();
     const h = setup([terminalTab(), terminalTab({ id: "tab-2", sessionId: "session-2" })]);
-    vi.mocked(h.dependencies.startBackend).mockImplementation(async ({ sessionId }) => {
+    h.startBackend.mockImplementation(async ({ sessionId }) => {
       if (sessionId === "session-1") return firstStart.promise;
       return "C:\\logs\\session-2.log";
     });
@@ -255,7 +268,7 @@ describe("manualLogController", () => {
     await expect(
       lease.commit({ filePath: "C:\\chosen.log", writeMode: "overwrite" })
     ).rejects.toMatchObject({ stage: "session", code: "session_not_found" });
-    expect(h.dependencies.startBackend).not.toHaveBeenCalled();
+    expect(h.startBackend).not.toHaveBeenCalled();
     lease.release();
   });
 
@@ -284,11 +297,11 @@ describe("manualLogController", () => {
 
     await h.controller.setPaused({ sessionId: "session-1" }, true);
     expect(h.calls.slice(-2)).toEqual(["flush:tab-1", "metadata:tab-1:undefined"]);
-    expect(h.dependencies.stopBackend).not.toHaveBeenCalled();
+    expect(h.stopBackend).not.toHaveBeenCalled();
 
     await h.controller.setPaused({ sessionId: "session-1" }, false);
-    expect(h.dependencies.flush).toHaveBeenCalledTimes(1);
-    expect(h.dependencies.stopBackend).not.toHaveBeenCalled();
+    expect(h.flush).toHaveBeenCalledTimes(1);
+    expect(h.stopBackend).not.toHaveBeenCalled();
   });
 
   it.each([["flush", "flush"] as const, ["backend", "backend"] as const])(
@@ -298,9 +311,9 @@ describe("manualLogController", () => {
         terminalTab({ isManualLogging: true, manualLogFilePath: "C:\\logs\\active.log" }),
       ]);
       if (failurePoint === "flush") {
-        vi.mocked(h.dependencies.flush).mockRejectedValueOnce(new Error("flush failed"));
+        h.flush.mockRejectedValueOnce(new Error("flush failed"));
       } else {
-        vi.mocked(h.dependencies.stopBackend).mockRejectedValueOnce(new Error("stop failed"));
+        h.stopBackend.mockRejectedValueOnce(new Error("stop failed"));
       }
 
       await expect(h.controller.stop({ sessionId: "session-1" })).rejects.toMatchObject({
@@ -312,7 +325,7 @@ describe("manualLogController", () => {
 
   it("repairs start metadata without starting or overwriting the backend twice", async () => {
     const h = setup();
-    vi.mocked(h.dependencies.updateMetadata).mockRejectedValueOnce(new Error("metadata failed"));
+    h.updateMetadata.mockRejectedValueOnce(new Error("metadata failed"));
 
     await expect(
       h.controller.start(startTarget, { filePath: "C:\\chosen.log", writeMode: "overwrite" })
@@ -322,14 +335,14 @@ describe("manualLogController", () => {
     await expect(
       h.controller.start(startTarget, { filePath: "C:\\other.log", writeMode: "overwrite" })
     ).resolves.toMatchObject({ filePath: "C:\\logs\\session-1.log", alreadyActive: true });
-    expect(h.dependencies.startBackend).toHaveBeenCalledTimes(1);
+    expect(h.startBackend).toHaveBeenCalledTimes(1);
   });
 
   it("repairs stop metadata without flushing or stopping the backend twice", async () => {
     const h = setup([
       terminalTab({ isManualLogging: true, manualLogFilePath: "C:\\logs\\active.log" }),
     ]);
-    vi.mocked(h.dependencies.updateMetadata).mockRejectedValueOnce(new Error("metadata failed"));
+    h.updateMetadata.mockRejectedValueOnce(new Error("metadata failed"));
 
     await expect(h.controller.stop({ sessionId: "session-1" })).rejects.toBeInstanceOf(
       ManualLogOperationError
@@ -338,15 +351,15 @@ describe("manualLogController", () => {
       alreadyInactive: true,
       metadataChanged: true,
     });
-    expect(h.dependencies.flush).toHaveBeenCalledTimes(1);
-    expect(h.dependencies.stopBackend).toHaveBeenCalledTimes(1);
+    expect(h.flush).toHaveBeenCalledTimes(1);
+    expect(h.stopBackend).toHaveBeenCalledTimes(1);
   });
 
   it("repairs a completed stop before starting the same session again", async () => {
     const h = setup([
       terminalTab({ isManualLogging: true, manualLogFilePath: "C:\\logs\\active.log" }),
     ]);
-    vi.mocked(h.dependencies.updateMetadata).mockRejectedValueOnce(new Error("metadata failed"));
+    h.updateMetadata.mockRejectedValueOnce(new Error("metadata failed"));
 
     await expect(h.controller.stop({ sessionId: "session-1" })).rejects.toMatchObject({
       stage: "metadata",
@@ -355,9 +368,9 @@ describe("manualLogController", () => {
       h.controller.start(startTarget, { filePath: "C:\\next.log", writeMode: "overwrite" })
     ).resolves.toMatchObject({ alreadyActive: false });
 
-    expect(h.dependencies.stopBackend).toHaveBeenCalledTimes(1);
-    expect(h.dependencies.startBackend).toHaveBeenCalledTimes(1);
-    expect(h.dependencies.updateMetadata).toHaveBeenNthCalledWith(2, "tab-1", {
+    expect(h.stopBackend).toHaveBeenCalledTimes(1);
+    expect(h.startBackend).toHaveBeenCalledTimes(1);
+    expect(h.updateMetadata).toHaveBeenNthCalledWith(2, "tab-1", {
       isManualLogging: false,
       isManualLoggingPaused: false,
     });

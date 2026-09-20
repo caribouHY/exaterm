@@ -13,15 +13,15 @@ function deferred<T>() {
 
 describe("manualLogBufferWriter", () => {
   it("drains a flush queued after the write loop exits but before settlement", async () => {
-    const first = deferred<void>();
-    const last = deferred<void>();
+    const first = deferred<undefined>();
+    const last = deferred<undefined>();
     const writes: string[] = [];
     const writer = createManualLogBufferWriter(async (data) => {
       writes.push(data);
       await (data === "first" ? first.promise : last.promise);
     });
     const append = writer.append("first");
-    first.resolve();
+    first.resolve(undefined);
     await Promise.resolve();
     await Promise.resolve();
     let flushed = false;
@@ -31,7 +31,7 @@ describe("manualLogBufferWriter", () => {
     await append;
     expect(writes).toEqual(["first", "last"]);
     expect(flushed).toBe(false);
-    last.resolve();
+    last.resolve(undefined);
     await flush;
     expect(flushed).toBe(true);
   });
@@ -53,7 +53,7 @@ describe("manualLogBufferWriter", () => {
   });
 
   it("includes output queued while a flush is in flight before resolving", async () => {
-    const first = deferred<void>();
+    const first = deferred<undefined>();
     const writes: string[] = [];
     const write = vi.fn(async (data: string) => {
       writes.push(data);
@@ -63,7 +63,7 @@ describe("manualLogBufferWriter", () => {
 
     const flush = writer.flush("first");
     const append = writer.append("second");
-    first.resolve();
+    first.resolve(undefined);
     await Promise.all([flush, append]);
 
     expect(writes).toEqual(["first", "second"]);

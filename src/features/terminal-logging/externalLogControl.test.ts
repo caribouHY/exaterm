@@ -27,19 +27,21 @@ const payload: ExternalLogControlRequestPayload = {
 
 function setup() {
   const order: string[] = [];
+  const start = vi.fn(async () => {
+    order.push("operation");
+    return {
+      filePath: "C:\\logs\\session.log",
+      alreadyActive: false,
+      metadataChanged: true,
+    };
+  });
+  const stop = vi.fn(async () => {
+    order.push("operation");
+    return { alreadyInactive: false, metadataChanged: true };
+  });
   const controller = {
-    start: vi.fn(async () => {
-      order.push("operation");
-      return {
-        filePath: "C:\\logs\\session.log",
-        alreadyActive: false,
-        metadataChanged: true,
-      };
-    }),
-    stop: vi.fn(async () => {
-      order.push("operation");
-      return { alreadyInactive: false, metadataChanged: true };
-    }),
+    start,
+    stop,
   } as unknown as ManualLogController;
   const submit = vi.fn(async (_response: ExternalLogControlResponse) => {
     order.push("ack");
@@ -54,7 +56,7 @@ function setup() {
     waitForUiUpdate,
     onSubmitError,
   });
-  return { handlers, controller, submit, waitForUiUpdate, onSubmitError, order };
+  return { handlers, start, stop, submit, waitForUiUpdate, onSubmitError, order };
 }
 
 describe("externalLogControl", () => {
@@ -93,7 +95,7 @@ describe("externalLogControl", () => {
 
   it("does not wait for UI when an idempotent operation changed no metadata", async () => {
     const h = setup();
-    vi.mocked(h.controller.stop).mockResolvedValueOnce({
+    h.stop.mockResolvedValueOnce({
       alreadyInactive: true,
       metadataChanged: false,
     });
@@ -106,7 +108,7 @@ describe("externalLogControl", () => {
 
   it("returns operation and UI-wait failures exactly once", async () => {
     const operationFailure = setup();
-    vi.mocked(operationFailure.controller.start).mockRejectedValueOnce(new Error("start failed"));
+    operationFailure.start.mockRejectedValueOnce(new Error("start failed"));
     await operationFailure.handlers.start(payload);
     expect(operationFailure.submit).toHaveBeenCalledOnce();
     expect(operationFailure.submit.mock.calls[0][0].error).toContain("start failed");
@@ -165,7 +167,7 @@ describe("externalLogControl", () => {
   });
 
   it("allows a handler accepted before disposal to finish", async () => {
-    const handling = deferred<void>();
+    const handling = deferred<undefined>();
     const listeners = new Map<
       string,
       (event: { payload: ExternalLogControlRequestPayload }) => void
@@ -189,7 +191,7 @@ describe("externalLogControl", () => {
 
     listeners.get("external-control://log-start-request")?.({ payload });
     dispose();
-    handling.resolve();
+    handling.resolve(undefined);
     await handling.promise;
 
     expect(handlers.start).toHaveBeenCalledOnce();

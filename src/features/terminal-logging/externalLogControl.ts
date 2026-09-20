@@ -139,8 +139,8 @@ export function subscribeExternalLogControl(
       .catch(onRegistrationError);
   };
 
-  register("external-control://log-start-request", handlers.start);
-  register("external-control://log-stop-request", handlers.stop);
+  register("external-control://log-start-request", (payload) => handlers.start(payload));
+  register("external-control://log-stop-request", (payload) => handlers.stop(payload));
 
   return () => {
     acceptingEvents = false;
