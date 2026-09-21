@@ -154,6 +154,23 @@ pub fn run() {
                         let result = workspace_state.unregister_window(window_id).await;
                         workspace::emit_workspace_updates(&app, &result.snapshots);
                         workspace::emit_workspace_window_closed(&app, &result);
+                        if result.remaining_window_count > 0 {
+                            let destination_window_id = workspace_state.preferred_window_id().await;
+                            let reassigned = app
+                                .state::<StartupCliState>()
+                                .reassign_window(&result.window_id, &destination_window_id);
+                            if reassigned > 0 {
+                                if let Err(error) = app.emit_to(
+                                    &destination_window_id,
+                                    "startup-cli://request-available",
+                                    (),
+                                ) {
+                                    log::warn!(
+                                        "Reassigned startup CLI request notification failed: {error}"
+                                    );
+                                }
+                            }
+                        }
                     });
                 }
                 _ => {}

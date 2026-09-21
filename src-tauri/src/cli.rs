@@ -64,6 +64,20 @@ impl StartupCliState {
             .position(|entry| entry.window_id == window_id)?;
         pending.remove(index).map(|entry| entry.request)
     }
+
+    pub fn reassign_window(&self, from_window_id: &str, to_window_id: &str) -> usize {
+        let Ok(mut pending) = self.pending.lock() else {
+            return 0;
+        };
+        let mut reassigned = 0;
+        for entry in pending.iter_mut() {
+            if entry.window_id == from_window_id {
+                entry.window_id = to_window_id.to_string();
+                reassigned += 1;
+            }
+        }
+        reassigned
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -515,5 +529,19 @@ mod tests {
         assert_eq!(state.take_for_window("main"), Some(second));
         assert_eq!(state.take_for_window("main"), None);
         assert_eq!(state.take_for_window("other"), Some(other));
+    }
+
+    #[test]
+    fn startup_requests_move_when_the_target_window_closes() {
+        let state = StartupCliState::default();
+        let request = StartupCliRequest::Telnet(StartupTelnetRequest {
+            target: "queued".into(),
+            port: None,
+        });
+        state.enqueue("closing".into(), request.clone());
+
+        assert_eq!(state.reassign_window("closing", "remaining"), 1);
+        assert_eq!(state.take_for_window("closing"), None);
+        assert_eq!(state.take_for_window("remaining"), Some(request));
     }
 }

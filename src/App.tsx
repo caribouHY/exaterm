@@ -718,12 +718,18 @@ export default function App() {
   }, [showConnection, startupCliRequestCoordinator]);
 
   useEffect(() => {
-    startupCliRequestCoordinator.check();
     const unlisten = startupCliClient.listenRequestAvailable(() => {
       startupCliRequestCoordinator.check();
     });
+    void unlisten
+      .then(() => {
+        startupCliRequestCoordinator.check();
+      })
+      .catch((error) => {
+        console.error("Failed to listen for startup CLI requests:", error);
+      });
     return () => {
-      unlisten.then((stopListening) => stopListening());
+      void unlisten.then((stopListening) => stopListening()).catch(() => {});
     };
   }, [startupCliRequestCoordinator]);
 
