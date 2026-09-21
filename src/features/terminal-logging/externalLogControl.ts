@@ -1,4 +1,4 @@
-import type { ConnectionType } from "../../types";
+import type { ConnectionType, ManualLogWriteMode } from "../../types";
 import { backendCommandErrorMessage } from "../backend-errors/backendCommandError";
 import {
   manualLogOperationCause,
@@ -11,6 +11,8 @@ export interface ExternalLogControlRequestPayload {
   session_id: string;
   connection_type: ConnectionType;
   target: string;
+  file_path: string | null;
+  write_mode: ManualLogWriteMode | null;
 }
 
 export interface ExternalLogControlResponse {
@@ -29,9 +31,14 @@ interface ExternalLogControlHandlersDependencies {
 export interface ExternalLogControlHandlers {
   start(payload: ExternalLogControlRequestPayload): Promise<void>;
   stop(payload: ExternalLogControlRequestPayload): Promise<void>;
+  pause(payload: ExternalLogControlRequestPayload): Promise<void>;
+  resume(payload: ExternalLogControlRequestPayload): Promise<void>;
 }
 
-export function externalLogControlErrorMessage(error: unknown, action: "start" | "stop"): string {
+export function externalLogControlErrorMessage(
+  error: unknown,
+  action: "start" | "stop" | "pause" | "resume"
+): string {
   if (error instanceof ManualLogOperationError) {
     switch (error.code) {
       case "session_not_found":
@@ -45,12 +52,22 @@ export function externalLogControlErrorMessage(error: unknown, action: "start" |
         return "Manual logging is not active.";
     }
   }
-  return backendCommandErrorMessage(
-    manualLogOperationCause(error),
-    action === "start"
-      ? "Failed to start the external control log."
-      : "Failed to stop the external control log."
-  );
+  let fallback: string;
+  switch (action) {
+    case "start":
+      fallback = "Failed to start the external control log.";
+      break;
+    case "stop":
+      fallback = "Failed to stop the external control log.";
+      break;
+    case "pause":
+      fallback = "Failed to pause the external control log.";
+      break;
+    case "resume":
+      fallback = "Failed to resume the external control log.";
+      break;
+  }
+  return backendCommandErrorMessage(manualLogOperationCause(error), fallback);
 }
 
 export function createExternalLogControlHandlers(
@@ -73,7 +90,10 @@ export function createExternalLogControlHandlers(
             connectionType: payload.connection_type,
             target: payload.target,
           },
-          { filePath: null, writeMode: "overwrite" }
+          {
+            filePath: payload.file_path,
+            writeMode: payload.write_mode ?? "overwrite",
+          }
         );
         if (result.metadataChanged) {
           await dependencies.waitForUiUpdate();
@@ -103,6 +123,42 @@ export function createExternalLogControlHandlers(
           requestId: payload.request_id,
           filePath: null,
           error: externalLogControlErrorMessage(error, "stop"),
+        });
+      }
+    },
+    pause: async (payload) => {
+      try {
+        const result = await dependencies.controller.setPaused(
+          { sessionId: payload.session_id },
+          true
+        );
+        if (result.changed) {
+          await dependencies.waitForUiUpdate();
+        }
+        await respond({ requestId: payload.request_id, filePath: null, error: null });
+      } catch (error) {
+        await respond({
+          requestId: payload.request_id,
+          filePath: null,
+          error: externalLogControlErrorMessage(error, "pause"),
+        });
+      }
+    },
+    resume: async (payload) => {
+      try {
+        const result = await dependencies.controller.setPaused(
+          { sessionId: payload.session_id },
+          false
+        );
+        if (result.changed) {
+          await dependencies.waitForUiUpdate();
+        }
+        await respond({ requestId: payload.request_id, filePath: null, error: null });
+      } catch (error) {
+        await respond({
+          requestId: payload.request_id,
+          filePath: null,
+          error: externalLogControlErrorMessage(error, "resume"),
         });
       }
     },
@@ -141,6 +197,8 @@ export function subscribeExternalLogControl(
 
   register("external-control://log-start-request", (payload) => handlers.start(payload));
   register("external-control://log-stop-request", (payload) => handlers.stop(payload));
+  register("external-control://log-pause-request", (payload) => handlers.pause(payload));
+  register("external-control://log-resume-request", (payload) => handlers.resume(payload));
 
   return () => {
     acceptingEvents = false;

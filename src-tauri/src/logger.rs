@@ -511,8 +511,13 @@ pub async fn clear_session_logs(state: &LoggerState, session_id: &str) {
     state.sessions.lock().await.remove(session_id);
 }
 
-pub async fn manual_log_session(state: &LoggerState, session_id: &str) -> Option<LogSession> {
+pub async fn active_log_session(state: &LoggerState, session_id: &str) -> Option<LogSession> {
     state.sessions.lock().await.get(session_id).cloned()
+}
+
+#[cfg(test)]
+pub async fn manual_log_session(state: &LoggerState, session_id: &str) -> Option<LogSession> {
+    active_log_session(state, session_id).await
 }
 
 #[tauri::command]
@@ -520,7 +525,7 @@ pub async fn logger_is_manual_active(
     state: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<bool, String> {
-    Ok(manual_log_session(&state, &session_id).await.is_some())
+    Ok(active_log_session(&state, &session_id).await.is_some())
 }
 
 #[tauri::command]

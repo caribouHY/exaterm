@@ -23,6 +23,8 @@ const payload: ExternalLogControlRequestPayload = {
   session_id: "session-1",
   connection_type: "ssh",
   target: "Terminal",
+  file_path: null,
+  write_mode: null,
 };
 
 function setup() {
@@ -39,9 +41,14 @@ function setup() {
     order.push("operation");
     return { alreadyInactive: false, metadataChanged: true };
   });
+  const setPaused = vi.fn(async () => {
+    order.push("operation");
+    return { changed: true };
+  });
   const controller = {
     start,
     stop,
+    setPaused,
   } as unknown as ManualLogController;
   const submit = vi.fn(async (_response: ExternalLogControlResponse) => {
     order.push("ack");
@@ -56,7 +63,7 @@ function setup() {
     waitForUiUpdate,
     onSubmitError,
   });
-  return { handlers, start, stop, submit, waitForUiUpdate, onSubmitError, order };
+  return { handlers, start, stop, setPaused, submit, waitForUiUpdate, onSubmitError, order };
 }
 
 describe("externalLogControl", () => {
@@ -90,6 +97,33 @@ describe("externalLogControl", () => {
     await h.handlers.stop(payload);
 
     expect(h.order).toEqual(["operation", "ui", "ack"]);
+    expect(h.submit).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["pause", true],
+    ["resume", false],
+  ] as const)("%s flushes through the controller before acknowledging", async (action, paused) => {
+    const h = setup();
+
+    if (action === "pause") {
+      await h.handlers.pause(payload);
+    } else {
+      await h.handlers.resume(payload);
+    }
+
+    expect(h.setPaused).toHaveBeenCalledWith({ sessionId: "session-1" }, paused);
+    expect(h.order).toEqual(["operation", "ui", "ack"]);
+    expect(h.submit).toHaveBeenCalledOnce();
+  });
+
+  it("does not wait for UI when pause state is unchanged", async () => {
+    const h = setup();
+    h.setPaused.mockResolvedValueOnce({ changed: false });
+
+    await h.handlers.pause(payload);
+
+    expect(h.waitForUiUpdate).not.toHaveBeenCalled();
     expect(h.submit).toHaveBeenCalledOnce();
   });
 
@@ -151,7 +185,12 @@ describe("externalLogControl", () => {
         ? (startRegistration.promise as Promise<() => void>)
         : (stopRegistration.promise as Promise<() => void>);
     };
-    const handlers = { start: vi.fn(async () => {}), stop: vi.fn(async () => {}) };
+    const handlers = {
+      start: vi.fn(async () => {}),
+      stop: vi.fn(async () => {}),
+      pause: vi.fn(async () => {}),
+      resume: vi.fn(async () => {}),
+    };
     const dispose = subscribeExternalLogControl(listen, handlers, vi.fn());
 
     dispose();
@@ -163,7 +202,7 @@ describe("externalLogControl", () => {
 
     expect(handlers.start).not.toHaveBeenCalled();
     expect(unlistenStart).toHaveBeenCalledOnce();
-    expect(unlistenStop).toHaveBeenCalledOnce();
+    expect(unlistenStop).toHaveBeenCalledTimes(3);
   });
 
   it("allows a handler accepted before disposal to finish", async () => {
@@ -185,6 +224,8 @@ describe("externalLogControl", () => {
     const handlers = {
       start: vi.fn(() => handling.promise),
       stop: vi.fn(async () => {}),
+      pause: vi.fn(async () => {}),
+      resume: vi.fn(async () => {}),
     };
     const dispose = subscribeExternalLogControl(listen, handlers, vi.fn());
     await Promise.resolve();
@@ -197,7 +238,7 @@ describe("externalLogControl", () => {
     expect(handlers.start).toHaveBeenCalledOnce();
   });
 
-  it("disposes one successful listener when the other registration fails", async () => {
+  it("disposes successful listeners when other registrations fail", async () => {
     const unlisten = vi.fn();
     const onRegistrationError = vi.fn();
     const listen: Parameters<typeof subscribeExternalLogControl>[0] = <T>(
@@ -209,7 +250,12 @@ describe("externalLogControl", () => {
         : Promise.reject(new Error("registration failed"));
     const dispose = subscribeExternalLogControl(
       listen,
-      { start: vi.fn(async () => {}), stop: vi.fn(async () => {}) },
+      {
+        start: vi.fn(async () => {}),
+        stop: vi.fn(async () => {}),
+        pause: vi.fn(async () => {}),
+        resume: vi.fn(async () => {}),
+      },
       onRegistrationError
     );
     await Promise.resolve();
@@ -217,7 +263,7 @@ describe("externalLogControl", () => {
 
     dispose();
 
-    expect(onRegistrationError).toHaveBeenCalledOnce();
+    expect(onRegistrationError).toHaveBeenCalledTimes(3);
     expect(unlisten).toHaveBeenCalledOnce();
   });
 });

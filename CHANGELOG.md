@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added CLI and MCP log status, pause, and resume controls, plus CLI-only destination and overwrite/append options for starting session logs.
+
 ## v0.9.2
 
 ### Added

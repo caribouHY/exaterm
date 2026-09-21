@@ -47,6 +47,8 @@ pub(crate) struct ExternalControlLogControlRequestPayload {
     pub(crate) session_id: String,
     pub(crate) connection_type: String,
     pub(crate) target: String,
+    pub(crate) file_path: Option<String>,
+    pub(crate) write_mode: Option<ExternalControlLogWriteMode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -359,6 +361,34 @@ pub(crate) struct SendTerminalInputArgs {
 pub(crate) struct StartTerminalLogArgs {
     /// Session ID returned by list_terminal_sessions.
     pub(crate) session_id: String,
+    /// Optional absolute destination path. Only the terminal CLI exposes this field.
+    pub(crate) file_path: Option<String>,
+    /// Write behavior for an explicitly selected destination path.
+    pub(crate) write_mode: Option<ExternalControlLogWriteMode>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TerminalLogSessionArgs {
+    /// Session ID returned by list_terminal_sessions.
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ExternalControlLogWriteMode {
+    Overwrite,
+    Append,
+}
+
+impl ExternalControlLogWriteMode {
+    #[cfg(test)]
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Overwrite => "overwrite",
+            Self::Append => "append",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
@@ -402,6 +432,9 @@ pub enum ExternalControlRequest {
     SendTerminalInput(SendTerminalInputArgs),
     StartTerminalLog(StartTerminalLogArgs),
     StopTerminalLog(StopTerminalLogArgs),
+    GetTerminalLogStatus(TerminalLogSessionArgs),
+    PauseTerminalLog(TerminalLogSessionArgs),
+    ResumeTerminalLog(TerminalLogSessionArgs),
     RunTerminalCommand(RunTerminalCommandArgs),
 }
 
@@ -501,6 +534,31 @@ pub struct StopTerminalLogResult {
     pub already_inactive: bool,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalLogState {
+    Inactive,
+    Active,
+    Paused,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TerminalLogStatusResult {
+    pub session_id: String,
+    pub state: TerminalLogState,
+    pub file_path: Option<String>,
+    pub log_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SetTerminalLogPausedResult {
+    pub session_id: String,
+    pub changed: bool,
+    pub state: TerminalLogState,
+    pub file_path: Option<String>,
+    pub log_mode: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RunTerminalCommandResult {
     pub session_id: String,
@@ -528,6 +586,9 @@ pub enum ExternalControlResponse {
     SendTerminalInput(SendTerminalInputResult),
     StartTerminalLog(StartTerminalLogResult),
     StopTerminalLog(StopTerminalLogResult),
+    GetTerminalLogStatus(TerminalLogStatusResult),
+    PauseTerminalLog(SetTerminalLogPausedResult),
+    ResumeTerminalLog(SetTerminalLogPausedResult),
     RunTerminalCommand(RunTerminalCommandResult),
 }
 
@@ -545,6 +606,9 @@ impl ExternalControlResponse {
             Self::SendTerminalInput(result) => serde_json::to_value(result),
             Self::StartTerminalLog(result) => serde_json::to_value(result),
             Self::StopTerminalLog(result) => serde_json::to_value(result),
+            Self::GetTerminalLogStatus(result) => serde_json::to_value(result),
+            Self::PauseTerminalLog(result) => serde_json::to_value(result),
+            Self::ResumeTerminalLog(result) => serde_json::to_value(result),
             Self::RunTerminalCommand(result) => serde_json::to_value(result),
         };
         value.map_err(|error| {

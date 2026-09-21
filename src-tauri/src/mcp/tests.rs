@@ -24,7 +24,8 @@ use crate::logger::{self, LoggerState};
 use crate::serial::{self};
 use crate::terminal_control::{TerminalControlState, TerminalProtocol, TerminalStatus};
 use crate::workspace::{
-    WorkspaceConnectionInfo, WorkspaceSnapshot, WorkspaceState, WorkspaceTabRegisterInput,
+    WorkspaceConnectionInfo, WorkspaceSnapshot, WorkspaceState, WorkspaceTabMetadataPatch,
+    WorkspaceTabRegisterInput,
 };
 
 type McpTerminalService = ExternalControlService;
@@ -210,21 +211,23 @@ impl ExternalControlUiIo for TestUiIo {
             .request_with_sender(payload, Duration::from_secs(1), move |payload| {
                 let payload = payload.clone();
                 tokio::spawn(async move {
-                    let result = if event.ends_with("log-start-request") {
-                        logger::start_manual_log(
+                    let result = match event.as_str() {
+                        "external-control://log-start-request" => logger::start_manual_log(
                             &logger,
                             payload.session_id,
                             payload.connection_type,
                             payload.target,
-                            None,
-                            None,
+                            payload.file_path,
+                            payload.write_mode.map(|mode| mode.as_str().to_string()),
                         )
                         .await
-                        .map(Some)
-                    } else {
-                        logger::stop_manual_log(&logger, &payload.session_id)
-                            .await
-                            .map(|_| None)
+                        .map(Some),
+                        "external-control://log-stop-request" => {
+                            logger::stop_manual_log(&logger, &payload.session_id)
+                                .await
+                                .map(|_| None)
+                        }
+                        _ => Ok(None),
                     };
                     let (file_path, error) = match result {
                         Ok(file_path) => (file_path, None),
@@ -258,11 +261,9 @@ impl ExternalControlLogIo for TestLogIo {
         self.state.is_some()
     }
 
-    async fn active_log_file(&self, session_id: &str) -> Option<String> {
+    async fn active_log_session(&self, session_id: &str) -> Option<logger::LogSession> {
         let state = self.state.as_ref()?;
-        logger::manual_log_session(state, session_id)
-            .await
-            .map(|session| session.file_path)
+        logger::active_log_session(state, session_id).await
     }
 
     async fn start_auto_log(
@@ -571,6 +572,32 @@ fn all_external_control_results_preserve_the_public_json_contract() {
         }),
         "stop_terminal_log",
         json!({ "session_id": "s1", "stopped": false, "already_inactive": true }),
+    );
+    assert_response_contract(
+        ExternalControlResponse::GetTerminalLogStatus(TerminalLogStatusResult {
+            session_id: "s1".into(),
+            state: TerminalLogState::Inactive,
+            file_path: None,
+            log_mode: None,
+        }),
+        "get_terminal_log_status",
+        json!({
+            "session_id": "s1", "state": "inactive", "file_path": null, "log_mode": null
+        }),
+    );
+    assert_response_contract(
+        ExternalControlResponse::PauseTerminalLog(SetTerminalLogPausedResult {
+            session_id: "s1".into(),
+            changed: true,
+            state: TerminalLogState::Paused,
+            file_path: Some("C:\\logs\\s1.log".into()),
+            log_mode: Some("auto".into()),
+        }),
+        "pause_terminal_log",
+        json!({
+            "session_id": "s1", "changed": true, "state": "paused",
+            "file_path": "C:\\logs\\s1.log", "log_mode": "auto"
+        }),
     );
     assert_response_contract(
         ExternalControlResponse::RunTerminalCommand(RunTerminalCommandResult {
@@ -1189,6 +1216,25 @@ async fn control_service_rejects_unknown_tools() {
 }
 
 #[tokio::test]
+async fn mcp_start_terminal_log_rejects_cli_only_options() {
+    let server = ExaTermMcpServer::with_service(ExternalControlService::new(test_runtime()));
+
+    let error = server
+        .call_tool_json(
+            "start_terminal_log",
+            json!({
+                "session_id": "s1",
+                "file_path": "C:\\logs\\session.log",
+                "write_mode": "overwrite"
+            }),
+        )
+        .await
+        .unwrap_err();
+
+    assert!(error.message.contains("unknown field"));
+}
+
+#[tokio::test]
 async fn control_plane_rejects_unknown_protocol_version() {
     let (server_stream, client_stream) = tokio::io::duplex(4096);
     let service = ExternalControlService::new(test_runtime());
@@ -1210,7 +1256,7 @@ async fn control_plane_rejects_unknown_protocol_version() {
     let response = read_json_line_for_test(&mut reader).await;
 
     assert_eq!(response["protocol_version"], CONTROL_PROTOCOL_VERSION);
-    assert_eq!(CONTROL_PROTOCOL_VERSION, 3);
+    assert_eq!(CONTROL_PROTOCOL_VERSION, 4);
     assert!(response["session_nonce"].is_null());
     assert!(response["error"]["message"]
         .as_str()
@@ -1370,6 +1416,9 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
     assert!(tool_names.contains(&"connect_ssh"));
     assert!(tool_names.contains(&"connect_telnet"));
     assert!(tool_names.contains(&"read_terminal_output"));
+    assert!(tool_names.contains(&"get_terminal_log_status"));
+    assert!(tool_names.contains(&"pause_terminal_log"));
+    assert!(tool_names.contains(&"resume_terminal_log"));
     assert!(!tool_names.contains(&"read_terminal_output_delta"));
     assert!(!tool_names.contains(&"wait_terminal_output"));
 
@@ -1422,6 +1471,17 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
     assert!(serial_connect_tool["inputSchema"]
         .to_string()
         .contains("\"furukawa_fitelnet\""));
+
+    let start_log_tool = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "start_terminal_log")
+        .unwrap();
+    let start_log_schema = start_log_tool["inputSchema"].to_string();
+    assert!(start_log_schema.contains("\"session_id\""));
+    assert!(!start_log_schema.contains("file_path"));
+    assert!(!start_log_schema.contains("write_mode"));
 }
 
 async fn write_json_line_for_test<W>(writer: &mut W, value: Value)
@@ -2673,6 +2733,8 @@ async fn service_starts_terminal_log_for_connected_session() {
     let result = service
         .start_terminal_log(StartTerminalLogArgs {
             session_id: "s1".into(),
+            file_path: None,
+            write_mode: None,
         })
         .await
         .unwrap();
@@ -2709,6 +2771,8 @@ async fn service_log_start_preserves_negative_and_missing_path_ack_errors() {
     let missing_error = ExternalControlService::new(missing_runtime)
         .start_terminal_log(StartTerminalLogArgs {
             session_id: "missing-path".into(),
+            file_path: None,
+            write_mode: None,
         })
         .await
         .unwrap_err();
@@ -2730,6 +2794,8 @@ async fn service_log_start_preserves_negative_and_missing_path_ack_errors() {
     let negative_error = ExternalControlService::new(negative_runtime)
         .start_terminal_log(StartTerminalLogArgs {
             session_id: "negative".into(),
+            file_path: None,
+            write_mode: None,
         })
         .await
         .unwrap_err();
@@ -2746,6 +2812,8 @@ async fn service_start_terminal_log_rejects_missing_and_disconnected_sessions() 
     let missing = service
         .start_terminal_log(StartTerminalLogArgs {
             session_id: "missing".into(),
+            file_path: None,
+            write_mode: None,
         })
         .await
         .unwrap_err();
@@ -2755,6 +2823,8 @@ async fn service_start_terminal_log_rejects_missing_and_disconnected_sessions() 
     let disconnected = service
         .start_terminal_log(StartTerminalLogArgs {
             session_id: "s1".into(),
+            file_path: None,
+            write_mode: None,
         })
         .await
         .unwrap_err();
@@ -2774,6 +2844,8 @@ async fn service_reports_missing_logger_as_internal_error() {
     let error = service
         .start_terminal_log(StartTerminalLogArgs {
             session_id: "s1".into(),
+            file_path: None,
+            write_mode: None,
         })
         .await
         .unwrap_err();
@@ -2790,12 +2862,16 @@ async fn service_start_terminal_log_reports_already_active() {
     let first = service
         .start_terminal_log(StartTerminalLogArgs {
             session_id: "s1".into(),
+            file_path: None,
+            write_mode: None,
         })
         .await
         .unwrap();
     let second = service
         .start_terminal_log(StartTerminalLogArgs {
             session_id: "s1".into(),
+            file_path: None,
+            write_mode: None,
         })
         .await
         .unwrap();
@@ -2803,6 +2879,296 @@ async fn service_start_terminal_log_reports_already_active() {
     assert!(!second.started);
     assert!(second.already_active);
     assert_eq!(second.file_path, first.file_path);
+}
+
+#[tokio::test]
+async fn service_reports_inactive_active_paused_and_auto_log_status() {
+    let (runtime, _config, _protocol, _ui, logger, _trace) =
+        test_runtime_parts(AppConfig::default(), Vec::new(), Some(test_logger()));
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Ssh, "host:22").await;
+    let service = McpTerminalService::new(runtime.clone());
+
+    let inactive = service
+        .get_terminal_log_status(TerminalLogSessionArgs {
+            session_id: "s1".into(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(inactive.state, TerminalLogState::Inactive);
+    assert_eq!(inactive.file_path, None);
+    assert_eq!(inactive.log_mode, None);
+
+    let auto_path = logger
+        .start_auto_log("s1".into(), "ssh".into(), "host:22".into())
+        .await
+        .unwrap();
+    let active = service
+        .get_terminal_log_status(TerminalLogSessionArgs {
+            session_id: "s1".into(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(active.state, TerminalLogState::Active);
+    assert_eq!(active.file_path.as_deref(), Some(auto_path.as_str()));
+    assert_eq!(active.log_mode.as_deref(), Some("auto"));
+
+    let tab = runtime.workspace.tab_for_session("s1").await.unwrap();
+    runtime
+        .workspace
+        .update_tab_metadata(
+            tab.tab_id,
+            WorkspaceTabMetadataPatch {
+                title: None,
+                encoding: None,
+                terminal_mode: None,
+                is_connected: None,
+                is_manual_logging: Some(true),
+                is_manual_logging_paused: Some(true),
+                manual_log_file_path: Some(auto_path.clone()),
+            },
+        )
+        .await
+        .unwrap();
+    let paused = service
+        .get_terminal_log_status(TerminalLogSessionArgs {
+            session_id: "s1".into(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(paused.state, TerminalLogState::Paused);
+    assert_eq!(paused.log_mode.as_deref(), Some("auto"));
+}
+
+#[tokio::test]
+async fn service_ignores_stale_paused_metadata_without_an_active_logger() {
+    let runtime = test_runtime();
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Ssh, "host:22").await;
+    let tab = runtime.workspace.tab_for_session("s1").await.unwrap();
+    runtime
+        .workspace
+        .update_tab_metadata(
+            tab.tab_id,
+            WorkspaceTabMetadataPatch {
+                title: None,
+                encoding: None,
+                terminal_mode: None,
+                is_connected: None,
+                is_manual_logging: Some(true),
+                is_manual_logging_paused: Some(true),
+                manual_log_file_path: Some("C:\\stale.log".into()),
+            },
+        )
+        .await
+        .unwrap();
+
+    let status = ExternalControlService::new(runtime)
+        .get_terminal_log_status(TerminalLogSessionArgs {
+            session_id: "s1".into(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(status.state, TerminalLogState::Inactive);
+    assert_eq!(status.file_path, None);
+    assert_eq!(status.log_mode, None);
+}
+
+#[tokio::test]
+async fn service_pause_and_resume_are_idempotent_and_owner_window_scoped() {
+    let (runtime, _config, _protocol, ui, _logger, _trace) =
+        test_runtime_parts(AppConfig::default(), Vec::new(), Some(test_logger()));
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Ssh, "host:22").await;
+    let service = McpTerminalService::new(runtime.clone());
+    service
+        .start_terminal_log(StartTerminalLogArgs {
+            session_id: "s1".into(),
+            file_path: None,
+            write_mode: None,
+        })
+        .await
+        .unwrap();
+
+    let paused = service
+        .set_terminal_log_paused(
+            TerminalLogSessionArgs {
+                session_id: "s1".into(),
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    assert!(paused.changed);
+    assert_eq!(paused.state, TerminalLogState::Paused);
+    assert!(ui.calls.lock().unwrap().iter().any(|call| matches!(
+        call,
+        TestUiCall::LogControl(window_id, event, payload)
+            if window_id == "main"
+                && event == "external-control://log-pause-request"
+                && payload.session_id == "s1"
+    )));
+
+    let tab = runtime.workspace.tab_for_session("s1").await.unwrap();
+    runtime
+        .workspace
+        .update_tab_metadata(
+            tab.tab_id,
+            WorkspaceTabMetadataPatch {
+                title: None,
+                encoding: None,
+                terminal_mode: None,
+                is_connected: None,
+                is_manual_logging: Some(true),
+                is_manual_logging_paused: Some(true),
+                manual_log_file_path: paused.file_path.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    let pause_again = service
+        .set_terminal_log_paused(
+            TerminalLogSessionArgs {
+                session_id: "s1".into(),
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    assert!(!pause_again.changed);
+
+    let resumed = service
+        .set_terminal_log_paused(
+            TerminalLogSessionArgs {
+                session_id: "s1".into(),
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    assert!(resumed.changed);
+    assert_eq!(resumed.state, TerminalLogState::Active);
+}
+
+#[tokio::test]
+async fn service_pause_rejects_inactive_and_disconnected_sessions() {
+    let runtime = test_runtime();
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Telnet, "host:23").await;
+    let service = McpTerminalService::new(runtime.clone());
+
+    let inactive = service
+        .set_terminal_log_paused(
+            TerminalLogSessionArgs {
+                session_id: "s1".into(),
+            },
+            true,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(inactive, ExternalControlError::Unavailable(_)));
+    assert!(inactive.message().contains("not active"));
+
+    runtime.terminals.mark_disconnected("s1").await;
+    let disconnected = service
+        .set_terminal_log_paused(
+            TerminalLogSessionArgs {
+                session_id: "s1".into(),
+            },
+            false,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(disconnected, ExternalControlError::Unavailable(_)));
+    assert!(disconnected.message().contains("disconnected"));
+}
+
+#[tokio::test]
+async fn service_custom_log_path_is_propagated_and_conflicts_are_rejected() {
+    let (runtime, _config, _protocol, ui, _logger, _trace) =
+        test_runtime_parts(AppConfig::default(), Vec::new(), Some(test_logger()));
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Serial, "COM3").await;
+    let service = McpTerminalService::new(runtime);
+    let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("test-logs")
+        .join(format!("exaterm_cli_log_{}.log", Uuid::new_v4()))
+        .to_string_lossy()
+        .to_string();
+
+    let first = service
+        .start_terminal_log(StartTerminalLogArgs {
+            session_id: "s1".into(),
+            file_path: Some(file_path.clone()),
+            write_mode: Some(ExternalControlLogWriteMode::Append),
+        })
+        .await
+        .unwrap();
+    assert_eq!(first.file_path, file_path);
+    let calls = ui.calls.lock().unwrap();
+    let payload = calls
+        .iter()
+        .find_map(|call| match call {
+            TestUiCall::LogControl(_, event, payload)
+                if event == "external-control://log-start-request" =>
+            {
+                Some(payload)
+            }
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(payload.file_path.as_deref(), Some(first.file_path.as_str()));
+    assert_eq!(
+        payload.write_mode,
+        Some(ExternalControlLogWriteMode::Append)
+    );
+    drop(calls);
+
+    let same = service
+        .start_terminal_log(StartTerminalLogArgs {
+            session_id: "s1".into(),
+            file_path: Some(first.file_path.clone()),
+            write_mode: Some(ExternalControlLogWriteMode::Overwrite),
+        })
+        .await
+        .unwrap();
+    assert!(same.already_active);
+
+    let conflict = service
+        .start_terminal_log(StartTerminalLogArgs {
+            session_id: "s1".into(),
+            file_path: Some(format!("{}.different", first.file_path)),
+            write_mode: Some(ExternalControlLogWriteMode::Overwrite),
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(conflict, ExternalControlError::Unavailable(_)));
+    assert!(conflict.message().contains("different file path"));
+}
+
+#[tokio::test]
+async fn service_revalidates_custom_log_path_options() {
+    let runtime = test_runtime();
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Ssh, "host:22").await;
+    let service = McpTerminalService::new(runtime);
+
+    for args in [
+        StartTerminalLogArgs {
+            session_id: "s1".into(),
+            file_path: Some("relative.log".into()),
+            write_mode: Some(ExternalControlLogWriteMode::Overwrite),
+        },
+        StartTerminalLogArgs {
+            session_id: "s1".into(),
+            file_path: Some(r"C:\logs\session.log".into()),
+            write_mode: None,
+        },
+        StartTerminalLogArgs {
+            session_id: "s1".into(),
+            file_path: None,
+            write_mode: Some(ExternalControlLogWriteMode::Append),
+        },
+    ] {
+        let error = service.start_terminal_log(args).await.unwrap_err();
+        assert!(matches!(error, ExternalControlError::InvalidArguments(_)));
+    }
 }
 
 #[tokio::test]
@@ -2824,6 +3190,8 @@ async fn service_stop_terminal_log_stops_active_and_reports_inactive() {
     service
         .start_terminal_log(StartTerminalLogArgs {
             session_id: "s1".into(),
+            file_path: None,
+            write_mode: None,
         })
         .await
         .unwrap();

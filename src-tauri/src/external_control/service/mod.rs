@@ -28,23 +28,24 @@ pub(super) use types::{internal_error, invalid_params, not_found, permission_den
 pub(crate) use types::{
     ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs,
     ExternalControlConnectionProfile, ExternalControlEncoding, ExternalControlLogControlAck,
-    ExternalControlSerialFlowControl, ExternalControlSerialParity, ExternalControlSshAuthMethod,
-    ExternalControlTerminalMode, ListConnectionProfilesArgs, PreparedConnection,
-    PreparedConnectionKind, PreparedSerialConnection, ReadTerminalOutputArgs,
+    ExternalControlLogWriteMode, ExternalControlSerialFlowControl, ExternalControlSerialParity,
+    ExternalControlSshAuthMethod, ExternalControlTerminalMode, ListConnectionProfilesArgs,
+    PreparedConnection, PreparedConnectionKind, PreparedSerialConnection, ReadTerminalOutputArgs,
     RunTerminalCommandArgs, SavedProfileConnectionType, SendTerminalInputArgs,
     StartTerminalLogArgs, StopTerminalLogArgs,
 };
 pub(crate) use types::{
     ConnectionCreatedResult, ListConnectionProfilesResult, ListSerialPortsResult,
     ReadTerminalOutputResult, RunTerminalCommandResult, SendTerminalInputResult,
-    StartTerminalLogResult, StopTerminalLogResult, TerminalOutputResult, WaitTerminalOutputResult,
+    SetTerminalLogPausedResult, StartTerminalLogResult, StopTerminalLogResult, TerminalLogState,
+    TerminalLogStatusResult, TerminalOutputResult, WaitTerminalOutputResult,
 };
 pub(crate) use types::{
     ExternalControlCredentialRequestPayload, ExternalControlLogControlRequestPayload,
 };
 pub use types::{
     ExternalControlError, ExternalControlRequest, ExternalControlResponse,
-    ListTerminalSessionsResult,
+    ListTerminalSessionsResult, TerminalLogSessionArgs,
 };
 
 pub(crate) const DEFAULT_READ_CHARS: usize = 2_000;
@@ -127,6 +128,18 @@ impl ExternalControlService {
                 .stop_terminal_log(args)
                 .await
                 .map(ExternalControlResponse::StopTerminalLog),
+            ExternalControlRequest::GetTerminalLogStatus(args) => self
+                .get_terminal_log_status(args)
+                .await
+                .map(ExternalControlResponse::GetTerminalLogStatus),
+            ExternalControlRequest::PauseTerminalLog(args) => self
+                .set_terminal_log_paused(args, true)
+                .await
+                .map(ExternalControlResponse::PauseTerminalLog),
+            ExternalControlRequest::ResumeTerminalLog(args) => self
+                .set_terminal_log_paused(args, false)
+                .await
+                .map(ExternalControlResponse::ResumeTerminalLog),
             ExternalControlRequest::RunTerminalCommand(args) => self
                 .run_terminal_command(args)
                 .await

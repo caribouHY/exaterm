@@ -69,6 +69,8 @@ option limits, result fields, setup, or troubleshooting details are needed.
 
 5. When the user requested manual logging, establish the log boundary before running the
    requested command:
+   - Check `terminal log status` first. Preserve an active log unless the user explicitly
+     requests a different lifecycle action.
    - Start the manual log.
    - Read recent output and retain the current cursor.
    - Send one empty line to request a fresh prompt.
@@ -133,6 +135,11 @@ option limits, result fields, setup, or troubleshooting details are needed.
   arguments, logs, or chat output.
 - Start manual terminal logging only when the user explicitly asks for logging. Remember
   that logs are plaintext and may contain sensitive terminal content.
+- Treat `terminal log pause`, `resume`, and `stop` as controls for the current active log,
+  including an automatically started log. Check status before changing it when the user's
+  intended log is ambiguous.
+- Specify a log destination only when the user asks for one. Pass `--file-path` and
+  `--write-mode` together; relative paths resolve against the CLI process's current directory.
 - Do not run a substantive command immediately after starting a manual log. First send an
   empty line and confirm that a fresh prompt was captured.
 - Do not clear, recreate, disconnect, or replace an existing session as a routine recovery

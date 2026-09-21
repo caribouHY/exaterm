@@ -51,8 +51,11 @@ exaterm-cli serial connect --port <name> [options]
 exaterm-cli terminal output --session-id <id> --mode <recent|delta|wait> [options]
 exaterm-cli terminal send --session-id <id> --data <text|->
 exaterm-cli terminal run --session-id <id> --command <text|-> [options]
-exaterm-cli terminal log start --session-id <id>
+exaterm-cli terminal log start --session-id <id> [--file-path <path> --write-mode <overwrite|append>]
 exaterm-cli terminal log stop --session-id <id>
+exaterm-cli terminal log status --session-id <id>
+exaterm-cli terminal log pause --session-id <id>
+exaterm-cli terminal log resume --session-id <id>
 ```
 
 個別の構文は `exaterm-cli <command> --help` で確認できます。
@@ -155,6 +158,26 @@ show ip route
 
 `terminal run` は既定で改行を追加します。無効化するには `--append-newline false` を指定します。
 `--timeout-ms`、`--settle-ms`（上限 5,000）、`--max-chars` も使用できます。
+
+## セッションログ
+
+保存先オプションを省略した `terminal log start` は、従来どおり ExaTerm のログディレクトリに
+一意なファイルを作成し、上書きモードで開きます。保存先を選ぶ場合は両方のオプションを指定します。
+
+```powershell
+exaterm-cli terminal log start --session-id $session `
+  --file-path .\logs\session.log --write-mode append
+```
+
+相対パスは CLI プロセスの現在ディレクトリを基準に絶対パスへ変換して ExaTerm に送信します。
+存在しない親ディレクトリは ExaTerm が作成します。`--file-path` と `--write-mode` の片方だけを
+指定すると引数エラーになり、終了コード 2 を返します。
+
+`status` は `state`（`inactive`、`active`、`paused`）、`file_path`、`log_mode`
+（`auto` または `manual`）を返します。inactive時のパスとモードは明示的な `null` です。
+`pause` は保留中の表示ログをflushしてから一時停止し、`resume` は同じファイルへの記録を
+再開します。同じ状態への再実行は成功し、`changed: false` を返します。接続時に自動開始された
+ログも対象です。ログ実行中に異なる保存先を指定したstartは拒否され、既存ログは維持されます。
 
 ## JSON 出力と終了コード
 
