@@ -65,6 +65,8 @@ Backend state is created in `src-tauri/src/lib.rs` and managed through Tauri `St
 
 The backend does not retain GUI language state. External-control, MCP, and terminal CLI errors remain English and machine-readable.
 
+The desktop application runs as a single GUI process. A later `exaterm.exe` invocation forwards its arguments to the existing process, which restores and focuses the most recently focused workspace window. SSH and Telnet startup requests are retained in a backend FIFO until that window can process them; an active connection dialog is never replaced by a later request.
+
 ## Workspace and Window Ownership
 
 The Rust workspace subsystem uses `src-tauri/src/workspace.rs` as its facade:
@@ -114,6 +116,7 @@ Configuration and port discovery, protocol connection and writes, GUI credential
 - `exaterm-cli` exposes typed subcommands and JSON output for local automation.
 - `exaterm-mcp` is a bundled stdio MCP proxy. It discovers or launches the GUI and forwards tool calls over the current-user local control plane.
 - Windows uses a current-user named pipe and protocol handshake. The non-Windows fallback uses a local TCP transport.
+- External clients serialize GUI startup with a current-user launch lock and recheck the control plane after acquiring it. The Windows named-pipe listener retries transient instance-creation failures instead of permanently stopping the control plane.
 - HTTP MCP has been removed and is not a compatibility target.
 
 External control requires `external_control.enabled`. The CLI and MCP compatibility adapter additionally require their respective `cli_enabled` or `mcp_enabled` flags. Creating new connections also requires `connect_enabled`, and saved profiles must individually allow external-control access. Direct SSH/Telnet targets additionally require `direct_connect_enabled`; a saved SSH profile used as a direct connection's jump host must also allow external control.

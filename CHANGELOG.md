@@ -6,6 +6,10 @@
 
 - Added CLI and MCP log status, pause, and resume controls, plus CLI-only destination and overwrite/append options for starting session logs.
 
+### Fixed
+
+- Prevented duplicate ExaTerm GUI processes and forwarded command-line SSH and Telnet startup requests to the existing application window.
+
 ## v0.9.2
 
 ### Added

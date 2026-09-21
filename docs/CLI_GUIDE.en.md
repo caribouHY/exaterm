@@ -205,6 +205,11 @@ If ExaTerm is not running, the CLI starts the normal visible GUI and waits up to
 seconds for its local control plane. Sessions remain owned by that GUI. New external
 connections appear as normal ExaTerm tabs, and required SSH credentials are entered in the GUI.
 
+ExaTerm keeps one GUI process. Starting `exaterm.exe` again focuses the most recently focused
+ExaTerm window. An `exaterm.exe ssh ...` or `exaterm.exe telnet ...` invocation forwards its
+connection request to that window. Concurrent startup requests are processed in arrival order
+without replacing an open connection dialog or resetting existing sessions.
+
 ## Security
 
 Terminal output, commands, prompts, profile memos, hostnames, usernames, and log paths can
@@ -220,6 +225,7 @@ plaintext files and are created only when connection logging is enabled or loggi
 - Session not found: run `sessions list` and use the returned session ID.
 - Wait timed out: inspect `timed_out` and the returned output, then continue from `cursor`.
 - GUI unavailable: confirm `exaterm.exe` is installed beside `exaterm-cli.exe` and can start.
+- A forwarded startup request does not open immediately: finish or close the current connection dialog; queued requests open in arrival order.
 
 ## AI Agent Example
 
