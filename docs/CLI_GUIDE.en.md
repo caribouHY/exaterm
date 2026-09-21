@@ -52,8 +52,11 @@ exaterm-cli serial connect --port <name> [options]
 exaterm-cli terminal output --session-id <id> --mode <recent|delta|wait> [options]
 exaterm-cli terminal send --session-id <id> --data <text|->
 exaterm-cli terminal run --session-id <id> --command <text|-> [options]
-exaterm-cli terminal log start --session-id <id>
+exaterm-cli terminal log start --session-id <id> [--file-path <path> --write-mode <overwrite|append>]
 exaterm-cli terminal log stop --session-id <id>
+exaterm-cli terminal log status --session-id <id>
+exaterm-cli terminal log pause --session-id <id>
+exaterm-cli terminal log resume --session-id <id>
 ```
 
 Use `exaterm-cli <command> --help` for command-specific syntax.
@@ -156,6 +159,28 @@ show ip route
 
 `terminal run` appends a newline by default. Use `--append-newline false` to disable it.
 It also accepts `--timeout-ms`, `--settle-ms` (maximum 5,000), and `--max-chars`.
+
+## Session Logging
+
+Without destination options, `terminal log start` creates a unique file under ExaTerm's log
+directory and opens it in overwrite mode, preserving the previous CLI behavior. To select a
+destination, pass both options together:
+
+```powershell
+exaterm-cli terminal log start --session-id $session `
+  --file-path .\logs\session.log --write-mode append
+```
+
+Relative paths are resolved against the CLI process's current directory and sent to ExaTerm as
+absolute paths. ExaTerm creates missing parent directories. Supplying only one of `--file-path`
+and `--write-mode` is an invalid-arguments error with exit code 2.
+
+`status` returns `state` (`inactive`, `active`, or `paused`), `file_path`, and `log_mode`
+(`auto` or `manual`). Inactive logs return explicit `null` values for the path and mode. `pause`
+flushes pending displayed output before pausing, and `resume` continues the same file. Repeating
+pause or resume in the same state succeeds with `changed: false`. These commands also control a
+log that was started automatically on connection. Starting with a different destination while a
+log is active is rejected; the active log is preserved.
 
 ## Output and Exit Codes
 

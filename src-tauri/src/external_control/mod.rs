@@ -11,4 +11,5 @@ pub(crate) use service::{
     ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs,
     ExternalControlError, ExternalControlRequest, ExternalControlResponse, ReadTerminalOutputArgs,
     RunTerminalCommandArgs, SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs,
+    TerminalLogSessionArgs,
 };

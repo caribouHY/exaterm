@@ -21,7 +21,7 @@ use crate::external_control::service::{
 const CREDENTIAL_REQUEST_TIMEOUT_MS: u64 = 5 * 60 * 1_000;
 const LOG_CONTROL_REQUEST_TIMEOUT_MS: u64 = 30_000;
 
-pub const CONTROL_PROTOCOL_VERSION: u32 = 3;
+pub const CONTROL_PROTOCOL_VERSION: u32 = 4;
 pub const CONTROL_UNAVAILABLE_MESSAGE: &str = "ExaTerm GUI control plane is unavailable";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -426,6 +426,8 @@ mod log_control_tests {
             session_id: "s1".into(),
             connection_type: "ssh".into(),
             target: "admin@example.test:22".into(),
+            file_path: None,
+            write_mode: None,
         }
     }
 

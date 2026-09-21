@@ -68,10 +68,26 @@ pub(super) fn request_from_tool(
         "send_terminal_input" => Ok(ExternalControlRequest::SendTerminalInput(parse_tool_args(
             args,
         )?)),
-        "start_terminal_log" => Ok(ExternalControlRequest::StartTerminalLog(parse_tool_args(
+        "start_terminal_log" => {
+            let args = parse_tool_args::<crate::external_control::TerminalLogSessionArgs>(args)?;
+            Ok(ExternalControlRequest::StartTerminalLog(
+                crate::external_control::StartTerminalLogArgs {
+                    session_id: args.session_id,
+                    file_path: None,
+                    write_mode: None,
+                },
+            ))
+        }
+        "stop_terminal_log" => Ok(ExternalControlRequest::StopTerminalLog(parse_tool_args(
             args,
         )?)),
-        "stop_terminal_log" => Ok(ExternalControlRequest::StopTerminalLog(parse_tool_args(
+        "get_terminal_log_status" => Ok(ExternalControlRequest::GetTerminalLogStatus(
+            parse_tool_args(args)?,
+        )),
+        "pause_terminal_log" => Ok(ExternalControlRequest::PauseTerminalLog(parse_tool_args(
+            args,
+        )?)),
+        "resume_terminal_log" => Ok(ExternalControlRequest::ResumeTerminalLog(parse_tool_args(
             args,
         )?)),
         "run_terminal_command" => Ok(ExternalControlRequest::RunTerminalCommand(parse_tool_args(

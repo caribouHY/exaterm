@@ -1,8 +1,10 @@
 use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 
 use clap::{error::ErrorKind, Args, Parser, Subcommand, ValueEnum};
 use serde_json::json;
 
+use crate::external_control::service::ExternalControlLogWriteMode;
 use crate::{
     config,
     external_control::{
@@ -15,7 +17,7 @@ use crate::{
         ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs,
         ExternalControlError, ExternalControlRequest, ExternalControlResponse,
         ReadTerminalOutputArgs, RunTerminalCommandArgs, SendTerminalInputArgs,
-        StartTerminalLogArgs, StopTerminalLogArgs,
+        StartTerminalLogArgs, StopTerminalLogArgs, TerminalLogSessionArgs,
     },
 };
 
@@ -296,8 +298,27 @@ struct LogArgs {
 
 #[derive(Debug, Subcommand)]
 enum LogCommand {
-    Start(SessionArg),
+    Start(StartLogArgs),
     Stop(SessionArg),
+    Status(SessionArg),
+    Pause(SessionArg),
+    Resume(SessionArg),
+}
+
+#[derive(Debug, Args)]
+struct StartLogArgs {
+    #[arg(long)]
+    session_id: String,
+    #[arg(long)]
+    file_path: Option<String>,
+    #[arg(long, value_enum)]
+    write_mode: Option<LogWriteMode>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum LogWriteMode {
+    Overwrite,
+    Append,
 }
 
 #[derive(Debug, Args)]
@@ -517,9 +538,25 @@ fn build_request(
                 }),
         }) => {
             require_non_empty("--session-id", &args.session_id)?;
+            let (file_path, write_mode) = match (args.file_path, args.write_mode) {
+                (None, None) => (None, None),
+                (Some(file_path), Some(write_mode)) => {
+                    require_non_empty("--file-path", &file_path)?;
+                    let base_dir = std::env::current_dir().map_err(|error| {
+                        format!("Failed to resolve the current directory: {error}")
+                    })?;
+                    (
+                        Some(resolve_log_file_path(&file_path, &base_dir)),
+                        Some(write_mode.into_request_write_mode()),
+                    )
+                }
+                _ => return Err("--file-path and --write-mode must be specified together".into()),
+            };
             Ok(ExternalControlRequest::StartTerminalLog(
                 StartTerminalLogArgs {
                     session_id: args.session_id,
+                    file_path,
+                    write_mode,
                 },
             ))
         }
@@ -536,7 +573,45 @@ fn build_request(
                 },
             ))
         }
+        RootCommand::Terminal(TerminalArgs {
+            command:
+                TerminalCommand::Log(LogArgs {
+                    command: LogCommand::Status(args),
+                }),
+        }) => build_log_session_request(args, ExternalControlRequest::GetTerminalLogStatus),
+        RootCommand::Terminal(TerminalArgs {
+            command:
+                TerminalCommand::Log(LogArgs {
+                    command: LogCommand::Pause(args),
+                }),
+        }) => build_log_session_request(args, ExternalControlRequest::PauseTerminalLog),
+        RootCommand::Terminal(TerminalArgs {
+            command:
+                TerminalCommand::Log(LogArgs {
+                    command: LogCommand::Resume(args),
+                }),
+        }) => build_log_session_request(args, ExternalControlRequest::ResumeTerminalLog),
     }
+}
+
+fn build_log_session_request(
+    args: SessionArg,
+    build: impl FnOnce(TerminalLogSessionArgs) -> ExternalControlRequest,
+) -> Result<ExternalControlRequest, String> {
+    require_non_empty("--session-id", &args.session_id)?;
+    Ok(build(TerminalLogSessionArgs {
+        session_id: args.session_id,
+    }))
+}
+
+fn resolve_log_file_path(file_path: &str, base_dir: &Path) -> String {
+    let path = PathBuf::from(file_path);
+    let absolute = if path.is_absolute() {
+        path
+    } else {
+        base_dir.join(path)
+    };
+    absolute.to_string_lossy().to_string()
 }
 
 fn build_output_request(args: OutputArgs) -> Result<ExternalControlRequest, String> {
@@ -674,6 +749,15 @@ impl SshAuthMethod {
             Self::Password => ExternalControlSshAuthMethod::Password,
             Self::KeyboardInteractive => ExternalControlSshAuthMethod::KeyboardInteractive,
             Self::PublicKey => ExternalControlSshAuthMethod::PublicKey,
+        }
+    }
+}
+
+impl LogWriteMode {
+    fn into_request_write_mode(self) -> ExternalControlLogWriteMode {
+        match self {
+            Self::Overwrite => ExternalControlLogWriteMode::Overwrite,
+            Self::Append => ExternalControlLogWriteMode::Append,
         }
     }
 }
@@ -1430,8 +1514,136 @@ mod tests {
             .unwrap(),
             ExternalControlRequest::StartTerminalLog(StartTerminalLogArgs {
                 session_id: "s1".into(),
+                file_path: None,
+                write_mode: None,
             })
         );
+    }
+
+    #[test]
+    fn terminal_log_start_builds_custom_path_and_mode() {
+        let base_dir = std::env::current_dir().unwrap();
+        let expected = base_dir.join("logs").join("session.log");
+        assert_eq!(
+            build_request(
+                parse(&[
+                    "exaterm-cli",
+                    "terminal",
+                    "log",
+                    "start",
+                    "--session-id",
+                    "s1",
+                    "--file-path",
+                    "logs\\session.log",
+                    "--write-mode",
+                    "append",
+                ]),
+                &mut io::empty()
+            )
+            .unwrap(),
+            ExternalControlRequest::StartTerminalLog(StartTerminalLogArgs {
+                session_id: "s1".into(),
+                file_path: Some(expected.to_string_lossy().to_string()),
+                write_mode: Some(ExternalControlLogWriteMode::Append),
+            })
+        );
+    }
+
+    #[test]
+    fn terminal_log_start_preserves_absolute_path_and_overwrite_mode() {
+        let file_path = r"C:\logs\session.log";
+        assert_eq!(
+            build_request(
+                parse(&[
+                    "exaterm-cli",
+                    "terminal",
+                    "log",
+                    "start",
+                    "--session-id",
+                    "s1",
+                    "--file-path",
+                    file_path,
+                    "--write-mode",
+                    "overwrite",
+                ]),
+                &mut io::empty()
+            )
+            .unwrap(),
+            ExternalControlRequest::StartTerminalLog(StartTerminalLogArgs {
+                session_id: "s1".into(),
+                file_path: Some(file_path.into()),
+                write_mode: Some(ExternalControlLogWriteMode::Overwrite),
+            })
+        );
+    }
+
+    #[test]
+    fn terminal_log_start_requires_path_and_mode_together() {
+        for args in [
+            vec![
+                "exaterm-cli",
+                "terminal",
+                "log",
+                "start",
+                "--session-id",
+                "s1",
+                "--file-path",
+                "session.log",
+            ],
+            vec![
+                "exaterm-cli",
+                "terminal",
+                "log",
+                "start",
+                "--session-id",
+                "s1",
+                "--write-mode",
+                "overwrite",
+            ],
+        ] {
+            let error = build_request(parse(&args), &mut io::empty()).unwrap_err();
+            assert!(error.contains("specified together"));
+        }
+    }
+
+    #[test]
+    fn terminal_log_status_pause_and_resume_build_requests() {
+        for (command, expected) in [
+            (
+                "status",
+                ExternalControlRequest::GetTerminalLogStatus(TerminalLogSessionArgs {
+                    session_id: "s1".into(),
+                }),
+            ),
+            (
+                "pause",
+                ExternalControlRequest::PauseTerminalLog(TerminalLogSessionArgs {
+                    session_id: "s1".into(),
+                }),
+            ),
+            (
+                "resume",
+                ExternalControlRequest::ResumeTerminalLog(TerminalLogSessionArgs {
+                    session_id: "s1".into(),
+                }),
+            ),
+        ] {
+            assert_eq!(
+                build_request(
+                    parse(&[
+                        "exaterm-cli",
+                        "terminal",
+                        "log",
+                        command,
+                        "--session-id",
+                        "s1",
+                    ]),
+                    &mut io::empty()
+                )
+                .unwrap(),
+                expected
+            );
+        }
     }
 
     #[test]

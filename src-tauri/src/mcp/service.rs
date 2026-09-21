@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use crate::external_control::{
     client::ExternalControlClient, ConnectSavedProfileArgs, ConnectSerialConsoleArgs,
     ConnectSshArgs, ConnectTelnetArgs, ExternalControlService, ReadTerminalOutputArgs,
-    RunTerminalCommandArgs, SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs,
+    RunTerminalCommandArgs, SendTerminalInputArgs, StopTerminalLogArgs, TerminalLogSessionArgs,
 };
 use crate::mcp::backend::McpTarget;
 
@@ -156,7 +156,7 @@ impl ExaTermMcpServer {
     )]
     async fn start_terminal_log(
         &self,
-        Parameters(args): Parameters<StartTerminalLogArgs>,
+        Parameters(args): Parameters<TerminalLogSessionArgs>,
     ) -> Result<CallToolResult, McpError> {
         self.call_tool_with_args("start_terminal_log", args).await
     }
@@ -170,6 +170,40 @@ impl ExaTermMcpServer {
         Parameters(args): Parameters<StopTerminalLogArgs>,
     ) -> Result<CallToolResult, McpError> {
         self.call_tool_with_args("stop_terminal_log", args).await
+    }
+
+    #[tool(
+        name = "get_terminal_log_status",
+        description = "Get the current logging state, file path, and log mode for an ExaTerm terminal session without changing it."
+    )]
+    async fn get_terminal_log_status(
+        &self,
+        Parameters(args): Parameters<TerminalLogSessionArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call_tool_with_args("get_terminal_log_status", args)
+            .await
+    }
+
+    #[tool(
+        name = "pause_terminal_log",
+        description = "Pause the active plaintext log for a connected ExaTerm terminal session after flushing pending displayed output."
+    )]
+    async fn pause_terminal_log(
+        &self,
+        Parameters(args): Parameters<TerminalLogSessionArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call_tool_with_args("pause_terminal_log", args).await
+    }
+
+    #[tool(
+        name = "resume_terminal_log",
+        description = "Resume the paused plaintext log for a connected ExaTerm terminal session."
+    )]
+    async fn resume_terminal_log(
+        &self,
+        Parameters(args): Parameters<TerminalLogSessionArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call_tool_with_args("resume_terminal_log", args).await
     }
 
     #[tool(

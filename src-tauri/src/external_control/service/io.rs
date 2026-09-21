@@ -291,7 +291,7 @@ impl ExternalControlUiIo for TauriExternalControlUiIo {
 #[async_trait]
 pub(crate) trait ExternalControlLogIo: Send + Sync {
     fn is_available(&self) -> bool;
-    async fn active_log_file(&self, session_id: &str) -> Option<String>;
+    async fn active_log_session(&self, session_id: &str) -> Option<logger::LogSession>;
     async fn start_auto_log(
         &self,
         session_id: String,
@@ -317,11 +317,9 @@ impl ExternalControlLogIo for LoggerExternalControlIo {
         self.state.is_some()
     }
 
-    async fn active_log_file(&self, session_id: &str) -> Option<String> {
+    async fn active_log_session(&self, session_id: &str) -> Option<logger::LogSession> {
         let state = self.state.as_ref()?;
-        logger::manual_log_session(state, session_id)
-            .await
-            .map(|session| session.file_path)
+        logger::active_log_session(state, session_id).await
     }
 
     async fn start_auto_log(

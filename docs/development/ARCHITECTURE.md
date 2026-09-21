@@ -92,8 +92,8 @@ GUI SSH connections verify and, when necessary, confirm the host key within the 
 
 Logging is opt-in. A terminal session has at most one active log, regardless of whether it was started automatically or manually.
 
-- Automatic logging continues independently of manual log pause state.
-- Manual pause and resume controls only manual logging behavior.
+- Automatic and manually started logs share the same active, paused, and stopped lifecycle.
+- The backend logger is authoritative for whether a log is active; workspace pause metadata never makes an inactive logger appear active.
 - Frontend sanitizer buffers must be flushed before operations that require all rendered output to be persisted.
 - Moving a tab preserves the backend log state and does not stop logging.
 - MCP and the terminal CLI can control an allowed session log but cannot read log files directly.
@@ -118,7 +118,7 @@ Configuration and port discovery, protocol connection and writes, GUI credential
 
 External control requires `external_control.enabled`. The CLI and MCP compatibility adapter additionally require their respective `cli_enabled` or `mcp_enabled` flags. Creating new connections also requires `connect_enabled`, and saved profiles must individually allow external-control access. Direct SSH/Telnet targets additionally require `direct_connect_enabled`; a saved SSH profile used as a direct connection's jump host must also allow external control.
 
-The local control plane rejects invalid protocol versions and requests without the negotiated nonce. MCP stdout is reserved for JSON-RPC; diagnostics belong on stderr or in privacy-safe logs.
+The local control protocol is version 4. It carries typed status, pause, resume, start, and stop log operations. CLI start requests may include an absolute destination with overwrite or append mode, while the MCP start schema remains session-ID-only. The local control plane rejects invalid protocol versions and requests without the negotiated nonce. MCP stdout is reserved for JSON-RPC; diagnostics belong on stderr or in privacy-safe logs.
 
 See [ADR 0001](decisions/0001-local-external-control-and-mcp-stdio.md) for the durable transport and ownership decision.
 

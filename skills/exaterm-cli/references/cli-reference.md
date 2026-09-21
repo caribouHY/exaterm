@@ -42,8 +42,11 @@ exaterm-cli serial connect --port <name> [options]
 exaterm-cli terminal output --session-id <id> --mode <recent|delta|wait> [options]
 exaterm-cli terminal send --session-id <id> --data <text|->
 exaterm-cli terminal run --session-id <id> --command <text|-> [options]
-exaterm-cli terminal log start --session-id <id>
+exaterm-cli terminal log start --session-id <id> [--file-path <path> --write-mode <overwrite|append>]
 exaterm-cli terminal log stop --session-id <id>
+exaterm-cli terminal log status --session-id <id>
+exaterm-cli terminal log pause --session-id <id>
+exaterm-cli terminal log resume --session-id <id>
 ```
 
 Use `exaterm-cli <command> --help` for the syntax supported by the installed version.
@@ -270,15 +273,30 @@ while ($result.timed_out -and (Get-Date) -lt $deadline) {
   latest cursor observes future output but does not recover already truncated content.
 - Re-run `sessions list` if waiting fails because the session may have disconnected.
 
-## Manual Logging
+## Session Logging
 
 ```powershell
+$status = exaterm-cli terminal log status --session-id $sessionId | ConvertFrom-Json
 exaterm-cli terminal log start --session-id $sessionId
+exaterm-cli terminal log pause --session-id $sessionId
+exaterm-cli terminal log resume --session-id $sessionId
 exaterm-cli terminal log stop --session-id $sessionId
 ```
 
-Manual logs are plaintext and can contain commands, prompts, output, hostnames, usernames,
-and accidental secrets. Start them only when the user explicitly requests logging.
+Logs are plaintext and can contain commands, prompts, output, hostnames, usernames, and
+accidental secrets. Start them only when the user explicitly requests logging. Status reports
+`inactive`, `active`, or `paused`, plus the active file path and `auto` or `manual` mode; inactive
+path and mode fields are `null`. Pause and resume also apply to automatically started logs and
+are idempotent through the `changed` result.
+
+Omitting destination options creates a unique log file in ExaTerm's log directory using
+overwrite mode. To choose a file, supply both options. Relative paths are resolved from the CLI
+process's current directory. A different destination is rejected while a log is already active.
+
+```powershell
+exaterm-cli terminal log start --session-id $sessionId `
+  --file-path .\logs\session.log --write-mode append
+```
 
 Manual logging does not copy output already retained in the terminal buffer. To include a
 prompt at the beginning of a newly started log, request a fresh prompt before executing the

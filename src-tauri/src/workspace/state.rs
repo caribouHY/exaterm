@@ -26,6 +26,15 @@ impl WorkspaceState {
             .map(|tab| tab.owner_window_id.clone())
     }
 
+    pub async fn tab_for_session(&self, session_id: &str) -> Option<WorkspaceTab> {
+        let model = self.model.lock().await;
+        model
+            .tabs
+            .values()
+            .find(|tab| tab.session_id == session_id)
+            .cloned()
+    }
+
     pub async fn register_window(
         &self,
         window_id: String,
