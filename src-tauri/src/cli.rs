@@ -64,14 +64,6 @@ impl StartupCliState {
             .position(|entry| entry.window_id == window_id)?;
         pending.remove(index).map(|entry| entry.request)
     }
-
-    pub fn take_next(&self) -> Option<StartupCliRequest> {
-        self.pending
-            .lock()
-            .ok()?
-            .pop_front()
-            .map(|entry| entry.request)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -36,11 +36,6 @@ pub use mcp::run_stdio_proxy;
 pub use terminal_cli::run_terminal_cli;
 
 #[tauri::command]
-fn startup_cli_request_get(state: tauri::State<'_, StartupCliState>) -> Option<StartupCliRequest> {
-    state.take_next()
-}
-
-#[tauri::command]
 fn startup_cli_request_take(
     state: tauri::State<'_, StartupCliState>,
     window_id: String,
@@ -216,7 +211,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             // SSH
-            startup_cli_request_get,
             startup_cli_request_take,
             ssh::ssh_algorithm_catalog,
             ssh::ssh_private_key_requires_passphrase,

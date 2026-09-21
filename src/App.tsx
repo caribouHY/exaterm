@@ -64,6 +64,8 @@ import { SshAuthenticationPromptDialog } from "./features/ssh-authentication/Ssh
 import { SshHostKeyPromptDialog } from "./features/ssh-authentication/SshHostKeyPromptDialog";
 import { useSshPrompts } from "./features/ssh-authentication/useSshPrompts";
 import { useAppConfig } from "./features/language/LanguageCoordinator";
+import { startupCliClient } from "./features/startup-cli/startupCliClient";
+import { createStartupCliRequestCoordinator } from "./features/startup-cli/startupCliRequestCoordinator";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -125,6 +127,23 @@ export default function App() {
   const [showConnection, setShowConnection] = useState(false);
   const [connectionInitialValues, setConnectionInitialValues] =
     useState<ConnectionDialogInitialValues | null>(null);
+  const [startupCliRequest, setStartupCliRequest] = useState<StartupCliRequest | null>(null);
+  const startupCliRequestCoordinator = useMemo(
+    () =>
+      createStartupCliRequestCoordinator({
+        takeNext: () => startupCliClient.takeNext(windowTabs.windowId),
+        onRequest: (request) => {
+          setStartupCliRequest(request);
+          void loadConnectionDialog();
+          setConnectionInitialValues(null);
+          setShowConnection(true);
+        },
+        onError: (error) => {
+          console.error("Failed to load startup CLI request:", error);
+        },
+      }),
+    [windowTabs.windowId]
+  );
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [aiPanelWidth, setAiPanelWidth] = useState(AI_PANEL_DEFAULT_WIDTH);
   const [isDragging, setIsDragging] = useState(false);
@@ -142,7 +161,6 @@ export default function App() {
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiSelectedProvider, setAiSelectedProvider] = useState("");
   const [aiSelectedModel, setAiSelectedModel] = useState("");
-  const [startupCliRequest, setStartupCliRequest] = useState<StartupCliRequest | null>(null);
   const [mcpCredentialPrompts, setMcpCredentialPrompts] = useState<McpCredentialPromptState[]>([]);
   const [terminalSelectionByTab, setTerminalSelectionByTab] = useState<
     ReadonlyMap<string, boolean>
@@ -621,21 +639,26 @@ export default function App() {
   );
 
   const openConnection = useCallback(() => {
+    startupCliRequestCoordinator.setBlocked(true);
     void loadConnectionDialog();
     setConnectionInitialValues(null);
     setShowConnection(true);
-  }, []);
+  }, [startupCliRequestCoordinator]);
 
-  const openSameDestination = useCallback((tab: TabInfo) => {
-    if (!tab.connectionInfo || tab.connectionType === "serial") return;
-    void loadConnectionDialog();
-    setConnectionInitialValues({
-      connectionInfo: tab.connectionInfo,
-      encoding: tab.encoding,
-      terminalMode: tab.terminalMode,
-    });
-    setShowConnection(true);
-  }, []);
+  const openSameDestination = useCallback(
+    (tab: TabInfo) => {
+      if (!tab.connectionInfo || tab.connectionType === "serial") return;
+      startupCliRequestCoordinator.setBlocked(true);
+      void loadConnectionDialog();
+      setConnectionInitialValues({
+        connectionInfo: tab.connectionInfo,
+        encoding: tab.encoding,
+        terminalMode: tab.terminalMode,
+      });
+      setShowConnection(true);
+    },
+    [startupCliRequestCoordinator]
+  );
 
   const openWindow = windowTabs.createWorkspaceWindow;
 
@@ -691,17 +714,18 @@ export default function App() {
   }, [appExit.requestExit, openConnection, openUtilityTab, openWindow, shortcuts]);
 
   useEffect(() => {
-    invoke<StartupCliRequest | null>("startup_cli_request_get")
-      .then((request) => {
-        if (!request) return;
-        setStartupCliRequest(request);
-        void loadConnectionDialog();
-        setShowConnection(true);
-      })
-      .catch((error) => {
-        console.error("Failed to load startup CLI request:", error);
-      });
-  }, []);
+    startupCliRequestCoordinator.setBlocked(showConnection);
+  }, [showConnection, startupCliRequestCoordinator]);
+
+  useEffect(() => {
+    startupCliRequestCoordinator.check();
+    const unlisten = startupCliClient.listenRequestAvailable(() => {
+      startupCliRequestCoordinator.check();
+    });
+    return () => {
+      unlisten.then((stopListening) => stopListening());
+    };
+  }, [startupCliRequestCoordinator]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
