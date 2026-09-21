@@ -1,4 +1,5 @@
 use std::{
+    future::Future,
     path::PathBuf,
     process::{Command, Stdio},
     time::Duration,
@@ -34,13 +35,19 @@ impl ExternalControlClient {
         }
 
         let launch_lock = LaunchLock::acquire()?;
-        if launch_lock.is_some() {
-            start_gui_process()?;
-        }
+        launch_gui_if_needed(
+            launch_lock.is_some(),
+            probe_local_control_plane,
+            start_gui_process,
+        )
+        .await?;
 
-        self.wait_for_control_plane(POST_LAUNCH_TIMEOUT)
+        let result = self
+            .wait_for_control_plane(POST_LAUNCH_TIMEOUT)
             .await
-            .map_err(|_| CONTROL_UNAVAILABLE_MESSAGE.to_string())
+            .map_err(|_| CONTROL_UNAVAILABLE_MESSAGE.to_string());
+        drop(launch_lock);
+        result
     }
 
     pub(crate) async fn call(
@@ -62,6 +69,22 @@ impl ExternalControlClient {
             time::sleep(RETRY_INTERVAL).await;
         }
     }
+}
+
+async fn launch_gui_if_needed<Probe, ProbeFuture, Launch>(
+    owns_launch_lock: bool,
+    probe: Probe,
+    launch: Launch,
+) -> Result<(), String>
+where
+    Probe: FnOnce() -> ProbeFuture,
+    ProbeFuture: Future<Output = Result<(), String>>,
+    Launch: FnOnce() -> Result<(), String>,
+{
+    if owns_launch_lock && probe().await.is_err() {
+        launch()?;
+    }
+    Ok(())
 }
 
 fn start_gui_process() -> Result<(), String> {
@@ -298,4 +321,69 @@ fn fnv1a_64(bytes: &[u8]) -> u64 {
         hash = hash.wrapping_mul(0x100000001b3);
     }
     hash
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[tokio::test]
+    async fn launch_owner_rechecks_control_plane_before_starting_gui() {
+        let launches = AtomicUsize::new(0);
+
+        launch_gui_if_needed(
+            true,
+            || async { Ok(()) },
+            || {
+                launches.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(launches.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn launch_owner_starts_gui_when_control_plane_remains_unavailable() {
+        let launches = AtomicUsize::new(0);
+
+        launch_gui_if_needed(
+            true,
+            || async { Err("unavailable".into()) },
+            || {
+                launches.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(launches.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn launch_non_owner_waits_without_probing_or_starting_gui() {
+        let probes = AtomicUsize::new(0);
+        let launches = AtomicUsize::new(0);
+
+        launch_gui_if_needed(
+            false,
+            || async {
+                probes.fetch_add(1, Ordering::SeqCst);
+                Err("unavailable".into())
+            },
+            || {
+                launches.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(probes.load(Ordering::SeqCst), 0);
+        assert_eq!(launches.load(Ordering::SeqCst), 0);
+    }
 }
