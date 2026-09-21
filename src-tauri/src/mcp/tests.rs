@@ -3086,7 +3086,9 @@ async fn service_custom_log_path_is_propagated_and_conflicts_are_rejected() {
         test_runtime_parts(AppConfig::default(), Vec::new(), Some(test_logger()));
     register_test_terminal(&runtime, "s1", TerminalProtocol::Serial, "COM3").await;
     let service = McpTerminalService::new(runtime);
-    let file_path = std::env::temp_dir()
+    let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("test-logs")
         .join(format!("exaterm_cli_log_{}.log", Uuid::new_v4()))
         .to_string_lossy()
         .to_string();

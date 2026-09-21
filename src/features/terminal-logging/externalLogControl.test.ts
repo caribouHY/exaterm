@@ -106,7 +106,11 @@ describe("externalLogControl", () => {
   ] as const)("%s flushes through the controller before acknowledging", async (action, paused) => {
     const h = setup();
 
-    await h.handlers[action](payload);
+    if (action === "pause") {
+      await h.handlers.pause(payload);
+    } else {
+      await h.handlers.resume(payload);
+    }
 
     expect(h.setPaused).toHaveBeenCalledWith({ sessionId: "session-1" }, paused);
     expect(h.order).toEqual(["operation", "ui", "ack"]);

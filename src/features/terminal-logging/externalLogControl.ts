@@ -52,12 +52,21 @@ export function externalLogControlErrorMessage(
         return "Manual logging is not active.";
     }
   }
-  const fallback = {
-    start: "Failed to start the external control log.",
-    stop: "Failed to stop the external control log.",
-    pause: "Failed to pause the external control log.",
-    resume: "Failed to resume the external control log.",
-  }[action];
+  let fallback: string;
+  switch (action) {
+    case "start":
+      fallback = "Failed to start the external control log.";
+      break;
+    case "stop":
+      fallback = "Failed to stop the external control log.";
+      break;
+    case "pause":
+      fallback = "Failed to pause the external control log.";
+      break;
+    case "resume":
+      fallback = "Failed to resume the external control log.";
+      break;
+  }
   return backendCommandErrorMessage(manualLogOperationCause(error), fallback);
 }
 
