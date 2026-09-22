@@ -1,6 +1,6 @@
 ---
 name: exaterm-cli
-description: Control ExaTerm SSH, Telnet, and serial terminal sessions through the Windows exaterm-cli JSON interface. Use when an agent needs to inspect active ExaTerm sessions, connect an explicitly supplied direct target or an approved saved profile, open serial consoles, read terminal output, run commands, send interactive input, or control opt-in session logging through ExaTerm's recommended primary external-control path.
+description: Diagnose and control ExaTerm SSH, Telnet, and serial terminal sessions through the Windows exaterm-cli JSON interface. Use when an agent needs to check CLI availability, troubleshoot configuration or GUI control-plane access, inspect active ExaTerm sessions, connect an explicitly supplied direct target or an approved saved profile, open serial consoles, read terminal output, run commands, send interactive input, or control opt-in session logging through ExaTerm's recommended primary external-control path.
 ---
 
 # ExaTerm CLI
@@ -23,7 +23,28 @@ option limits, result fields, setup, or troubleshooting details are needed.
    under `C:\Program Files\ExaTerm` beside `exaterm.exe` and `exaterm-mcp.exe`. Do not
    download or install software unless the user requested it.
 
-2. Run `sessions list` and parse the JSON before acting on a session:
+2. Use `doctor` when CLI readiness must be established or when a command reports a
+   configuration, GUI startup, control-plane, or protocol problem. It is not required before
+   every healthy operation.
+
+   ```powershell
+   $diagnosis = exaterm-cli doctor | ConvertFrom-Json
+   $doctorExitCode = $LASTEXITCODE
+   ```
+
+   `doctor` always writes its diagnostic report to stdout, including when it exits with `1`.
+   Inspect checks by `id`, not array position or message text. It may start the visible ExaTerm
+   GUI and wait up to 30 seconds when the control plane is unavailable. Do not automatically
+   edit configuration or restart/close the GUI from a remediation string; those actions need
+   the host agent's normal authorization and can affect active sessions.
+
+   Do not treat exit code `1` alone as proof that every current operation is impossible. For
+   example, `gui_executable=fail` with permission, control-plane, and protocol checks passing
+   means the current GUI is usable but future automatic startup is not ready. Conversely,
+   failed or skipped configuration, permission, control-plane, or protocol checks block the
+   affected CLI operation until resolved.
+
+3. Run `sessions list` and parse the JSON before acting on a session:
 
    ```powershell
    $sessions = exaterm-cli sessions list | ConvertFrom-Json
@@ -32,7 +53,7 @@ option limits, result fields, setup, or troubleshooting details are needed.
    Match a session using returned identifiers and metadata. Do not guess a session ID.
    If more than one session plausibly matches the request, ask the user which one to use.
 
-3. When a requested session is not open, use only connection details supplied by the user or
+4. When a requested session is not open, use only connection details supplied by the user or
    discover an approved saved target before connecting:
 
    ```powershell
@@ -53,7 +74,7 @@ option limits, result fields, setup, or troubleshooting details are needed.
    For serial, select only an exact port returned by `serial ports`. Connection commands
    may require the user to enter credentials in the visible ExaTerm UI.
 
-4. After connecting, verify that the returned session is ready before sending the requested
+5. After connecting, verify that the returned session is ready before sending the requested
    command:
    - Run `sessions list` again and confirm that the session status is `connected`.
    - Read `terminal output --mode recent` and retain its cursor.
@@ -67,7 +88,7 @@ option limits, result fields, setup, or troubleshooting details are needed.
    - MUST NOT send the requested command until a normal prompt or another explicit readiness
      marker has been observed. A successful connect response alone is not sufficient.
 
-5. When the user requested manual logging, establish the log boundary before running the
+6. When the user requested manual logging, establish the log boundary before running the
    requested command:
    - Check `terminal log status` first. Preserve an active log unless the user explicitly
      requests a different lifecycle action.
@@ -82,7 +103,7 @@ option limits, result fields, setup, or troubleshooting details are needed.
    displayed prompt from the terminal buffer. If the device does not redraw a prompt after
    an empty line, report that the initial prompt may be absent from the log.
 
-6. Prefer `terminal run` for ordinary commands because it sends input and captures the
+7. Prefer `terminal run` for ordinary commands because it sends input and captures the
    resulting output:
 
    ```powershell
@@ -96,13 +117,13 @@ option limits, result fields, setup, or troubleshooting details are needed.
    output. A timeout is not proof that the command failed; inspect `timed_out`, `output`, and
    `cursor`.
 
-7. For commands that can run longer than 60 seconds, send the command only once. If
+8. For commands that can run longer than 60 seconds, send the command only once. If
    `terminal run` returns `timed_out=true`, continue waiting from its returned cursor with
    repeated `terminal output --mode wait` calls. Stop only when a verified completion marker
    or normal prompt appears, the session disconnects, or the user-defined overall deadline
    expires. MUST NOT resend the command merely because one wait interval timed out.
 
-8. Use stdin for multiline input, long command text, or text with difficult shell quoting:
+9. Use stdin for multiline input, long command text, or text with difficult shell quoting:
 
    ```powershell
    @"
@@ -111,16 +132,18 @@ option limits, result fields, setup, or troubleshooting details are needed.
    "@ | exaterm-cli terminal run --session-id $sessionId --command -
    ```
 
-9. Use `terminal output` for observation without sending input. Preserve the returned
-   cursor and use `delta` or `wait` for follow-up reads instead of repeatedly requesting
-   recent output. Request 2,000 characters by default and increase the limit only when the
-   relevant output is missing. Use 20,000 characters only when necessary and when the result
-   fits the host agent's available context.
+10. Use `terminal output` for observation without sending input. Preserve the returned
+    cursor and use `delta` or `wait` for follow-up reads instead of repeatedly requesting
+    recent output. Request 2,000 characters by default and increase the limit only when the
+    relevant output is missing. Use 20,000 characters only when necessary and when the result
+    fits the host agent's available context.
 
-10. Parse successful stdout and error stderr as JSON. Branch on the error code and exit code;
+11. Parse successful stdout and error stderr as JSON. Branch on the error code and exit code;
     do not scrape human-readable text. Re-list sessions after a missing-session error and
     re-list profiles or ports before retrying a connection. Treat `--help` and `--version`
-    as human-readable text and never pass their output to a JSON parser.
+    as human-readable text and never pass their output to a JSON parser. `doctor` is the
+    exception to the usual failure-output rule: it writes a report to stdout even when one or
+    more checks fail and the process exits with `1`.
 
 ## Operating Rules
 
@@ -129,6 +152,9 @@ option limits, result fields, setup, or troubleshooting details are needed.
   restart services, delete data, interrupt connectivity, or otherwise have material impact.
 - Do not claim a command succeeded unless returned JSON or later terminal output demonstrates
   success.
+- Use `doctor` for diagnosis, not as permission to repair settings, restart the GUI, or repeat
+  launches. In particular, report a failed `protocol` check without repeatedly invoking the
+  CLI; matching GUI and CLI versions or a safe GUI restart may require user action.
 - Keep credentials, terminal output, prompts, hostnames, usernames, profile memos, and log
   paths out of responses unless they are needed to answer the user.
 - Never place passwords, passphrases, API keys, private keys, or other secrets in CLI

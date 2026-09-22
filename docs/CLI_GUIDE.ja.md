@@ -41,6 +41,7 @@ exaterm-cli --version
 ## コマンド
 
 ```text
+exaterm-cli doctor
 exaterm-cli sessions list
 exaterm-cli profiles list [--type <ssh|telnet>]
 exaterm-cli profiles connect --type <ssh|telnet> --profile-id <id> [--cols <n>] [--rows <n>]
@@ -59,6 +60,24 @@ exaterm-cli terminal log resume --session-id <id>
 ```
 
 個別の構文は `exaterm-cli <command> --help` で確認できます。
+
+### CLI 利用可否の診断
+
+`doctor` は設定、外部制御と CLI の許可、GUI 実行ファイル、ローカル制御プレーン、
+プロトコル互換性を確認します。
+
+```powershell
+exaterm-cli doctor
+```
+
+結果は1つの JSON オブジェクトです。全体の `ok`、CLI とプロトコルのバージョン、今回の
+実行で GUI を起動したかどうか、固定順の6チェックを含みます。各チェックには安定した `id`、
+`pass`、`fail`、`skipped` のいずれかの状態、メッセージ、必要な場合は対処案が含まれます。
+絶対パス、設定値、セッション、認証情報は出力しません。
+
+GUI が停止中の場合、`doctor` はGUIを起動し、制御プレーンを最大30秒待機します。設定読込に
+失敗しても、独立したチェックは続行します。全チェック成功時だけ終了コードは `0` となり、
+失敗またはスキップが1つでもあれば `1` となります。
 
 ### 保存済みプロファイル
 

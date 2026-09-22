@@ -24,6 +24,20 @@ const RETRY_INTERVAL: Duration = Duration::from_millis(250);
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ExternalControlClient;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ExternalControlClientDiagnostic {
+    pub(crate) gui_started: bool,
+    pub(crate) control_plane_reachable: bool,
+    pub(crate) protocol_compatible: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ControlPlaneProbeState {
+    Unavailable,
+    Compatible,
+    Incompatible,
+}
+
 impl ExternalControlClient {
     pub(crate) fn new() -> Self {
         Self
@@ -50,6 +64,44 @@ impl ExternalControlClient {
         result
     }
 
+    pub(crate) fn gui_executable_available(&self) -> bool {
+        resolve_gui_exe_path().is_ok()
+    }
+
+    pub(crate) async fn diagnose_or_start_gui(&self) -> ExternalControlClientDiagnostic {
+        match probe_control_plane_state().await {
+            ControlPlaneProbeState::Compatible => return available_diagnostic(false, true),
+            ControlPlaneProbeState::Incompatible => return available_diagnostic(false, false),
+            ControlPlaneProbeState::Unavailable => {}
+        }
+
+        let launch_lock = match LaunchLock::acquire() {
+            Ok(lock) => lock,
+            Err(_) => return unavailable_diagnostic(false),
+        };
+        let mut gui_started = false;
+
+        if launch_lock.is_some()
+            && probe_control_plane_state().await == ControlPlaneProbeState::Unavailable
+        {
+            if start_gui_process().is_err() {
+                return unavailable_diagnostic(false);
+            }
+            gui_started = true;
+        }
+
+        let probe_state = self
+            .wait_for_reachable_control_plane(POST_LAUNCH_TIMEOUT)
+            .await;
+        drop(launch_lock);
+
+        match probe_state {
+            Some(ControlPlaneProbeState::Compatible) => available_diagnostic(gui_started, true),
+            Some(ControlPlaneProbeState::Incompatible) => available_diagnostic(gui_started, false),
+            Some(ControlPlaneProbeState::Unavailable) | None => unavailable_diagnostic(gui_started),
+        }
+    }
+
     pub(crate) async fn call(
         &self,
         request: ExternalControlRequest,
@@ -68,6 +120,42 @@ impl ExternalControlClient {
             }
             time::sleep(RETRY_INTERVAL).await;
         }
+    }
+
+    async fn wait_for_reachable_control_plane(
+        &self,
+        timeout: Duration,
+    ) -> Option<ControlPlaneProbeState> {
+        let deadline = time::Instant::now() + timeout;
+        loop {
+            let state = probe_control_plane_state().await;
+            if state != ControlPlaneProbeState::Unavailable {
+                return Some(state);
+            }
+            if time::Instant::now() >= deadline {
+                return None;
+            }
+            time::sleep(RETRY_INTERVAL).await;
+        }
+    }
+}
+
+fn available_diagnostic(
+    gui_started: bool,
+    protocol_compatible: bool,
+) -> ExternalControlClientDiagnostic {
+    ExternalControlClientDiagnostic {
+        gui_started,
+        control_plane_reachable: true,
+        protocol_compatible: Some(protocol_compatible),
+    }
+}
+
+fn unavailable_diagnostic(gui_started: bool) -> ExternalControlClientDiagnostic {
+    ExternalControlClientDiagnostic {
+        gui_started,
+        control_plane_reachable: false,
+        protocol_compatible: None,
     }
 }
 
@@ -261,18 +349,46 @@ async fn call_local_control(
 
 #[cfg(windows)]
 async fn probe_local_control_plane() -> Result<(), String> {
-    let stream = connect_named_pipe()
-        .await
-        .map_err(|error| error.message().to_string())?;
-    control_probe_over_stream(stream).await
+    match probe_control_plane_state().await {
+        ControlPlaneProbeState::Compatible => Ok(()),
+        ControlPlaneProbeState::Unavailable | ControlPlaneProbeState::Incompatible => {
+            Err(CONTROL_UNAVAILABLE_MESSAGE.into())
+        }
+    }
 }
 
 #[cfg(not(windows))]
 async fn probe_local_control_plane() -> Result<(), String> {
-    let stream = tokio::net::TcpStream::connect(control_tcp_address())
-        .await
-        .map_err(|error| format!("ExaTerm control TCP connect error: {error}"))?;
-    control_probe_over_stream(stream).await
+    match probe_control_plane_state().await {
+        ControlPlaneProbeState::Compatible => Ok(()),
+        ControlPlaneProbeState::Unavailable | ControlPlaneProbeState::Incompatible => {
+            Err(CONTROL_UNAVAILABLE_MESSAGE.into())
+        }
+    }
+}
+
+#[cfg(windows)]
+async fn probe_control_plane_state() -> ControlPlaneProbeState {
+    let Ok(stream) = connect_named_pipe().await else {
+        return ControlPlaneProbeState::Unavailable;
+    };
+    if control_probe_over_stream(stream).await.is_ok() {
+        ControlPlaneProbeState::Compatible
+    } else {
+        ControlPlaneProbeState::Incompatible
+    }
+}
+
+#[cfg(not(windows))]
+async fn probe_control_plane_state() -> ControlPlaneProbeState {
+    let Ok(stream) = tokio::net::TcpStream::connect(control_tcp_address()).await else {
+        return ControlPlaneProbeState::Unavailable;
+    };
+    if control_probe_over_stream(stream).await.is_ok() {
+        ControlPlaneProbeState::Compatible
+    } else {
+        ControlPlaneProbeState::Incompatible
+    }
 }
 
 #[cfg(windows)]
@@ -327,6 +443,38 @@ fn fnv1a_64(bytes: &[u8]) -> u64 {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn compatible_and_incompatible_control_planes_remain_reachable() {
+        assert_eq!(
+            available_diagnostic(false, true),
+            ExternalControlClientDiagnostic {
+                gui_started: false,
+                control_plane_reachable: true,
+                protocol_compatible: Some(true),
+            }
+        );
+        assert_eq!(
+            available_diagnostic(false, false),
+            ExternalControlClientDiagnostic {
+                gui_started: false,
+                control_plane_reachable: true,
+                protocol_compatible: Some(false),
+            }
+        );
+    }
+
+    #[test]
+    fn unavailable_control_plane_skips_protocol_result() {
+        assert_eq!(
+            unavailable_diagnostic(true),
+            ExternalControlClientDiagnostic {
+                gui_started: true,
+                control_plane_reachable: false,
+                protocol_compatible: None,
+            }
+        );
+    }
 
     #[tokio::test]
     async fn launch_owner_rechecks_control_plane_before_starting_gui() {
