@@ -26,12 +26,13 @@ Enable the shared external-control service and CLI access in ExaTerm Settings, o
 - `external_control.direct_connect_enabled` additionally permits direct SSH/Telnet connections to explicitly specified hosts.
 - `external_control.mcp_enabled` affects `exaterm-mcp`, not `exaterm-cli`.
 
-Restart ExaTerm after changing these settings. Individual saved profiles must also allow MCP
-access before the CLI can list or connect them.
+Restart ExaTerm after changing these settings. Individual saved profiles must also allow
+external-control access before the CLI can list or connect them.
 
 ## Commands
 
 ```text
+exaterm-cli doctor
 exaterm-cli sessions list
 exaterm-cli profiles list [--type <ssh|telnet>]
 exaterm-cli profiles connect --type <ssh|telnet> --profile-id <id> [--cols <n>] [--rows <n>]
@@ -52,6 +53,40 @@ exaterm-cli terminal log resume --session-id <id>
 Use `exaterm-cli <command> --help` for the syntax supported by the installed version.
 `--help` and `--version` produce human-readable text, so do not pipe them to
 `ConvertFrom-Json` or any other JSON parser.
+
+## Diagnosing CLI Availability
+
+Use `doctor` to diagnose CLI readiness without reading terminal content or changing settings:
+
+```powershell
+$diagnosis = exaterm-cli doctor | ConvertFrom-Json
+$doctorExitCode = $LASTEXITCODE
+```
+
+It checks these stable IDs in order:
+
+- `config`: the configuration can be loaded and validated.
+- `external_control`: `external_control.enabled` is enabled.
+- `cli_permission`: `external_control.cli_enabled` is enabled.
+- `gui_executable`: the GUI executable can be found near the CLI.
+- `control_plane`: the existing or newly started local control plane is reachable.
+- `protocol`: the nonce handshake and protocol version are compatible.
+
+The report contains `ok`, `version`, `protocol_version`, `gui_started`, and `checks`. Each
+check has `id`, `status` (`pass`, `fail`, or `skipped`), `message`, and an optional
+`remediation`. Absolute paths, configuration values, sessions, and credentials are omitted.
+Inspect fields and check IDs rather than depending on property order or message wording.
+
+If the GUI is not running, `doctor` may start the normal visible GUI and wait up to 30 seconds.
+It continues independent GUI and control-plane checks when configuration loading fails. A
+protocol mismatch is reported without repeatedly starting the GUI. Do not close or restart a
+running GUI merely to make the diagnostic pass because that can interrupt active sessions.
+
+Exit code `0` means every check passed. Exit code `1` means at least one check failed or was
+skipped, but the complete report is still written to stdout and should be parsed. Evaluate the
+individual checks: a lone `gui_executable` failure with a reachable, compatible control plane
+does not invalidate the current GUI, although automatic startup is not ready. Do not apply a
+remediation automatically when it changes configuration or restarts the GUI.
 
 ## Sessions and Profiles
 
@@ -324,7 +359,8 @@ that the initial prompt may be absent from the log.
 
 ## JSON and Exit Codes
 
-Successful commands write one JSON value to stdout. Errors write JSON to stderr:
+Successful commands write one JSON value to stdout. Ordinary command errors write JSON to
+stderr:
 
 ```json
 { "error": { "code": "cli_disabled", "message": "..." } }
@@ -332,6 +368,9 @@ Successful commands write one JSON value to stdout. Errors write JSON to stderr:
 
 `--help` and `--version` are the only human-readable outputs. Read them as syntax or version
 text and do not parse them as JSON.
+
+`doctor` is the exception for failed operations: it writes its complete diagnostic JSON to
+stdout even when it exits with `1`. Capture and parse that stdout before evaluating the checks.
 
 | Exit code | Meaning                                                                |
 | --------- | ---------------------------------------------------------------------- |
@@ -353,6 +392,10 @@ active sessions and discard state.
 
 ## Recovery
 
+- CLI readiness unclear: Run `doctor`, inspect checks by ID, and act only on the failed or
+  skipped checks relevant to the requested operation.
+- `protocol` failed: Confirm that the GUI and CLI versions match. Do not repeatedly launch or
+  restart ExaTerm; a safe restart may require the user to preserve or close active sessions.
 - `cli_disabled`: Enable `external_control.enabled` and `external_control.cli_enabled`, then restart ExaTerm.
 - Connection rejected: Enable `external_control.connect_enabled` and verify that the selected saved
   profile allows external control access.

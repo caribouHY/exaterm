@@ -42,6 +42,7 @@ Restart ExaTerm after changing these settings.
 ## Commands
 
 ```text
+exaterm-cli doctor
 exaterm-cli sessions list
 exaterm-cli profiles list [--type <ssh|telnet>]
 exaterm-cli profiles connect --type <ssh|telnet> --profile-id <id> [--cols <n>] [--rows <n>]
@@ -60,6 +61,24 @@ exaterm-cli terminal log resume --session-id <id>
 ```
 
 Use `exaterm-cli <command> --help` for command-specific syntax.
+
+### Diagnose CLI Availability
+
+Run `doctor` to check the configuration, external-control and CLI permissions, GUI
+executable, local control plane, and protocol compatibility:
+
+```powershell
+exaterm-cli doctor
+```
+
+The command returns one JSON object with `ok`, the CLI and protocol versions, whether this
+invocation started the GUI, and six ordered checks. Each check has a stable `id`, a
+`pass`, `fail`, or `skipped` status, a message, and an optional remediation. Absolute paths,
+configuration values, sessions, and credentials are not included.
+
+If the GUI is not running, `doctor` starts it and waits up to 30 seconds for the control
+plane. Independent checks continue after a configuration error. The exit code is `0` only
+when all checks pass and `1` when any check fails or is skipped.
 
 ### Saved Profiles
 

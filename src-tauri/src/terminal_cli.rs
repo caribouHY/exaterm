@@ -2,13 +2,15 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use clap::{error::ErrorKind, Args, Parser, Subcommand, ValueEnum};
+use serde::Serialize;
 use serde_json::json;
 
 use crate::external_control::service::ExternalControlLogWriteMode;
 use crate::{
     config,
     external_control::{
-        client::ExternalControlClient,
+        client::{ExternalControlClient, ExternalControlClientDiagnostic},
+        protocol::CONTROL_PROTOCOL_VERSION,
         service::{
             normalize_direct_host, ExternalControlEncoding, ExternalControlSerialFlowControl,
             ExternalControlSerialParity, ExternalControlSshAuthMethod, ExternalControlTerminalMode,
@@ -35,6 +37,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum RootCommand {
+    /// Diagnose ExaTerm CLI availability.
+    Doctor,
     Sessions(SessionsArgs),
     Profiles(ProfilesArgs),
     Ssh(SshArgs),
@@ -345,6 +349,10 @@ pub async fn run_terminal_cli() -> i32 {
         }
     };
 
+    if matches!(&cli.command, RootCommand::Doctor) {
+        return run_doctor().await;
+    }
+
     let request = match build_request(cli.command, &mut io::stdin()) {
         Ok(request) => request,
         Err(error) => {
@@ -387,11 +395,198 @@ pub async fn run_terminal_cli() -> i32 {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum DoctorCheckStatus {
+    Pass,
+    Fail,
+    Skipped,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct DoctorCheck {
+    id: &'static str,
+    status: DoctorCheckStatus,
+    message: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    remediation: Option<&'static str>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct DoctorReport {
+    ok: bool,
+    version: &'static str,
+    protocol_version: u32,
+    gui_started: bool,
+    checks: Vec<DoctorCheck>,
+}
+
+async fn run_doctor() -> i32 {
+    let config = config::config_read().map(|config| {
+        (
+            config.external_control.enabled,
+            config.external_control.cli_enabled,
+        )
+    });
+    let client = ExternalControlClient::new();
+    let gui_executable_available = client.gui_executable_available();
+    let client_diagnostic = client.diagnose_or_start_gui().await;
+    let report = build_doctor_report(
+        config.map_err(|_| ()),
+        gui_executable_available,
+        client_diagnostic,
+    );
+    let exit_code = doctor_exit_code(&report);
+    let output = serde_json::to_string(&report).unwrap_or_else(|_| "{}".into());
+    println!("{output}");
+    exit_code
+}
+
+fn doctor_exit_code(report: &DoctorReport) -> i32 {
+    if report.ok {
+        0
+    } else {
+        1
+    }
+}
+
+fn build_doctor_report(
+    config_permissions: Result<(bool, bool), ()>,
+    gui_executable_available: bool,
+    client: ExternalControlClientDiagnostic,
+) -> DoctorReport {
+    let mut checks = Vec::with_capacity(6);
+
+    match config_permissions {
+        Ok((external_control_enabled, cli_enabled)) => {
+            checks.push(passed_check(
+                "config",
+                "ExaTerm configuration loaded successfully.",
+            ));
+            checks.push(if external_control_enabled {
+                passed_check("external_control", "ExaTerm external control is enabled.")
+            } else {
+                failed_check(
+                    "external_control",
+                    "ExaTerm external control is disabled.",
+                    "Set external_control.enabled=true and restart ExaTerm.",
+                )
+            });
+            checks.push(if cli_enabled {
+                passed_check("cli_permission", "ExaTerm CLI access is enabled.")
+            } else {
+                failed_check(
+                    "cli_permission",
+                    "ExaTerm CLI access is disabled.",
+                    "Set external_control.cli_enabled=true and restart ExaTerm.",
+                )
+            });
+        }
+        Err(()) => {
+            checks.push(failed_check(
+                "config",
+                "ExaTerm configuration could not be loaded.",
+                "Repair or replace the ExaTerm configuration file.",
+            ));
+            checks.push(skipped_check(
+                "external_control",
+                "External control setting was not checked because configuration loading failed.",
+                "Repair the ExaTerm configuration file, then run doctor again.",
+            ));
+            checks.push(skipped_check(
+                "cli_permission",
+                "CLI permission was not checked because configuration loading failed.",
+                "Repair the ExaTerm configuration file, then run doctor again.",
+            ));
+        }
+    }
+
+    checks.push(if gui_executable_available {
+        passed_check("gui_executable", "ExaTerm GUI executable was found.")
+    } else {
+        failed_check(
+            "gui_executable",
+            "ExaTerm GUI executable was not found near the CLI.",
+            "Install exaterm-cli beside the ExaTerm GUI executable.",
+        )
+    });
+
+    checks.push(if client.control_plane_reachable {
+        passed_check("control_plane", "ExaTerm control plane is reachable.")
+    } else {
+        failed_check(
+            "control_plane",
+            "ExaTerm control plane is unavailable.",
+            "Confirm that ExaTerm can start, then run doctor again.",
+        )
+    });
+
+    checks.push(match client.protocol_compatible {
+        Some(true) => passed_check(
+            "protocol",
+            "ExaTerm external control protocol is compatible.",
+        ),
+        Some(false) => failed_check(
+            "protocol",
+            "ExaTerm external control protocol handshake failed.",
+            "Use matching ExaTerm GUI and CLI versions, restart ExaTerm, then run doctor again.",
+        ),
+        None => skipped_check(
+            "protocol",
+            "Protocol compatibility was not checked because the control plane is unavailable.",
+            "Restore the ExaTerm control plane, then run doctor again.",
+        ),
+    });
+
+    let ok = checks
+        .iter()
+        .all(|check| check.status == DoctorCheckStatus::Pass);
+    DoctorReport {
+        ok,
+        version: env!("CARGO_PKG_VERSION"),
+        protocol_version: CONTROL_PROTOCOL_VERSION,
+        gui_started: client.gui_started,
+        checks,
+    }
+}
+
+fn passed_check(id: &'static str, message: &'static str) -> DoctorCheck {
+    DoctorCheck {
+        id,
+        status: DoctorCheckStatus::Pass,
+        message,
+        remediation: None,
+    }
+}
+
+fn failed_check(id: &'static str, message: &'static str, remediation: &'static str) -> DoctorCheck {
+    DoctorCheck {
+        id,
+        status: DoctorCheckStatus::Fail,
+        message,
+        remediation: Some(remediation),
+    }
+}
+
+fn skipped_check(
+    id: &'static str,
+    message: &'static str,
+    remediation: &'static str,
+) -> DoctorCheck {
+    DoctorCheck {
+        id,
+        status: DoctorCheckStatus::Skipped,
+        message,
+        remediation: Some(remediation),
+    }
+}
+
 fn build_request(
     command: RootCommand,
     stdin: &mut impl Read,
 ) -> Result<ExternalControlRequest, String> {
     match command {
+        RootCommand::Doctor => Err("doctor does not create an external control request".into()),
         RootCommand::Sessions(SessionsArgs {
             command: SessionsCommand::List,
         }) => Ok(ExternalControlRequest::ListTerminalSessions),
@@ -815,6 +1010,137 @@ mod tests {
 
     fn parse(args: &[&str]) -> RootCommand {
         Cli::try_parse_from(args).unwrap().command
+    }
+
+    fn client_diagnostic(
+        gui_started: bool,
+        control_plane_reachable: bool,
+        protocol_compatible: Option<bool>,
+    ) -> ExternalControlClientDiagnostic {
+        ExternalControlClientDiagnostic {
+            gui_started,
+            control_plane_reachable,
+            protocol_compatible,
+        }
+    }
+
+    fn check<'a>(report: &'a DoctorReport, id: &str) -> &'a DoctorCheck {
+        report.checks.iter().find(|check| check.id == id).unwrap()
+    }
+
+    #[test]
+    fn doctor_parses_as_root_command() {
+        assert!(matches!(
+            parse(&["exaterm-cli", "doctor"]),
+            RootCommand::Doctor
+        ));
+    }
+
+    #[test]
+    fn doctor_report_succeeds_only_when_every_check_passes() {
+        let report = build_doctor_report(
+            Ok((true, true)),
+            true,
+            client_diagnostic(false, true, Some(true)),
+        );
+
+        assert!(report.ok);
+        assert_eq!(doctor_exit_code(&report), 0);
+        assert_eq!(report.checks.len(), 6);
+        assert!(report
+            .checks
+            .iter()
+            .all(|check| check.status == DoctorCheckStatus::Pass));
+    }
+
+    #[test]
+    fn doctor_report_continues_independent_checks_after_config_failure() {
+        let report = build_doctor_report(Err(()), true, client_diagnostic(true, true, Some(true)));
+
+        assert!(!report.ok);
+        assert_eq!(doctor_exit_code(&report), 1);
+        assert_eq!(check(&report, "config").status, DoctorCheckStatus::Fail);
+        assert_eq!(
+            check(&report, "external_control").status,
+            DoctorCheckStatus::Skipped
+        );
+        assert_eq!(
+            check(&report, "cli_permission").status,
+            DoctorCheckStatus::Skipped
+        );
+        assert_eq!(
+            check(&report, "control_plane").status,
+            DoctorCheckStatus::Pass
+        );
+        assert_eq!(check(&report, "protocol").status, DoctorCheckStatus::Pass);
+        assert!(report.gui_started);
+    }
+
+    #[test]
+    fn doctor_report_marks_disabled_permissions_as_failures() {
+        let report = build_doctor_report(
+            Ok((false, false)),
+            true,
+            client_diagnostic(false, true, Some(true)),
+        );
+
+        assert_eq!(
+            check(&report, "external_control").status,
+            DoctorCheckStatus::Fail
+        );
+        assert_eq!(
+            check(&report, "cli_permission").status,
+            DoctorCheckStatus::Fail
+        );
+        assert_eq!(doctor_exit_code(&report), 1);
+    }
+
+    #[test]
+    fn doctor_report_skips_protocol_when_control_plane_is_unavailable() {
+        let report = build_doctor_report(
+            Ok((true, true)),
+            false,
+            client_diagnostic(false, false, None),
+        );
+
+        assert_eq!(
+            check(&report, "gui_executable").status,
+            DoctorCheckStatus::Fail
+        );
+        assert_eq!(
+            check(&report, "control_plane").status,
+            DoctorCheckStatus::Fail
+        );
+        assert_eq!(
+            check(&report, "protocol").status,
+            DoctorCheckStatus::Skipped
+        );
+    }
+
+    #[test]
+    fn doctor_report_marks_protocol_mismatch_without_claiming_gui_start() {
+        let report = build_doctor_report(
+            Ok((true, true)),
+            true,
+            client_diagnostic(false, true, Some(false)),
+        );
+
+        assert!(!report.gui_started);
+        assert_eq!(check(&report, "protocol").status, DoctorCheckStatus::Fail);
+    }
+
+    #[test]
+    fn doctor_report_json_does_not_contain_local_paths_or_configuration_values() {
+        let report = build_doctor_report(Err(()), false, client_diagnostic(false, false, None));
+        let serialized = serde_json::to_string(&report).unwrap();
+
+        assert!(!serialized.contains(r"C:\\Users\\example"));
+        assert!(!serialized.contains("config.json"));
+        assert!(!serialized.contains("session_id"));
+        assert_eq!(
+            serde_json::from_str::<Value>(&serialized).unwrap()["ok"],
+            false
+        );
     }
 
     #[test]
