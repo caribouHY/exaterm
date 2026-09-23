@@ -27,18 +27,19 @@ pub(crate) use terminal::{normalize_max_chars, normalize_timeout_ms};
 pub(super) use types::{internal_error, invalid_params, not_found, permission_denied, unavailable};
 pub(crate) use types::{
     ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs,
-    ExternalControlConnectionProfile, ExternalControlEncoding, ExternalControlLogControlAck,
-    ExternalControlLogWriteMode, ExternalControlSerialFlowControl, ExternalControlSerialParity,
-    ExternalControlSshAuthMethod, ExternalControlTerminalMode, ListConnectionProfilesArgs,
-    PreparedConnection, PreparedConnectionKind, PreparedSerialConnection, ReadTerminalOutputArgs,
-    RunTerminalCommandArgs, SavedProfileConnectionType, SendTerminalInputArgs,
-    StartTerminalLogArgs, StopTerminalLogArgs,
+    DisconnectTerminalSessionArgs, ExternalControlConnectionProfile, ExternalControlEncoding,
+    ExternalControlLogControlAck, ExternalControlLogWriteMode, ExternalControlSerialFlowControl,
+    ExternalControlSerialParity, ExternalControlSshAuthMethod, ExternalControlTerminalMode,
+    ListConnectionProfilesArgs, PreparedConnection, PreparedConnectionKind,
+    PreparedSerialConnection, ReadTerminalOutputArgs, RunTerminalCommandArgs,
+    SavedProfileConnectionType, SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs,
 };
 pub(crate) use types::{
-    ConnectionCreatedResult, ListConnectionProfilesResult, ListSerialPortsResult,
-    ReadTerminalOutputResult, RunTerminalCommandResult, SendTerminalInputResult,
-    SetTerminalLogPausedResult, StartTerminalLogResult, StopTerminalLogResult, TerminalLogState,
-    TerminalLogStatusResult, TerminalOutputResult, WaitTerminalOutputResult,
+    ConnectionCreatedResult, DisconnectTerminalSessionResult, ListConnectionProfilesResult,
+    ListSerialPortsResult, ReadTerminalOutputResult, RunTerminalCommandResult,
+    SendTerminalInputResult, SetTerminalLogPausedResult, StartTerminalLogResult,
+    StopTerminalLogResult, TerminalLogState, TerminalLogStatusResult, TerminalOutputResult,
+    WaitTerminalOutputResult,
 };
 pub(crate) use types::{
     ExternalControlCredentialRequestPayload, ExternalControlLogControlRequestPayload,
@@ -144,6 +145,10 @@ impl ExternalControlService {
                 .run_terminal_command(args)
                 .await
                 .map(ExternalControlResponse::RunTerminalCommand),
+            ExternalControlRequest::DisconnectTerminalSession(args) => self
+                .disconnect_terminal_session(args)
+                .await
+                .map(ExternalControlResponse::DisconnectTerminalSession),
         }
     }
 

@@ -563,13 +563,33 @@ pub async fn telnet_disconnect(
     logger: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<(), crate::command_error::BackendCommandError> {
-    if let Some(session) = remove_session(
+    disconnect(
         &app,
+        &state,
         &terminals,
         &workspace,
         Some(&logger),
-        &state.sessions,
         &session_id,
+    )
+    .await
+    .map_err(Into::into)
+}
+
+pub(crate) async fn disconnect(
+    app: &AppHandle,
+    state: &TelnetState,
+    terminals: &TerminalControlState,
+    workspace: &WorkspaceState,
+    logger: Option<&LoggerState>,
+    session_id: &str,
+) -> Result<(), String> {
+    if let Some(session) = remove_session(
+        app,
+        terminals,
+        workspace,
+        logger,
+        &state.sessions,
+        session_id,
     )
     .await
     {

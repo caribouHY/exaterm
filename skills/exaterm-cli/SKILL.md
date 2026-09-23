@@ -1,6 +1,6 @@
 ---
 name: exaterm-cli
-description: Diagnose and control ExaTerm SSH, Telnet, and serial terminal sessions through the Windows exaterm-cli JSON interface. Use when an agent needs to check CLI availability, troubleshoot configuration or GUI control-plane access, inspect active ExaTerm sessions, connect an explicitly supplied direct target or an approved saved profile, open serial consoles, read terminal output, run commands, send interactive input, or control opt-in session logging through ExaTerm's recommended primary external-control path.
+description: Diagnose and control ExaTerm SSH, Telnet, and serial terminal sessions through the Windows exaterm-cli JSON interface. Use when an agent needs to check CLI availability, troubleshoot configuration or GUI control-plane access, inspect active ExaTerm sessions, connect an explicitly supplied direct target or an approved saved profile, open serial consoles, read terminal output, run commands, send interactive input, safely disconnect a selected session, or control opt-in session logging through ExaTerm's recommended primary external-control path.
 ---
 
 # ExaTerm CLI
@@ -145,6 +145,20 @@ option limits, result fields, setup, or troubleshooting details are needed.
     exception to the usual failure-output rule: it writes a report to stdout even when one or
     more checks fail and the process exits with `1`.
 
+12. Disconnect only the exact session selected for the task when the user requested it or the
+    authorized workflow explicitly requires cleanup of a temporary session created for that
+    task:
+
+    ```powershell
+    $disconnect = exaterm-cli sessions disconnect --session-id $sessionId |
+      ConvertFrom-Json
+    ```
+
+    A successful disconnect keeps the GUI tab and scrollback. It flushes and stops an active
+    log before ending protocol I/O. Treat `already_disconnected=true` as successful idempotent
+    cleanup. For Serial, success also means its read, write, and receive-FIFO workers stopped
+    and ExaTerm released the local port handle.
+
 ## Operating Rules
 
 - Use PowerShell examples and Windows paths by default.
@@ -170,6 +184,9 @@ option limits, result fields, setup, or troubleshooting details are needed.
   empty line and confirm that a fresh prompt was captured.
 - Do not clear, recreate, disconnect, or replace an existing session as a routine recovery
   step. Preserve the GUI-owned session and its scrollback.
+- Use `sessions disconnect` only for an exact returned session ID and only within the user's
+  requested operation or an explicitly authorized temporary-session cleanup boundary. Do not
+  infer permission to disconnect another active session.
 - Do not resend a long-running command after a wait timeout unless terminal evidence shows
   that it was not accepted.
 - Keep terminal reads small by default. Increase `--max-chars` incrementally, and summarize

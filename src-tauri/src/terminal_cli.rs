@@ -17,9 +17,9 @@ use crate::{
             ListConnectionProfilesArgs, SavedProfileConnectionType,
         },
         ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs,
-        ExternalControlError, ExternalControlRequest, ExternalControlResponse,
-        ReadTerminalOutputArgs, RunTerminalCommandArgs, SendTerminalInputArgs,
-        StartTerminalLogArgs, StopTerminalLogArgs, TerminalLogSessionArgs,
+        DisconnectTerminalSessionArgs, ExternalControlError, ExternalControlRequest,
+        ExternalControlResponse, ReadTerminalOutputArgs, RunTerminalCommandArgs,
+        SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs, TerminalLogSessionArgs,
     },
 };
 
@@ -56,6 +56,7 @@ struct SessionsArgs {
 #[derive(Debug, Subcommand)]
 enum SessionsCommand {
     List,
+    Disconnect(SessionArg),
 }
 
 #[derive(Debug, Args)]
@@ -590,6 +591,16 @@ fn build_request(
         RootCommand::Sessions(SessionsArgs {
             command: SessionsCommand::List,
         }) => Ok(ExternalControlRequest::ListTerminalSessions),
+        RootCommand::Sessions(SessionsArgs {
+            command: SessionsCommand::Disconnect(args),
+        }) => {
+            require_non_empty("--session-id", &args.session_id)?;
+            Ok(ExternalControlRequest::DisconnectTerminalSession(
+                DisconnectTerminalSessionArgs {
+                    session_id: args.session_id,
+                },
+            ))
+        }
         RootCommand::Profiles(ProfilesArgs {
             command: ProfilesCommand::List(args),
         }) => Ok(ExternalControlRequest::ListConnectionProfiles(
@@ -1442,6 +1453,36 @@ mod tests {
             .unwrap(),
             ExternalControlRequest::ListTerminalSessions
         );
+    }
+
+    #[test]
+    fn sessions_disconnect_builds_request() {
+        assert_eq!(
+            build_request(
+                parse(&[
+                    "exaterm-cli",
+                    "sessions",
+                    "disconnect",
+                    "--session-id",
+                    "s1",
+                ]),
+                &mut io::empty(),
+            )
+            .unwrap(),
+            ExternalControlRequest::DisconnectTerminalSession(DisconnectTerminalSessionArgs {
+                session_id: "s1".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn sessions_disconnect_rejects_empty_session_id() {
+        let error = build_request(
+            parse(&["exaterm-cli", "sessions", "disconnect", "--session-id", " "]),
+            &mut io::empty(),
+        )
+        .unwrap_err();
+        assert!(error.contains("--session-id"));
     }
 
     #[test]

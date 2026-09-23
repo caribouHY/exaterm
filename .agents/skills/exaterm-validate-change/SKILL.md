@@ -33,6 +33,26 @@ cargo test --manifest-path src-tauri/Cargo.toml
 pnpm run tauri build --debug
 ```
 
+## CLI and Agent Skill Synchronization
+
+When a change affects `exaterm-cli`, inspect the public CLI contract before validation. A change
+to command or subcommand names, options, defaults, JSON result fields, error or exit behavior,
+permissions, readiness or recovery guidance, or session lifecycle semantics must update the
+installable Agent Skill in the same change:
+
+- Update `skills/exaterm-cli/SKILL.md` when discovery, workflow, authorization, or operating
+  rules change.
+- Update `skills/exaterm-cli/references/cli-reference.md` when command syntax, result fields,
+  limits, defaults, or troubleshooting behavior changes.
+- Keep both files synchronized when the change affects both agent decisions and exact CLI
+  details.
+
+Do not assume that updating `docs/CLI_GUIDE.*.md` also updates the Agent Skill. Before committing
+or publishing, inspect the diff and explicitly confirm that the Skill was updated or that the
+CLI change has no user-visible or agent-visible contract impact. When either Skill file changes,
+use the `skill-creator` workflow and run its `quick_validate.py` against
+`skills/exaterm-cli` in addition to the formatting checks below.
+
 ## Select Validation By Change Type
 
 | Change type                                                                   | Required validation                                                                                                                                    |
@@ -52,6 +72,8 @@ Before publishing or reporting a PR-ready change:
 - If the change touches frontend, TypeScript, UI, CSS, or locale files, run `pnpm run build`.
 - If the change touches Rust, backend commands, Tauri command registration, config, logger, SSH, Serial, Telnet, AI provider logic, or Cargo files, run `cargo test --manifest-path src-tauri/Cargo.toml`.
 - If installer/runtime packaging is in scope, run `pnpm run tauri build --debug`.
+- If the public `exaterm-cli` contract changes, confirm that `skills/exaterm-cli/SKILL.md` and
+  `skills/exaterm-cli/references/cli-reference.md` are synchronized and validated.
 - For documentation-only, agent-guidance-only, or skill-only changes, do not run full app builds by default; verify the edited Markdown/frontmatter/path references instead.
 
 ## Failure Handling

@@ -8,15 +8,15 @@ use crate::terminal_control::{TerminalControlState, TerminalStatus};
 
 use super::connections::terminal_protocol_log_type;
 use super::{
-    internal_error, invalid_params, not_found, unavailable, ExternalControlError,
-    ExternalControlLogControlRequestPayload, ExternalControlRuntime, ExternalControlService,
-    ListTerminalSessionsResult, ReadTerminalOutputArgs, ReadTerminalOutputResult,
-    RunTerminalCommandArgs, RunTerminalCommandResult, SendTerminalInputArgs,
-    SendTerminalInputResult, SetTerminalLogPausedResult, StartTerminalLogArgs,
-    StartTerminalLogResult, StopTerminalLogArgs, StopTerminalLogResult, TerminalLogSessionArgs,
-    TerminalLogState, TerminalLogStatusResult, TerminalOutputResult, WaitTerminalOutputResult,
-    DEFAULT_READ_CHARS, DEFAULT_SETTLE_MS, DEFAULT_WAIT_TIMEOUT_MS, MAX_INPUT_CHARS,
-    MAX_READ_CHARS, MAX_SETTLE_MS, MAX_WAIT_TIMEOUT_MS,
+    internal_error, invalid_params, not_found, unavailable, DisconnectTerminalSessionArgs,
+    DisconnectTerminalSessionResult, ExternalControlError, ExternalControlLogControlRequestPayload,
+    ExternalControlRuntime, ExternalControlService, ListTerminalSessionsResult,
+    ReadTerminalOutputArgs, ReadTerminalOutputResult, RunTerminalCommandArgs,
+    RunTerminalCommandResult, SendTerminalInputArgs, SendTerminalInputResult,
+    SetTerminalLogPausedResult, StartTerminalLogArgs, StartTerminalLogResult, StopTerminalLogArgs,
+    StopTerminalLogResult, TerminalLogSessionArgs, TerminalLogState, TerminalLogStatusResult,
+    TerminalOutputResult, WaitTerminalOutputResult, DEFAULT_READ_CHARS, DEFAULT_SETTLE_MS,
+    DEFAULT_WAIT_TIMEOUT_MS, MAX_INPUT_CHARS, MAX_READ_CHARS, MAX_SETTLE_MS, MAX_WAIT_TIMEOUT_MS,
 };
 
 impl ExternalControlService {
@@ -25,6 +25,54 @@ impl ExternalControlService {
     ) -> Result<ListTerminalSessionsResult, ExternalControlError> {
         let sessions = self.runtime.terminals.list_sessions().await;
         Ok(ListTerminalSessionsResult { sessions })
+    }
+
+    pub(crate) async fn disconnect_terminal_session(
+        &self,
+        args: DisconnectTerminalSessionArgs,
+    ) -> Result<DisconnectTerminalSessionResult, ExternalControlError> {
+        let info = self
+            .runtime
+            .terminals
+            .session_info(&args.session_id)
+            .await
+            .ok_or_else(|| not_found("Session not found"))?;
+
+        if info.status == TerminalStatus::Disconnected {
+            return Ok(DisconnectTerminalSessionResult {
+                session_id: args.session_id,
+                disconnected: false,
+                already_disconnected: true,
+            });
+        }
+
+        if self.runtime.io.logger.is_available()
+            && self
+                .runtime
+                .io
+                .logger
+                .active_log_session(&args.session_id)
+                .await
+                .is_some()
+        {
+            self.stop_terminal_log(StopTerminalLogArgs {
+                session_id: args.session_id.clone(),
+            })
+            .await?;
+        }
+
+        self.runtime
+            .io
+            .protocol
+            .disconnect_terminal(info.protocol, &args.session_id)
+            .await
+            .map_err(internal_error)?;
+
+        Ok(DisconnectTerminalSessionResult {
+            session_id: args.session_id,
+            disconnected: true,
+            already_disconnected: false,
+        })
     }
 
     pub(crate) async fn read_terminal_output(
@@ -545,6 +593,16 @@ async fn wait_for_terminal_output(
                 start_cursor: snapshot.start_cursor,
                 cursor: snapshot.cursor,
             });
+        }
+
+        if terminals
+            .session_info(session_id)
+            .await
+            .is_some_and(|info| info.status == TerminalStatus::Disconnected)
+        {
+            return Err(unavailable(
+                "The session was disconnected while waiting for output",
+            ));
         }
 
         let now = time::Instant::now();

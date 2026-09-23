@@ -86,6 +86,11 @@ pub(crate) trait ExternalControlProtocolIo: Send + Sync {
         session_id: &str,
         data: String,
     ) -> Result<(), String>;
+    async fn disconnect_terminal(
+        &self,
+        protocol: TerminalProtocol,
+        session_id: &str,
+    ) -> Result<(), String>;
 }
 
 #[derive(Clone)]
@@ -211,6 +216,48 @@ impl ExternalControlProtocolIo for TauriExternalControlProtocolIo {
             }
             TerminalProtocol::Telnet => {
                 telnet::write_data(&self.telnet, &self.terminals, session_id, data).await
+            }
+        }
+    }
+
+    async fn disconnect_terminal(
+        &self,
+        protocol: TerminalProtocol,
+        session_id: &str,
+    ) -> Result<(), String> {
+        match protocol {
+            TerminalProtocol::Ssh => {
+                ssh::disconnect(
+                    &self.app,
+                    &self.ssh,
+                    &self.terminals,
+                    &self.workspace,
+                    self.logger.as_ref(),
+                    session_id,
+                )
+                .await
+            }
+            TerminalProtocol::Serial => {
+                serial::disconnect(
+                    &self.app,
+                    &self.serial,
+                    &self.terminals,
+                    &self.workspace,
+                    self.logger.as_ref(),
+                    session_id,
+                )
+                .await
+            }
+            TerminalProtocol::Telnet => {
+                telnet::disconnect(
+                    &self.app,
+                    &self.telnet,
+                    &self.terminals,
+                    &self.workspace,
+                    self.logger.as_ref(),
+                    session_id,
+                )
+                .await
             }
         }
     }

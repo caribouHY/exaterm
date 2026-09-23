@@ -16,6 +16,7 @@ mod tests;
 pub use auth::private_key_requires_passphrase;
 pub(crate) use connection::{connect, SshConnectRequest, SshConnectRuntime};
 pub use host_key::HostKeyHandling;
+pub(crate) use io::disconnect;
 pub use io::{write_data, SshState};
 pub use profiles::resolve_jump_profile;
 pub use types::{SshConnectOptions, SshConnectResult, SshJumpProfile};

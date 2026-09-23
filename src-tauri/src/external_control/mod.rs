@@ -9,7 +9,7 @@ pub use service::{ExternalControlRuntime, ExternalControlService};
 
 pub(crate) use service::{
     ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs,
-    ExternalControlError, ExternalControlRequest, ExternalControlResponse, ReadTerminalOutputArgs,
-    RunTerminalCommandArgs, SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs,
-    TerminalLogSessionArgs,
+    DisconnectTerminalSessionArgs, ExternalControlError, ExternalControlRequest,
+    ExternalControlResponse, ReadTerminalOutputArgs, RunTerminalCommandArgs, SendTerminalInputArgs,
+    StartTerminalLogArgs, StopTerminalLogArgs, TerminalLogSessionArgs,
 };

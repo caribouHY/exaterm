@@ -48,6 +48,9 @@ pub(super) fn request_from_tool(
 ) -> Result<ExternalControlRequest, McpError> {
     match name {
         "list_terminal_sessions" => Ok(ExternalControlRequest::ListTerminalSessions),
+        "disconnect_terminal_session" => Ok(ExternalControlRequest::DisconnectTerminalSession(
+            parse_tool_args(args)?,
+        )),
         "list_connection_profiles" => Ok(ExternalControlRequest::ListConnectionProfiles(
             parse_tool_args(args)?,
         )),
