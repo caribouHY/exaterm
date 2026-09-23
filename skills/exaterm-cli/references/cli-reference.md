@@ -34,6 +34,7 @@ external-control access before the CLI can list or connect them.
 ```text
 exaterm-cli doctor
 exaterm-cli sessions list
+exaterm-cli sessions disconnect --session-id <id>
 exaterm-cli profiles list [--type <ssh|telnet>]
 exaterm-cli profiles connect --type <ssh|telnet> --profile-id <id> [--cols <n>] [--rows <n>]
 exaterm-cli ssh connect --host <host> --username <user> [options]
@@ -104,6 +105,42 @@ values from 1 through 1000. Profile connections require
 
 SSH passwords and encrypted private-key passphrases are entered through the visible ExaTerm
 UI and must never be supplied as CLI arguments.
+
+## Disconnecting a Session
+
+Disconnect only an exact `session_id` returned by `sessions list`:
+
+```powershell
+$disconnect = exaterm-cli sessions disconnect --session-id $sessionId |
+  ConvertFrom-Json
+```
+
+The result contains `session_id`, `disconnected`, and `already_disconnected`. A first successful
+disconnect normally returns `disconnected=true` and `already_disconnected=false`. Repeating the
+operation for the same known session is safe and returns `disconnected=false` with
+`already_disconnected=true`. An unknown session returns a not-found error; re-list sessions
+instead of guessing another ID.
+
+Disconnect preserves the GUI tab and retained scrollback. ExaTerm flushes and stops an active
+session log before ending SSH, Telnet, or Serial I/O. For Serial, a successful response is sent
+only after the read, write, and receive-FIFO workers have stopped and the local port handle has
+been released, so the same port can be opened again.
+
+Disconnecting is a material connectivity change. Use it only when the user requested it or an
+authorized workflow explicitly requires cleanup of a temporary session created for that task.
+Do not use it as routine recovery for timeouts, ambiguous prompts, or transient errors.
+
+For an authorized temporary automation session, preserve its exact returned ID and clean it up
+without selecting another session:
+
+```powershell
+$connection = exaterm-cli serial connect --port $port | ConvertFrom-Json
+try {
+  # Perform only the authorized terminal operations.
+} finally {
+  exaterm-cli sessions disconnect --session-id $connection.session_id
+}
+```
 
 ## Direct SSH and Telnet Connections
 
@@ -405,6 +442,8 @@ active sessions and discard state.
 - Profile not found or ambiguous: Run `profiles list`, retain both ID and type, and retry
   only with an exact match.
 - Serial port rejected: Run `serial ports` again and use an exact current port name.
+- Serial disconnect did not return success: Do not assume the port was released. Re-list the
+  session before retrying, and do not switch to another session ID.
 - Wait timed out: Inspect partial output and continue from the returned cursor.
 - GUI unavailable: Confirm `exaterm.exe` is installed near `exaterm-cli.exe` and can launch
   normally.
