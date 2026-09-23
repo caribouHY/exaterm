@@ -121,7 +121,7 @@ Configuration and port discovery, protocol connection and writes, GUI credential
 
 External control requires `external_control.enabled`. The CLI and MCP compatibility adapter additionally require their respective `cli_enabled` or `mcp_enabled` flags. Creating new connections also requires `connect_enabled`, and saved profiles must individually allow external-control access. Direct SSH/Telnet targets additionally require `direct_connect_enabled`; a saved SSH profile used as a direct connection's jump host must also allow external control.
 
-The local control protocol is version 4. It carries typed status, pause, resume, start, and stop log operations. CLI start requests may include an absolute destination with overwrite or append mode, while the MCP start schema remains session-ID-only. The local control plane rejects invalid protocol versions and requests without the negotiated nonce. MCP stdout is reserved for JSON-RPC; diagnostics belong on stderr or in privacy-safe logs.
+The local control protocol is version 5. It carries typed session disconnect and log status, pause, resume, start, and stop operations. CLI start requests may include an absolute destination with overwrite or append mode, while the MCP start schema remains session-ID-only. The local control plane rejects invalid protocol versions and requests without the negotiated nonce. MCP stdout is reserved for JSON-RPC; diagnostics belong on stderr or in privacy-safe logs.
 
 See [ADR 0001](decisions/0001-local-external-control-and-mcp-stdio.md) for the durable transport and ownership decision.
 

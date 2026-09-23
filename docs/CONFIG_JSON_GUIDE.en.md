@@ -187,6 +187,7 @@ The HTTP MCP transport has been removed. Existing HTTP-only `mcp.host` and `mcp.
 When MCP is enabled, external clients can call these tools:
 
 - `list_terminal_sessions`: lists ExaTerm terminal sessions opened by the user.
+- `disconnect_terminal_session`: flushes and stops an active log, then disconnects the session while preserving its tab and scrollback.
 - `read_terminal_output`: reads or waits for session output using the required `mode` argument:
   - `recent`: immediately reads the most recent retained output.
   - `delta`: immediately reads output after the required `cursor`.

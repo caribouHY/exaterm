@@ -172,6 +172,8 @@ impl TerminalControlState {
         if let Some(session) = sessions.get_mut(session_id) {
             session.info.status = TerminalStatus::Disconnected;
         }
+        drop(sessions);
+        self.output_notify.notify_waiters();
     }
 
     pub async fn list_sessions(&self) -> Vec<TerminalSessionInfo> {

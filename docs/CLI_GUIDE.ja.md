@@ -43,6 +43,7 @@ exaterm-cli --version
 ```text
 exaterm-cli doctor
 exaterm-cli sessions list
+exaterm-cli sessions disconnect --session-id <id>
 exaterm-cli profiles list [--type <ssh|telnet>]
 exaterm-cli profiles connect --type <ssh|telnet> --profile-id <id> [--cols <n>] [--rows <n>]
 exaterm-cli ssh connect --host <host> --username <user> [options]
@@ -132,6 +133,19 @@ Telnet は `--port`（既定値 `23`）、`--encoding`、`--terminal-mode`、`--
 | `--cols`, `--rows` | `120`, `30` | `1` から `1000`                                                                                                            |
 
 ポート名は `serial ports` が返す値と完全一致する必要があります。
+
+## セッションの切断
+
+SSH、Telnet、シリアルセッションを接続種別に関係なく終了できます。
+
+```powershell
+exaterm-cli sessions disconnect --session-id $session
+```
+
+切断前に実行中のログをflushして停止します。タブとスクロールバックは削除せず、切断済みとして
+GUIに残します。既知の切断済みセッションへの再実行は成功し、`already_disconnected: true` を
+返します。シリアルでは読取、書込、受信FIFOのワーカー終了とローカルCOMポート解放を待って
+から成功を返します。
 
 ## 出力の読み取り
 
@@ -239,6 +253,7 @@ ExaTerm の GUI プロセスは1つだけ動作します。`exaterm.exe` を再�
 - プロファイル/シリアル接続が拒否される: `external_control.connect_enabled` を有効にします。
 - 直接接続が拒否される: `external_control.direct_connect_enabled` も有効にします。
 - セッションが見つからない: `sessions list` の `session_id` を使用します。
+- シリアルを切断できない: ポートを使用する処理が終了するまで待って再試行します。成功応答はローカルCOMポートの解放完了を示します。
 - 待機がタイムアウトする: `timed_out` と出力を確認し、返された `cursor` から継続します。
 - GUI を利用できない: `exaterm.exe` が CLI と同じインストール先にあり、起動できるか確認します。
 - 転送した起動要求がすぐに開かない: 現在の接続ダイアログを完了または閉じると、待機中の要求が到着順に開きます。
@@ -248,9 +263,13 @@ ExaTerm の GUI プロセスは1つだけ動作します。`exaterm.exe` を再�
 ```powershell
 $sessions = exaterm-cli sessions list | ConvertFrom-Json
 $session = $sessions.sessions[0].session_id
-$result = exaterm-cli terminal run --session-id $session `
-  --command "show version" --wait-contains "#" --timeout-ms 30000 | ConvertFrom-Json
-$result.output
+try {
+  $result = exaterm-cli terminal run --session-id $session `
+    --command "show version" --wait-contains "#" --timeout-ms 30000 | ConvertFrom-Json
+  $result.output
+} finally {
+  exaterm-cli sessions disconnect --session-id $session
+}
 ```
 
 破壊的なコマンドをエージェントが選択する場合は、アプリケーション側の承認ポリシーを必須に

@@ -185,6 +185,12 @@ export default function App() {
       }),
     [getCurrentWindowTabsState, updateWorkspaceTabMetadata]
   );
+  const stopManualLogBeforeDisconnect = useCallback(
+    async (sessionId: string) => {
+      await manualLogController.stop({ sessionId });
+    },
+    [manualLogController]
+  );
   const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
   const shortcuts = config?.shortcuts ?? DEFAULT_SHORTCUT_CONFIG;
   const appUpdate = useAppUpdate({
@@ -316,6 +322,7 @@ export default function App() {
   const terminalTabLifecycle = useTerminalTabLifecycle({
     tabs: windowTabs,
     onTerminalRemoved: removeTerminalFromState,
+    stopManualLog: stopManualLogBeforeDisconnect,
   });
   const workspaceTabMovement = useWorkspaceTabMovement({
     tabs: windowTabs,

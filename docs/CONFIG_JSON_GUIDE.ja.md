@@ -187,6 +187,7 @@ HTTP MCP transport は削除されました。古い設定ファイルに残っ�
 MCP が有効な場合、外部クライアントは次のツールを呼び出せます。
 
 - `list_terminal_sessions`: ユーザーが ExaTerm で開いたターミナルセッションを一覧表示します。
+- `disconnect_terminal_session`: 実行中ログをflushして停止した後、タブとスクロールバックを残したままセッションを切断します。
 - `read_terminal_output`: 必須の `mode` 引数に応じてセッション出力を読み取るか待機します。
   - `recent`: 保持されている直近出力を即時に読み取ります。
   - `delta`: 必須の `cursor` 以降の出力を即時に読み取ります。

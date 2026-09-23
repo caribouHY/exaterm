@@ -24,6 +24,7 @@ interface ConnectedTerminalInput {
 interface UseTerminalTabLifecycleOptions {
   tabs: WindowTabsController;
   onTerminalRemoved: (tabId: string) => void;
+  stopManualLog: (sessionId: string) => Promise<void>;
 }
 
 const disconnectCommands: Record<ConnectionType, string> = {
@@ -35,6 +36,7 @@ const disconnectCommands: Record<ConnectionType, string> = {
 export function useTerminalTabLifecycle({
   tabs,
   onTerminalRemoved,
+  stopManualLog,
 }: UseTerminalTabLifecycleOptions) {
   const closeOperationsRef = useRef(new Map<string, Promise<boolean>>());
 
@@ -72,6 +74,7 @@ export function useTerminalTabLifecycle({
         }
 
         try {
+          await stopManualLog(tab.sessionId);
           await invoke(disconnectCommands[tab.connectionType], { sessionId: tab.sessionId });
           const snapshot = await workspaceClient.removeTab(tabs.windowId, tabId);
           onTerminalRemoved(tabId);
@@ -92,7 +95,7 @@ export function useTerminalTabLifecycle({
       closeOperationsRef.current.set(tabId, operation);
       return operation;
     },
-    [onTerminalRemoved, tabs]
+    [onTerminalRemoved, stopManualLog, tabs]
   );
 
   const closeTab = useCallback(

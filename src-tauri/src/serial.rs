@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -93,6 +93,38 @@ pub struct PortInfo {
 struct SerialSession {
     running: Arc<AtomicBool>,
     writer: mpsc::Sender<Vec<u8>>,
+    worker_completion: SerialWorkerCompletion,
+}
+
+#[derive(Clone)]
+struct SerialWorkerCompletion {
+    remaining: Arc<AtomicUsize>,
+    notify: Arc<tokio::sync::Notify>,
+}
+
+impl SerialWorkerCompletion {
+    fn new(worker_count: usize) -> Self {
+        Self {
+            remaining: Arc::new(AtomicUsize::new(worker_count)),
+            notify: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    fn complete(&self) {
+        if self.remaining.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.notify.notify_waiters();
+        }
+    }
+
+    async fn wait(&self) {
+        loop {
+            let notified = self.notify.notified();
+            if self.remaining.load(Ordering::SeqCst) == 0 {
+                return;
+            }
+            notified.await;
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -178,6 +210,35 @@ async fn remove_session(
         let _ = app.emit("serial://disconnected", session_id);
     }
     session
+}
+
+async fn shutdown_session(
+    app: &AppHandle,
+    terminals: &TerminalControlState,
+    workspace: &WorkspaceState,
+    logger_state: Option<&LoggerState>,
+    sessions: &Arc<Mutex<HashMap<String, SerialSession>>>,
+    session_id: &str,
+) -> bool {
+    let session = sessions.lock().await.remove(session_id);
+    let Some(session) = session else {
+        return false;
+    };
+
+    session.running.store(false, Ordering::SeqCst);
+    let worker_completion = session.worker_completion.clone();
+    drop(session);
+    worker_completion.wait().await;
+
+    terminals.mark_disconnected(session_id).await;
+    if let Some(snapshot) = workspace.mark_disconnected(session_id).await {
+        emit_workspace_updated(app, &snapshot);
+    }
+    if let Some(logger_state) = logger_state {
+        logger::clear_session_logs(logger_state, session_id).await;
+    }
+    let _ = app.emit("serial://disconnected", session_id);
+    true
 }
 
 async fn mark_disconnected(
@@ -292,9 +353,11 @@ pub(crate) async fn connect(
     }
     let (writer, write_rx) = mpsc::channel::<Vec<u8>>();
 
+    let worker_completion = SerialWorkerCompletion::new(3);
     let session = SerialSession {
         running: running.clone(),
         writer: writer.clone(),
+        worker_completion: worker_completion.clone(),
     };
     state
         .sessions
@@ -318,6 +381,7 @@ pub(crate) async fn connect(
     let write_workspace = workspace.clone();
     let write_logger = logger_state.cloned();
     let write_runtime = tokio::runtime::Handle::current();
+    let write_completion = worker_completion.clone();
     tokio::task::spawn_blocking(move || {
         while let Ok(data) = write_rx.recv() {
             if let Err(e) = writer_port.write_all(&data) {
@@ -342,6 +406,8 @@ pub(crate) async fn connect(
                 break;
             }
         }
+        drop(writer_port);
+        write_completion.complete();
     });
 
     // Background read loop
@@ -353,6 +419,7 @@ pub(crate) async fn connect(
     let output_app = app.clone();
     let output_terminals = terminals.clone();
     let output_sid = session_id.clone();
+    let output_completion = worker_completion.clone();
     tokio::spawn(async move {
         let app = &output_app;
         let terminals = &output_terminals;
@@ -378,8 +445,10 @@ pub(crate) async fn connect(
             },
         )
         .await;
+        output_completion.complete();
     });
 
+    let read_completion = worker_completion;
     tokio::task::spawn_blocking(move || {
         let mut port = serial_port;
         let mut buf = [0u8; 4096];
@@ -400,6 +469,8 @@ pub(crate) async fn connect(
                 _ => {}
             }
         }
+        drop(port);
+        read_completion.complete();
     });
 
     let _ = app.emit("serial://connected", &session_id);
@@ -502,13 +573,33 @@ pub async fn serial_disconnect(
     logger: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<(), crate::command_error::BackendCommandError> {
-    let _ = remove_session(
+    disconnect(
         &app,
+        &state,
         &terminals,
         &workspace,
         Some(&logger),
-        &state.sessions,
         &session_id,
+    )
+    .await
+    .map_err(Into::into)
+}
+
+pub(crate) async fn disconnect(
+    app: &AppHandle,
+    state: &SerialState,
+    terminals: &TerminalControlState,
+    workspace: &WorkspaceState,
+    logger: Option<&LoggerState>,
+    session_id: &str,
+) -> Result<(), String> {
+    let _ = shutdown_session(
+        app,
+        terminals,
+        workspace,
+        logger,
+        &state.sessions,
+        session_id,
     )
     .await;
     Ok(())
@@ -532,6 +623,7 @@ mod tests {
             SerialSession {
                 running: running.clone(),
                 writer,
+                worker_completion: SerialWorkerCompletion::new(0),
             },
         );
         terminals
@@ -623,6 +715,22 @@ mod tests {
         )
         .await;
         assert_eq!(*output.lock().await, b"last");
+    }
+
+    #[tokio::test]
+    async fn worker_completion_waits_for_every_serial_worker() {
+        let completion = SerialWorkerCompletion::new(2);
+        let wait = tokio::spawn({
+            let completion = completion.clone();
+            async move { completion.wait().await }
+        });
+
+        completion.complete();
+        tokio::task::yield_now().await;
+        assert!(!wait.is_finished());
+
+        completion.complete();
+        wait.await.unwrap();
     }
 
     #[tokio::test]

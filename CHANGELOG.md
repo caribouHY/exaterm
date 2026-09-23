@@ -5,10 +5,12 @@
 ### Added
 
 - Added CLI and MCP log status, pause, and resume controls, plus CLI-only destination and overwrite/append options for starting session logs.
+- Added CLI and MCP session disconnect controls that preserve terminal tabs and scrollback.
 
 ### Fixed
 
 - Prevented duplicate ExaTerm GUI processes and forwarded command-line SSH and Telnet startup requests to the existing application window.
+- Waited for Serial workers and the local port handle to close before reporting a completed disconnect.
 
 ## v0.9.2
 

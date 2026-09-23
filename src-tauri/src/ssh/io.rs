@@ -460,7 +460,26 @@ pub async fn ssh_disconnect(
     logger: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<(), String> {
-    let session = state.sessions.lock().await.remove(&session_id);
+    disconnect(
+        &app,
+        &state,
+        &terminals,
+        &workspace,
+        Some(&logger),
+        &session_id,
+    )
+    .await
+}
+
+pub(crate) async fn disconnect(
+    app: &AppHandle,
+    state: &SshState,
+    terminals: &TerminalControlState,
+    workspace: &WorkspaceState,
+    logger: Option<&LoggerState>,
+    session_id: &str,
+) -> Result<(), String> {
+    let session = state.sessions.lock().await.remove(session_id);
     if let Some(session) = session {
         let session = session.lock().await;
         {
@@ -478,11 +497,13 @@ pub async fn ssh_disconnect(
                 .await;
         }
     }
-    terminals.mark_disconnected(&session_id).await;
-    if let Some(snapshot) = workspace.mark_disconnected(&session_id).await {
-        emit_workspace_updated(&app, &snapshot);
+    terminals.mark_disconnected(session_id).await;
+    if let Some(snapshot) = workspace.mark_disconnected(session_id).await {
+        emit_workspace_updated(app, &snapshot);
     }
-    logger::clear_session_logs(&logger, &session_id).await;
-    let _ = app.emit("ssh://disconnected", &session_id);
+    if let Some(logger) = logger {
+        logger::clear_session_logs(logger, session_id).await;
+    }
+    let _ = app.emit("ssh://disconnected", session_id);
     Ok(())
 }

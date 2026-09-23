@@ -44,6 +44,7 @@ Restart ExaTerm after changing these settings.
 ```text
 exaterm-cli doctor
 exaterm-cli sessions list
+exaterm-cli sessions disconnect --session-id <id>
 exaterm-cli profiles list [--type <ssh|telnet>]
 exaterm-cli profiles connect --type <ssh|telnet> --profile-id <id> [--cols <n>] [--rows <n>]
 exaterm-cli ssh connect --host <host> --username <user> [options]
@@ -133,6 +134,20 @@ confirmation. A host-key mismatch is rejected and must be resolved in ExaTerm be
 | `--cols`, `--rows` | `120`, `30` | `1` through `1000`                                                                                                         |
 
 The port must exactly match a value returned by `serial ports`.
+
+## Disconnecting Sessions
+
+Disconnect an SSH, Telnet, or Serial session without selecting its connection type:
+
+```powershell
+exaterm-cli sessions disconnect --session-id $session
+```
+
+ExaTerm flushes and stops an active log before disconnecting. The tab and scrollback remain
+available in the GUI as a disconnected session. Repeating the command for a known disconnected
+session succeeds with `already_disconnected: true`. For Serial sessions, success is returned only
+after the read, write, and receive-FIFO workers have stopped and the local COM port handle has
+been released.
 
 ## Reading Output
 
@@ -242,6 +257,7 @@ plaintext files and are created only when connection logging is enabled or loggi
 - Profile or Serial connection rejected: enable `external_control.connect_enabled`.
 - Direct connection rejected: also enable `external_control.direct_connect_enabled`.
 - Session not found: run `sessions list` and use the returned session ID.
+- Serial disconnect failed: retry after the port operation finishes. A successful response means the local COM port has been released.
 - Wait timed out: inspect `timed_out` and the returned output, then continue from `cursor`.
 - GUI unavailable: confirm `exaterm.exe` is installed beside `exaterm-cli.exe` and can start.
 - A forwarded startup request does not open immediately: finish or close the current connection dialog; queued requests open in arrival order.
@@ -251,9 +267,13 @@ plaintext files and are created only when connection logging is enabled or loggi
 ```powershell
 $sessions = exaterm-cli sessions list | ConvertFrom-Json
 $session = $sessions.sessions[0].session_id
-$result = exaterm-cli terminal run --session-id $session `
-  --command "show version" --wait-contains "#" --timeout-ms 30000 | ConvertFrom-Json
-$result.output
+try {
+  $result = exaterm-cli terminal run --session-id $session `
+    --command "show version" --wait-contains "#" --timeout-ms 30000 | ConvertFrom-Json
+  $result.output
+} finally {
+  exaterm-cli sessions disconnect --session-id $session
+}
 ```
 
 Do not let an agent select a destructive command without an application-level approval

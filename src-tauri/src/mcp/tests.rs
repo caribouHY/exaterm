@@ -61,6 +61,7 @@ enum TestProtocolCall {
     ConnectTelnet(ExternalControlTelnetConnectRequest),
     ConnectSerial(ExternalControlSerialConnectRequest),
     Write(TerminalProtocol, String, String),
+    Disconnect(TerminalProtocol, String),
 }
 
 struct TestProtocolIo {
@@ -70,6 +71,7 @@ struct TestProtocolIo {
     telnet_result: Mutex<Result<String, String>>,
     serial_result: Mutex<Result<String, String>>,
     write_result: Mutex<Result<(), String>>,
+    disconnect_result: Mutex<Result<(), String>>,
 }
 
 impl TestProtocolIo {
@@ -81,6 +83,7 @@ impl TestProtocolIo {
             telnet_result: Mutex::new(Ok("telnet-session".into())),
             serial_result: Mutex::new(Ok("serial-session".into())),
             write_result: Mutex::new(Ok(())),
+            disconnect_result: Mutex::new(Ok(())),
         }
     }
 }
@@ -135,6 +138,19 @@ impl ExternalControlProtocolIo for TestProtocolIo {
             .unwrap()
             .push(TestProtocolCall::Write(protocol, session_id.into(), data));
         self.write_result.lock().unwrap().clone()
+    }
+
+    async fn disconnect_terminal(
+        &self,
+        protocol: TerminalProtocol,
+        session_id: &str,
+    ) -> Result<(), String> {
+        self.trace.lock().unwrap().push("disconnect_terminal");
+        self.calls
+            .lock()
+            .unwrap()
+            .push(TestProtocolCall::Disconnect(protocol, session_id.into()));
+        self.disconnect_result.lock().unwrap().clone()
     }
 }
 
@@ -416,6 +432,17 @@ fn all_external_control_results_preserve_the_public_json_contract() {
                 "encoding": "utf-8",
                 "status": "connected"
             }]
+        }),
+    );
+    assert_response_contract(
+        ExternalControlResponse::DisconnectTerminalSession(DisconnectTerminalSessionResult {
+            session_id: "s1".into(),
+            disconnected: true,
+            already_disconnected: false,
+        }),
+        "disconnect_terminal_session",
+        json!({
+            "session_id": "s1", "disconnected": true, "already_disconnected": false
         }),
     );
     assert_response_contract(
@@ -1204,6 +1231,30 @@ async fn control_service_dispatches_to_in_process_backend() {
 }
 
 #[tokio::test]
+async fn control_service_dispatches_disconnect_tool_to_protocol_backend() {
+    let (runtime, _config, protocol, _ui, _logger, _trace) =
+        test_runtime_parts(AppConfig::default(), Vec::new(), Some(test_logger()));
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Serial, "COM1").await;
+    let server = ExaTermMcpServer::with_service(ExternalControlService::new(runtime));
+
+    let result = server
+        .call_tool_json("disconnect_terminal_session", json!({ "session_id": "s1" }))
+        .await
+        .unwrap();
+
+    assert_eq!(result["session_id"], "s1");
+    assert_eq!(result["disconnected"], true);
+    assert_eq!(result["already_disconnected"], false);
+    assert_eq!(
+        protocol.calls.lock().unwrap().as_slice(),
+        &[TestProtocolCall::Disconnect(
+            TerminalProtocol::Serial,
+            "s1".into()
+        )]
+    );
+}
+
+#[tokio::test]
 async fn control_service_rejects_unknown_tools() {
     let server = ExaTermMcpServer::with_service(ExternalControlService::new(test_runtime()));
 
@@ -1256,7 +1307,7 @@ async fn control_plane_rejects_unknown_protocol_version() {
     let response = read_json_line_for_test(&mut reader).await;
 
     assert_eq!(response["protocol_version"], CONTROL_PROTOCOL_VERSION);
-    assert_eq!(CONTROL_PROTOCOL_VERSION, 4);
+    assert_eq!(CONTROL_PROTOCOL_VERSION, 5);
     assert!(response["session_nonce"].is_null());
     assert!(response["error"]["message"]
         .as_str()
@@ -1413,6 +1464,7 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
         .map(|tool| tool["name"].as_str().unwrap())
         .collect::<Vec<_>>();
     assert!(tool_names.contains(&"list_terminal_sessions"));
+    assert!(tool_names.contains(&"disconnect_terminal_session"));
     assert!(tool_names.contains(&"connect_ssh"));
     assert!(tool_names.contains(&"connect_telnet"));
     assert!(tool_names.contains(&"read_terminal_output"));
@@ -2494,6 +2546,88 @@ async fn service_lists_terminal_sessions() {
 }
 
 #[tokio::test]
+async fn service_disconnects_connected_session_and_is_idempotent_after_disconnect() {
+    let (runtime, _config, protocol, _ui, _logger, _trace) =
+        test_runtime_parts(AppConfig::default(), Vec::new(), Some(test_logger()));
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Serial, "COM1").await;
+    let service = McpTerminalService::new(runtime.clone());
+
+    let result = service
+        .disconnect_terminal_session(DisconnectTerminalSessionArgs {
+            session_id: "s1".into(),
+        })
+        .await
+        .unwrap();
+    assert!(result.disconnected);
+    assert!(!result.already_disconnected);
+    assert_eq!(
+        protocol.calls.lock().unwrap().as_slice(),
+        &[TestProtocolCall::Disconnect(
+            TerminalProtocol::Serial,
+            "s1".into()
+        )]
+    );
+
+    runtime.terminals.mark_disconnected("s1").await;
+    let result = service
+        .disconnect_terminal_session(DisconnectTerminalSessionArgs {
+            session_id: "s1".into(),
+        })
+        .await
+        .unwrap();
+    assert!(!result.disconnected);
+    assert!(result.already_disconnected);
+    assert_eq!(protocol.calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn service_disconnect_rejects_unknown_session() {
+    let service = McpTerminalService::new(test_runtime());
+
+    let error = service
+        .disconnect_terminal_session(DisconnectTerminalSessionArgs {
+            session_id: "missing".into(),
+        })
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, ExternalControlError::NotFound(_)));
+}
+
+#[tokio::test]
+async fn service_stops_active_log_before_disconnect() {
+    let logger = test_logger();
+    let (runtime, _config, protocol, _ui, _logger, trace) =
+        test_runtime_parts(AppConfig::default(), Vec::new(), Some(logger.clone()));
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Ssh, "host:22").await;
+    logger::start_manual_log(
+        &logger,
+        "s1".into(),
+        "ssh".into(),
+        "host:22".into(),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let service = McpTerminalService::new(runtime);
+
+    service
+        .disconnect_terminal_session(DisconnectTerminalSessionArgs {
+            session_id: "s1".into(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        *trace.lock().unwrap(),
+        vec!["request_log_control", "disconnect_terminal"]
+    );
+    assert_eq!(protocol.calls.lock().unwrap().len(), 1);
+    assert!(logger::active_log_session(&logger, "s1").await.is_none());
+}
+
+#[tokio::test]
 async fn service_reads_terminal_output_with_multibyte_tail() {
     let runtime = test_runtime();
     runtime
@@ -2611,6 +2745,35 @@ async fn service_waits_for_matching_terminal_output() {
     assert_eq!(result["matched"], true);
     assert_eq!(result["timed_out"], false);
     assert_eq!(result["output"], "router#");
+}
+
+#[tokio::test]
+async fn service_wait_stops_when_session_disconnects() {
+    let runtime = test_runtime();
+    runtime
+        .terminals
+        .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+        .await;
+    let terminals = runtime.terminals.clone();
+    tokio::spawn(async move {
+        time::sleep(Duration::from_millis(10)).await;
+        terminals.mark_disconnected("s1").await;
+    });
+    let service = McpTerminalService::new(runtime);
+
+    let error = service
+        .read_terminal_output(ReadTerminalOutputArgs::Wait {
+            session_id: "s1".into(),
+            cursor: Some(0),
+            contains: Some("router#".into()),
+            timeout_ms: Some(500),
+            max_chars: Some(100),
+        })
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, ExternalControlError::Unavailable(_)));
+    assert!(error.message().contains("disconnected"));
 }
 
 #[tokio::test]

@@ -8,8 +8,9 @@ use serde_json::{json, Value};
 
 use crate::external_control::{
     client::ExternalControlClient, ConnectSavedProfileArgs, ConnectSerialConsoleArgs,
-    ConnectSshArgs, ConnectTelnetArgs, ExternalControlService, ReadTerminalOutputArgs,
-    RunTerminalCommandArgs, SendTerminalInputArgs, StopTerminalLogArgs, TerminalLogSessionArgs,
+    ConnectSshArgs, ConnectTelnetArgs, DisconnectTerminalSessionArgs, ExternalControlService,
+    ReadTerminalOutputArgs, RunTerminalCommandArgs, SendTerminalInputArgs, StopTerminalLogArgs,
+    TerminalLogSessionArgs,
 };
 use crate::mcp::backend::McpTarget;
 
@@ -64,6 +65,18 @@ impl ExaTermMcpServer {
     )]
     async fn list_terminal_sessions(&self) -> Result<CallToolResult, McpError> {
         self.call_tool("list_terminal_sessions", json!({})).await
+    }
+
+    #[tool(
+        name = "disconnect_terminal_session",
+        description = "Disconnect an existing ExaTerm terminal session while preserving its tab and scrollback. Repeated calls for an already disconnected session are safe."
+    )]
+    async fn disconnect_terminal_session(
+        &self,
+        Parameters(args): Parameters<DisconnectTerminalSessionArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call_tool_with_args("disconnect_terminal_session", args)
+            .await
     }
 
     #[tool(

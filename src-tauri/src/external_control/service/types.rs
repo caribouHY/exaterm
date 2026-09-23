@@ -418,6 +418,12 @@ pub(crate) struct RunTerminalCommandArgs {
     pub(crate) max_chars: Option<usize>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub struct DisconnectTerminalSessionArgs {
+    /// Session ID returned by list_terminal_sessions.
+    pub session_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "operation", content = "arguments", rename_all = "snake_case")]
 pub enum ExternalControlRequest {
@@ -436,6 +442,7 @@ pub enum ExternalControlRequest {
     PauseTerminalLog(TerminalLogSessionArgs),
     ResumeTerminalLog(TerminalLogSessionArgs),
     RunTerminalCommand(RunTerminalCommandArgs),
+    DisconnectTerminalSession(DisconnectTerminalSessionArgs),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -572,6 +579,13 @@ pub struct RunTerminalCommandResult {
     pub cursor: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DisconnectTerminalSessionResult {
+    pub session_id: String,
+    pub disconnected: bool,
+    pub already_disconnected: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "operation", content = "result", rename_all = "snake_case")]
 pub enum ExternalControlResponse {
@@ -590,6 +604,7 @@ pub enum ExternalControlResponse {
     PauseTerminalLog(SetTerminalLogPausedResult),
     ResumeTerminalLog(SetTerminalLogPausedResult),
     RunTerminalCommand(RunTerminalCommandResult),
+    DisconnectTerminalSession(DisconnectTerminalSessionResult),
 }
 
 impl ExternalControlResponse {
@@ -610,6 +625,7 @@ impl ExternalControlResponse {
             Self::PauseTerminalLog(result) => serde_json::to_value(result),
             Self::ResumeTerminalLog(result) => serde_json::to_value(result),
             Self::RunTerminalCommand(result) => serde_json::to_value(result),
+            Self::DisconnectTerminalSession(result) => serde_json::to_value(result),
         };
         value.map_err(|error| {
             internal_error(format!(
