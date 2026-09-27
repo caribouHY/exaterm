@@ -23,6 +23,9 @@ use crate::{
     },
 };
 
+mod follow;
+use follow::{run_follow, FollowOptions};
+
 #[derive(Debug, Parser)]
 #[command(
     name = "exaterm-cli",
@@ -260,6 +263,12 @@ struct OutputArgs {
     timeout_ms: Option<u64>,
     #[arg(long)]
     max_chars: Option<usize>,
+    #[arg(long)]
+    duration_ms: Option<u64>,
+    #[arg(long)]
+    max_total_chars: Option<usize>,
+    #[arg(long)]
+    until: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -267,6 +276,7 @@ enum OutputMode {
     Recent,
     Delta,
     Wait,
+    Follow,
 }
 
 #[derive(Debug, Args)]
@@ -354,8 +364,16 @@ pub async fn run_terminal_cli() -> i32 {
         return run_doctor().await;
     }
 
-    let request = match build_request(cli.command, &mut io::stdin()) {
-        Ok(request) => request,
+    let command = match cli.command {
+        RootCommand::Terminal(TerminalArgs {
+            command: TerminalCommand::Output(args),
+        }) if matches!(args.mode, OutputMode::Follow) => {
+            follow::build_options(args).map(CliExecution::Follow)
+        }
+        command => build_request(command, &mut io::stdin()).map(CliExecution::Once),
+    };
+    let command = match command {
+        Ok(command) => command,
         Err(error) => {
             print_error("invalid_arguments", &error);
             return 2;
@@ -383,6 +401,30 @@ pub async fn run_terminal_cli() -> i32 {
         return 1;
     }
 
+    if let CliExecution::Follow(options) = command {
+        return match run_follow(&client, &mut io::stdout(), options, async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .await
+        {
+            Ok(()) => 0,
+            Err(follow::FollowError::Control(error)) => {
+                let (code, exit_code) = classify_external_control_error(&error);
+                print_error(code, error.message());
+                exit_code
+            }
+            Err(follow::FollowError::Output(error)) => {
+                print_error(
+                    "tool_error",
+                    &format!("Failed to write follow output: {error}"),
+                );
+                1
+            }
+        };
+    }
+    let CliExecution::Once(request) = command else {
+        unreachable!();
+    };
     match client.call(request).await {
         Ok(result) => {
             print_response(result);
@@ -394,6 +436,11 @@ pub async fn run_terminal_cli() -> i32 {
             exit_code
         }
     }
+}
+
+enum CliExecution {
+    Once(ExternalControlRequest),
+    Follow(FollowOptions),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -823,6 +870,9 @@ fn resolve_log_file_path(file_path: &str, base_dir: &Path) -> String {
 fn build_output_request(args: OutputArgs) -> Result<ExternalControlRequest, String> {
     require_non_empty("--session-id", &args.session_id)?;
     validate_optional_range("--max-chars", args.max_chars, 1, 20_000)?;
+    if args.duration_ms.is_some() || args.max_total_chars.is_some() || args.until.is_some() {
+        return Err("--duration-ms, --max-total-chars, and --until require follow mode".into());
+    }
     let request = match args.mode {
         OutputMode::Recent => {
             if args.cursor.is_some() || args.contains.is_some() || args.timeout_ms.is_some() {
@@ -858,6 +908,7 @@ fn build_output_request(args: OutputArgs) -> Result<ExternalControlRequest, Stri
                 max_chars: args.max_chars,
             })
         }
+        OutputMode::Follow => unreachable!("follow is handled by the CLI runner"),
     };
 
     Ok(request)
