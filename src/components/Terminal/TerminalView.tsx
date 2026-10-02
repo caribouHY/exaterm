@@ -45,6 +45,7 @@ import { getTerminalPromptColor, TERMINAL_DECORATION_COLORS } from "./terminalDe
 import type { TerminalPinnedCommand } from "./terminalDecorationTypes";
 import { clearTerminalBuffer, clearTerminalViewport } from "./terminalClearActions";
 import { getTerminalControlInput } from "./terminalControlInput";
+import { createTerminalFitController, type TerminalFitController } from "./terminalFitController";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
@@ -165,7 +166,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const [pinnedCommand, setPinnedCommand] = useState<TerminalPinnedCommand | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
+  const fitControllerRef = useRef<TerminalFitController | null>(null);
   const outputSyncControllerRef = useRef<TerminalOutputSyncController | null>(null);
   const isConnectedRef = useRef(isConnected);
   const isActiveRef = useRef(isActive);
@@ -214,6 +215,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
   useEffect(() => {
     isActiveRef.current = isActive;
+    if (!isActive) fitControllerRef.current?.cancelPending();
   }, [isActive]);
 
   useEffect(() => {
@@ -366,10 +368,18 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     term.loadAddon(searchAddon);
 
     term.open(terminalElement);
-    fitAddon.fit();
 
     termRef.current = term;
-    fitRef.current = fitAddon;
+    const fitController = createTerminalFitController({
+      container: terminalElement,
+      fitAddon,
+      isActive: () => isActiveRef.current,
+      onFit: () => {
+        decorationController.schedule(term, true);
+      },
+    });
+    fitControllerRef.current = fitController;
+    fitController.fit();
 
     // Terminal input -> backend
     const protocol = getConnectionCommands(connectionType);
@@ -578,8 +588,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     // Resize handling
     const resizeCmd = protocol.resize;
     const handleResize = () => {
-      fitAddon.fit();
-      decorationController.schedule(term, true);
+      if (!fitController.fit()) return;
       if (resizeCmd && sessionId && isConnectedRef.current) {
         invoke(resizeCmd, { sessionId, cols: term.cols, rows: term.rows }).catch(() => {});
       }
@@ -590,6 +599,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
     return () => {
       disposed = true;
+      fitController.dispose();
       terminalElement.removeEventListener("contextmenu", handleContextMenu);
       outputSyncController.dispose();
       if (outputSyncControllerRef.current === outputSyncController) {
@@ -609,24 +619,17 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       decorationController.clear();
       term.dispose();
       termRef.current = null;
-      fitRef.current = null;
+      if (fitControllerRef.current === fitController) {
+        fitControllerRef.current = null;
+      }
     };
   }, [sessionId, connectionType, manualLogBufferWriter, refreshDecorationsAfterClear]);
 
   // Re-fit the terminal whenever this tab becomes active (container goes from display:none to visible)
   useEffect(() => {
-    if (isActive && fitRef.current) {
-      // Small delay to allow the browser to lay out the now-visible container
-      const timer = setTimeout(() => {
-        fitRef.current?.fit();
-        if (termRef.current) {
-          decorationController.schedule(termRef.current, true);
-        }
-        termRef.current?.focus();
-      }, 50);
-      return () => {
-        clearTimeout(timer);
-      };
+    if (isActive) {
+      const terminal = termRef.current;
+      return fitControllerRef.current?.schedule(() => terminal?.focus());
     }
   }, [isActive]);
 
@@ -638,13 +641,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       termRef.current.options.cursorStyle = normalizeCursorStyle(terminalConfig.cursor_style);
       termRef.current.options.scrollback = terminalConfig.scrollback;
 
-      // Re-fit to adjust for potential size changes
-      setTimeout(() => {
-        fitRef.current?.fit();
-        if (termRef.current) {
-          decorationController.schedule(termRef.current, true);
-        }
-      }, 50);
+      return fitControllerRef.current?.schedule();
     }
   }, [terminalConfig]);
 
