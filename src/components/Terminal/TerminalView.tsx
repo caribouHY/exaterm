@@ -374,7 +374,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       container: terminalElement,
       fitAddon,
       isActive: () => isActiveRef.current,
-      onFit: () => decorationController.schedule(term, true),
+      onFit: () => {
+        decorationController.schedule(term, true);
+      },
     });
     fitControllerRef.current = fitController;
     fitController.fit();
