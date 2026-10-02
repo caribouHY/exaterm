@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- Restored Rust 1.99 Clippy compatibility by updating async-trait.
 - Preserved trailing terminal text when switching between Serial terminal and Settings tabs by skipping size adjustments while the terminal is hidden.
 - Prevented duplicate ExaTerm GUI processes and forwarded command-line SSH and Telnet startup requests to the existing application window.
 - Waited for Serial workers and the local port handle to close before reporting a completed disconnect.
