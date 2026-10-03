@@ -44,6 +44,7 @@ Restart ExaTerm after changing these settings.
 ```text
 exaterm-cli doctor
 exaterm-cli sessions list
+exaterm-cli sessions focus --session-id <id>
 exaterm-cli sessions disconnect --session-id <id>
 exaterm-cli profiles list [--type <ssh|telnet>]
 exaterm-cli profiles connect --type <ssh|telnet> --profile-id <id> [--cols <n>] [--rows <n>]
@@ -134,6 +135,28 @@ confirmation. A host-key mismatch is rejected and must be resolved in ExaTerm be
 | `--cols`, `--rows` | `120`, `30` | `1` through `1000`                                                                                                         |
 
 The port must exactly match a value returned by `serial ports`.
+
+## Focusing Sessions
+
+Select an existing session tab and bring its owning window to the foreground:
+
+```powershell
+exaterm-cli sessions focus --session-id $session
+```
+
+The result contains `session_id`, `window_id`, `tab_id`, and `focused: true`. Success waits for
+the GUI to apply the tab selection and for the window show, restore, and focus calls to succeed.
+Disconnected tabs can also be selected. Settings and Logs switch to the terminal view; open
+dialogs keep their contents and input focus while the terminal tab is selected behind them.
+Focus preserves the connection, scrollback, and logging state and does not require permission
+to create new connections.
+
+GUI acknowledgement has a five-second deadline, including one retry if the tab moves to another
+window. A missing session tab returns CLI error code `invalid_arguments` with exit code `2`.
+Missing GUI acknowledgement, repeated tab movement, and native window-operation failures
+return CLI error code `tool_error` with exit code `1`.
+On failure, a tab selection may already have been applied. Operating-system foreground rules
+can still affect the final window focus even when the native calls succeed.
 
 ## Disconnecting Sessions
 

@@ -424,6 +424,27 @@ pub struct DisconnectTerminalSessionArgs {
     pub session_id: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+pub struct FocusTerminalSessionArgs {
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FocusTerminalSessionResult {
+    pub session_id: String,
+    pub window_id: String,
+    pub tab_id: String,
+    pub focused: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExternalControlFocusRequestPayload {
+    pub request_id: String,
+    pub session_id: String,
+    pub tab_id: String,
+    pub snapshot: crate::workspace::WorkspaceSnapshot,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "operation", content = "arguments", rename_all = "snake_case")]
 pub enum ExternalControlRequest {
@@ -443,6 +464,7 @@ pub enum ExternalControlRequest {
     ResumeTerminalLog(TerminalLogSessionArgs),
     RunTerminalCommand(RunTerminalCommandArgs),
     DisconnectTerminalSession(DisconnectTerminalSessionArgs),
+    FocusTerminalSession(FocusTerminalSessionArgs),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -605,6 +627,7 @@ pub enum ExternalControlResponse {
     ResumeTerminalLog(SetTerminalLogPausedResult),
     RunTerminalCommand(RunTerminalCommandResult),
     DisconnectTerminalSession(DisconnectTerminalSessionResult),
+    FocusTerminalSession(FocusTerminalSessionResult),
 }
 
 impl ExternalControlResponse {
@@ -626,6 +649,7 @@ impl ExternalControlResponse {
             Self::ResumeTerminalLog(result) => serde_json::to_value(result),
             Self::RunTerminalCommand(result) => serde_json::to_value(result),
             Self::DisconnectTerminalSession(result) => serde_json::to_value(result),
+            Self::FocusTerminalSession(result) => serde_json::to_value(result),
         };
         value.map_err(|error| {
             internal_error(format!(

@@ -47,6 +47,9 @@ pub(super) fn request_from_tool(
     args: Value,
 ) -> Result<ExternalControlRequest, McpError> {
     match name {
+        "focus_terminal_session" => Ok(ExternalControlRequest::FocusTerminalSession(
+            parse_tool_args(args)?,
+        )),
         "list_terminal_sessions" => Ok(ExternalControlRequest::ListTerminalSessions),
         "disconnect_terminal_session" => Ok(ExternalControlRequest::DisconnectTerminalSession(
             parse_tool_args(args)?,

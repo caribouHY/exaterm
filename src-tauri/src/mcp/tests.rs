@@ -156,12 +156,18 @@ impl ExternalControlProtocolIo for TestProtocolIo {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TestUiCall {
+    FocusRequest(String, String),
+    FocusWindow(String),
     Credential(ExternalControlCredentialRequestPayload),
     LogControl(String, String, ExternalControlLogControlRequestPayload),
     WorkspaceUpdated(String),
 }
 
 struct TestUiIo {
+    focus_result: Mutex<Result<bool, String>>,
+    focus_window_result: Mutex<Result<(), ExternalControlError>>,
+    focus_workspace: Mutex<Option<WorkspaceState>>,
+    focus_moves: Mutex<Vec<String>>,
     calls: Mutex<Vec<TestUiCall>>,
     trace: Arc<Mutex<Vec<&'static str>>>,
     credential_result: Mutex<Result<Option<String>, String>>,
@@ -174,6 +180,10 @@ struct TestUiIo {
 impl TestUiIo {
     fn new(logger: Option<LoggerState>, trace: Arc<Mutex<Vec<&'static str>>>) -> Self {
         Self {
+            focus_result: Mutex::new(Ok(true)),
+            focus_window_result: Mutex::new(Ok(())),
+            focus_workspace: Mutex::new(None),
+            focus_moves: Mutex::new(Vec::new()),
             calls: Mutex::new(Vec::new()),
             trace,
             credential_result: Mutex::new(Ok(None)),
@@ -187,6 +197,31 @@ impl TestUiIo {
 
 #[async_trait]
 impl ExternalControlUiIo for TestUiIo {
+    async fn request_session_focus(
+        &self,
+        payload: ExternalControlFocusRequestPayload,
+    ) -> Result<bool, String> {
+        self.calls.lock().unwrap().push(TestUiCall::FocusRequest(
+            payload.snapshot.window_id.clone(),
+            payload.tab_id.clone(),
+        ));
+        let workspace = self.focus_workspace.lock().unwrap().clone();
+        let destination = self.focus_moves.lock().unwrap().pop();
+        if let (Some(workspace), Some(destination)) = (workspace, destination) {
+            workspace
+                .move_tab(payload.tab_id, payload.snapshot.window_id, destination, 0)
+                .await?;
+        }
+        self.focus_result.lock().unwrap().clone()
+    }
+
+    fn focus_window(&self, window_id: &str) -> Result<(), ExternalControlError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(TestUiCall::FocusWindow(window_id.into()));
+        self.focus_window_result.lock().unwrap().clone()
+    }
     fn private_key_requires_passphrase(&self, _path: &str) -> Result<bool, String> {
         self.private_key_requires_passphrase.lock().unwrap().clone()
     }
@@ -1307,7 +1342,7 @@ async fn control_plane_rejects_unknown_protocol_version() {
     let response = read_json_line_for_test(&mut reader).await;
 
     assert_eq!(response["protocol_version"], CONTROL_PROTOCOL_VERSION);
-    assert_eq!(CONTROL_PROTOCOL_VERSION, 5);
+    assert_eq!(CONTROL_PROTOCOL_VERSION, 6);
     assert!(response["session_nonce"].is_null());
     assert!(response["error"]["message"]
         .as_str()
@@ -1465,6 +1500,7 @@ async fn stdio_server_smoke_initialize_and_tools_list() {
         .collect::<Vec<_>>();
     assert!(tool_names.contains(&"list_terminal_sessions"));
     assert!(tool_names.contains(&"disconnect_terminal_session"));
+    assert!(tool_names.contains(&"focus_terminal_session"));
     assert!(tool_names.contains(&"connect_ssh"));
     assert!(tool_names.contains(&"connect_telnet"));
     assert!(tool_names.contains(&"read_terminal_output"));
@@ -2543,6 +2579,194 @@ async fn service_lists_terminal_sessions() {
     assert_eq!(result.sessions[0].session_id, "s1");
     assert_eq!(result.sessions[0].protocol, TerminalProtocol::Ssh);
     assert_eq!(result.sessions[0].encoding, "utf-8");
+}
+
+#[tokio::test]
+async fn focus_selects_disconnected_tab_through_mcp_without_protocol_or_logger_io() {
+    let (runtime, _config, protocol, ui, _logger, _) =
+        test_runtime_parts(AppConfig::default(), Vec::new(), None);
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Serial, "COM1").await;
+    register_test_terminal(&runtime, "s2", TerminalProtocol::Ssh, "host:22").await;
+    runtime.terminals.mark_disconnected("s1").await;
+    let server = ExaTermMcpServer::with_service(ExternalControlService::new(runtime.clone()));
+    for _ in 0..2 {
+        let result = server
+            .call_tool_json("focus_terminal_session", json!({ "session_id": "s1" }))
+            .await
+            .unwrap();
+        assert_eq!(
+            result,
+            json!({ "session_id": "s1", "window_id": "main", "tab_id": "s1", "focused": true })
+        );
+    }
+    assert_eq!(
+        runtime
+            .workspace
+            .snapshot_for_window("main".into())
+            .await
+            .window
+            .active_tab_id
+            .as_deref(),
+        Some("s1")
+    );
+    assert_eq!(
+        runtime.terminals.session_info("s1").await.unwrap().status,
+        TerminalStatus::Disconnected
+    );
+    assert!(protocol.calls.lock().unwrap().is_empty());
+    assert_eq!(
+        ui.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|call| matches!(call, TestUiCall::FocusWindow(_)))
+            .count(),
+        2
+    );
+    assert_response_contract(
+        ExternalControlResponse::FocusTerminalSession(FocusTerminalSessionResult {
+            session_id: "s1".into(),
+            window_id: "main".into(),
+            tab_id: "s1".into(),
+            focused: true,
+        }),
+        "focus_terminal_session",
+        json!({ "session_id": "s1", "window_id": "main", "tab_id": "s1", "focused": true }),
+    );
+    let request = ExternalControlRequest::FocusTerminalSession(FocusTerminalSessionArgs {
+        session_id: "s1".into(),
+    });
+    assert_eq!(
+        serde_json::from_value::<ExternalControlRequest>(serde_json::to_value(&request).unwrap())
+            .unwrap(),
+        request
+    );
+}
+
+#[tokio::test]
+async fn focus_rejects_invalid_missing_unselected_and_native_failure() {
+    let (runtime, _, _, ui, _, _) = test_runtime_parts(AppConfig::default(), Vec::new(), None);
+    let service = ExternalControlService::new(runtime.clone());
+    assert!(matches!(
+        service
+            .focus_terminal_session(FocusTerminalSessionArgs {
+                session_id: " ".into()
+            })
+            .await,
+        Err(ExternalControlError::InvalidArguments(_))
+    ));
+    assert!(matches!(
+        service
+            .focus_terminal_session(FocusTerminalSessionArgs {
+                session_id: "missing".into()
+            })
+            .await,
+        Err(ExternalControlError::NotFound(_))
+    ));
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Ssh, "host:22").await;
+    *ui.focus_result.lock().unwrap() = Ok(false);
+    assert!(matches!(
+        service
+            .focus_terminal_session(FocusTerminalSessionArgs {
+                session_id: "s1".into()
+            })
+            .await,
+        Err(ExternalControlError::Unavailable(_))
+    ));
+    assert!(!ui
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|call| matches!(call, TestUiCall::FocusWindow(_))));
+    *ui.focus_result.lock().unwrap() = Ok(true);
+    *ui.focus_window_result.lock().unwrap() = Err(ExternalControlError::Internal(
+        "Native window operation failed".into(),
+    ));
+    assert!(matches!(
+        service
+            .focus_terminal_session(FocusTerminalSessionArgs {
+                session_id: "s1".into()
+            })
+            .await,
+        Err(ExternalControlError::Internal(_))
+    ));
+}
+
+#[tokio::test]
+async fn local_control_plane_dispatches_focus_and_returns_the_selected_owner() {
+    let (runtime, _, _, ui, _, _) = test_runtime_parts(AppConfig::default(), Vec::new(), None);
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Ssh, "host:22").await;
+    let (server_stream, client_stream) = tokio::io::duplex(4096);
+    let service = ExternalControlService::new(runtime);
+    let server =
+        tokio::spawn(async move { handle_control_connection(service, server_stream).await });
+    let response = external_control_call_over_stream(
+        client_stream,
+        ExternalControlRequest::FocusTerminalSession(FocusTerminalSessionArgs {
+            session_id: "s1".into(),
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        response.into_value().unwrap(),
+        json!({ "session_id": "s1", "window_id": "main", "tab_id": "s1", "focused": true })
+    );
+    assert!(ui
+        .calls
+        .lock()
+        .unwrap()
+        .contains(&TestUiCall::FocusWindow("main".into())));
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn focus_retries_new_owner_once_and_rejects_a_second_move() {
+    for moves in [
+        vec!["other".to_string()],
+        vec!["third".to_string(), "other".to_string()],
+    ] {
+        let (runtime, _, _, ui, _, _) = test_runtime_parts(AppConfig::default(), Vec::new(), None);
+        register_test_terminal(&runtime, "s1", TerminalProtocol::Ssh, "host:22").await;
+        runtime
+            .workspace
+            .register_window("other".into(), "other".into(), false)
+            .await;
+        runtime
+            .workspace
+            .register_window("third".into(), "third".into(), false)
+            .await;
+        *ui.focus_workspace.lock().unwrap() = Some(runtime.workspace.clone());
+        *ui.focus_moves.lock().unwrap() = moves.clone();
+        let service = ExternalControlService::new(runtime);
+        let result = service
+            .focus_terminal_session(FocusTerminalSessionArgs {
+                session_id: "s1".into(),
+            })
+            .await;
+        if moves.len() == 1 {
+            assert_eq!(result.unwrap().window_id, "other");
+            assert!(ui
+                .calls
+                .lock()
+                .unwrap()
+                .contains(&TestUiCall::FocusWindow("other".into())));
+        } else {
+            assert!(matches!(result, Err(ExternalControlError::Unavailable(_))));
+            assert!(!ui
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|call| matches!(call, TestUiCall::FocusWindow(_))));
+        }
+        assert!(!ui
+            .calls
+            .lock()
+            .unwrap()
+            .contains(&TestUiCall::FocusWindow("main".into())));
+    }
 }
 
 #[tokio::test]

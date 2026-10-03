@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added CLI and MCP session focus controls that select a terminal tab and bring its owning window to the foreground.
 - Added CLI and MCP log status, pause, and resume controls, plus CLI-only destination and overwrite/append options for starting session logs.
 - Added CLI and MCP session disconnect controls that preserve terminal tabs and scrollback.
 

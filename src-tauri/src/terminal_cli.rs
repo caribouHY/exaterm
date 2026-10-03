@@ -59,6 +59,8 @@ struct SessionsArgs {
 #[derive(Debug, Subcommand)]
 enum SessionsCommand {
     List,
+    /// Select a session tab and bring its window to the foreground.
+    Focus(SessionArg),
     Disconnect(SessionArg),
 }
 
@@ -638,6 +640,16 @@ fn build_request(
         RootCommand::Sessions(SessionsArgs {
             command: SessionsCommand::List,
         }) => Ok(ExternalControlRequest::ListTerminalSessions),
+        RootCommand::Sessions(SessionsArgs {
+            command: SessionsCommand::Focus(args),
+        }) => {
+            require_non_empty("--session-id", &args.session_id)?;
+            Ok(ExternalControlRequest::FocusTerminalSession(
+                crate::external_control::FocusTerminalSessionArgs {
+                    session_id: args.session_id,
+                },
+            ))
+        }
         RootCommand::Sessions(SessionsArgs {
             command: SessionsCommand::Disconnect(args),
         }) => {
@@ -1524,6 +1536,29 @@ mod tests {
                 session_id: "s1".into(),
             })
         );
+    }
+
+    #[test]
+    fn sessions_focus_builds_request_and_rejects_missing_or_empty_id() {
+        assert_eq!(
+            build_request(
+                parse(&["exaterm-cli", "sessions", "focus", "--session-id", "s1"]),
+                &mut io::empty(),
+            )
+            .unwrap(),
+            ExternalControlRequest::FocusTerminalSession(
+                crate::external_control::FocusTerminalSessionArgs {
+                    session_id: "s1".into()
+                },
+            )
+        );
+        assert!(Cli::try_parse_from(["exaterm-cli", "sessions", "focus"]).is_err());
+        assert!(build_request(
+            parse(&["exaterm-cli", "sessions", "focus", "--session-id", " "]),
+            &mut io::empty(),
+        )
+        .unwrap_err()
+        .contains("--session-id"));
     }
 
     #[test]

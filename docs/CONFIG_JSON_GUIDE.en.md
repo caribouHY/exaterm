@@ -188,6 +188,7 @@ When MCP is enabled, external clients can call these tools:
 
 - `list_terminal_sessions`: lists ExaTerm terminal sessions opened by the user.
 - `disconnect_terminal_session`: flushes and stops an active log, then disconnects the session while preserving its tab and scrollback.
+- `focus_terminal_session`: accepts `session_id`, selects its existing tab, and shows, restores, and focuses its owning window. It returns `session_id`, `window_id`, `tab_id`, and `focused: true` after GUI acknowledgement. Disconnected tabs are supported; open dialogs remain active. The GUI acknowledgement deadline is five seconds, including one retry after a tab moves to another window. OS foreground restrictions still apply.
 - `read_terminal_output`: reads or waits for session output using the required `mode` argument:
   - `recent`: immediately reads the most recent retained output.
   - `delta`: immediately reads output after the required `cursor`.

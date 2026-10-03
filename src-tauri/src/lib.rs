@@ -127,6 +127,7 @@ pub fn run() {
         .manage(connection_history_state)
         .manage(external_control_credential_state.clone())
         .manage(external_control_log_control_state.clone())
+        .manage(external_control::ExternalControlFocusState::default())
         .on_window_event({
             let workspace_state = workspace_state.clone();
             let ssh_state = ssh_state.clone();
@@ -273,6 +274,7 @@ pub fn run() {
             connection_history::connection_history_clear,
             external_control::protocol::external_control_credential_submit,
             external_control::protocol::external_control_log_control_submit,
+            external_control::focus::external_control_session_focus_submit,
             terminal_control::terminal_encoding_set,
             terminal_control::terminal_output_delta_get,
             terminal_control::terminal_output_snapshot_get,

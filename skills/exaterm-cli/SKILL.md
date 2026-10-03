@@ -1,6 +1,6 @@
 ---
 name: exaterm-cli
-description: Diagnose and control ExaTerm SSH, Telnet, and serial terminal sessions through the Windows exaterm-cli JSON interface. Use when an agent needs to check CLI availability, troubleshoot configuration or GUI control-plane access, inspect active ExaTerm sessions, connect an explicitly supplied direct target or an approved saved profile, open serial consoles, read terminal output, run commands, send interactive input, safely disconnect a selected session, or control opt-in session logging through ExaTerm's recommended primary external-control path.
+description: Diagnose and control ExaTerm SSH, Telnet, and serial terminal sessions through the Windows exaterm-cli JSON interface. Use when an agent needs to check CLI availability, troubleshoot configuration or GUI control-plane access, inspect active ExaTerm sessions, connect an explicitly supplied direct target or an approved saved profile, open serial consoles, read terminal output, run commands, send interactive input, show or safely disconnect a selected session, or control opt-in session logging through ExaTerm's recommended primary external-control path.
 ---
 
 # ExaTerm CLI
@@ -53,6 +53,12 @@ option limits, result fields, setup, or troubleshooting details are needed.
 
    Match a session using returned identifiers and metadata. Do not guess a session ID.
    If more than one session plausibly matches the request, ask the user which one to use.
+
+   When the user requests to show that session in the GUI, run
+   `sessions focus --session-id $sessionId`. It selects the existing tab and restores and
+   focuses its owning window, including for disconnected tabs. Open dialogs remain active;
+   focus success does not mean the terminal can receive input through an open dialog.
+   See the reference for result fields, acknowledgement timeout, and window-focus limitations.
 
 4. When a requested session is not open, use only connection details supplied by the user or
    discover an approved saved target before connecting:

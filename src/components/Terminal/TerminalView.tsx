@@ -45,6 +45,7 @@ import { getTerminalPromptColor, TERMINAL_DECORATION_COLORS } from "./terminalDe
 import type { TerminalPinnedCommand } from "./terminalDecorationTypes";
 import { clearTerminalBuffer, clearTerminalViewport } from "./terminalClearActions";
 import { getTerminalControlInput } from "./terminalControlInput";
+import { focusTerminalUnlessModal } from "./terminalFocus";
 import { createTerminalFitController, type TerminalFitController } from "./terminalFitController";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
@@ -629,7 +630,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   useEffect(() => {
     if (isActive) {
       const terminal = termRef.current;
-      return fitControllerRef.current?.schedule(() => terminal?.focus());
+      return fitControllerRef.current?.schedule(() =>
+        focusTerminalUnlessModal(() => terminal?.focus())
+      );
     }
   }, [isActive]);
 

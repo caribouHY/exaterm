@@ -80,6 +80,18 @@ impl ExaTermMcpServer {
     }
 
     #[tool(
+        name = "focus_terminal_session",
+        description = "Select an existing ExaTerm session tab and bring its owning window to the foreground. Disconnected tabs can also be selected. Open dialogs are preserved."
+    )]
+    async fn focus_terminal_session(
+        &self,
+        Parameters(args): Parameters<crate::external_control::FocusTerminalSessionArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call_tool_with_args("focus_terminal_session", args)
+            .await
+    }
+
+    #[tool(
         name = "list_connection_profiles",
         description = "List saved SSH and Telnet connection profiles when external profile connections are enabled. Secrets and private key paths are not returned."
     )]

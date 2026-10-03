@@ -34,6 +34,7 @@ external-control access before the CLI can list or connect them.
 ```text
 exaterm-cli doctor
 exaterm-cli sessions list
+exaterm-cli sessions focus --session-id <id>
 exaterm-cli sessions disconnect --session-id <id>
 exaterm-cli profiles list [--type <ssh|telnet>]
 exaterm-cli profiles connect --type <ssh|telnet> --profile-id <id> [--cols <n>] [--rows <n>]
@@ -105,6 +106,28 @@ values from 1 through 1000. Profile connections require
 
 SSH passwords and encrypted private-key passphrases are entered through the visible ExaTerm
 UI and must never be supplied as CLI arguments.
+
+## Focusing a Session
+
+Use an exact session ID returned by `sessions list`:
+
+```powershell
+exaterm-cli sessions focus --session-id $sessionId | ConvertFrom-Json
+```
+
+The result contains `session_id`, `window_id`, `tab_id`, and `focused: true`. The command waits
+for GUI tab-selection acknowledgement and successful window show, restore, and focus calls.
+It can select disconnected tabs and switch from Settings or Logs. Open dialogs retain their
+contents and input focus with the terminal selected behind them. Connection, scrollback, and
+logging state are preserved. Existing CLI permissions apply; connection-creation permissions
+are not required. The MCP equivalent is `focus_terminal_session` with `session_id`.
+
+GUI acknowledgement is bounded to five seconds, including one retry after an ownership change.
+Missing tabs return CLI error code `invalid_arguments` with exit code `2`. Absent acknowledgement,
+repeated movement, and native window-operation failures return `tool_error` with exit code `1`.
+A failure can leave the tab
+selected. Native API success does not override operating-system foreground restrictions.
+GUI and sidecars must use matching local control protocol version 6.
 
 ## Disconnecting a Session
 

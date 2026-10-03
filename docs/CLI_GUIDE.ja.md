@@ -43,6 +43,7 @@ exaterm-cli --version
 ```text
 exaterm-cli doctor
 exaterm-cli sessions list
+exaterm-cli sessions focus --session-id <id>
 exaterm-cli sessions disconnect --session-id <id>
 exaterm-cli profiles list [--type <ssh|telnet>]
 exaterm-cli profiles connect --type <ssh|telnet> --profile-id <id> [--cols <n>] [--rows <n>]
@@ -133,6 +134,26 @@ Telnet は `--port`（既定値 `23`）、`--encoding`、`--terminal-mode`、`--
 | `--cols`, `--rows` | `120`, `30` | `1` から `1000`                                                                                                            |
 
 ポート名は `serial ports` が返す値と完全一致する必要があります。
+
+## セッションの前面表示
+
+既存セッションのタブを選択し、そのタブを所有するウィンドウを前面表示します。
+
+```powershell
+exaterm-cli sessions focus --session-id $session
+```
+
+結果は `session_id`、`window_id`、`tab_id`、`focused: true` を含みます。GUIのタブ選択反映と、
+ウィンドウの表示・最小化解除・フォーカス操作の成功を確認して応答します。切断済みタブも
+選択できます。Settings／Logsからは端末表示に切り替えます。表示中のダイアログは内容と
+入力フォーカスを保持し、背後の端末タブを選択します。接続・スクロールバック・ログ状態を
+保持し、新規接続の許可は要求しません。
+
+GUI応答の期限は、別ウィンドウへの移動時の1回の再要求を含めて5秒です。対象タブが存在しない
+場合はCLIエラーコード `invalid_arguments` と終了コード `2` を返します。GUI応答がない場合、
+移動が続く場合、ウィンドウ操作が失敗した場合は `tool_error` と終了コード `1` を返します。
+失敗時でもタブ選択が反映済みの場合があります。
+OSの前面表示制約により、ウィンドウ操作APIが成功しても最終的なフォーカスが制限される場合があります。
 
 ## セッションの切断
 

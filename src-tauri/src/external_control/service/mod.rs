@@ -3,12 +3,16 @@ use crate::terminal_control::TerminalControlState;
 use crate::workspace::WorkspaceState;
 
 mod connections;
+mod focus;
 mod io;
 mod profiles;
 mod terminal;
 mod types;
 
 pub(crate) use io::*;
+pub(crate) use types::{
+    ExternalControlFocusRequestPayload, FocusTerminalSessionArgs, FocusTerminalSessionResult,
+};
 
 pub(crate) use profiles::normalize_direct_host;
 #[cfg(test)]
@@ -85,6 +89,10 @@ impl ExternalControlService {
         request: ExternalControlRequest,
     ) -> Result<ExternalControlResponse, ExternalControlError> {
         match request {
+            ExternalControlRequest::FocusTerminalSession(args) => self
+                .focus_terminal_session(args)
+                .await
+                .map(ExternalControlResponse::FocusTerminalSession),
             ExternalControlRequest::ListTerminalSessions => self
                 .list_terminal_sessions()
                 .await

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::config::{self, AppConfig};
 use crate::external_control::protocol::{
@@ -15,7 +15,8 @@ use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 use crate::workspace::{self, WorkspaceSnapshot, WorkspaceState};
 
 use super::{
-    ExternalControlCredentialRequestPayload, ExternalControlLogControlAck,
+    ExternalControlCredentialRequestPayload, ExternalControlError,
+    ExternalControlFocusRequestPayload, ExternalControlLogControlAck,
     ExternalControlLogControlRequestPayload,
 };
 
@@ -265,6 +266,11 @@ impl ExternalControlProtocolIo for TauriExternalControlProtocolIo {
 
 #[async_trait]
 pub(crate) trait ExternalControlUiIo: Send + Sync {
+    async fn request_session_focus(
+        &self,
+        payload: ExternalControlFocusRequestPayload,
+    ) -> Result<bool, String>;
+    fn focus_window(&self, window_id: &str) -> Result<(), ExternalControlError>;
     fn private_key_requires_passphrase(&self, path: &str) -> Result<bool, String>;
     async fn request_ssh_credential(
         &self,
@@ -302,6 +308,31 @@ impl TauriExternalControlUiIo {
 
 #[async_trait]
 impl ExternalControlUiIo for TauriExternalControlUiIo {
+    async fn request_session_focus(
+        &self,
+        payload: ExternalControlFocusRequestPayload,
+    ) -> Result<bool, String> {
+        self.app
+            .state::<crate::external_control::ExternalControlFocusState>()
+            .request(&self.app, payload)
+            .await
+    }
+
+    fn focus_window(&self, window_id: &str) -> Result<(), ExternalControlError> {
+        let window = self
+            .app
+            .get_webview_window(window_id)
+            .ok_or_else(|| super::unavailable("Session window is unavailable"))?;
+        window
+            .show()
+            .map_err(|_| super::internal_error("Failed to show the session window"))?;
+        window
+            .unminimize()
+            .map_err(|_| super::internal_error("Failed to restore the session window"))?;
+        window
+            .set_focus()
+            .map_err(|_| super::internal_error("Failed to focus the session window"))
+    }
     fn private_key_requires_passphrase(&self, path: &str) -> Result<bool, String> {
         ssh::private_key_requires_passphrase(path)
     }
