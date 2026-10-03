@@ -26,8 +26,12 @@ export function useExternalSessionFocus(
         request.snapshot.window_id === windowId &&
         selectSessionForExternalFocus(request.snapshot, request.session_id, request.tab_id),
       submit: (response) => invoke("external_control_session_focus_submit", { ...response }),
-      focusTerminal: (tabId) => focusTerminalRef.current(tabId),
-      onError: () => console.error("Failed to acknowledge a session focus request."),
+      focusTerminal: (tabId) => {
+        focusTerminalRef.current(tabId);
+      },
+      onError: () => {
+        console.error("Failed to acknowledge a session focus request.");
+      },
     });
     controllerRef.current = controller;
     let disposed = false;
@@ -40,7 +44,9 @@ export function useExternalSessionFocus(
         setRequestVersion(version);
       }
     );
-    void unlisten.catch(() => console.error("Failed to register the session focus listener."));
+    void unlisten.catch(() => {
+      console.error("Failed to register the session focus listener.");
+    });
     return () => {
       disposed = true;
       controller.dispose();

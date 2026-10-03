@@ -630,9 +630,11 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   useEffect(() => {
     if (isActive) {
       const terminal = termRef.current;
-      return fitControllerRef.current?.schedule(() =>
-        focusTerminalUnlessModal(() => terminal?.focus())
-      );
+      return fitControllerRef.current?.schedule(() => {
+        focusTerminalUnlessModal(() => {
+          terminal?.focus();
+        });
+      });
     }
   }, [isActive]);
 

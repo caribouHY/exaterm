@@ -77,6 +77,25 @@ describe("external session focus", () => {
     expect(h.focusTerminal).not.toHaveBeenCalled();
   });
 
+  it("preserves the error handler receiver when acknowledgement fails", async () => {
+    const onError = vi.fn();
+    const dependencies = {
+      select: () => true,
+      submit: async () => {
+        throw new Error("Acknowledgement failed");
+      },
+      focusTerminal: vi.fn(),
+      onError(this: unknown) {
+        onError(this);
+      },
+    };
+    const controller = createExternalSessionFocusController(dependencies);
+    controller.receive(request, 1);
+    controller.afterCommit({ activeTabId: "tab", tabs: [tab], closingTabIds: [] }, 1);
+    await Promise.resolve();
+    expect(onError).toHaveBeenCalledExactlyOnceWith(dependencies);
+  });
+
   it("rejects selection failure and releases pending requests on disposal", () => {
     const h = harness(false);
     h.controller.receive(request, 1);

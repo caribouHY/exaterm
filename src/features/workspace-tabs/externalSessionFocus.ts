@@ -33,7 +33,9 @@ export function createExternalSessionFocusController(dependencies: {
   const submit = (request: SessionFocusRequest, selected: boolean) => {
     void dependencies
       .submit({ requestId: request.request_id, tabId: request.tab_id, selected })
-      .catch(dependencies.onError);
+      .catch(() => {
+        dependencies.onError();
+      });
   };
   return {
     receive(request: SessionFocusRequest, version: number) {
