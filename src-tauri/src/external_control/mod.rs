@@ -1,8 +1,10 @@
 pub(crate) mod client;
+pub(crate) mod focus;
 pub(crate) mod protocol;
 mod server;
 pub(crate) mod service;
 
+pub use focus::ExternalControlFocusState;
 pub use protocol::{ExternalControlCredentialState, ExternalControlLogControlState};
 pub use server::spawn_gui_control_plane;
 pub use service::{ExternalControlRuntime, ExternalControlService};
@@ -10,6 +12,7 @@ pub use service::{ExternalControlRuntime, ExternalControlService};
 pub(crate) use service::{
     ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs,
     DisconnectTerminalSessionArgs, ExternalControlError, ExternalControlRequest,
-    ExternalControlResponse, ReadTerminalOutputArgs, RunTerminalCommandArgs, SendTerminalInputArgs,
-    StartTerminalLogArgs, StopTerminalLogArgs, TerminalLogSessionArgs,
+    ExternalControlResponse, FocusTerminalSessionArgs, ReadTerminalOutputArgs,
+    RunTerminalCommandArgs, SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs,
+    TerminalLogSessionArgs,
 };

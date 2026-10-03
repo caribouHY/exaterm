@@ -39,6 +39,8 @@ import {
   ModalTitle,
 } from "./components/Common";
 import { useWindowTabs } from "./features/workspace-tabs/useWindowTabs";
+import { useExternalSessionFocus } from "./features/workspace-tabs/useExternalSessionFocus";
+import { focusTerminalUnlessModal } from "./components/Terminal/terminalFocus";
 import { useTerminalTabLifecycle } from "./features/workspace-tabs/useTerminalTabLifecycle";
 import { useWorkspaceTabMovement } from "./features/workspace-tabs/useWorkspaceTabMovement";
 import { DEFAULT_SHORTCUT_CONFIG, findShortcutAction } from "./features/shortcuts/shortcutModel";
@@ -168,6 +170,9 @@ export default function App() {
   const activeTerminalBuffer = useRef("");
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
+  useExternalSessionFocus(windowTabs, (tabId) => {
+    focusTerminalUnlessModal(() => terminalViewRefs.current.get(tabId)?.focus());
+  });
   const restoreTerminalFocusAfterPaletteRef = useRef(false);
   const manualLogController = useMemo(
     () =>

@@ -188,6 +188,7 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
 
 - `list_terminal_sessions`: ユーザーが ExaTerm で開いたターミナルセッションを一覧表示します。
 - `disconnect_terminal_session`: 実行中ログをflushして停止した後、タブとスクロールバックを残したままセッションを切断します。
+- `focus_terminal_session`: `session_id` を受け取り、既存タブを選択して所有ウィンドウを表示・最小化解除・前面表示します。GUI反映確認後に `session_id`、`window_id`、`tab_id`、`focused: true` を返します。切断済みタブも対象にでき、表示中のダイアログは維持します。GUI応答の期限は別ウィンドウへの移動時の1回の再要求を含めて5秒です。OSの前面表示制約は適用されます。
 - `read_terminal_output`: 必須の `mode` 引数に応じてセッション出力を読み取るか待機します。
   - `recent`: 保持されている直近出力を即時に読み取ります。
   - `delta`: 必須の `cursor` 以降の出力を即時に読み取ります。
