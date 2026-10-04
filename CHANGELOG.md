@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Selected server-supported RSA SHA-2 signatures for SSH public key authentication, including automatic authentication and jump hosts, while retaining legacy RSA/SHA-1 compatibility when SHA-2 support is unknown or unavailable.
 - Protected actively recorded log files from bulk deletion through older automatic log history entries, including alternate Windows path spellings.
 - Restored Rust 1.99 Clippy compatibility by updating async-trait.
 - Preserved trailing terminal text when switching between Serial terminal and Settings tabs by skipping size adjustments while the terminal is hidden.

@@ -74,6 +74,14 @@ pnpm run tauri build --no-bundle
 
 Launch `src-tauri/target/release/exaterm.exe` and invoke the affected command. For connection changes, verify at minimum that invalid input and a refused local connection return errors without terminating the application. When an appropriate test endpoint is available, also verify a successful connection and cancellation during setup. Do not treat debug packaging alone as proof that the optimized runtime is safe.
 
+### SSH RSA Authentication Compatibility
+
+RSA public key authentication selects the server's preferred supported SHA-2 signature through russh's `server-sig-algs` support, preferring SHA-512 over SHA-256. An advertised SHA-2 selection is used without falling back to SHA-1 after authentication rejection. If the server advertises only legacy RSA support, ExaTerm retains `ssh-rsa` (RSA/SHA-1) compatibility.
+
+When russh cannot determine RSA support, ExaTerm tries RSA/SHA-512, RSA/SHA-256, then RSA/SHA-1. Another signature is attempted only after a non-partial authentication rejection that still permits public key authentication. Success, partial success, transport errors, and timeouts stop these attempts. Support discovery and all signature attempts share the existing public key authentication timeout.
+
+This applies independently to direct connections, jump hosts, and targets reached through a jump host, in both public key and automatic authentication. The SSH settings screen's host key algorithms control server identity verification; they do not control user authentication signatures. Ed25519 and ECDSA authentication retain their existing behavior.
+
 ## Branches and Commits
 
 When editing code, create a working branch from the latest `dev` branch. Do not commit directly to `dev`; merge changes through pull requests.
