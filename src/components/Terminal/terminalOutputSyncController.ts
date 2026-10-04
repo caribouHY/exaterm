@@ -33,7 +33,6 @@ export interface TerminalOutputSyncDependencies {
 interface TerminalOutputSyncOptions {
   sessionId: string;
   encoding: Encoding;
-  maxChars: number;
   channels: TerminalOutputChannel[];
   write: (text: string) => void;
   dependencies: TerminalOutputSyncDependencies;
@@ -51,6 +50,8 @@ interface Subscription {
   released: boolean;
 }
 
+// Match the backend retention ceiling so restoration does not truncate retained history again.
+const RESTORE_MAX_CHARS = 2 * 1024 * 1024;
 const DEFAULT_MAX_INITIAL_DELTA_DRAINS = 5;
 
 export function createTerminalOutputSyncController(
@@ -144,7 +145,7 @@ export function createTerminalOutputSyncController(
 
     phase = "syncing";
     try {
-      const snapshot = await options.dependencies.getSnapshot(options.sessionId, options.maxChars);
+      const snapshot = await options.dependencies.getSnapshot(options.sessionId, RESTORE_MAX_CHARS);
       if (isDisposed()) return;
       write(snapshot.output);
 
@@ -155,7 +156,7 @@ export function createTerminalOutputSyncController(
         const delta = await options.dependencies.getDelta(
           options.sessionId,
           cursor,
-          options.maxChars
+          RESTORE_MAX_CHARS
         );
         if (isDisposed()) return;
         write(delta.output);
