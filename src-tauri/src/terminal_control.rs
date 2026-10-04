@@ -656,9 +656,93 @@ mod tests {
         assert!(error.contains("cursor"));
     }
 
+    #[tokio::test]
+    async fn restoration_ceiling_returns_all_retained_lines() {
+        let state = TerminalControlState::new();
+        state.set_output_limit_from_scrollback(10_000);
+        state
+            .register_session("s1".into(), TerminalProtocol::Serial, "COM1".into())
+            .await;
+        let output = format!("{}\r\n", "x".repeat(70)).repeat(500);
+        assert_eq!(output.chars().count(), 36_000);
+        state.append_output("s1", output.as_bytes()).await;
+
+        let snapshot = state.read_output("s1", MAX_OUTPUT_LIMIT).await.unwrap();
+        assert_eq!(snapshot.output, output);
+        assert!(!snapshot.truncated);
+        assert_eq!(snapshot.available_chars, 36_000);
+        assert_eq!(snapshot.start_cursor, 0);
+        assert_eq!(snapshot.cursor, 36_000);
+    }
+
+    #[tokio::test]
+    async fn unicode_retention_and_requested_tails_use_character_cursors() {
+        let retained = "\x1b[31m界😀!";
+        let state = TerminalControlState::with_output_limit(retained.chars().count());
+        state
+            .register_session("s1".into(), TerminalProtocol::Serial, "COM1".into())
+            .await;
+        state
+            .append_output("s1", format!("古😀{retained}").as_bytes())
+            .await;
+
+        let snapshot = state.read_output("s1", MAX_OUTPUT_LIMIT).await.unwrap();
+        assert_eq!(snapshot.output, retained);
+        assert_eq!(snapshot.available_chars, 8);
+        assert_eq!(snapshot.start_cursor, 2);
+        assert_eq!(snapshot.cursor, 10);
+        assert!(snapshot.truncated);
+
+        let tail = state.read_output("s1", 3).await.unwrap();
+        assert_eq!(tail.output, "界😀!");
+        assert_eq!(tail.start_cursor, 7);
+        assert_eq!(tail.cursor, 10);
+        assert!(tail.truncated);
+        let delta = state.read_output_delta("s1", 2, 3).await.unwrap();
+        assert_eq!(delta, tail);
+        let delta = state
+            .read_output_delta("s1", 2, MAX_OUTPUT_LIMIT)
+            .await
+            .unwrap();
+        assert_eq!(delta.output, retained);
+        assert_eq!(delta.start_cursor, 2);
+        assert_eq!(delta.cursor, 10);
+        assert!(!delta.truncated);
+    }
+
+    #[tokio::test]
+    async fn restoration_remains_bounded_by_the_retention_ceiling() {
+        let state = TerminalControlState::new();
+        state.set_output_limit_from_scrollback(u32::MAX);
+        state
+            .register_session("s1".into(), TerminalProtocol::Serial, "COM1".into())
+            .await;
+        let output = format!("😀{}\x1b[31m😀!\r\n", "界".repeat(MAX_OUTPUT_LIMIT - 8));
+        let total_chars = output.chars().count();
+        state.append_output("s1", output.as_bytes()).await;
+
+        let snapshot = state.read_output("s1", MAX_OUTPUT_LIMIT).await.unwrap();
+        let dropped_chars = total_chars - MAX_OUTPUT_LIMIT;
+        assert_eq!(
+            snapshot.output,
+            output.chars().skip(dropped_chars).collect::<String>()
+        );
+        assert_eq!(snapshot.available_chars, MAX_OUTPUT_LIMIT);
+        assert_eq!(snapshot.start_cursor, dropped_chars);
+        assert_eq!(snapshot.cursor, total_chars);
+        assert!(snapshot.truncated);
+        let delta = state
+            .read_output_delta("s1", 0, MAX_OUTPUT_LIMIT)
+            .await
+            .unwrap();
+        assert_eq!(delta, snapshot);
+    }
+
     #[test]
     fn scrollback_output_limit_is_bounded() {
+        assert_eq!(output_limit_from_scrollback(0), MIN_OUTPUT_LIMIT);
         assert_eq!(output_limit_from_scrollback(1), MIN_OUTPUT_LIMIT);
+        assert_eq!(output_limit_from_scrollback(10_000), 1_600_000);
         assert_eq!(output_limit_from_scrollback(1_000), 160_000);
         assert_eq!(output_limit_from_scrollback(u32::MAX), MAX_OUTPUT_LIMIT);
     }

@@ -67,7 +67,6 @@ function createHarness(maxInitialDeltaDrains = 5) {
   const controller = createTerminalOutputSyncController({
     sessionId: "session-1",
     encoding: "utf-8",
-    maxChars: 100,
     channels: [
       { event: "data/session-1", replayedBySnapshot: true },
       { event: "error/session-1", replayedBySnapshot: false },
@@ -87,6 +86,55 @@ const tick = async () => {
 };
 
 describe("terminal output sync controller", () => {
+  it.each([
+    ["500 complete lines", `${"x".repeat(70)}\r\n`.repeat(500), "next\r\n".repeat(2_000)],
+    ["long lines, Unicode and ANSI", `${"界😀".repeat(20_000)}\x1b[31mred\x1b[0m\r\n`, "界😀\r\n"],
+    [
+      "output exceeding the retention ceiling",
+      `${"界😀\x1b[31m".repeat(300_000)}\x1b[0m\r\n`,
+      "live\r\n",
+    ],
+  ])("restores bounded snapshot and delta text for %s", async (_name, history, additional) => {
+    const maxRetainedChars = 2 * 1024 * 1024;
+    const historyChars = Array.from(history);
+    const retainedChars = historyChars.slice(-maxRetainedChars);
+    const additionalChars = Array.from(additional);
+    const writes: string[] = [];
+    const getSnapshot = vi.fn(async (_sessionId: string, maxChars: number) => {
+      const output = retainedChars.slice(-maxChars).join("");
+      return outputSnapshot(output, historyChars.length, {
+        available_chars: retainedChars.length,
+        truncated: Array.from(output).length < historyChars.length,
+      });
+    });
+    const getDelta = vi.fn(async (_sessionId: string, cursor: number, maxChars: number) => {
+      expect(cursor).toBe(historyChars.length);
+      const output = additionalChars.slice(-maxChars).join("");
+      return outputSnapshot(output, cursor + additionalChars.length, {
+        truncated: Array.from(output).length < additionalChars.length,
+      });
+    });
+    const controller = createTerminalOutputSyncController({
+      sessionId: "session-1",
+      encoding: "utf-8",
+      channels: [{ event: "data/session-1", replayedBySnapshot: true }],
+      dependencies: { listen: async () => vi.fn<TerminalOutputUnlisten>(), getSnapshot, getDelta },
+      write: (text) => writes.push(text),
+    });
+
+    await controller.start();
+
+    expect(getSnapshot).toHaveBeenCalledExactlyOnceWith("session-1", maxRetainedChars);
+    expect(getDelta).toHaveBeenCalledExactlyOnceWith(
+      "session-1",
+      historyChars.length,
+      maxRetainedChars
+    );
+    expect(writes).toEqual([retainedChars.join(""), additional]);
+    expect(Array.from(writes[0]).length).toBeLessThanOrEqual(maxRetainedChars);
+    controller.dispose();
+  });
+
   it("waits for every subscription and restores output that arrives during initial sync", async () => {
     const h = createHarness();
     const started = h.controller.start();

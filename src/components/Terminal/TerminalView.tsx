@@ -559,7 +559,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     const outputSyncController = createTerminalOutputSyncController({
       sessionId,
       encoding,
-      maxChars: terminalConfig?.scrollback ?? 20000,
       channels: [
         { event: `${protocol.dataEvent}/${sessionId}`, replayedBySnapshot: true },
         {
