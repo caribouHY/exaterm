@@ -29,6 +29,9 @@ Enable the shared external-control service and CLI access in ExaTerm Settings, o
 Restart ExaTerm after changing these settings. Individual saved profiles must also allow
 external-control access before the CLI can list or connect them.
 
+For post-connect readiness, completion tracking, or logging, read only the relevant
+section of [workflows.md](workflows.md).
+
 ## Commands
 
 ```text
@@ -56,13 +59,95 @@ Use `exaterm-cli <command> --help` for the syntax supported by the installed ver
 `--help` and `--version` produce human-readable text, so do not pipe them to
 `ConvertFrom-Json` or any other JSON parser.
 
+## Checked PowerShell JSON Calls
+
+Define this function once before using `Invoke-ExaTermJson` examples here or in
+[workflows.md](workflows.md). It reads raw UTF-8 stdout and stderr through a process rather
+than PowerShell's native stderr redirection, which decorates errors in Windows PowerShell
+5.1. It works in PowerShell 5.1 and 7 regardless of native-command error preferences.
+
+```powershell
+function Invoke-ExaTermJson {
+  [CmdletBinding(PositionalBinding = $false)]
+  param(
+    [Parameter(Position = 0, ValueFromRemainingArguments = $true)][string[]]$CliArguments,
+    [AllowEmptyString()][string]$InputText
+  )
+
+  $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName = (Get-Command exaterm-cli -CommandType Application -ErrorAction Stop |
+    Select-Object -First 1).Source
+  $startInfo.Arguments = ($CliArguments | ForEach-Object {
+    '"' + (($_ -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"'
+  }) -join ' '
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  $startInfo.RedirectStandardInput = $true
+  $startInfo.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
+  $startInfo.StandardErrorEncoding = [System.Text.UTF8Encoding]::new($false)
+  $process = [System.Diagnostics.Process]::new()
+  $process.StartInfo = $startInfo
+  try {
+    [void]$process.Start()
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    if ($PSBoundParameters.ContainsKey('InputText')) {
+      $inputBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($InputText)
+      $process.StandardInput.BaseStream.Write($inputBytes, 0, $inputBytes.Length)
+    }
+    $process.StandardInput.Close()
+    $process.WaitForExit()
+    $stdout = $stdoutTask.GetAwaiter().GetResult()
+    $stderr = $stderrTask.GetAwaiter().GetResult()
+    $cliExitCode = $process.ExitCode
+    if ($cliExitCode -ne 0) {
+      $failure = $stderr | ConvertFrom-Json -ErrorAction Stop
+      $exception = [System.Exception]::new("ExaTerm CLI failed: $($failure.error.code)")
+      $exception.Data['exit_code'] = $cliExitCode
+      $exception.Data['code'] = $failure.error.code
+      $exception.Data['error'] = $failure.error
+      throw $exception
+    }
+    $stdout | ConvertFrom-Json -ErrorAction Stop
+  } finally {
+    $process.Dispose()
+  }
+}
+```
+
+Handle failures by the exception's `Data['code']` and `Data['exit_code']`; do not
+retry a state-changing command automatically. `Data['error']` retains the parsed error
+for diagnosis; its message may contain sensitive data and should not be copied to chat.
+This function is for ordinary JSON calls. Invoke `doctor` directly and parse its report
+on exit code 0 or 1. Parse `follow` incrementally as JSON Lines; do not use this function
+for `follow`, `--help`, or `--version`. For CLI stdin options, pass the exact input through
+`-InputText` and use `--data -` or `--command -`; the helper writes UTF-8 bytes without
+adding or converting line endings. Do not pipe text into the helper.
+
+The argument quoting above preserves embedded quotes and trailing backslashes for Windows
+executables. For native piped input, set UTF-8 explicitly before piping non-ASCII text in
+Windows PowerShell 5.1. Set native output decoding too when parsing its JSON:
+
+```powershell
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+```
+
+PowerShell's native pipeline supplies a platform line ending (normally CRLF on Windows),
+not necessarily a single LF character. Some terminals interpret CR and LF separately,
+producing an extra empty-line response. Prefer `-InputText` with explicit LF line endings
+when exactly one submitted line is required.
+
 ## Diagnosing CLI Availability
 
 Use `doctor` to diagnose CLI readiness without reading terminal content or changing settings:
 
 ```powershell
-$diagnosis = exaterm-cli doctor | ConvertFrom-Json
+$stdout = exaterm-cli doctor
 $doctorExitCode = $LASTEXITCODE
+$diagnosis = ($stdout -join "`n") | ConvertFrom-Json
 ```
 
 It checks these stable IDs in order:
@@ -112,7 +197,7 @@ UI and must never be supplied as CLI arguments.
 Use an exact session ID returned by `sessions list`:
 
 ```powershell
-exaterm-cli sessions focus --session-id $sessionId | ConvertFrom-Json
+Invoke-ExaTermJson sessions focus --session-id $sessionId
 ```
 
 The result contains `session_id`, `window_id`, `tab_id`, and `focused: true`. The command waits
@@ -134,8 +219,7 @@ GUI and sidecars must use matching local control protocol version 6.
 Disconnect only an exact `session_id` returned by `sessions list`:
 
 ```powershell
-$disconnect = exaterm-cli sessions disconnect --session-id $sessionId |
-  ConvertFrom-Json
+$disconnect = Invoke-ExaTermJson sessions disconnect --session-id $sessionId
 ```
 
 The result contains `session_id`, `disconnected`, and `already_disconnected`. A first successful
@@ -157,11 +241,11 @@ For an authorized temporary automation session, preserve its exact returned ID a
 without selecting another session:
 
 ```powershell
-$connection = exaterm-cli serial connect --port $port | ConvertFrom-Json
+$connection = Invoke-ExaTermJson serial connect --port $port
 try {
   # Perform only the authorized terminal operations.
 } finally {
-  exaterm-cli sessions disconnect --session-id $connection.session_id
+  Invoke-ExaTermJson sessions disconnect --session-id $connection.session_id
 }
 ```
 
@@ -173,8 +257,8 @@ provided by the user. Never infer a host, SSH user name, port, authentication me
 private-key path, or jump profile.
 
 ```powershell
-exaterm-cli ssh connect --host $host --username $username
-exaterm-cli telnet connect --host $host
+exaterm-cli ssh connect --host $targetHost --username $username
+exaterm-cli telnet connect --host $targetHost
 ```
 
 SSH supports `--port` (default `22`), `--auth-method`, `--private-key-path`,
@@ -188,50 +272,6 @@ Unknown SSH host keys are confirmed in the visible ExaTerm UI. Host-key mismatch
 rejected. Passwords and passphrases stay in the GUI and must not be passed through CLI
 arguments, environment variables, terminal input, or chat.
 
-## Connection Readiness
-
-A successful `profiles connect`, direct `ssh connect`/`telnet connect`, or `serial connect`
-result means that ExaTerm created a session. It does not guarantee that the initial banner,
-login exchange, or normal prompt has finished rendering.
-
-After connecting:
-
-1. Retain the returned `session_id`.
-2. Run `sessions list` and confirm that the matching session has status `connected`.
-3. Read recent output and retain its cursor:
-
-   ```powershell
-   $initial = exaterm-cli terminal output --session-id $sessionId `
-     --mode recent --max-chars 2000 | ConvertFrom-Json
-   $cursor = $initial.cursor
-   ```
-
-4. Inspect whether the output shows a normal prompt, a login prompt, an incomplete banner,
-   or no output.
-5. If an exact normal prompt is observed, retain it for later operations:
-
-   ```powershell
-   $verifiedPrompt = "the exact prompt observed in this session"
-   ```
-
-   Do not assign this variable from generic characters such as `#`, `$`, or `>`.
-
-6. If readiness is unclear, wait from the retained cursor without guessing a prompt:
-
-   ```powershell
-   $ready = exaterm-cli terminal output --session-id $sessionId `
-     --mode wait --cursor $cursor --timeout-ms 30000 `
-     --max-chars 2000 | ConvertFrom-Json
-   ```
-
-MUST NOT send the requested command until a normal prompt or another explicit readiness
-marker has been observed. A successful connection result alone does not establish readiness.
-
-Use `--contains $verifiedPrompt` only after the exact prompt has been observed in the current
-session. If it remains unknown, omit `--contains` and inspect the output returned by each
-wait. Some serial consoles remain silent until input is sent. Sending an empty line changes
-the remote interaction, so follow the host agent's normal approval policy before doing so.
-
 ## Serial Connections
 
 `serial ports` returns a `ports` array. Pass an exact returned port name to `serial connect`.
@@ -244,8 +284,12 @@ Serial connections require `external_control.connect_enabled=true`.
 | `--parity`         | `none`      | `none`, `odd`, `even`          |
 | `--stop-bits`      | `1`         | `1`, `2`                       |
 | `--flow-control`   | `none`      | `none`, `software`, `hardware` |
-| `--terminal-mode`  | `general`   | `general`, `cisco-ios`         |
+| `--terminal-mode`  | `general`   | See terminal modes below       |
 | `--cols`, `--rows` | `120`, `30` | 1 through 1000                 |
+
+Terminal modes: `general`, `cisco-ios`, `arista-eos`, `juniper-junos`, `vyos`,
+`fujitsu-sir`, `allied-telesis-awplus`, and `furukawa-fitelnet`. These values also
+apply to direct SSH and Telnet connections; check installed-version help before use.
 
 ## Reading Output
 
@@ -259,42 +303,45 @@ The default and maximum output lengths are 2,000 and 20,000 characters.
   remaining context to process it.
 - Prefer `delta` or `wait` with a retained cursor over repeatedly returning a large recent
   buffer.
-- When `truncated=true`, narrow the requested output or continue from an appropriate cursor.
+- When `truncated=true`, the result is incomplete. Reads return the tail of the requested
+  delta and advance the cursor to the current end. Continuing from that cursor cannot recover
+  omitted text. If needed, retry the original cursor with a larger limit before it leaves the
+  retained buffer; text already dropped from the buffer cannot be recovered through the CLI.
 - Summarize large terminal results instead of copying them wholesale into the response.
 
 Read the most recent retained output:
 
 ```powershell
-$result = exaterm-cli terminal output --session-id $sessionId `
-  --mode recent --max-chars 2000 | ConvertFrom-Json
+$result = Invoke-ExaTermJson terminal output --session-id $sessionId `
+  --mode recent --max-chars 2000
 ```
 
 Continue from a cursor returned by an earlier output or run result:
 
 ```powershell
-$result = exaterm-cli terminal output --session-id $sessionId `
-  --mode delta --cursor $cursor | ConvertFrom-Json
+$result = Invoke-ExaTermJson terminal output --session-id $sessionId `
+  --mode delta --cursor $cursor
 ```
 
 Wait for new output or a substring:
 
 ```powershell
-$result = exaterm-cli terminal output --session-id $sessionId `
+$result = Invoke-ExaTermJson terminal output --session-id $sessionId `
   --mode wait --cursor $cursor --contains $verifiedPrompt `
-  --timeout-ms 30000 | ConvertFrom-Json
+  --timeout-ms 30000
 ```
 
 If no exact prompt or command-specific marker has been verified, omit `--contains`:
 
 ```powershell
-$result = exaterm-cli terminal output --session-id $sessionId `
-  --mode wait --cursor $cursor --timeout-ms 30000 | ConvertFrom-Json
+$result = Invoke-ExaTermJson terminal output --session-id $sessionId `
+  --mode wait --cursor $cursor --timeout-ms 30000
 ```
 
 - `recent` rejects `--cursor`, `--contains`, and `--timeout-ms`.
 - `delta` requires `--cursor` and rejects `--contains` and `--timeout-ms`.
 - `wait` starts at the current output position when `--cursor` is omitted.
-- `--timeout-ms` accepts 1 through 60,000 milliseconds.
+- `--timeout-ms` defaults to 10,000 and accepts 1 through 60,000 milliseconds.
 - A wait result includes a `timed_out` flag. Retain its returned cursor even on timeout.
 
 `follow` emits one JSON event per stdout line. It starts with recent retained output when
@@ -333,113 +380,38 @@ Before using it, verify the target session and the expected interaction state sh
 output. The valid state may be a normal prompt, login prompt, or confirmation question.
 
 ```powershell
-"show version`n" |
-  exaterm-cli terminal send --session-id $sessionId --data -
+$sent = Invoke-ExaTermJson -InputText "show version`n" `
+  terminal send --session-id $sessionId --data -
 ```
 
 `terminal run` sends a command and returns captured output:
 
 ```powershell
-$result = exaterm-cli terminal run --session-id $sessionId `
+$result = Invoke-ExaTermJson terminal run --session-id $sessionId `
   --command "show version" --wait-contains $verifiedPrompt `
-  --timeout-ms 30000 --max-chars 2000 | ConvertFrom-Json
+  --timeout-ms 30000 --max-chars 2000
 ```
 
 Use `--wait-contains` only when `$verifiedPrompt` or a command-specific completion marker has
 been established from terminal evidence. Otherwise omit it and inspect the returned output.
 
 - Input is limited to 20,000 characters.
-- Passing `-` to `--data` or `--command` reads the value from stdin.
+- Passing `-` to `--data` or `--command` reads stdin verbatim, including trailing newlines.
+- PowerShell adds a line ending when piping a string to a native executable. Do not add
+  another newline to a piped `terminal send` string. For piped `terminal run` input, use
+  `--append-newline false` to preserve the supplied line endings without adding another.
+- For controlled stdin through `-InputText`, choose the final line ending explicitly.
+  Use `--append-newline false` when the supplied input already ends in LF.
 - `terminal run` appends a newline by default.
 - Use `--append-newline false` when the input must not end in a newline.
-- `--timeout-ms` accepts 1 through 60,000 milliseconds.
-- `--settle-ms` accepts 0 through 5,000 milliseconds.
+- `--timeout-ms` defaults to 10,000 and accepts 1 through 60,000 milliseconds.
+- `--settle-ms` defaults to 250 and accepts 0 through 5,000 milliseconds. It adds a fixed
+  delay after a successful wait; it does not wait for output to become quiet.
 - `--max-chars` accepts 1 through 20,000 characters.
 - A timeout may still return useful partial output and a cursor.
-
-## Long-running Commands
-
-Each `terminal run` or `terminal output --mode wait` call can wait for at most 60 seconds.
-For a command that may take longer, send it once and continue observing from the returned
-cursor.
-
-```powershell
-$completionMarker = $verifiedPrompt
-
-$result = exaterm-cli terminal run --session-id $sessionId `
-  --command "long-running-command" --wait-contains $completionMarker `
-  --timeout-ms 60000 --max-chars 20000 | ConvertFrom-Json
-
-$cursor = $result.cursor
-$deadline = (Get-Date).AddMinutes(10)
-
-while ($result.timed_out -and (Get-Date) -lt $deadline) {
-  $result = exaterm-cli terminal output --session-id $sessionId `
-    --mode wait --cursor $cursor --contains $completionMarker `
-    --timeout-ms 60000 --max-chars 20000 | ConvertFrom-Json
-  $cursor = $result.cursor
-}
-```
-
-- Set `$completionMarker` only to the exact verified prompt or a command-specific completion
-  marker. If neither is known, omit the contains arguments and inspect each result.
-- MUST NOT resend the command after a wait timeout. Continue from the returned cursor.
-- Update the cursor after every result, including timeouts.
-- Treat the expected prompt or another command-specific completion marker as completion.
-- If the overall deadline expires, report that the command remains unconfirmed rather than
-  reporting failure or success.
-- If `truncated=true`, report that the returned output is incomplete. Continuing from the
-  latest cursor observes future output but does not recover already truncated content.
-- Re-run `sessions list` if waiting fails because the session may have disconnected.
-
-## Session Logging
-
-```powershell
-$status = exaterm-cli terminal log status --session-id $sessionId | ConvertFrom-Json
-exaterm-cli terminal log start --session-id $sessionId
-exaterm-cli terminal log pause --session-id $sessionId
-exaterm-cli terminal log resume --session-id $sessionId
-exaterm-cli terminal log stop --session-id $sessionId
-```
-
-Logs are plaintext and can contain commands, prompts, output, hostnames, usernames, and
-accidental secrets. Start them only when the user explicitly requests logging. Status reports
-`inactive`, `active`, or `paused`, plus the active file path and `auto` or `manual` mode; inactive
-path and mode fields are `null`. Pause and resume also apply to automatically started logs and
-are idempotent through the `changed` result.
-
-Omitting destination options creates a unique log file in ExaTerm's log directory using
-overwrite mode. To choose a file, supply both options. Relative paths are resolved from the CLI
-process's current directory. A different destination is rejected while a log is already active.
-
-```powershell
-exaterm-cli terminal log start --session-id $sessionId `
-  --file-path .\logs\session.log --write-mode append
-```
-
-Manual logging does not copy output already retained in the terminal buffer. To include a
-prompt at the beginning of a newly started log, request a fresh prompt before executing the
-substantive command:
-
-```powershell
-$log = exaterm-cli terminal log start --session-id $sessionId | ConvertFrom-Json
-
-$beforePrompt = exaterm-cli terminal output --session-id $sessionId `
-  --mode recent --max-chars 2000 | ConvertFrom-Json
-$cursor = $beforePrompt.cursor
-
-"" | exaterm-cli terminal send --session-id $sessionId --data -
-
-$prompt = exaterm-cli terminal output --session-id $sessionId `
-  --mode wait --cursor $cursor --contains $verifiedPrompt `
-  --timeout-ms 30000 --max-chars 2000 | ConvertFrom-Json
-```
-
-MUST NOT run the requested command until the fresh prompt is observed. Capture the cursor
-before sending the empty line so that a quickly redrawn prompt is not missed. Reuse the exact
-prompt retained during connection readiness. If it is unknown, omit `--contains` and inspect
-the returned output. If the terminal does not redraw its prompt after an empty line, report
-that the initial prompt may be absent from the log.
+- Without a contains option, `matched=true` and `timed_out=false` mean that some output
+  arrived, possibly only command echo. Neither proves command completion. See
+  [command completion](workflows.md#command-completion-and-continuation).
 
 ## JSON and Exit Codes
 
