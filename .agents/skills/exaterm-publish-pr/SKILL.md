@@ -1,9 +1,9 @@
 ---
-name: publish-exaterm-pr
+name: exaterm-publish-pr
 description: Review, validate, commit, push, and open a draft ExaTerm PR to dev when publication is requested.
 ---
 
-# Publish ExaTerm PR
+# ExaTerm Publish PR
 
 Use this repository procedure instead of the user-level publication Skill. Publication requires the user's request; this Skill does not authorize publishing an implementation-only task.
 

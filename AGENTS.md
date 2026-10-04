@@ -41,4 +41,4 @@ Read only the documentation sections relevant to the task; expand to related sec
 - For the existing ExaTerm UI, use the project UI Skill rather than generic design, Tailwind, or shadcn Skills. Use generic creative Skills only for separately requested assets or independent designs.
 - Use `.agents/skills/exaterm-validate-change/SKILL.md` to choose and report validation commands.
 - Use `.agents/skills/exaterm-release-prep/SKILL.md` for release version and changelog preparation.
-- Use `.agents/skills/publish-exaterm-pr/SKILL.md` for PR publication; this repository procedure takes precedence over the user-level publication Skill.
+- Use `.agents/skills/exaterm-publish-pr/SKILL.md` for PR publication; this repository procedure takes precedence over the user-level publication Skill.
