@@ -45,10 +45,19 @@ pub struct TerminalOutputSnapshot {
     pub cursor: usize,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TerminalOutputEvent {
+    pub session_id: String,
+    pub output: String,
+    pub start_cursor: usize,
+    pub cursor: usize,
+}
+
 struct TerminalSession {
     info: TerminalSessionInfo,
     output: String,
     dropped_chars: usize,
+    cursor: usize,
     decoder: Decoder,
 }
 
@@ -118,23 +127,35 @@ impl TerminalControlState {
             info,
             output: String::new(),
             dropped_chars: 0,
+            cursor: 0,
             decoder: encoding_impl.new_decoder(),
         };
 
         self.sessions.lock().await.insert(session_id, session);
     }
 
-    pub async fn append_output(&self, session_id: &str, data: &[u8]) {
+    pub async fn append_output(
+        &self,
+        session_id: &str,
+        data: &[u8],
+    ) -> Option<TerminalOutputEvent> {
         let mut sessions = self.sessions.lock().await;
-        let Some(session) = sessions.get_mut(session_id) else {
-            return;
-        };
+        let session = sessions.get_mut(session_id)?;
 
         let text = decode_output(&mut session.decoder, data);
+        let start_cursor = session.cursor;
+        let cursor = start_cursor + text.chars().count();
+        session.cursor = cursor;
         session.output.push_str(&text);
         trim_to_recent_chars(session, self.output_limit.load(Ordering::Relaxed));
         drop(sessions);
         self.output_notify.notify_waiters();
+        Some(TerminalOutputEvent {
+            session_id: session_id.to_string(),
+            output: text,
+            start_cursor,
+            cursor,
+        })
     }
 
     pub async fn set_encoding(&self, session_id: &str, encoding: &str) -> Result<(), String> {
@@ -210,7 +231,7 @@ impl TerminalControlState {
         let output = tail_chars(&session.output, requested_chars);
         let output_chars = output.chars().count();
         let truncated = session.dropped_chars > 0 || output_chars < available_chars;
-        let end_cursor = session.dropped_chars + available_chars;
+        let end_cursor = session.cursor;
 
         Ok(TerminalOutputSnapshot {
             session_id: session_id.to_string(),
@@ -227,7 +248,7 @@ impl TerminalControlState {
         let session = sessions
             .get(session_id)
             .ok_or_else(|| "Session not found".to_string())?;
-        Ok(session.dropped_chars + session.output.chars().count())
+        Ok(session.cursor)
     }
 
     pub async fn read_output_delta(
@@ -242,7 +263,7 @@ impl TerminalControlState {
             .ok_or_else(|| "Session not found".to_string())?;
         let available_chars = session.output.chars().count();
         let start_cursor = session.dropped_chars;
-        let end_cursor = start_cursor + available_chars;
+        let end_cursor = session.cursor;
 
         if cursor > end_cursor {
             return Err("The specified cursor is past the current output position".to_string());
@@ -390,13 +411,100 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn output_events_share_snapshot_cursors_across_protocols_and_retention() {
+        for protocol in [
+            TerminalProtocol::Ssh,
+            TerminalProtocol::Serial,
+            TerminalProtocol::Telnet,
+        ] {
+            let state = TerminalControlState::with_output_limit(3);
+            state
+                .register_session("s1".into(), protocol, "test".into())
+                .await;
+            let first = state.append_output("s1", "A😀".as_bytes()).await.unwrap();
+            let second = state.append_output("s1", "界BC".as_bytes()).await.unwrap();
+            assert_eq!((first.start_cursor, first.cursor), (0, 2));
+            assert_eq!((second.start_cursor, second.cursor), (2, 5));
+            assert_eq!(second.output, "界BC");
+            let delta = state
+                .read_output_delta("s1", first.cursor, 100)
+                .await
+                .unwrap();
+            assert_eq!(delta.output, second.output);
+            assert_eq!(
+                (delta.start_cursor, delta.cursor),
+                (second.start_cursor, second.cursor)
+            );
+            let snapshot = state.read_output("s1", 100).await.unwrap();
+            assert_eq!(snapshot.output, "界BC");
+            assert!(snapshot.truncated);
+            assert_eq!(snapshot.cursor, second.cursor);
+            assert_eq!(state.cursor("s1").await.unwrap(), second.cursor);
+            assert_eq!(
+                serde_json::to_value(second).unwrap(),
+                serde_json::json!({
+                    "session_id": "s1", "output": "界BC", "start_cursor": 2, "cursor": 5
+                })
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn event_includes_output_dropped_from_retention_by_the_same_append() {
+        let state = TerminalControlState::with_output_limit(2);
+        state
+            .register_session("s1".into(), TerminalProtocol::Serial, "test".into())
+            .await;
+        let event = state.append_output("s1", "A😀BC".as_bytes()).await.unwrap();
+        assert_eq!(event.output, "A😀BC");
+        assert_eq!((event.start_cursor, event.cursor), (0, 4));
+        let snapshot = state.read_output("s1", 100).await.unwrap();
+        assert_eq!(snapshot.output, "BC");
+        assert_eq!((snapshot.start_cursor, snapshot.cursor), (2, 4));
+    }
+
+    #[tokio::test]
+    async fn split_bytes_and_encoding_changes_use_the_same_event_and_snapshot_decoder() {
+        let state = TerminalControlState::new();
+        state
+            .register_session("s1".into(), TerminalProtocol::Ssh, "test".into())
+            .await;
+        let encoded = "😀".as_bytes();
+        let partial = state.append_output("s1", &encoded[..2]).await.unwrap();
+        assert_eq!(partial.output, "");
+        assert_eq!((partial.start_cursor, partial.cursor), (0, 0));
+        let complete = state.append_output("s1", &encoded[2..]).await.unwrap();
+        assert_eq!(complete.output, "😀");
+        assert_eq!((complete.start_cursor, complete.cursor), (0, 1));
+        let _ = state.append_output("s1", &[0xe7]).await;
+        state.set_encoding("s1", "shift-jis").await.unwrap();
+        let shift_jis = encode_shift_jis("あ");
+        let partial = state.append_output("s1", &shift_jis[..1]).await.unwrap();
+        assert_eq!(partial.output, "");
+        let complete = state.append_output("s1", &shift_jis[1..]).await.unwrap();
+        assert_eq!(complete.output, "あ");
+        assert_eq!((complete.start_cursor, complete.cursor), (1, 2));
+        let snapshot = state.read_output("s1", 100).await.unwrap();
+        assert_eq!(snapshot.output, "😀あ");
+        assert_eq!(snapshot.cursor, complete.cursor);
+    }
+
+    #[tokio::test]
+    async fn unknown_session_produces_no_output_event() {
+        assert!(TerminalControlState::new()
+            .append_output("missing", b"ignored")
+            .await
+            .is_none());
+    }
+
+    #[tokio::test]
     async fn output_is_trimmed_to_recent_chars() {
         let state = TerminalControlState::with_output_limit(5);
         state
             .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
             .await;
 
-        state.append_output("s1", "abcdef".as_bytes()).await;
+        let _ = state.append_output("s1", "abcdef".as_bytes()).await;
 
         let snapshot = state.read_output("s1", 10).await.unwrap();
         assert_eq!(snapshot.output, "bcdef");
@@ -419,7 +527,7 @@ mod tests {
             )
             .await;
 
-        state.append_output("s1", &encode_shift_jis(text)).await;
+        let _ = state.append_output("s1", &encode_shift_jis(text)).await;
 
         let snapshot = state.read_output("s1", 100).await.unwrap();
         assert_eq!(snapshot.output, text);
@@ -439,8 +547,8 @@ mod tests {
             )
             .await;
 
-        state.append_output("s1", b"abc").await;
-        state.append_output("s1", &encode_euc_jp(text)).await;
+        let _ = state.append_output("s1", b"abc").await;
+        let _ = state.append_output("s1", &encode_euc_jp(text)).await;
 
         let snapshot = state.read_output_delta("s1", 3, 100).await.unwrap();
         assert_eq!(snapshot.output, text);
@@ -461,8 +569,8 @@ mod tests {
             )
             .await;
 
-        state.append_output("s1", &encoded[..1]).await;
-        state.append_output("s1", &encoded[1..]).await;
+        let _ = state.append_output("s1", &encoded[..1]).await;
+        let _ = state.append_output("s1", &encoded[1..]).await;
 
         let snapshot = state.read_output("s1", 100).await.unwrap();
         assert_eq!(snapshot.output, "α");
@@ -476,9 +584,9 @@ mod tests {
         state
             .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
             .await;
-        state.append_output("s1", b"abc").await;
+        let _ = state.append_output("s1", b"abc").await;
         state.set_encoding("s1", "shift-jis").await.unwrap();
-        state.append_output("s1", &encoded).await;
+        let _ = state.append_output("s1", &encoded).await;
 
         let snapshot = state.read_output("s1", 100).await.unwrap();
         assert_eq!(snapshot.output, "abcα");
@@ -499,7 +607,7 @@ mod tests {
                 Some("unknown".into()),
             )
             .await;
-        state.append_output("s1", "alpha".as_bytes()).await;
+        let _ = state.append_output("s1", "alpha".as_bytes()).await;
 
         let snapshot = state.read_output("s1", 100).await.unwrap();
         assert_eq!(snapshot.output, "alpha");
@@ -570,7 +678,7 @@ mod tests {
             .register_session("s1".into(), TerminalProtocol::Serial, "COM1".into())
             .await;
 
-        state.append_output("s1", "example".as_bytes()).await;
+        let _ = state.append_output("s1", "example".as_bytes()).await;
 
         let snapshot = state.read_output("s1", 2).await.unwrap();
         assert_eq!(snapshot.output, "le");
@@ -585,7 +693,7 @@ mod tests {
         state
             .register_session("s1".into(), TerminalProtocol::Telnet, "host:23".into())
             .await;
-        state.append_output("s1", b"login: ").await;
+        let _ = state.append_output("s1", b"login: ").await;
         state.mark_disconnected("s1").await;
 
         let sessions = state.list_sessions().await;
@@ -602,7 +710,7 @@ mod tests {
         state
             .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
             .await;
-        state.append_output("s1", "abcalpha".as_bytes()).await;
+        let _ = state.append_output("s1", "abcalpha".as_bytes()).await;
 
         let snapshot = state.read_output_delta("s1", 3, 100).await.unwrap();
 
@@ -618,7 +726,7 @@ mod tests {
         state
             .register_session("s1".into(), TerminalProtocol::Serial, "COM1".into())
             .await;
-        state.append_output("s1", "abcdef".as_bytes()).await;
+        let _ = state.append_output("s1", "abcdef".as_bytes()).await;
 
         let snapshot = state.read_output_delta("s1", 0, 100).await.unwrap();
 
@@ -634,7 +742,7 @@ mod tests {
         state
             .register_session("s1".into(), TerminalProtocol::Serial, "COM1".into())
             .await;
-        state.append_output("s1", "abcdef".as_bytes()).await;
+        let _ = state.append_output("s1", "abcdef".as_bytes()).await;
 
         let snapshot = state.read_output_delta("s1", 3, 100).await.unwrap();
 
@@ -665,7 +773,7 @@ mod tests {
             .await;
         let output = format!("{}\r\n", "x".repeat(70)).repeat(500);
         assert_eq!(output.chars().count(), 36_000);
-        state.append_output("s1", output.as_bytes()).await;
+        let _ = state.append_output("s1", output.as_bytes()).await;
 
         let snapshot = state.read_output("s1", MAX_OUTPUT_LIMIT).await.unwrap();
         assert_eq!(snapshot.output, output);
@@ -682,7 +790,7 @@ mod tests {
         state
             .register_session("s1".into(), TerminalProtocol::Serial, "COM1".into())
             .await;
-        state
+        let _ = state
             .append_output("s1", format!("古😀{retained}").as_bytes())
             .await;
 
@@ -719,7 +827,7 @@ mod tests {
             .await;
         let output = format!("😀{}\x1b[31m😀!\r\n", "界".repeat(MAX_OUTPUT_LIMIT - 8));
         let total_chars = output.chars().count();
-        state.append_output("s1", output.as_bytes()).await;
+        let _ = state.append_output("s1", output.as_bytes()).await;
 
         let snapshot = state.read_output("s1", MAX_OUTPUT_LIMIT).await.unwrap();
         let dropped_chars = total_chars - MAX_OUTPUT_LIMIT;

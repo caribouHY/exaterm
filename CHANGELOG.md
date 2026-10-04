@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Preserved terminal output arriving during the final restoration delta read, and prevented duplicate display of overlapping output events.
 - Preserved retained terminal history when moving tabs between windows by separating the restoration character limit from the scrollback line setting.
 - Selected server-supported RSA SHA-2 signatures for SSH public key authentication, including automatic authentication and jump hosts, while retaining legacy RSA/SHA-1 compatibility when SHA-2 support is unknown or unavailable.
 - Protected actively recorded log files from bulk deletion through older automatic log history entries, including alternate Windows path spellings.

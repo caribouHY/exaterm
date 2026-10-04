@@ -2858,7 +2858,7 @@ async fn service_reads_terminal_output_with_multibyte_tail() {
         .terminals
         .register_session("s1".into(), TerminalProtocol::Serial, "COM1".into())
         .await;
-    runtime
+    let _ = runtime
         .terminals
         .append_output("s1", "example".as_bytes())
         .await;
@@ -2887,7 +2887,7 @@ async fn service_reads_terminal_output_in_delta_mode() {
         .terminals
         .register_session("s1".into(), TerminalProtocol::Serial, "COM1".into())
         .await;
-    runtime
+    let _ = runtime
         .terminals
         .append_output("s1", "abcalpha".as_bytes())
         .await;
@@ -2921,7 +2921,7 @@ async fn service_reads_non_utf8_terminal_output() {
             Some("shift-jis".into()),
         )
         .await;
-    runtime
+    let _ = runtime
         .terminals
         .append_output("s1", &encoding_rs::SHIFT_JIS.encode("αβγδε").0.into_owned())
         .await;
@@ -2949,7 +2949,7 @@ async fn service_waits_for_matching_terminal_output() {
     let terminals = runtime.terminals.clone();
     tokio::spawn(async move {
         time::sleep(Duration::from_millis(10)).await;
-        terminals.append_output("s1", b"router#").await;
+        let _ = terminals.append_output("s1", b"router#").await;
     });
     let service = McpTerminalService::new(runtime);
 
@@ -3007,7 +3007,7 @@ async fn service_wait_timeout_returns_latest_delta() {
         .terminals
         .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
         .await;
-    runtime.terminals.append_output("s1", b"partial").await;
+    let _ = runtime.terminals.append_output("s1", b"partial").await;
     let service = McpTerminalService::new(runtime);
 
     let result = service
@@ -3034,11 +3034,11 @@ async fn service_wait_without_cursor_starts_from_current_output() {
         .terminals
         .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
         .await;
-    runtime.terminals.append_output("s1", b"old").await;
+    let _ = runtime.terminals.append_output("s1", b"old").await;
     let terminals = runtime.terminals.clone();
     tokio::spawn(async move {
         time::sleep(Duration::from_millis(10)).await;
-        terminals.append_output("s1", b"new").await;
+        let _ = terminals.append_output("s1", b"new").await;
     });
     let service = McpTerminalService::new(runtime);
 

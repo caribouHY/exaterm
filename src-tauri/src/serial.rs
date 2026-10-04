@@ -427,9 +427,9 @@ pub(crate) async fn connect(
         process_serial_output(
             output_rx,
             |data| async move {
-                // Initial sync relies on the snapshot cursor advancing before its live event is visible.
-                terminals.append_output(sid, &data).await;
-                let _ = app.emit(&format!("serial://data/{}", sid), data);
+                if let Some(output) = terminals.append_output(sid, &data).await {
+                    let _ = app.emit(&format!("serial://data/{}", sid), output);
+                }
             },
             |error| async move {
                 let _ = app.emit(&format!("serial://error/{}", sid), error);
@@ -661,7 +661,7 @@ mod tests {
                     entered_ref.notify_one();
                     resume_ref.notified().await;
                 }
-                terminals_ref.append_output(session_ref, &data).await;
+                let _ = terminals_ref.append_output(session_ref, &data).await;
                 events_ref
                     .lock()
                     .await

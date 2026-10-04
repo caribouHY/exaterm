@@ -50,6 +50,10 @@ Major frontend areas are:
 
 Terminal views may remount when a tab moves between windows, but a move must not disconnect or recreate the backend session. The destination restores bounded recent output from the backend and resumes live output handling.
 
+The backend decodes retained output once and tags protocol output events with the same Unicode code-point cursor ranges used by snapshots and deltas. SSH stdout and extended data share the session decoder and cursor. Serial/Telnet errors and the local SSH queue-overflow notice are non-retained strings. The frontend applies only ranges beyond its displayed cursor, including events that cross the final restoration response; equal text at different cursors is separate output.
+
+Restoration requests the backend retention ceiling and performs at most five initial delta reads. Remaining events continue in scheduled tasks, each writing at most 20,000 code points and processing at most 256 events. Cursor gaps use one delta request at a time, with at most five reads before yielding. A failed or non-advancing recovery keeps pending events and retries when another event arrives. Backend retention truncation may advance past unavailable history; the restoration drain limit never discards pending events. Disposal cancels scheduled continuations and ignores late results without changing the backend session.
+
 ### GUI Connection Attempts
 
 The connection-attempt controller owns the authoritative state of one GUI connection attempt. It applies transitions synchronously and publishes a read-only snapshot to React. The dialog owns editable form values and renders the snapshot; it does not maintain a second attempt reducer or execution flags. Connection inputs are captured when an attempt starts.

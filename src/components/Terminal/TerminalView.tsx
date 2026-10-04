@@ -38,7 +38,6 @@ import {
   createTerminalOutputSyncController,
   type TerminalOutputEventPayload,
   type TerminalOutputSnapshot,
-  type TerminalOutputSyncController,
 } from "./terminalOutputSyncController";
 import { getTerminalDecorationProfile } from "./terminalDecorationProfiles";
 import { getTerminalPromptColor, TERMINAL_DECORATION_COLORS } from "./terminalDecorationTheme";
@@ -150,7 +149,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     connectionType,
     isConnected,
     isActive,
-    encoding,
     isManualLogging,
     isManualLoggingPaused,
     terminalConfig,
@@ -168,7 +166,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitControllerRef = useRef<TerminalFitController | null>(null);
-  const outputSyncControllerRef = useRef<TerminalOutputSyncController | null>(null);
   const isConnectedRef = useRef(isConnected);
   const isActiveRef = useRef(isActive);
   const isManualLoggingRef = useRef(isManualLogging);
@@ -308,10 +305,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     }),
     [clearBuffer, clearViewport, manualLogBufferWriter, sessionId]
   );
-
-  useEffect(() => {
-    outputSyncControllerRef.current?.setEncoding(encoding);
-  }, [encoding]);
 
   useEffect(() => {
     manualLogSanitizerRef.current = createTerminalLogSanitizer(
@@ -558,7 +551,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     };
     const outputSyncController = createTerminalOutputSyncController({
       sessionId,
-      encoding,
       channels: [
         { event: `${protocol.dataEvent}/${sessionId}`, replayedBySnapshot: true },
         {
@@ -582,7 +574,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
           }),
       },
     });
-    outputSyncControllerRef.current = outputSyncController;
     void outputSyncController.start().catch(() => {});
 
     // Resize handling
@@ -602,9 +593,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       fitController.dispose();
       terminalElement.removeEventListener("contextmenu", handleContextMenu);
       outputSyncController.dispose();
-      if (outputSyncControllerRef.current === outputSyncController) {
-        outputSyncControllerRef.current = null;
-      }
       if (isManualLoggingRef.current) {
         const logText = manualLogSanitizerRef.current.flush();
         void manualLogBufferWriter.flush(logText).catch(() => {});
