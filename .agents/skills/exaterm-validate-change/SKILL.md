@@ -63,6 +63,10 @@ use the `skill-creator` workflow and run its `quick_validate.py` against
 | Installer, sidecar, CLI binary, runtime packaging, Tauri bundle integration   | Relevant frontend/Rust validation plus `pnpm run tauri build --debug`                                                                                  |
 | Documentation-only, agent-guidance-only, skill-only                           | Run `pnpm run format` for changed Markdown/YAML when practical; no full app build by default; check paths, frontmatter, and exact content requirements |
 
+## Change Completion
+
+Before completing any change, confirm that `CHANGELOG.md` has the required `Unreleased` entry or report why no entry is needed under `AGENTS.md`. Repeat this check against the final publication diff before opening a PR.
+
 ## PR-Ready Validation
 
 Before publishing or reporting a PR-ready change:

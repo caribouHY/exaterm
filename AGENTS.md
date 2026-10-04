@@ -24,6 +24,7 @@ Read `docs/development/DEVELOPMENT_GUIDE.md` before code changes or Git operatio
 
 ## Codebase Conventions
 
+- Record user-facing features, fixes, behavior changes, and compatibility changes in `CHANGELOG.md` under `Unreleased` in the same change. Internal-only refactors, tests, documentation, and Skills normally need no entry; confirm the reason before completing the task.
 - Keep Rust config structs in `src-tauri/src/config.rs` synchronized with TypeScript config types in `src/types/index.ts`.
 - When adding or renaming Tauri commands, update both the Rust command implementation and the registration list in `src-tauri/src/lib.rs`.
 - When frontend text changes, update both `src/locales/en.json` and `src/locales/ja.json`.
@@ -36,3 +37,4 @@ Read `docs/development/DEVELOPMENT_GUIDE.md` before code changes or Git operatio
 - Use `.agents/skills/exaterm-ui-change/SKILL.md` for React, CSS, layout, dialog, menu, design-token, or visual changes.
 - Use `.agents/skills/exaterm-validate-change/SKILL.md` to choose and report validation commands.
 - Use `.agents/skills/exaterm-release-prep/SKILL.md` for release version and changelog preparation.
+- Use `.agents/skills/publish-exaterm-pr/SKILL.md` for PR publication; this repository procedure takes precedence over the user-level publication Skill.
