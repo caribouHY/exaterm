@@ -2,6 +2,17 @@
 
 This document describes the current runtime architecture and durable ownership boundaries of ExaTerm. Update it when a change alters responsibilities across the React frontend, Rust backend, workspace model, protocol sessions, logging, or external-control interfaces.
 
+## Reading by Ownership
+
+Start with [Design Principles](#design-principles) and the sections for the responsibilities being changed. Follow related ownership boundaries when needed; a local change does not require the complete runtime map.
+
+- **Protocol connection, cancellation, or finalization:** [Backend Runtime](#backend-runtime), [Terminal Session Flow](#terminal-session-flow), and [GUI Connection Attempts](#gui-connection-attempts).
+- **CLI/MCP operation results, JSON contracts, or permissions:** [Backend Runtime](#backend-runtime) and [External Control, MCP, and CLI](#external-control-mcp-and-cli). Connection operations also use the connection sections above; focus or placement uses workspace ownership; log operations use logging.
+- **Tab placement, moving tabs, or window lifecycle:** [Workspace and Window Ownership](#workspace-and-window-ownership); also [Frontend Runtime](#frontend-runtime) when changing React projections and [Terminal Session Flow](#terminal-session-flow) when restoring output.
+- **Log capture or lifecycle:** [Logging](#logging); also workspace ownership for cross-window movement and external control for client operations.
+- **Configuration storage, credentials, or trust:** [Backend Runtime](#backend-runtime) and [Data and Storage](#data-and-storage); also terminal session flow for SSH host-key policy.
+- **Frontend composition:** [Frontend Runtime](#frontend-runtime). Visual-only changes use the relevant sections of [CSS Architecture](CSS_ARCHITECTURE.md) instead of the full runtime architecture.
+
 ## System Shape
 
 ExaTerm is a Windows-focused Tauri v2 desktop application.

@@ -12,8 +12,11 @@ ExaTerm is a Windows-focused Tauri v2 desktop app with:
 - User and contributor documentation under `docs/`
 - Agent workflows under `.agents/skills/`
 
-Read `docs/development/ARCHITECTURE.md` before changing behavior across frontend/backend, workspace/window, session/logging, or external-control boundaries.
-Read `docs/development/DEVELOPMENT_GUIDE.md` before code changes or Git operations, especially branch creation, staging, committing, pushing, or opening pull requests.
+Read only the documentation sections relevant to the task; expand to related sections when the change affects their ownership or contracts.
+
+- For runtime ownership or frontend/backend boundary changes, start with `Reading by Ownership` in `docs/development/ARCHITECTURE.md`, then read its selected sections. Expand when another owner or contract is affected; do not default to the whole document for a local change.
+- Before code edits or Git operations, read `Branches and Commits` in `docs/development/DEVELOPMENT_GUIDE.md` and confirm the working branch; also read `Pull Request Checks` for publication. Read `Setup` only for dependency setup and `Updater Signing` only for updater/release signing changes.
+- For validation, use the validation Skill below, including its optimized-runtime reference for protocol setup, cancellation, timeout, or Tauri async call-chain changes.
 
 ## Non-Negotiable Rules
 
@@ -24,6 +27,8 @@ Read `docs/development/DEVELOPMENT_GUIDE.md` before code changes or Git operatio
 
 ## Codebase Conventions
 
+- Record user-facing features, fixes, behavior changes, and compatibility changes in `CHANGELOG.md` under `Unreleased` in the same change. Internal-only refactors, tests, documentation, and Skills normally need no entry; confirm the reason before completing the task.
+- For release preparation, verify those notes under the target release heading and leave `Unreleased` empty; do not duplicate the moved notes in `Unreleased`.
 - Keep Rust config structs in `src-tauri/src/config.rs` synchronized with TypeScript config types in `src/types/index.ts`.
 - When adding or renaming Tauri commands, update both the Rust command implementation and the registration list in `src-tauri/src/lib.rs`.
 - When frontend text changes, update both `src/locales/en.json` and `src/locales/ja.json`.
@@ -34,5 +39,7 @@ Read `docs/development/DEVELOPMENT_GUIDE.md` before code changes or Git operatio
 ## Workflow Routing
 
 - Use `.agents/skills/exaterm-ui-change/SKILL.md` for React, CSS, layout, dialog, menu, design-token, or visual changes.
+- For the existing ExaTerm UI, use the project UI Skill rather than generic design, Tailwind, or shadcn Skills. Use generic creative Skills only for separately requested assets or independent designs.
 - Use `.agents/skills/exaterm-validate-change/SKILL.md` to choose and report validation commands.
 - Use `.agents/skills/exaterm-release-prep/SKILL.md` for release version and changelog preparation.
+- Use `.agents/skills/exaterm-publish-pr/SKILL.md` for PR publication; this repository procedure takes precedence over the user-level publication Skill.

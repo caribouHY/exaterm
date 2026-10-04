@@ -59,15 +59,26 @@ xterm.js owns the `.xterm*` DOM. Overrides belong only in `src/components/Termin
 
 CSS migration pull requests must preserve these behaviors:
 
+Automated CSS checks do not prove GUI appearance, focus behavior, active-session preservation, or connected terminal behavior. Migration pull requests that move active styles require proportionate GUI and session checks in addition to automated validation.
+
+### Terminal rendering
+
 - `TerminalView` and xterm remain mounted. Styling work must not clear buffers, disconnect sessions, recreate sessions, remount terminal views, or issue resize operations that are unnecessary for an actual size change.
+
+### Settings layout
+
 - At normal window widths, `.settings-content` owns Settings scrolling.
 - At compact window widths of `760px` or less, `.settings-layout` owns Settings scrolling.
 - `SettingsFooter` remains outside the scrolling region and stays at the bottom of the Settings panel.
+
+### Overlays and motion
+
 - Overlays retain their stacking relationship, focus containment or restoration, keyboard behavior, and dismissal behavior. z-index changes must be evaluated as a complete overlay stack rather than as isolated numbers.
 - Motion changes preserve existing feedback and add a coherent `prefers-reduced-motion` path. Reduced motion must not remove state visibility or keyboard feedback.
-- Terminal buffers, scrollback, session logs, connection targets, usernames, prompts, command output, and API keys remain sensitive. Styling, examples, diagnostics, screenshots, generated content, and CSS attributes must not expose or persist them.
 
-Automated CSS checks do not prove GUI appearance, focus behavior, active-session preservation, or connected terminal behavior. Migration pull requests that move active styles require proportionate GUI and session checks in addition to automated validation.
+### Sensitive data
+
+- Terminal buffers, scrollback, session logs, connection targets, usernames, prompts, command output, and API keys remain sensitive. Styling, examples, diagnostics, screenshots, generated content, and CSS attributes must not expose or persist them.
 
 ## Convention checks
 
