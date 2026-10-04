@@ -67,6 +67,10 @@ use the `skill-creator` workflow and run its `quick_validate.py` against
 
 Before completing any change, confirm that `CHANGELOG.md` has the required `Unreleased` entry or report why no entry is needed under `AGENTS.md`. Repeat this check against the final publication diff before opening a PR.
 
+## Optimized Protocol Runtime
+
+When changing protocol connection setup, cancellation, timeouts, or a Tauri command's async call chain, also run `pnpm run tauri build --no-bundle` and exercise the affected command in `src-tauri/target/release/exaterm.exe`. Verify invalid input and a refused local connection return errors without terminating the app; verify successful connection and cancellation when an appropriate endpoint is available. Preserve the heap allocation boundary around deeply nested protocol futures. See only `Optimized Tauri Runtime Checks` in `docs/development/DEVELOPMENT_GUIDE.md` for the rationale. Debug builds and unit tests do not replace this runtime check; report any unperformed runtime scenarios.
+
 ## PR-Ready Validation
 
 Before publishing or reporting a PR-ready change:

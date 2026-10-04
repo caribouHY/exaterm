@@ -12,8 +12,11 @@ ExaTerm is a Windows-focused Tauri v2 desktop app with:
 - User and contributor documentation under `docs/`
 - Agent workflows under `.agents/skills/`
 
-Read `docs/development/ARCHITECTURE.md` before changing behavior across frontend/backend, workspace/window, session/logging, or external-control boundaries.
-Read `docs/development/DEVELOPMENT_GUIDE.md` before code changes or Git operations, especially branch creation, staging, committing, pushing, or opening pull requests.
+Read only the documentation sections relevant to the task; expand to related sections when the change affects their ownership or contracts.
+
+- For runtime ownership or frontend/backend boundary changes, read `Design Principles` and the affected sections of `docs/development/ARCHITECTURE.md`: connection attempts, workspace/windows, terminal sessions, logging, external control, or data storage.
+- Before Git operations, read `Branches and Commits` in `docs/development/DEVELOPMENT_GUIDE.md`; also read `Pull Request Checks` for publication. Read `Setup` only for dependency setup and `Updater Signing` only for updater/release signing changes.
+- For validation, use the validation Skill below. Protocol setup, cancellation, timeout, or Tauri async call-chain changes additionally require `Optimized Tauri Runtime Checks` in the development guide.
 
 ## Non-Negotiable Rules
 

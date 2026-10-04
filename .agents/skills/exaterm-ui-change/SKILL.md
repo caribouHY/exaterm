@@ -7,7 +7,7 @@ description: Change the existing ExaTerm React UI, CSS, or design tokens while p
 
 ## Prepare
 
-- Before changing CSS, tokens, shared UI, overlays, or motion, read `docs/development/CSS_ARCHITECTURE.md`.
+- Before changing CSS, tokens, shared UI, overlays, or motion, read `Direction` and only the relevant sections of `docs/development/CSS_ARCHITECTURE.md`: `Ownership` for the affected global, shared, feature, or xterm styles; `Migration contracts` for tokens, overlays, stacking, or motion; `Convention checks` for stylesheet registration or checker changes. Read `Staged migration` only for migration work.
 - Inspect the target React component, its CSS, the layer order in `src/styles/tokens.css`, and the relevant definitions in `src/styles/tokens/semantic.css` or `src/styles/tokens/components.css` before editing.
 - Preserve the current VS Code-inspired direction: compact, restrained, task-oriented, and suitable for repeated terminal work.
 - Treat screenshots as layout evidence. Do not copy terminal output, connection targets, usernames, prompts, logs, or secrets into examples or diagnostics.
