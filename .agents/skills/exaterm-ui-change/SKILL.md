@@ -1,6 +1,6 @@
 ---
 name: exaterm-ui-change
-description: Apply ExaTerm-specific desktop UI, React, and CSS conventions while preserving terminal sessions and sensitive-data boundaries. Use when Codex changes ExaTerm layouts, dialogs, menus, controls, styling, design tokens, component CSS, visual states, or screenshot-led UI behavior.
+description: Change the existing ExaTerm React UI, CSS, or design tokens while preserving terminal state. Excludes standalone creative assets.
 ---
 
 # ExaTerm UI Change

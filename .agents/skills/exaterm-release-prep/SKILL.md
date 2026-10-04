@@ -1,6 +1,6 @@
 ---
 name: exaterm-release-prep
-description: Prepare ExaTerm release version bumps and release notes. Use when Codex is asked to prepare a new ExaTerm release, update release version metadata, move changelog entries from Unreleased to a release heading, verify release-preparation files, or decide what is in scope before commits, tags, artifacts, pushes, or pull requests.
+description: Prepare ExaTerm release versions and move Unreleased notes into a release heading. Excludes routine changelog entries for individual changes.
 ---
 
 # ExaTerm Release Prep

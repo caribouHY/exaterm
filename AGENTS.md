@@ -35,6 +35,7 @@ Read `docs/development/DEVELOPMENT_GUIDE.md` before code changes or Git operatio
 ## Workflow Routing
 
 - Use `.agents/skills/exaterm-ui-change/SKILL.md` for React, CSS, layout, dialog, menu, design-token, or visual changes.
+- For the existing ExaTerm UI, use the project UI Skill rather than generic design, Tailwind, or shadcn Skills. Use generic creative Skills only for separately requested assets or independent designs.
 - Use `.agents/skills/exaterm-validate-change/SKILL.md` to choose and report validation commands.
 - Use `.agents/skills/exaterm-release-prep/SKILL.md` for release version and changelog preparation.
 - Use `.agents/skills/publish-exaterm-pr/SKILL.md` for PR publication; this repository procedure takes precedence over the user-level publication Skill.

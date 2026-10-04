@@ -1,6 +1,6 @@
 ---
 name: exaterm-validate-change
-description: Standardize ExaTerm validation command selection and reporting. Use when Codex needs to choose, run, or report tests, formatting checks, builds, or PR-ready validation for changes in the ExaTerm repository, including frontend, backend, Tauri, documentation, agent guidance, and skill-only changes.
+description: Select, run, and report validation for ExaTerm changes, including code, documentation, and Skills. Use before marking changes complete or PR-ready.
 ---
 
 # ExaTerm Validate Change
