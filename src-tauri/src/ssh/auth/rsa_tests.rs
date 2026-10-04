@@ -12,8 +12,12 @@ use russh::{client, server, Channel};
 use tokio::io::{AsyncRead, AsyncWrite, DuplexStream, ReadBuf};
 
 fn generated_key(kind: &str) -> PrivateKey {
-    let dir = std::env::temp_dir().join(format!("exaterm-auth-test-{}", uuid::Uuid::new_v4()));
-    fs::create_dir_all(&dir).unwrap();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("test-ssh-auth");
+    fs::create_dir_all(&root).unwrap();
+    let dir = root.join(uuid::Uuid::new_v4().to_string());
+    fs::create_dir(&dir).unwrap();
     let path = dir.join("key");
     let status = Command::new("ssh-keygen")
         .args([
