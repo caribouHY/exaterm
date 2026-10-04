@@ -147,47 +147,24 @@ fn active_log_keys(sessions: &HashMap<String, LogSession>) -> HashSet<ActiveLogK
         .collect()
 }
 
-#[cfg(windows)]
-fn normalized_paths_equal(left: &Path, right: &Path) -> Result<bool, String> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Globalization::{CompareStringOrdinal, CSTR_EQUAL};
-
-    let left: Vec<u16> = left.as_os_str().encode_wide().collect();
-    let right: Vec<u16> = right.as_os_str().encode_wide().collect();
-    let left_len = i32::try_from(left.len()).map_err(|_| "The log path is too long")?;
-    let right_len = i32::try_from(right.len()).map_err(|_| "The log path is too long")?;
-    // Both UTF-16 buffers remain alive for the explicit lengths passed to Windows.
-    let result =
-        unsafe { CompareStringOrdinal(left.as_ptr(), left_len, right.as_ptr(), right_len, 1) };
-    if result == 0 {
-        return Err(format!(
-            "Failed to compare log paths: {}",
-            std::io::Error::last_os_error()
-        ));
-    }
-    Ok(result == CSTR_EQUAL)
-}
-
-#[cfg(not(windows))]
-fn normalized_paths_equal(left: &Path, right: &Path) -> Result<bool, String> {
-    Ok(left == right)
-}
-
 fn protected_log_history_rows(
     sessions: &[LogSession],
     active_keys: &HashSet<ActiveLogKey>,
     delete_auto_files: bool,
 ) -> Result<Vec<bool>, String> {
-    let active_paths = if delete_auto_files {
+    // Keep handles open during comparison so file identities stay valid and aliases,
+    // including hard links, cannot bypass protection through different path strings.
+    let active_files = if delete_auto_files {
         active_keys
             .iter()
             .map(|key| {
                 fs::canonicalize(&key.file_path)
+                    .and_then(same_file::Handle::from_path)
                     .map_err(|e| format!("Failed to verify an active log file: {}", e))
             })
-            .collect::<Result<Vec<_>, _>>()?
+            .collect::<Result<HashSet<_>, _>>()?
     } else {
-        Vec::new()
+        HashSet::new()
     };
 
     sessions
@@ -196,20 +173,16 @@ fn protected_log_history_rows(
             if is_session_active(session, active_keys) {
                 return Ok(true);
             }
-            if active_paths.is_empty()
+            if active_files.is_empty()
                 || !matches!(session.log_mode.as_str(), "auto" | "manual")
                 || !Path::new(&session.file_path).exists()
             {
                 return Ok(false);
             }
-            let path = fs::canonicalize(&session.file_path)
+            let file = fs::canonicalize(&session.file_path)
+                .and_then(same_file::Handle::from_path)
                 .map_err(|e| format!("Failed to verify the log file: {}", e))?;
-            for active_path in &active_paths {
-                if normalized_paths_equal(&path, active_path)? {
-                    return Ok(true);
-                }
-            }
-            Ok(false)
+            Ok(active_files.contains(&file))
         })
         .collect()
 }
@@ -1338,10 +1311,13 @@ mod tests {
         .unwrap();
         let subdir = dir.join("nested");
         fs::create_dir(&subdir).unwrap();
+        let linked_file = dir.join("linked.log");
+        fs::hard_link(&file, &linked_file).unwrap();
         let aliases = vec![
             dir.join(".").join("MixedCase.log"),
             subdir.join("..").join("MixedCase.log"),
             fs::canonicalize(&file).unwrap(),
+            linked_file,
         ];
         #[cfg(windows)]
         let aliases = {
@@ -1402,18 +1378,45 @@ mod tests {
     }
 
     #[cfg(windows)]
-    #[test]
-    fn normalized_windows_paths_compare_unicode_without_case() {
-        assert!(normalized_paths_equal(
-            Path::new(r"C:\logs\Écho.log"),
-            Path::new(r"c:\LOGS\éCHO.LOG")
+    #[tokio::test]
+    async fn bulk_delete_protects_unicode_case_alias_and_removes_distinct_file() {
+        let index_path = temp_index_path();
+        let dir = index_path.parent().unwrap().to_path_buf();
+        let state = LoggerState::with_paths(dir.clone(), index_path.clone());
+        let active_file = dir.join("Écho.log");
+        start_manual_log(
+            &state,
+            "manual".into(),
+            "ssh".into(),
+            "host".into(),
+            Some(active_file.to_string_lossy().into_owned()),
+            None,
         )
-        .unwrap());
-        assert!(!normalized_paths_equal(
-            Path::new(r"C:\logs\Écho.log"),
-            Path::new(r"C:\logs\other.log")
+        .await
+        .unwrap();
+        let alias = LogSession {
+            file_path: dir.join("éCHO.LOG").to_string_lossy().into_owned(),
+            ..sample_session("old-auto", "2026-04-25T10:00:00+09:00", "host")
+        };
+        upsert_log_session(&index_path, alias).unwrap();
+        let other_file = dir.join("other.log");
+        fs::write(&other_file, "inactive").unwrap();
+        upsert_log_session(
+            &index_path,
+            LogSession {
+                file_path: other_file.to_string_lossy().into_owned(),
+                ..sample_session("other-auto", "2026-04-25T10:00:00+09:00", "host")
+            },
         )
-        .unwrap());
+        .unwrap();
+
+        let result = delete_log_sessions(&state, true).await.unwrap();
+
+        assert_eq!(result.skipped_active_count, 2);
+        assert_eq!(result.removed_auto_file_count, 1);
+        assert!(active_file.exists());
+        assert!(!other_file.exists());
+        cleanup(&index_path);
     }
 
     #[tokio::test]

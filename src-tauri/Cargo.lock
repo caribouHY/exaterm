@@ -1542,6 +1542,7 @@ dependencies = [
  "reqwest 0.12.28",
  "rmcp",
  "russh",
+ "same-file",
  "schemars 1.2.1",
  "serde",
  "serde_json",
