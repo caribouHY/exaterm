@@ -430,8 +430,9 @@ pub(crate) async fn connect(
                 Ok(n) => {
                     let (data, response) = parser.parse(&buf[..n]);
                     if !data.is_empty() {
-                        read_terminals.append_output(&read_sid, &data).await;
-                        let _ = read_app.emit(&format!("telnet://data/{}", read_sid), data);
+                        if let Some(output) = read_terminals.append_output(&read_sid, &data).await {
+                            let _ = read_app.emit(&format!("telnet://data/{}", read_sid), output);
+                        }
                     }
                     if !response.is_empty() {
                         let writer = {

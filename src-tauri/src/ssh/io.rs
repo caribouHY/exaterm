@@ -17,7 +17,7 @@ use crate::ssh::authentication_prompt::SshAuthenticationPromptState;
 use crate::ssh::diagnostics::SshDiagnostic;
 use crate::ssh::host_key::{verify_server_key, HostKeyVerifier, SshHostKeyHandler};
 use crate::ssh::host_key_prompt::{SshHostKeyPromptState, SshHostKeyPrompter};
-use crate::terminal_control::TerminalControlState;
+use crate::terminal_control::{TerminalControlState, TerminalOutputEvent};
 use crate::workspace::{emit_workspace_updated, WorkspaceState};
 
 pub(super) struct SshSession {
@@ -28,8 +28,8 @@ pub(super) struct SshSession {
 
 pub(super) const SSH_READ_QUEUE_CAPACITY: usize = 1024;
 pub(super) const SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS: usize = 1024;
-const SSH_READ_DROP_STATUS_LINE: &[u8] =
-    b"\r\n[ExaTerm] Some SSH output was dropped because the read queue was full.\r\n";
+const SSH_READ_DROP_STATUS_LINE: &str =
+    "\r\n[ExaTerm] Some SSH output was dropped because the read queue was full.\r\n";
 pub(super) const SSH_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 pub(super) const SSH_AUTH_TIMEOUT: Duration = Duration::from_secs(30);
 pub(super) const SSH_CHANNEL_OPEN_TIMEOUT: Duration = Duration::from_secs(15);
@@ -137,7 +137,7 @@ fn enqueue_ssh_read(
                 );
                 let _ = app.emit(
                     &SshReadStreamKind::ExtendedData.event_name(session_id),
-                    SSH_READ_DROP_STATUS_LINE.to_vec(),
+                    SSH_READ_DROP_STATUS_LINE,
                 );
             }
         }
@@ -367,16 +367,29 @@ pub(super) fn spawn_ssh_read_processor(
     app: &AppHandle,
     session_id: &str,
     terminals: TerminalControlState,
-    mut read_rx: mpsc::Receiver<SshReadRequest>,
+    read_rx: mpsc::Receiver<SshReadRequest>,
 ) {
     let app = app.clone();
     let session_id = session_id.to_string();
     tokio::spawn(async move {
-        while let Some(request) = read_rx.recv().await {
-            terminals.append_output(&session_id, &request.data).await;
-            let _ = app.emit(&request.stream_kind.event_name(&session_id), request.data);
-        }
+        process_ssh_output(&terminals, &session_id, read_rx, |event, output| {
+            let _ = app.emit(event, output);
+        })
+        .await;
     });
+}
+
+pub(super) async fn process_ssh_output(
+    terminals: &TerminalControlState,
+    session_id: &str,
+    mut read_rx: mpsc::Receiver<SshReadRequest>,
+    mut emit: impl FnMut(&str, TerminalOutputEvent),
+) {
+    while let Some(request) = read_rx.recv().await {
+        if let Some(output) = terminals.append_output(session_id, &request.data).await {
+            emit(&request.stream_kind.event_name(session_id), output);
+        }
+    }
 }
 
 pub async fn ssh_write(

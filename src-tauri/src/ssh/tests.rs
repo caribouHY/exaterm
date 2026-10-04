@@ -15,8 +15,9 @@ use super::client_config::{algorithm_catalog, build_client_config, validate_algo
 use super::diagnostics::{ssh_diagnostic_event_name, ssh_progress_event_name};
 use super::host_key::{HostKeyHandling, HostKeyVerifier};
 use super::io::{
-    record_ssh_read_drop, run_ssh_channel_operation_with_timeout, run_ssh_operation_with_timeout,
-    ssh_read_overflow_event_name, SshReadDropNotice, SshReadDropState, SSH_CONNECT_TIMEOUT_ERROR,
+    process_ssh_output, record_ssh_read_drop, run_ssh_channel_operation_with_timeout,
+    run_ssh_operation_with_timeout, ssh_read_overflow_event_name, SshReadDropNotice,
+    SshReadDropState, SshReadRequest, SshReadStreamKind, SSH_CONNECT_TIMEOUT_ERROR,
     SSH_READ_DROP_NOTICE_INTERVAL_CHUNKS, SSH_WRITE_ERROR, SSH_WRITE_TIMEOUT_ERROR,
 };
 use super::private_key_requires_passphrase;
@@ -24,6 +25,41 @@ use super::profiles::normalize_profile_auth_method;
 use super::types::SshAuthRequest;
 use crate::config::{SshAlgorithmSelection, SshConfig};
 use crate::ssh_known_hosts::HostKeyCheckStatus;
+use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+
+#[tokio::test]
+async fn stdout_and_extended_data_share_fifo_decoding_and_snapshot_cursors() {
+    let terminals = TerminalControlState::new();
+    terminals
+        .register_session("s1".into(), TerminalProtocol::Ssh, "test".into())
+        .await;
+    let (tx, rx) = tokio::sync::mpsc::channel(3);
+    let encoded = "😀".as_bytes();
+    for (stream_kind, data) in [
+        (SshReadStreamKind::Data, encoded[..2].to_vec()),
+        (SshReadStreamKind::ExtendedData, encoded[2..].to_vec()),
+        (SshReadStreamKind::Data, b"tail".to_vec()),
+    ] {
+        tx.send(SshReadRequest { data, stream_kind }).await.unwrap();
+    }
+    drop(tx);
+    let mut events = Vec::new();
+    process_ssh_output(&terminals, "s1", rx, |name, output| {
+        events.push((name.to_string(), output));
+    })
+    .await;
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[0].0, "ssh://data/s1");
+    assert_eq!(events[0].1.output, "");
+    assert_eq!(events[1].0, "ssh://error/s1");
+    assert_eq!(events[1].1.output, "😀");
+    assert_eq!((events[1].1.start_cursor, events[1].1.cursor), (0, 1));
+    assert_eq!(events[2].0, "ssh://data/s1");
+    assert_eq!((events[2].1.start_cursor, events[2].1.cursor), (1, 5));
+    let snapshot = terminals.read_output("s1", 100).await.unwrap();
+    assert_eq!(snapshot.output, "😀tail");
+    assert_eq!(snapshot.cursor, events[2].1.cursor);
+}
 
 fn preferred_names<T: AsRef<str>>(items: &[T]) -> Vec<&str> {
     items.iter().map(|item| item.as_ref()).collect()
