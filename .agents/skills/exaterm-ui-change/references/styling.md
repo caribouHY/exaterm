@@ -3,8 +3,8 @@
 Read this only for CSS, tokens, shared UI, overlays or motion. `docs/development/CSS_ARCHITECTURE.md` owns the CSS structure and contracts; consult its matching sections rather than a duplicate rule list:
 
 - Always read `Direction` for existing-system styling work.
-- Read the affected `Ownership` subsections for global/token layers, shared controls/overlays, feature styles or xterm overrides. Inspect `src/styles/tokens.css` and relevant semantic/component token definitions for token work.
-- Read `Migration contracts` for terminal layout, Settings scrolling/footer, overlays, stacking or motion changes.
+- Choose the affected `Ownership` subsection by its exact heading: `Feature and component CSS` for local layout, `Global design system` for token/global layers, `Shared UI` for shared controls or overlays, and `xterm third-party overrides` for terminal overrides. Do not read the whole `Ownership` section for a local feature change. Inspect `src/styles/tokens.css` and relevant semantic/component token definitions for token work.
+- Choose the affected `Migration contracts` subsection: `Terminal rendering` for terminal/layout changes, `Settings layout` for Settings scrolling/footer, `Overlays and motion` for focus, stacking or motion, and `Sensitive data` for examples, screenshots or data presentation. Settings layout changes also read `Terminal rendering` to preserve the surrounding terminal.
 - Read `Convention checks` for stylesheet registration or checker changes, and `Staged migration` only for migration work.
 
 Apply these additional implementation choices:
