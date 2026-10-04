@@ -29,8 +29,9 @@ function createScheduler() {
     return () => tasks.delete(task);
   };
   const runNext = async () => {
-    const [task] = tasks;
-    if (!task) throw new Error("No scheduled task");
+    const next = tasks.values().next();
+    if (next.done) throw new Error("No scheduled task");
+    const task = next.value;
     tasks.delete(task);
     task();
     await tick();
@@ -108,11 +109,24 @@ function createHarness(maxInitialDeltaDrains = 5, replayErrors = false) {
     dependencies,
     maxInitialDeltaDrains,
   });
-  const emit = (output: string, cursor: number, channel = 0) => {
-    listeners[channel].handler({ payload: outputEvent(output, cursor) });
+  const emit = (output: string, cursor: number, channel: 0 | 1 = 0) => {
+    const event = channel === 0 ? "data/session-1" : "error/session-1";
+    const listener = listeners.find((listener) => listener.event === event);
+    if (!listener) throw new Error(`No listener for ${event}`);
+    listener.handler({ payload: outputEvent(output, cursor) });
+  };
+  const resolveDelta = (cursor: number, snapshot: TerminalOutputSnapshot) => {
+    const delta = deltas
+      .slice()
+      .reverse()
+      .find((delta) => delta.cursor === cursor);
+    if (!delta) throw new Error(`No delta requested at cursor ${cursor}`);
+    delta.result.resolve(snapshot);
   };
   const subscribe = async () => {
-    listeners.forEach(({ registration }) => registration.resolve(vi.fn()));
+    listeners.forEach(({ registration }) => {
+      registration.resolve(vi.fn());
+    });
     await tick();
   };
   const startLive = async (history = "", cursor = [...history].length) => {
@@ -131,6 +145,7 @@ function createHarness(maxInitialDeltaDrains = 5, replayErrors = false) {
     writes,
     scheduler,
     emit,
+    resolveDelta,
     subscribe,
     startLive,
   };
@@ -219,7 +234,7 @@ describe("terminal output sync controller", () => {
       const text = String.fromCharCode(65 + attempt);
       h.emit(text, attempt + 1);
       expect(h.deltas).toHaveLength(attempt + 1);
-      h.deltas[attempt].result.resolve(outputSnapshot(text, attempt + 1));
+      h.resolveDelta(attempt, outputSnapshot(text, attempt + 1));
       if (attempt === 4) h.emit("F", 6);
       await tick();
     }
@@ -364,7 +379,7 @@ describe("terminal output sync controller", () => {
     h.emit("H", 8);
     await h.scheduler.runNext();
     for (let index = 1; index <= 5; index += 1) {
-      h.deltas[index].result.resolve(outputSnapshot(String.fromCharCode(65 + index), index + 1));
+      h.resolveDelta(index, outputSnapshot(String.fromCharCode(65 + index), index + 1));
       await tick();
     }
     expect(h.deltas).toHaveLength(6);

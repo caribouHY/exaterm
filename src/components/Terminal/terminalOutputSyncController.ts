@@ -59,7 +59,9 @@ const MAX_TASK_EVENTS = 256;
 
 const scheduleTimeout = (task: () => void) => {
   const timer = setTimeout(task, 0);
-  return () => clearTimeout(timer);
+  return () => {
+    clearTimeout(timer);
+  };
 };
 
 function splitText(text: string, chars: number): [string, string, number] {
@@ -267,7 +269,9 @@ export function createTerminalOutputSyncController(
       phase = "disposed";
       cancelPump?.();
       cancelPump = null;
-      yields.forEach((finish) => finish());
+      yields.forEach((finish) => {
+        finish();
+      });
       pending.length = 0;
       subscriptions.forEach(release);
     },
