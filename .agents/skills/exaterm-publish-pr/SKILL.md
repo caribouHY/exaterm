@@ -12,11 +12,11 @@ Use this repository procedure instead of the user-level publication Skill. Publi
 - Read `AGENTS.md` and the `Branches and Commits` and `Pull Request Checks` sections of `docs/development/DEVELOPMENT_GUIDE.md`.
 - Inspect the branch, working-tree diff, staged diff, and current `origin/dev`. Preserve unrelated user changes and keep an existing working branch unless instructed otherwise. When starting on `dev`, create `codex/<short-description>` from the latest `dev`; never commit directly to `dev`.
 - Review the intended diff for regressions, privacy, session ownership, missing tests, and documentation. Fix findings within scope before publication.
-- Confirm the required `CHANGELOG.md` entry under `Unreleased`, or state why the change needs no entry under `AGENTS.md`.
+- Apply the changelog completion rule in `AGENTS.md`, including its target-release-heading exception for release preparation; report the decision for the final publication diff.
 
 ## Validate and Publish
 
-- Use `.agents/skills/exaterm-validate-change/SKILL.md` for validation commands. Resolve required check failures caused by the change before committing; report unresolved failures.
+- Use `.agents/skills/exaterm-validate-change/SKILL.md` and its PR-ready reference for validation. Resolve required check failures caused by the change before committing; report unresolved failures.
 - Stage only confirmed paths and inspect the staged diff. Use focused English commits with the repository's change-type prefix. Preserve an explicitly requested commit split.
 - Push the branch to `origin` with upstream tracking. Do not force-push without explicit authorization.
 - Create a draft PR to `dev` in `caribouHY/exaterm` using the connected GitHub app. Never use `gh`, the GitHub website, or an API fallback. Use ready-for-review only when requested.

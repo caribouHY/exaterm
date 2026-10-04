@@ -33,6 +33,7 @@ rg "ExaTerm v|<old-version>|<new-version>" src package.json pnpm-lock.yaml src-t
 - Leave an empty `## Unreleased` heading at the top for the next development cycle.
 - Match the existing heading style. Do not add a release date unless the surrounding changelog convention uses dates.
 - Confirm the release notes include user-visible additions, fixes, and notable behavior changes.
+- Apply the release-preparation exception in `AGENTS.md`: validate the moved notes under the target release heading, without adding them back to `Unreleased` to satisfy completion or PR checks.
 
 ## Validation
 

@@ -15,8 +15,8 @@ ExaTerm is a Windows-focused Tauri v2 desktop app with:
 Read only the documentation sections relevant to the task; expand to related sections when the change affects their ownership or contracts.
 
 - For runtime ownership or frontend/backend boundary changes, read `Design Principles` and the affected sections of `docs/development/ARCHITECTURE.md`: connection attempts, workspace/windows, terminal sessions, logging, external control, or data storage.
-- Before Git operations, read `Branches and Commits` in `docs/development/DEVELOPMENT_GUIDE.md`; also read `Pull Request Checks` for publication. Read `Setup` only for dependency setup and `Updater Signing` only for updater/release signing changes.
-- For validation, use the validation Skill below. Protocol setup, cancellation, timeout, or Tauri async call-chain changes additionally require `Optimized Tauri Runtime Checks` in the development guide.
+- Before code edits or Git operations, read `Branches and Commits` in `docs/development/DEVELOPMENT_GUIDE.md` and confirm the working branch; also read `Pull Request Checks` for publication. Read `Setup` only for dependency setup and `Updater Signing` only for updater/release signing changes.
+- For validation, use the validation Skill below, including its optimized-runtime reference for protocol setup, cancellation, timeout, or Tauri async call-chain changes.
 
 ## Non-Negotiable Rules
 
@@ -28,6 +28,7 @@ Read only the documentation sections relevant to the task; expand to related sec
 ## Codebase Conventions
 
 - Record user-facing features, fixes, behavior changes, and compatibility changes in `CHANGELOG.md` under `Unreleased` in the same change. Internal-only refactors, tests, documentation, and Skills normally need no entry; confirm the reason before completing the task.
+- For release preparation, verify those notes under the target release heading and leave `Unreleased` empty; do not duplicate the moved notes in `Unreleased`.
 - Keep Rust config structs in `src-tauri/src/config.rs` synchronized with TypeScript config types in `src/types/index.ts`.
 - When adding or renaming Tauri commands, update both the Rust command implementation and the registration list in `src-tauri/src/lib.rs`.
 - When frontend text changes, update both `src/locales/en.json` and `src/locales/ja.json`.
