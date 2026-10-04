@@ -147,6 +147,73 @@ fn active_log_keys(sessions: &HashMap<String, LogSession>) -> HashSet<ActiveLogK
         .collect()
 }
 
+#[cfg(windows)]
+fn normalized_paths_equal(left: &Path, right: &Path) -> Result<bool, String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Globalization::{CompareStringOrdinal, CSTR_EQUAL};
+
+    let left: Vec<u16> = left.as_os_str().encode_wide().collect();
+    let right: Vec<u16> = right.as_os_str().encode_wide().collect();
+    let left_len = i32::try_from(left.len()).map_err(|_| "The log path is too long")?;
+    let right_len = i32::try_from(right.len()).map_err(|_| "The log path is too long")?;
+    // Both UTF-16 buffers remain alive for the explicit lengths passed to Windows.
+    let result =
+        unsafe { CompareStringOrdinal(left.as_ptr(), left_len, right.as_ptr(), right_len, 1) };
+    if result == 0 {
+        return Err(format!(
+            "Failed to compare log paths: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok(result == CSTR_EQUAL)
+}
+
+#[cfg(not(windows))]
+fn normalized_paths_equal(left: &Path, right: &Path) -> Result<bool, String> {
+    Ok(left == right)
+}
+
+fn protected_log_history_rows(
+    sessions: &[LogSession],
+    active_keys: &HashSet<ActiveLogKey>,
+    delete_auto_files: bool,
+) -> Result<Vec<bool>, String> {
+    let active_paths = if delete_auto_files {
+        active_keys
+            .iter()
+            .map(|key| {
+                fs::canonicalize(&key.file_path)
+                    .map_err(|e| format!("Failed to verify an active log file: {}", e))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        Vec::new()
+    };
+
+    sessions
+        .iter()
+        .map(|session| {
+            if is_session_active(session, active_keys) {
+                return Ok(true);
+            }
+            if active_paths.is_empty()
+                || !matches!(session.log_mode.as_str(), "auto" | "manual")
+                || !Path::new(&session.file_path).exists()
+            {
+                return Ok(false);
+            }
+            let path = fs::canonicalize(&session.file_path)
+                .map_err(|e| format!("Failed to verify the log file: {}", e))?;
+            for active_path in &active_paths {
+                if normalized_paths_equal(&path, active_path)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        })
+        .collect()
+}
+
 fn delete_auto_log_file(
     log_dir: &PathBuf,
     file_path: &str,
@@ -184,11 +251,14 @@ fn bulk_delete_log_sessions(
     delete_auto_files: bool,
 ) -> Result<LogBulkDeleteResult, String> {
     let sessions = read_log_index(index_path)?;
+    // Complete protection checks before deleting anything; unresolved active paths
+    // must not let an older history entry delete a file that is still being recorded.
+    let protected = protected_log_history_rows(&sessions, active_keys, delete_auto_files)?;
     let mut kept = Vec::new();
     let mut result = LogBulkDeleteResult::default();
 
-    for session in sessions {
-        if is_session_active(&session, active_keys) {
+    for (session, is_protected) in sessions.into_iter().zip(protected) {
+        if is_protected {
             result.skipped_active_count += 1;
             kept.push(session);
             continue;
@@ -558,16 +628,23 @@ pub async fn logger_bulk_delete_sessions(
     state: tauri::State<'_, LoggerState>,
     delete_auto_files: bool,
 ) -> Result<LogBulkDeleteResult, crate::command_error::BackendCommandError> {
-    let active_keys = {
-        let sessions = state.sessions.lock().await;
-        active_log_keys(&sessions)
-    };
-    command_result(bulk_delete_log_sessions(
+    command_result(delete_log_sessions(&state, delete_auto_files).await)
+}
+
+async fn delete_log_sessions(
+    state: &LoggerState,
+    delete_auto_files: bool,
+) -> Result<LogBulkDeleteResult, String> {
+    // Starting a log uses this same lock, so its file cannot become active between
+    // the protection check and deletion or be lost from a concurrent index update.
+    let sessions = state.sessions.lock().await;
+    let active_keys = active_log_keys(&sessions);
+    bulk_delete_log_sessions(
         &state.index_path,
         &state.log_dir,
         &active_keys,
         delete_auto_files,
-    ))
+    )
 }
 
 #[tauri::command]
@@ -1164,6 +1241,271 @@ mod tests {
         assert_eq!(result.removed_history_count, 1);
         assert_eq!(result.skipped_missing_file_count, 1);
         cleanup(&path);
+    }
+
+    #[tokio::test]
+    async fn bulk_delete_preserves_auto_file_reused_by_manual_logging() {
+        for (manual_id, keep_manual_history) in
+            [("auto", true), ("manual", true), ("manual", false)]
+        {
+            let index_path = temp_index_path();
+            let dir = index_path.parent().unwrap().to_path_buf();
+            let state = LoggerState::with_paths(dir.clone(), index_path.clone());
+            let file_path =
+                start_log_on_connection(&state, "auto".into(), "ssh".into(), "host".into())
+                    .await
+                    .unwrap();
+            stop_manual_log(&state, "auto").await.unwrap();
+            start_manual_log(
+                &state,
+                manual_id.into(),
+                "ssh".into(),
+                "host".into(),
+                Some(file_path.clone()),
+                Some("append".into()),
+            )
+            .await
+            .unwrap();
+            let manual = active_log_session(&state, manual_id).await.unwrap();
+            append_to_log_sessions(std::slice::from_ref(&manual), "before deletion\n").unwrap();
+            if !keep_manual_history {
+                let mut history = read_log_index(&index_path).unwrap();
+                history.retain(|entry| entry.log_mode == "auto");
+                write_log_index(&index_path, &history).unwrap();
+            }
+            let before = fs::read_to_string(&file_path).unwrap();
+
+            let result = delete_log_sessions(&state, true).await.unwrap();
+
+            let expected_rows = if keep_manual_history { 2 } else { 1 };
+            assert_eq!(result.skipped_active_count, expected_rows);
+            assert_eq!(result.removed_history_count, 0);
+            assert_eq!(result.removed_auto_file_count, 0);
+            assert_eq!(read_log_index(&index_path).unwrap().len(), expected_rows);
+            append_to_log_sessions(&[manual], "after deletion\n").unwrap();
+            assert_eq!(
+                fs::read_to_string(file_path).unwrap(),
+                format!("{before}after deletion\n")
+            );
+            cleanup(&index_path);
+        }
+    }
+
+    #[tokio::test]
+    async fn bulk_delete_history_only_removes_old_row_for_shared_active_file() {
+        let index_path = temp_index_path();
+        let dir = index_path.parent().unwrap().to_path_buf();
+        let state = LoggerState::with_paths(dir, index_path.clone());
+        let file_path = start_log_on_connection(&state, "auto".into(), "ssh".into(), "host".into())
+            .await
+            .unwrap();
+        stop_manual_log(&state, "auto").await.unwrap();
+        start_manual_log(
+            &state,
+            "manual".into(),
+            "ssh".into(),
+            "host".into(),
+            Some(file_path.clone()),
+            Some("append".into()),
+        )
+        .await
+        .unwrap();
+
+        let result = delete_log_sessions(&state, false).await.unwrap();
+
+        assert_eq!(result.removed_history_count, 1);
+        assert_eq!(result.skipped_active_count, 1);
+        assert_eq!(read_log_index(&index_path).unwrap()[0].log_mode, "manual");
+        assert!(Path::new(&file_path).exists());
+        cleanup(&index_path);
+    }
+
+    #[tokio::test]
+    async fn bulk_delete_protects_normalized_path_aliases() {
+        let index_path = temp_index_path();
+        let dir = index_path.parent().unwrap().to_path_buf();
+        let state = LoggerState::with_paths(dir.clone(), index_path.clone());
+        let file = dir.join("MixedCase.log");
+        start_manual_log(
+            &state,
+            "manual".into(),
+            "ssh".into(),
+            "host".into(),
+            Some(file.to_string_lossy().into_owned()),
+            None,
+        )
+        .await
+        .unwrap();
+        let subdir = dir.join("nested");
+        fs::create_dir(&subdir).unwrap();
+        let aliases = vec![
+            dir.join(".").join("MixedCase.log"),
+            subdir.join("..").join("MixedCase.log"),
+            fs::canonicalize(&file).unwrap(),
+        ];
+        #[cfg(windows)]
+        let aliases = {
+            let mut aliases = aliases;
+            aliases.push(PathBuf::from(file.to_string_lossy().to_uppercase()));
+            aliases.push(PathBuf::from(file.to_string_lossy().replace('\\', "/")));
+            aliases
+        };
+        for alias in aliases {
+            let old = LogSession {
+                file_path: alias.to_string_lossy().into_owned(),
+                ..sample_session("old-auto", "2026-04-25T10:00:00+09:00", "host")
+            };
+            let active = active_log_session(&state, "manual").await.unwrap();
+            write_log_index(&index_path, &[old, active]).unwrap();
+
+            let result = delete_log_sessions(&state, true).await.unwrap();
+
+            assert_eq!(result.skipped_active_count, 2);
+            assert_eq!(result.removed_auto_file_count, 0);
+            assert!(file.exists());
+        }
+        cleanup(&index_path);
+    }
+
+    #[tokio::test]
+    async fn bulk_delete_protects_relative_path_alias() {
+        let relative_dir =
+            PathBuf::from("target").join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+        let dir = std::env::current_dir().unwrap().join(&relative_dir);
+        let index_path = dir.join("index.json");
+        let state = LoggerState::with_paths(dir.clone(), index_path.clone());
+        let file = dir.join("active.log");
+        start_manual_log(
+            &state,
+            "manual".into(),
+            "ssh".into(),
+            "host".into(),
+            Some(file.to_string_lossy().into_owned()),
+            None,
+        )
+        .await
+        .unwrap();
+        let old = LogSession {
+            file_path: relative_dir
+                .join("active.log")
+                .to_string_lossy()
+                .into_owned(),
+            ..sample_session("old-auto", "2026-04-25T10:00:00+09:00", "host")
+        };
+        upsert_log_session(&index_path, old).unwrap();
+
+        let result = delete_log_sessions(&state, true).await.unwrap();
+
+        assert_eq!(result.skipped_active_count, 2);
+        assert!(file.exists());
+        cleanup(&index_path);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn normalized_windows_paths_compare_unicode_without_case() {
+        assert!(normalized_paths_equal(
+            Path::new(r"C:\logs\Écho.log"),
+            Path::new(r"c:\LOGS\éCHO.LOG")
+        )
+        .unwrap());
+        assert!(!normalized_paths_equal(
+            Path::new(r"C:\logs\Écho.log"),
+            Path::new(r"C:\logs\other.log")
+        )
+        .unwrap());
+    }
+
+    #[tokio::test]
+    async fn bulk_delete_fails_before_mutation_if_active_file_cannot_be_resolved() {
+        let index_path = temp_index_path();
+        let dir = index_path.parent().unwrap().to_path_buf();
+        let state = LoggerState::with_paths(dir.clone(), index_path.clone());
+        let file_path = start_manual_log(
+            &state,
+            "manual".into(),
+            "ssh".into(),
+            "host".into(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        fs::remove_file(file_path).unwrap();
+        let inactive_file = dir.join("inactive.log");
+        fs::write(&inactive_file, "preserve me").unwrap();
+        upsert_log_session(
+            &index_path,
+            LogSession {
+                file_path: inactive_file.to_string_lossy().into_owned(),
+                ..sample_session("inactive", "2027-04-25T10:00:00+09:00", "host")
+            },
+        )
+        .unwrap();
+        let index_before = fs::read(&index_path).unwrap();
+
+        assert!(delete_log_sessions(&state, true).await.is_err());
+
+        assert_eq!(fs::read(&index_path).unwrap(), index_before);
+        assert_eq!(fs::read_to_string(inactive_file).unwrap(), "preserve me");
+        assert_eq!(
+            delete_log_sessions(&state, false)
+                .await
+                .unwrap()
+                .removed_history_count,
+            1
+        );
+        cleanup(&index_path);
+    }
+
+    #[tokio::test]
+    async fn bulk_delete_and_log_start_are_serialized() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+
+        let index_path = temp_index_path();
+        let dir = index_path.parent().unwrap().to_path_buf();
+        let state = LoggerState::with_paths(dir.clone(), index_path.clone());
+        let file = dir.join("old.log");
+        fs::write(&file, "old content").unwrap();
+        upsert_log_session(
+            &index_path,
+            LogSession {
+                file_path: file.to_string_lossy().into_owned(),
+                ..sample_session("old-auto", "2026-04-25T10:00:00+09:00", "host")
+            },
+        )
+        .unwrap();
+        let guard = state.sessions.lock().await;
+        let mut deletion = std::pin::pin!(delete_log_sessions(&state, true));
+        let mut start = std::pin::pin!(start_manual_log(
+            &state,
+            "new-manual".into(),
+            "ssh".into(),
+            "host".into(),
+            Some(file.to_string_lossy().into_owned()),
+            Some("append".into()),
+        ));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(deletion.as_mut().poll(&mut cx).is_pending());
+        assert!(start.as_mut().poll(&mut cx).is_pending());
+        drop(guard);
+
+        let Poll::Ready(Ok(result)) = deletion.as_mut().poll(&mut cx) else {
+            panic!("deletion should complete before the queued log start");
+        };
+        assert_eq!(result.removed_auto_file_count, 1);
+        assert!(!file.exists());
+        assert!(matches!(start.as_mut().poll(&mut cx), Poll::Ready(Ok(_))));
+        let active = active_log_session(&state, "new-manual").await.unwrap();
+        append_to_log_sessions(&[active], "new content\n").unwrap();
+        assert!(fs::read_to_string(&file)
+            .unwrap()
+            .ends_with("new content\n"));
+        let history = read_log_index(&index_path).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].session_id, "new-manual");
+        cleanup(&index_path);
     }
 
     #[test]

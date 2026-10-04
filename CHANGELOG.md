@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Protected actively recorded log files from bulk deletion through older automatic log history entries, including alternate Windows path spellings.
 - Restored Rust 1.99 Clippy compatibility by updating async-trait.
 - Preserved trailing terminal text when switching between Serial terminal and Settings tabs by skipping size adjustments while the terminal is hidden.
 - Prevented duplicate ExaTerm GUI processes and forwarded command-line SSH and Telnet startup requests to the existing application window.
