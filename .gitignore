@@ -28,6 +28,7 @@ dist-ssr
 !.codex/agents/
 .codex/agents/*
 !.codex/agents/exaterm-contract-reviewer.toml
+!.codex/agents/exaterm-state-reviewer.toml
 src-tauri/binaries/
 
 manifests/

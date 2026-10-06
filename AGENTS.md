@@ -38,6 +38,8 @@ Read only the documentation sections relevant to the task; expand to related sec
 
 ## Workflow Routing
 
+- Use `.agents/skills/exaterm-session-lifecycle-change/SKILL.md` for connection/cancellation/finalization, session teardown, tab/window ownership, output restoration, or logging lifecycle changes. Pure styling and operating existing sessions use their respective Skills.
+- For an independent lifecycle review, delegate to `exaterm-state-reviewer` in `.codex/agents/exaterm-state-reviewer.toml`; pass the intended transitions, comparison base or diff, and validation evidence. The lifecycle Skill defines review triggers and coordination with the contract reviewer.
 - Use `.agents/skills/exaterm-external-control-change/SKILL.md` for CLI, MCP, or shared external-control implementation and contract changes. Use `skills/exaterm-cli/SKILL.md` to operate ExaTerm instead.
 - For an independent external-control contract review, delegate to `exaterm-contract-reviewer` in `.codex/agents/exaterm-contract-reviewer.toml`; pass the intended behavior, comparison base or diff, and validation evidence. The development Skill defines when to request this review.
 - Use `.agents/skills/exaterm-ui-change/SKILL.md` for React, CSS, layout, dialog, menu, design-token, or visual changes.
