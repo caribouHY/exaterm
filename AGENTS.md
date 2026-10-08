@@ -1,6 +1,6 @@
 # ExaTerm AI Agent Guide
 
-Keep human-facing project documentation in `docs/`. Keep agent execution procedures in repository-local Skills under `.agents/skills/`.
+Keep human-facing project documentation in `docs/`. Keep agent execution procedures in repository-local Skills under `.agents/skills/` and custom agent definitions under `.codex/agents/`.
 
 ## Project Snapshot
 
@@ -23,7 +23,7 @@ Read only the documentation sections relevant to the task; expand to related sec
 - Do not clear, recreate, or reset terminal sessions as a side effect of settings changes or ordinary UI updates.
 - Treat terminal buffers, session logs, connection targets, usernames, prompts, command output, and API keys as sensitive.
 - Do not change log capture, log storage, API key storage, or secret handling without explicitly preserving privacy expectations.
-- Keep human-facing documentation in `docs/`; keep task procedures and agent-only decision criteria in `.agents/skills/` or `AGENTS.md`.
+- Keep human-facing documentation in `docs/`; keep task procedures and agent-only decision criteria in `.agents/skills/` or `AGENTS.md`, and custom agent definitions in `.codex/agents/`.
 
 ## Codebase Conventions
 
@@ -38,6 +38,10 @@ Read only the documentation sections relevant to the task; expand to related sec
 
 ## Workflow Routing
 
+- Use `.agents/skills/exaterm-session-lifecycle-change/SKILL.md` for connection/cancellation/finalization, session teardown, tab/window ownership, output restoration, or logging lifecycle changes. Pure styling and operating existing sessions use their respective Skills.
+- For an independent lifecycle review, delegate to `exaterm-state-reviewer` in `.codex/agents/exaterm-state-reviewer.toml`; pass the intended transitions, comparison base or diff, and validation evidence. The lifecycle Skill defines review triggers and coordination with the contract reviewer.
+- Use `.agents/skills/exaterm-external-control-change/SKILL.md` for CLI, MCP, or shared external-control implementation and contract changes. Use `skills/exaterm-cli/SKILL.md` to operate ExaTerm instead.
+- For an independent external-control contract review, delegate to `exaterm-contract-reviewer` in `.codex/agents/exaterm-contract-reviewer.toml`; pass the intended behavior, comparison base or diff, and validation evidence. The development Skill defines when to request this review.
 - Use `.agents/skills/exaterm-ui-change/SKILL.md` for React, CSS, layout, dialog, menu, design-token, or visual changes.
 - For the existing ExaTerm UI, use the project UI Skill rather than generic design, Tailwind, or shadcn Skills. Use generic creative Skills only for separately requested assets or independent designs.
 - Use `.agents/skills/exaterm-validate-change/SKILL.md` to choose and report validation commands.
