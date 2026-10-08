@@ -302,6 +302,7 @@ plaintext files and are created only when connection logging is enabled or loggi
 - `cli_disabled`: enable `external_control.enabled` and `external_control.cli_enabled`, then restart ExaTerm.
 - Profile or Serial connection rejected: enable `external_control.connect_enabled`.
 - Direct connection rejected: also enable `external_control.direct_connect_enabled`.
+- SSH PTY or shell startup failed: the server must accept both requests. Each request has a 10-second send-and-reply deadline; rejection, early channel closure, or no reply fails the connection without creating a terminal tab. Check server permissions and responsiveness before retrying.
 - Session not found: run `sessions list` and use the returned session ID.
 - Serial disconnect failed: retry after the port operation finishes. A successful response means the local COM port has been released.
 - Wait timed out: inspect `timed_out` and the returned output, then continue from `cursor`.

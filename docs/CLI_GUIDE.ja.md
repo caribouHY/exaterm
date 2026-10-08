@@ -297,6 +297,7 @@ ExaTerm の GUI プロセスは1つだけ動作します。`exaterm.exe` を再�
 - `cli_disabled`: `external_control.enabled` と `external_control.cli_enabled` を有効にして再起動します。
 - プロファイル/シリアル接続が拒否される: `external_control.connect_enabled` を有効にします。
 - 直接接続が拒否される: `external_control.direct_connect_enabled` も有効にします。
+- SSH の PTY・shell 開始に失敗する: 両要求の成功応答が必要です。各要求の送信と応答待ちは10秒で制限され、拒否・開始前のチャネル終了・無応答ではターミナルタブを作成せず接続に失敗します。再試行前にサーバーの権限設定と応答状況を確認します。
 - セッションが見つからない: `sessions list` の `session_id` を使用します。
 - シリアルを切断できない: ポートを使用する処理が終了するまで待って再試行します。成功応答はローカルCOMポートの解放完了を示します。
 - 待機がタイムアウトする: `timed_out` と出力を確認し、返された `cursor` から継続します。
