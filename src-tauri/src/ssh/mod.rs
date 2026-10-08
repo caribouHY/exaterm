@@ -8,6 +8,7 @@ mod host_key_prompt;
 mod io;
 mod jump;
 mod profiles;
+mod shell;
 mod types;
 
 #[cfg(test)]

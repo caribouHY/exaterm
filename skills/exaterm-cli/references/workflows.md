@@ -9,6 +9,11 @@ A successful `profiles connect`, direct `ssh connect`/`telnet connect`, or `seri
 result means that ExaTerm created a session. It does not guarantee that the initial banner,
 login exchange, or normal prompt has finished rendering.
 
+SSH success also requires server acceptance of both PTY allocation and shell startup.
+Each request has a 10-second deadline covering send and reply. Rejection, channel closure,
+or no reply fails the connection without creating a terminal tab. Inspect the connection
+error and server policy before retrying; output alone does not prove startup acceptance.
+
 After connecting:
 
 1. Retain the returned `session_id`.

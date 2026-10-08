@@ -105,6 +105,8 @@ Settings and Logs are window-local utility views. Rust owns terminal placement; 
 
 GUI SSH connections verify and, when necessary, confirm the host key within the active handshake so authentication continues on the same TCP connection. Saved-profile external-control SSH connections require an already trusted key. Direct external-control SSH connections may confirm an unknown key in the preferred GUI window, but reject a mismatch with an existing known-hosts entry.
 
+SSH session setup requests PTY allocation and shell startup sequentially, requiring each server success reply within a 10-second send-and-reply deadline. The setup owner retains the channel outside cancellable futures and registers a session only after both replies and the attempt completion check. Failed or cancelled setup closes the channel and disconnects the target and jump transports within a shared five-second cleanup deadline. Startup output stays queued in the handler until the registered session starts its output processor.
+
 ## Logging
 
 Logging is opt-in. A terminal session has at most one active log, regardless of whether it was started automatically or manually.

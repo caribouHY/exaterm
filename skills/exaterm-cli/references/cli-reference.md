@@ -268,6 +268,11 @@ port, and SSH user name separately; do not use URI, `user@host`, embedded-port, 
 IPv6, or whitespace-containing syntax. A jump profile must be an externally enabled saved SSH
 profile and cannot use another jump profile.
 
+Direct and saved-profile SSH connections require successful PTY and shell replies.
+Each request times out after 10 seconds, including send and reply. A rejection or early
+channel closure returns a connection error; no session ID or terminal tab is created.
+Check server PTY/shell permissions and responsiveness before retrying.
+
 Unknown SSH host keys are confirmed in the visible ExaTerm UI. Host-key mismatches are
 rejected. Passwords and passphrases stay in the GUI and must not be passed through CLI
 arguments, environment variables, terminal input, or chat.

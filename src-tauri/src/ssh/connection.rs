@@ -17,13 +17,13 @@ use crate::ssh::host_key::{HostKeyHandling, HostKeyVerifier, SshHostKeyHandler};
 use crate::ssh::host_key_prompt::{SshHostKeyPrompter, HOST_KEY_PROMPT_TIMEOUT};
 use crate::ssh::io::{
     run_ssh_operation_with_timeout, spawn_ssh_read_processor, SshClientHandler, SshReadDropState,
-    SshReadRequest, SshSession, SshState, SSH_AUTH_TIMEOUT_ERROR, SSH_CHANNEL_OPEN_TIMEOUT,
-    SSH_CHANNEL_OPEN_TIMEOUT_ERROR, SSH_CONNECT_TIMEOUT, SSH_CONNECT_TIMEOUT_ERROR,
-    SSH_PTY_TIMEOUT, SSH_PTY_TIMEOUT_ERROR, SSH_READ_QUEUE_CAPACITY, SSH_SHELL_TIMEOUT,
+    SshReadRequest, SshSession, SshState, SSH_AUTH_TIMEOUT_ERROR, SSH_CHANNEL_OPEN_TIMEOUT_ERROR,
+    SSH_CONNECT_TIMEOUT, SSH_CONNECT_TIMEOUT_ERROR, SSH_PTY_TIMEOUT_ERROR, SSH_READ_QUEUE_CAPACITY,
     SSH_SHELL_TIMEOUT_ERROR,
 };
 use crate::ssh::jump::{connect_jump_profile, JumpAttemptContext, JumpConnectInputs};
 use crate::ssh::profiles::resolve_jump_profile;
+use crate::ssh::shell::{cleanup_failed_connection, start_session};
 use crate::ssh::types::{SshAuthRequest, SshConnectOptions, SshConnectResult, SshJumpProfile};
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 use crate::workspace::WorkspaceState;
@@ -149,34 +149,43 @@ pub(crate) async fn connect(
         attempt: attempt.as_ref(),
     };
     let (mut handle, jump_handle) = connect_target_handle(target_inputs, &target_context).await?;
-    let channel = match run_with_attempt(
+    let setup_result = run_with_attempt(
         attempt.as_ref(),
-        Box::pin(establish_target_shell(
+        Box::pin(authenticate_target_session(
             &mut handle,
-            &jump_handle,
             auth,
             &options,
             &diagnostic,
             &authentication_prompter,
         )),
     )
-    .await
-    {
-        Ok(channel) => channel,
-        Err(error) => {
-            if error == SSH_CONNECT_CANCELLED {
-                disconnect_target_handles(&handle, &jump_handle, "Connection cancelled").await;
-            }
-            return Err(error);
-        }
-    };
-    if attempt
-        .as_mut()
-        .is_some_and(|attempt| !attempt.begin_completion())
-    {
-        disconnect_target_handles(&handle, &jump_handle, "Connection cancelled").await;
-        return Err(SSH_CONNECT_CANCELLED.to_string());
+    .await;
+    if let Err(error) = setup_result {
+        cleanup_failed_connection(None, &handle, jump_handle.as_ref()).await;
+        return Err(error);
     }
+    let channel = start_session(
+        &handle,
+        jump_handle.as_ref(),
+        options.cols,
+        options.rows,
+        Some(&diagnostic),
+        attempt.as_mut(),
+    )
+    .await
+    .map_err(|error| {
+        if error != SSH_CONNECT_CANCELLED {
+            let label = if error.starts_with("PTY") {
+                "pty request"
+            } else if error.starts_with("Shell") {
+                "shell request"
+            } else {
+                "session channel"
+            };
+            emit_target_timeout_or_failure(&diagnostic, &error, label, label);
+        }
+        error
+    })?;
     let completion = ConnectCompletion {
         session_id,
         diagnostic,
@@ -204,12 +213,6 @@ async fn finish_connected_session(
     } = connected_target;
     let (mut channel_read_half, channel_write_half) = channel.split();
     tokio::spawn(async move { while channel_read_half.wait().await.is_some() {} });
-    spawn_ssh_read_processor(
-        runtime.app,
-        &completion.session_id,
-        runtime.terminals.clone(),
-        completion.read_rx,
-    );
     register_connected_session(
         runtime.state,
         runtime.terminals,
@@ -220,6 +223,12 @@ async fn finish_connected_session(
         options,
     )
     .await;
+    spawn_ssh_read_processor(
+        runtime.app,
+        &completion.session_id,
+        runtime.terminals.clone(),
+        completion.read_rx,
+    );
     let _ = runtime.app.emit("ssh://connected", &completion.session_id);
     completion.diagnostic.info("target: session ready");
     Ok(SshConnectResult {
@@ -227,36 +236,16 @@ async fn finish_connected_session(
     })
 }
 
-async fn establish_target_shell(
+async fn authenticate_target_session(
     handle: &mut TargetHandle,
-    jump_handle: &Option<JumpHandle>,
     auth: SshAuthRequest,
     options: &SshConnectOptions,
     diagnostic: &SshDiagnostic,
     prompter: &SshAuthenticationPrompter,
-) -> Result<TargetSessionChannel, String> {
+) -> Result<(), String> {
     let auth_context = prompter.context("target", &options.host, options.port, &options.username);
-    authenticate_target(
-        handle,
-        jump_handle,
-        &options.username,
-        auth,
-        diagnostic,
-        &auth_context,
-    )
-    .await?;
-    let channel = open_target_session_channel(handle, jump_handle, diagnostic).await?;
-    request_target_pty(
-        handle,
-        jump_handle,
-        &channel,
-        options.cols,
-        options.rows,
-        diagnostic,
-    )
-    .await?;
-    request_target_shell(handle, jump_handle, &channel, diagnostic).await?;
-    Ok(channel)
+    authenticate_target(handle, &options.username, auth, diagnostic, &auth_context).await?;
+    Ok(())
 }
 
 fn prepare_connect(
@@ -438,24 +427,8 @@ fn emit_target_timeout_or_failure(
     }
 }
 
-async fn disconnect_target_handles(
-    handle: &TargetHandle,
-    jump_handle: &Option<JumpHandle>,
-    reason: &'static str,
-) {
-    let _ = handle
-        .disconnect(Disconnect::ByApplication, reason, "en")
-        .await;
-    if let Some(jump_handle) = jump_handle {
-        let _ = jump_handle
-            .disconnect(Disconnect::ByApplication, reason, "en")
-            .await;
-    }
-}
-
 async fn authenticate_target(
     handle: &mut TargetHandle,
-    jump_handle: &Option<JumpHandle>,
     username: &str,
     auth: SshAuthRequest,
     diagnostic: &SshDiagnostic,
@@ -471,90 +444,9 @@ async fn authenticate_target(
         }
         Err(error) => {
             emit_target_timeout_or_failure(diagnostic, &error, "authentication", "authentication");
-            disconnect_target_handles(handle, jump_handle, "Target authentication failed").await;
             Err(error)
         }
     }
-}
-
-async fn open_target_session_channel(
-    handle: &mut TargetHandle,
-    jump_handle: &Option<JumpHandle>,
-    diagnostic: &SshDiagnostic,
-) -> Result<TargetSessionChannel, String> {
-    diagnostic.progress("target", "opening_session");
-    diagnostic.info("target: opening session channel");
-    let result = run_ssh_operation_with_timeout(
-        SSH_CHANNEL_OPEN_TIMEOUT,
-        SSH_CHANNEL_OPEN_TIMEOUT_ERROR,
-        async {
-            handle
-                .channel_open_session()
-                .await
-                .map_err(|e| format!("Failed to open the SSH channel: {}", e))
-        },
-    )
-    .await;
-    match result {
-        Ok(channel) => Ok(channel),
-        Err(error) => {
-            emit_target_timeout_or_failure(
-                diagnostic,
-                &error,
-                "session channel",
-                "session channel",
-            );
-            disconnect_target_handles(handle, jump_handle, "Target channel open failed").await;
-            Err(error)
-        }
-    }
-}
-
-async fn request_target_pty(
-    handle: &TargetHandle,
-    jump_handle: &Option<JumpHandle>,
-    channel: &TargetSessionChannel,
-    cols: u32,
-    rows: u32,
-    diagnostic: &SshDiagnostic,
-) -> Result<(), String> {
-    diagnostic.info("target: requesting pty");
-    let result = run_ssh_operation_with_timeout(SSH_PTY_TIMEOUT, SSH_PTY_TIMEOUT_ERROR, async {
-        channel
-            .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
-            .await
-            .map_err(|_| "PTY request failed".to_string())
-    })
-    .await;
-    if let Err(error) = result {
-        emit_target_timeout_or_failure(diagnostic, &error, "pty request", "pty request");
-        disconnect_target_handles(handle, jump_handle, "Target pty request failed").await;
-        return Err(error);
-    }
-    Ok(())
-}
-
-async fn request_target_shell(
-    handle: &TargetHandle,
-    jump_handle: &Option<JumpHandle>,
-    channel: &TargetSessionChannel,
-    diagnostic: &SshDiagnostic,
-) -> Result<(), String> {
-    diagnostic.info("target: requesting shell");
-    let result =
-        run_ssh_operation_with_timeout(SSH_SHELL_TIMEOUT, SSH_SHELL_TIMEOUT_ERROR, async {
-            channel
-                .request_shell(false)
-                .await
-                .map_err(|_| "Shell request failed".to_string())
-        })
-        .await;
-    if let Err(error) = result {
-        emit_target_timeout_or_failure(diagnostic, &error, "shell request", "shell request");
-        disconnect_target_handles(handle, jump_handle, "Target shell request failed").await;
-        return Err(error);
-    }
-    Ok(())
 }
 
 async fn register_connected_session(
