@@ -168,9 +168,11 @@ exaterm-cli sessions disconnect --session-id $session
 
 ExaTerm flushes and stops an active log before disconnecting. The tab and scrollback remain
 available in the GUI as a disconnected session. Repeating the command for a known disconnected
-session succeeds with `already_disconnected: true`. For Serial sessions, success is returned only
-after the read, write, and receive-FIFO workers have stopped and the local COM port handle has
-been released.
+session succeeds with `already_disconnected: true`. For Serial sessions, a successful disconnect
+means the local COM port has been released. Concurrent disconnect requests also wait for release.
+
+Serial disconnect stops accepting input and discards unsent data. A successful input submission
+confirms acceptance, not device delivery.
 
 ## Reading Output
 

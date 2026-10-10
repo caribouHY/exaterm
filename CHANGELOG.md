@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Stopped accepting Serial input at disconnect, discarded unsent queued output, and made concurrent or error-triggered disconnects wait for worker and port release.
 - Confirmed SSH PTY and shell startup responses before registering connections, and released failed or cancelled attempts, including jump-host connections.
 - Preserved terminal output arriving during the final restoration delta read, and prevented duplicate display of overlapping output events.
 - Preserved retained terminal history when moving tabs between windows by separating the restoration character limit from the scrollback line setting.

@@ -229,9 +229,12 @@ operation for the same known session is safe and returns `disconnected=false` wi
 instead of guessing another ID.
 
 Disconnect preserves the GUI tab and retained scrollback. ExaTerm flushes and stops an active
-session log before ending SSH, Telnet, or Serial I/O. For Serial, a successful response is sent
-only after the read, write, and receive-FIFO workers have stopped and the local port handle has
-been released, so the same port can be opened again.
+session log before ending SSH, Telnet, or Serial I/O. For Serial, success means the local port
+has been released, so the same port can be opened again. Concurrent disconnect requests also
+wait for release.
+
+Serial stops accepting new input at disconnect and discards unsent data. Successful input
+submission means acceptance, not device delivery.
 
 Disconnecting is a material connectivity change. Use it only when the user requested it or an
 authorized workflow explicitly requires cleanup of a temporary session created for that task.

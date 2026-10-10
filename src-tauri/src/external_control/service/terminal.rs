@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::time;
 use uuid::Uuid;
 
-use crate::terminal_control::{TerminalControlState, TerminalStatus};
+use crate::terminal_control::{TerminalControlState, TerminalProtocol, TerminalStatus};
 
 use super::connections::terminal_protocol_log_type;
 use super::{
@@ -39,6 +39,15 @@ impl ExternalControlService {
             .ok_or_else(|| not_found("Session not found"))?;
 
         if info.status == TerminalStatus::Disconnected {
+            if info.protocol == TerminalProtocol::Serial {
+                // Error-triggered shutdown can project status before finalization completes.
+                self.runtime
+                    .io
+                    .protocol
+                    .disconnect_terminal(info.protocol, &args.session_id)
+                    .await
+                    .map_err(internal_error)?;
+            }
             return Ok(DisconnectTerminalSessionResult {
                 session_id: args.session_id,
                 disconnected: false,

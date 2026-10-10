@@ -72,6 +72,7 @@ struct TestProtocolIo {
     serial_result: Mutex<Result<String, String>>,
     write_result: Mutex<Result<(), String>>,
     disconnect_result: Mutex<Result<(), String>>,
+    disconnect_gate: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
 }
 
 impl TestProtocolIo {
@@ -84,6 +85,7 @@ impl TestProtocolIo {
             serial_result: Mutex::new(Ok("serial-session".into())),
             write_result: Mutex::new(Ok(())),
             disconnect_result: Mutex::new(Ok(())),
+            disconnect_gate: Mutex::new(None),
         }
     }
 }
@@ -150,6 +152,10 @@ impl ExternalControlProtocolIo for TestProtocolIo {
             .lock()
             .unwrap()
             .push(TestProtocolCall::Disconnect(protocol, session_id.into()));
+        let gate = self.disconnect_gate.lock().unwrap().take();
+        if let Some(gate) = gate {
+            gate.await.unwrap();
+        }
         self.disconnect_result.lock().unwrap().clone()
     }
 }
@@ -2801,7 +2807,41 @@ async fn service_disconnects_connected_session_and_is_idempotent_after_disconnec
         .unwrap();
     assert!(!result.disconnected);
     assert!(result.already_disconnected);
-    assert_eq!(protocol.calls.lock().unwrap().len(), 1);
+    assert_eq!(protocol.calls.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn service_waits_for_serial_finalization_even_after_status_is_disconnected() {
+    for fail_cleanup in [false, true] {
+        let (runtime, _, protocol, _, _, _) =
+            test_runtime_parts(AppConfig::default(), Vec::new(), None);
+        register_test_terminal(&runtime, "s1", TerminalProtocol::Serial, "COM1").await;
+        runtime.terminals.mark_disconnected("s1").await;
+        let (finish, unfinished) = tokio::sync::oneshot::channel();
+        *protocol.disconnect_gate.lock().unwrap() = Some(unfinished);
+        if fail_cleanup {
+            *protocol.disconnect_result.lock().unwrap() = Err("Serial cleanup failed".into());
+        }
+        let service = ExternalControlService::new(runtime);
+        let response = service.execute(ExternalControlRequest::DisconnectTerminalSession(
+            DisconnectTerminalSessionArgs {
+                session_id: "s1".into(),
+            },
+        ));
+        tokio::pin!(response);
+        assert!(futures::poll!(&mut response).is_pending());
+        assert_eq!(protocol.calls.lock().unwrap().len(), 1);
+        finish.send(()).unwrap();
+        let result = response.await;
+        if fail_cleanup {
+            assert!(matches!(result, Err(ExternalControlError::Internal(_))));
+        } else {
+            assert_eq!(
+                result.unwrap().into_value().unwrap(),
+                json!({"session_id":"s1", "disconnected":false, "already_disconnected":true})
+            );
+        }
+    }
 }
 
 #[tokio::test]

@@ -55,7 +55,9 @@ Read only the relevant sections:
    session state; success does not guarantee terminal input focus through an open dialog.
    Disconnect only the exact selected session when requested or when explicitly authorized
    cleanup requires it. Success preserves its tab and scrollback and stops its active log;
-   Serial success also guarantees local port release. Repeated disconnect is idempotent.
+   Serial success also guarantees local port release. Serial disconnect discards unsent
+   input; send success establishes queue acceptance, not device delivery. Concurrent
+   disconnects wait for the same cleanup. Repeated disconnect is idempotent.
 
 ## Operating Rules
 
