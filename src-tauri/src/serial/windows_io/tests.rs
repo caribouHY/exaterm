@@ -219,7 +219,7 @@ async fn deadline_enabled_adapter_preserves_native_writer_cancellation() {
     entered_rx.await.unwrap();
     running.store(false, Ordering::SeqCst);
     tokio::time::timeout(
-        Duration::from_secs(2),
+        Duration::from_secs(10),
         stop_serial_writer(worker, crate::serial::writer::cancel_synchronous_write),
     )
     .await

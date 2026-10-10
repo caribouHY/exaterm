@@ -1,10 +1,10 @@
 use super::*;
 use std::cell::Cell;
 
-struct TimedWriter<W, S> {
-    write: W,
-    set_timeout: S,
-    policy: WritePolicy,
+pub(super) struct TimedWriter<W, S> {
+    pub(super) write: W,
+    pub(super) set_timeout: S,
+    pub(super) policy: WritePolicy,
 }
 
 impl<W: FnMut(&[u8]) -> io::Result<usize>, S> Write for TimedWriter<W, S> {
@@ -48,7 +48,7 @@ fn run<W: SerialWritePort>(
     let (tx, rx) = mpsc::channel();
     tx.send(data).unwrap();
     drop(tx);
-    process_serial_writes_with_clock(port, rx, running, now)
+    process_serial_writes_with_clock(port, rx, running, &Mutex::default(), now)
 }
 
 #[test]

@@ -174,6 +174,14 @@ means the local COM port has been released. Concurrent disconnect requests also 
 Serial disconnect stops accepting input and discards unsent data. A successful input submission
 confirms acceptance, not device delivery.
 
+On Windows, a pending Serial write may finish within its original block deadline before
+cancellation. Recent successful writes also keep the port open until their original deadlines
+to allow device-side settling. Only the remaining budget is used (at most 30 seconds per block, about 9.534
+seconds for 4 KiB at 9600 baud, 8N1; at least 5 seconds for short writes). Even an idle writer
+may have remaining time from recent input. Disconnect does not extend any deadline or send queued remainders.
+Driver cancellation and handle release may take additional time. Port release does not
+guarantee device responsiveness after forced cancellation or an I/O failure.
+
 ## Reading Output
 
 The default and maximum returned output lengths are 2,000 and 20,000 characters.

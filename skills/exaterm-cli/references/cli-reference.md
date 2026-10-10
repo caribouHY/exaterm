@@ -236,6 +236,19 @@ wait for release.
 Serial stops accepting new input at disconnect and discards unsent data. Successful input
 submission means acceptance, not device delivery.
 
+On Windows, disconnect allows the currently pending write to finish within its original
+block deadline before requesting cancellation. The block budget is at most 30 seconds
+(about 9.534 seconds for a full 4 KiB block at 9600 baud, 8N1); only its remaining time is
+used. Partial writes and disconnect requests do not extend it. Recent successful writes
+retain their original deadlines for port release even while the writer is idle. Short writes
+have a five-second budget; no recent input or expired budgets add no wait. A later short
+write cannot shorten an earlier settling budget or extend its own cancellation deadline.
+The control port stays open until the retained deadline to allow device-side settling.
+Driver cancellation and handle release can take additional time, so this
+is not a wall-clock limit for disconnect. Unsent remainders and later blocks are discarded.
+Successful port release does not guarantee a device will respond after forced cancellation
+or an I/O failure; do not automatically reopen or resend input to hide that uncertainty.
+
 Disconnecting is a material connectivity change. Use it only when the user requested it or an
 authorized workflow explicitly requires cleanup of a temporary session created for that task.
 Do not use it as routine recovery for timeouts, ambiguous prompts, or transient errors.
