@@ -107,6 +107,10 @@ GUI SSH connections verify and, when necessary, confirm the host key within the 
 
 SSH session setup requests PTY allocation and shell startup sequentially, requiring each server success reply within a 10-second send-and-reply deadline. The setup owner retains the channel outside cancellable futures and registers a session only after both replies and the attempt completion check. Failed or cancelled setup closes the channel and disconnects the target and jump transports within a shared five-second cleanup deadline. Startup output stays queued in the handler until the registered session starts its output processor.
 
+Serial disconnect closes input acceptance under the session lock and discards unsent application output. A separate shutdown coordinator survives caller cancellation, clears the driver output buffer after the writer exits, waits for the read, write, and receive-FIFO workers and every local port handle to be released, and finalizes session state and logging once. Concurrent explicit and error-triggered disconnects share that completion.
+
+Serial writes submit at most 4 KiB at a time and check shutdown between partial writes. On Windows, the coordinator requests `CancelSynchronousIo` on a dedicated writer thread every 5 ms until it exits. Cancellation is a request, not proof that the driver stopped immediately; an in-flight operation may complete partly or normally before cancellation takes effect. Other platforms rely on the existing I/O timeout. Already transmitted bytes cannot be recalled, and successful input submission means queue acceptance rather than device delivery.
+
 ## Logging
 
 Logging is opt-in. A terminal session has at most one active log, regardless of whether it was started automatically or manually.
