@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -23,18 +23,31 @@ pub(super) trait SerialWritePort: Write {
 #[cfg(not(windows))]
 impl SerialWritePort for Box<dyn serialport::SerialPort> {}
 
+pub(super) struct SerialWriter {
+    thread: JoinHandle<io::Result<usize>>,
+    deadlines: Arc<Mutex<TransmissionDeadlines>>,
+}
+
+#[derive(Default)]
+struct TransmissionDeadlines {
+    active: Option<Instant>,
+    settle_until: Option<Instant>,
+}
+
+#[cfg(test)]
 pub(super) fn process_serial_writes<W: SerialWritePort>(
     port: &mut W,
     queue: mpsc::Receiver<Vec<u8>>,
     running: &AtomicBool,
 ) -> io::Result<usize> {
-    process_serial_writes_with_clock(port, queue, running, Instant::now)
+    process_serial_writes_with_clock(port, queue, running, &Mutex::default(), Instant::now)
 }
 
 fn process_serial_writes_with_clock<W: SerialWritePort>(
     port: &mut W,
     queue: mpsc::Receiver<Vec<u8>>,
     running: &AtomicBool,
+    deadlines: &Mutex<TransmissionDeadlines>,
     mut now: impl FnMut() -> Instant,
 ) -> io::Result<usize> {
     let policy = port.policy();
@@ -69,12 +82,30 @@ fn process_serial_writes_with_clock<W: SerialWritePort>(
                             if now() >= deadline {
                                 return deadline_result(running, submitted);
                             }
-                            port.write(&data[offset..chunk_end])
+                            let Some(result) = write_if_running(
+                                port,
+                                &data[offset..chunk_end],
+                                running,
+                                deadlines,
+                                Some(deadline),
+                            ) else {
+                                return Ok(submitted);
+                            };
+                            result
                         }
                         Err(error) => Err(error),
                     }
                 } else {
-                    port.write(&data[offset..data.len().min(offset + WRITE_CHUNK_SIZE)])
+                    let Some(result) = write_if_running(
+                        port,
+                        &data[offset..data.len().min(offset + WRITE_CHUNK_SIZE)],
+                        running,
+                        deadlines,
+                        None,
+                    ) else {
+                        return Ok(submitted);
+                    };
+                    result
                 };
                 if let Ok(written) = &result {
                     submitted += written;
@@ -99,6 +130,35 @@ fn process_serial_writes_with_clock<W: SerialWritePort>(
     Ok(submitted)
 }
 
+fn write_if_running<W: Write>(
+    port: &mut W,
+    data: &[u8],
+    running: &AtomicBool,
+    deadlines: &Mutex<TransmissionDeadlines>,
+    deadline: Option<Instant>,
+) -> Option<io::Result<usize>> {
+    let mut shared = deadlines.lock().unwrap_or_else(|error| error.into_inner());
+    // Publish before releasing the lock: shutdown either observes this original deadline,
+    // or closes acceptance before this writer can begin an operation.
+    if !running.load(Ordering::SeqCst) {
+        return None;
+    }
+    shared.active = deadline;
+    drop(shared);
+    let result = port.write(data);
+    let mut shared = deadlines.lock().unwrap_or_else(|error| error.into_inner());
+    // API completion can precede device-side settling, including between queued writes.
+    // A later short write must not shorten an earlier successful block's hold budget.
+    if result.as_ref().is_ok_and(|written| *written > 0) {
+        shared.settle_until = shared.settle_until.max(deadline);
+    }
+    // Retain the cutoff operation's budget even if its result precedes the coordinator.
+    if running.load(Ordering::SeqCst) {
+        shared.active = None;
+    }
+    Some(result)
+}
+
 fn deadline_result(running: &AtomicBool, submitted: usize) -> io::Result<usize> {
     if running.load(Ordering::SeqCst) {
         Err(io::Error::new(
@@ -119,7 +179,7 @@ pub(super) fn spawn_serial_writer<W, Error>(
     queue: mpsc::Receiver<Vec<u8>>,
     running: Arc<AtomicBool>,
     on_error: Error,
-) -> io::Result<JoinHandle<io::Result<usize>>>
+) -> io::Result<SerialWriter>
 where
     W: SerialWritePort + Send + 'static,
     Error: FnOnce(String) + Send + 'static,
@@ -137,7 +197,7 @@ fn spawn_serial_writer_with<W, Error, Spawn>(
     running: Arc<AtomicBool>,
     on_error: Error,
     spawn: Spawn,
-) -> io::Result<JoinHandle<io::Result<usize>>>
+) -> io::Result<SerialWriter>
 where
     W: SerialWritePort + Send + 'static,
     Error: FnOnce(String) + Send + 'static,
@@ -145,41 +205,81 @@ where
         Box<dyn FnOnce() -> io::Result<usize> + Send>,
     ) -> io::Result<JoinHandle<io::Result<usize>>>,
 {
-    spawn(Box::new(move || {
-        let result = process_serial_writes(&mut port, queue, &running);
+    let deadlines = Arc::new(Mutex::default());
+    let worker_deadlines = deadlines.clone();
+    let thread = spawn(Box::new(move || {
+        let result = process_serial_writes_with_clock(
+            &mut port,
+            queue,
+            &running,
+            &worker_deadlines,
+            Instant::now,
+        );
         drop(port);
         if let Err(error) = &result {
             on_error(error.to_string());
         }
         result
-    }))
+    }))?;
+    Ok(SerialWriter { thread, deadlines })
 }
 
 pub(super) async fn stop_serial_writer<Cancel>(
-    writer: JoinHandle<io::Result<usize>>,
-    mut cancel: Cancel,
+    writer: SerialWriter,
+    cancel: Cancel,
 ) -> Result<(), String>
 where
     Cancel: FnMut(&JoinHandle<io::Result<usize>>) -> io::Result<()>,
 {
+    stop_serial_writer_with_clock(writer, cancel, Instant::now).await
+}
+
+async fn stop_serial_writer_with_clock<Cancel>(
+    writer: SerialWriter,
+    mut cancel: Cancel,
+    mut now: impl FnMut() -> Instant,
+) -> Result<(), String>
+where
+    Cancel: FnMut(&JoinHandle<io::Result<usize>>) -> io::Result<()>,
+{
+    let (deadline, settle_until) = {
+        let shared = writer
+            .deadlines
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        (shared.active, shared.settle_until.max(shared.active))
+    };
+    // Cancelling a healthy synchronous FTDI write can leave the first reopen unresponsive.
+    // Reuse its existing budget, never a fresh timeout measured from the disconnect request.
     let mut cancellation_error = None;
-    while !writer.is_finished() {
-        if let Err(error) = cancel(&writer) {
-            cancellation_error
-                .get_or_insert_with(|| format!("Failed to cancel Serial I/O: {error}"));
+    while !writer.thread.is_finished() {
+        if deadline.is_none_or(|deadline| now() >= deadline) {
+            if let Err(error) = cancel(&writer.thread) {
+                cancellation_error
+                    .get_or_insert_with(|| format!("Failed to cancel Serial I/O: {error}"));
+            }
         }
         tokio::time::sleep(SERIAL_CANCEL_RETRY_INTERVAL).await;
     }
     let result = writer
+        .thread
         .join()
         .map_err(|_| "The Serial writer panicked".to_string())?
         .map(|_| ())
         .map_err(|error| format!("Serial write failed: {error}"));
+    if result.is_ok() && cancellation_error.is_none() {
+        // API/flush success alone did not make immediate reuse reliable on the tested FTDI
+        // device. The cleanup caller retains the control handle for the original budgets,
+        // including successful writes that finished before the disconnect request.
+        while settle_until.is_some_and(|deadline| now() < deadline) {
+            tokio::time::sleep(SERIAL_CANCEL_RETRY_INTERVAL).await;
+        }
+    }
     cancellation_error.map_or(result, Err)
 }
 
 pub(super) async fn finish_serial_workers<Cancel, Clear>(
-    writer: JoinHandle<io::Result<usize>>,
+    writer: SerialWriter,
     cancel: Cancel,
     clear_output: Clear,
     reader: tokio::task::JoinHandle<()>,
@@ -234,5 +334,7 @@ pub(super) fn cancel_synchronous_write(_writer: &JoinHandle<io::Result<usize>>) 
 
 #[cfg(test)]
 mod deadline_tests;
+#[cfg(test)]
+mod shutdown_tests;
 #[cfg(test)]
 mod tests;

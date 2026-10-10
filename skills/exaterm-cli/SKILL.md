@@ -58,6 +58,10 @@ Read only the relevant sections:
    Serial success also guarantees local port release. Serial disconnect discards unsent
    input; send success establishes queue acceptance, not device delivery. Concurrent
    disconnects wait for the same cleanup. Repeated disconnect is idempotent.
+   On Windows, Serial may wait for the pending write's remaining transmission deadline
+   before cancelling it. Recent successful writes also retain their remaining budgets
+   before port release, including while the writer is idle.
+   See the reference for timing and forced-cancellation limits.
 
 ## Operating Rules
 

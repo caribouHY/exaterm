@@ -176,10 +176,16 @@ async fn cancellation_failure_is_reported_after_writer_release() {
         released_rx.recv().unwrap();
         Ok(0)
     });
-    let result = stop_serial_writer(writer, |_| {
-        let _ = released.send(());
-        Err(io::ErrorKind::PermissionDenied.into())
-    })
+    let result = stop_serial_writer(
+        SerialWriter {
+            thread: writer,
+            deadlines: Arc::new(Mutex::default()),
+        },
+        |_| {
+            let _ = released.send(());
+            Err(io::ErrorKind::PermissionDenied.into())
+        },
+    )
     .await;
     assert!(result.unwrap_err().contains("Failed to cancel Serial I/O"));
 }

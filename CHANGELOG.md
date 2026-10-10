@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Allowed pending Windows Serial writes to finish and retained recent successful writes' original transmission budgets before port release, avoiding first-reconnect failures during and immediately after healthy bulk transfers.
 - Prevented Windows Serial bulk-write failures caused by the receive polling timeout by using baud-aware transmission deadlines and smaller blocks at low speeds.
 - Stopped accepting Serial input at disconnect, discarded unsent queued output, and made concurrent or error-triggered disconnects wait for worker and port release.
 - Confirmed SSH PTY and shell startup responses before registering connections, and released failed or cancelled attempts, including jump-host connections.
