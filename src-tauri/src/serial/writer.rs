@@ -148,7 +148,10 @@ pub(super) fn cancel_synchronous_write(writer: &JoinHandle<io::Result<usize>>) -
     use windows_sys::Win32::Foundation::ERROR_NOT_FOUND;
     use windows_sys::Win32::System::IO::CancelSynchronousIo;
 
-    // The join handle owns a dedicated thread, never a reusable Tokio pool thread.
+    // SAFETY: The borrowed JoinHandle keeps this OS thread handle open throughout the call.
+    // It belongs to a dedicated writer, so cancellation cannot affect a reused pool thread.
+    // The API requests I/O cancellation without terminating the thread or accessing Rust memory;
+    // the coordinator retains the handle and joins only after the writer has exited.
     if unsafe { CancelSynchronousIo(writer.as_raw_handle()) } != 0 {
         return Ok(());
     }
