@@ -14,6 +14,8 @@ use crate::workspace::{emit_workspace_updated, WorkspaceState};
 use crate::{logger, logger::LoggerState};
 
 mod lifecycle;
+#[cfg(windows)]
+mod windows_io;
 mod writer;
 
 use lifecycle::{
@@ -44,7 +46,7 @@ pub fn list_ports() -> Result<Vec<PortInfo>, String> {
         .collect())
 }
 
-const SERIAL_IO_TIMEOUT: Duration = Duration::from_millis(5);
+const SERIAL_READ_TIMEOUT: Duration = Duration::from_millis(5);
 const SERIAL_CONNECT_CANCELLED: &str = "The Serial connection attempt was cancelled";
 const SERIAL_CONNECT_DUPLICATE: &str =
     "A Serial connection attempt with this request ID already exists";
@@ -403,24 +405,46 @@ async fn process_serial_output<Data, DataFuture, Error, ErrorFuture>(
     }
 }
 
-type SerialPortPair = (
-    Box<dyn serialport::SerialPort>,
-    Box<dyn serialport::SerialPort>,
-);
+#[cfg(windows)]
+type SerialWriterPort = windows_io::WindowsWriterPort;
+#[cfg(not(windows))]
+type SerialWriterPort = Box<dyn serialport::SerialPort>;
+
+type SerialPortPair = (Box<dyn serialport::SerialPort>, SerialWriterPort);
 
 fn open_serial_port_pair(port: String, config: SerialConfig) -> Result<SerialPortPair, String> {
-    let serial_port = serialport::new(&port, config.baud_rate)
+    #[cfg(windows)]
+    if config.baud_rate == 0 {
+        return Err("Serial baud rate must be greater than zero".into());
+    }
+    let builder = serialport::new(&port, config.baud_rate)
         .data_bits(to_data_bits(config.data_bits))
         .parity(to_parity(&config.parity))
         .stop_bits(to_stop_bits(config.stop_bits))
         .flow_control(to_flow_control(&config.flow_control))
-        .timeout(SERIAL_IO_TIMEOUT)
-        .open()
-        .map_err(|error| format!("Failed to open the serial port: {}", error))?;
-    let writer_port = serial_port
-        .try_clone()
-        .map_err(|error| format!("Failed to clone the serial port handle: {}", error))?;
-    Ok((serial_port, writer_port))
+        .timeout(SERIAL_READ_TIMEOUT);
+    #[cfg(windows)]
+    {
+        let serial_port = builder
+            .open_native()
+            .map_err(|error| format!("Failed to open the serial port: {error}"))?;
+        let writer_port = serial_port
+            .try_clone_native()
+            .map_err(|error| format!("Failed to clone the serial port handle: {error}"))?;
+        let writer_port = windows_io::WindowsWriterPort::new(writer_port)
+            .map_err(|error| format!("Failed to configure Serial transmission: {error}"))?;
+        Ok((Box::new(serial_port), writer_port))
+    }
+    #[cfg(not(windows))]
+    {
+        let serial_port = builder
+            .open()
+            .map_err(|error| format!("Failed to open the serial port: {}", error))?;
+        let writer_port = serial_port
+            .try_clone()
+            .map_err(|error| format!("Failed to clone the serial port handle: {}", error))?;
+        Ok((serial_port, writer_port))
+    }
 }
 
 #[tauri::command]

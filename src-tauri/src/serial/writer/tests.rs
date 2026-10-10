@@ -3,6 +3,8 @@ use std::sync::Mutex;
 
 struct TestWriter<F>(F);
 
+impl<F: FnMut(&[u8]) -> io::Result<usize>> SerialWritePort for TestWriter<F> {}
+
 impl<F: FnMut(&[u8]) -> io::Result<usize>> Write for TestWriter<F> {
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         (self.0)(data)
@@ -184,6 +186,8 @@ async fn cancellation_failure_is_reported_after_writer_release() {
 
 struct DropWriter(Arc<AtomicBool>);
 
+impl SerialWritePort for DropWriter {}
+
 impl Write for DropWriter {
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         Ok(data.len())
@@ -221,6 +225,7 @@ async fn writer_error_notification_follows_port_drop() {
     struct FailingWriter {
         _port: DropWriter,
     }
+    impl SerialWritePort for FailingWriter {}
     impl Write for FailingWriter {
         fn write(&mut self, _: &[u8]) -> io::Result<usize> {
             Err(io::ErrorKind::BrokenPipe.into())

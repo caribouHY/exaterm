@@ -2,16 +2,42 @@ use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
-use super::SERIAL_IO_TIMEOUT;
+mod timing;
+pub(super) use timing::WritePolicy;
 
 const WRITE_CHUNK_SIZE: usize = 4096;
+const SERIAL_CANCEL_RETRY_INTERVAL: Duration = Duration::from_millis(5);
 
-pub(super) fn process_serial_writes<W: Write>(
+pub(super) trait SerialWritePort: Write {
+    fn policy(&self) -> Option<WritePolicy> {
+        None
+    }
+
+    fn set_write_timeout(&mut self, _timeout: Duration) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+impl SerialWritePort for Box<dyn serialport::SerialPort> {}
+
+pub(super) fn process_serial_writes<W: SerialWritePort>(
     port: &mut W,
     queue: mpsc::Receiver<Vec<u8>>,
     running: &AtomicBool,
 ) -> io::Result<usize> {
+    process_serial_writes_with_clock(port, queue, running, Instant::now)
+}
+
+fn process_serial_writes_with_clock<W: SerialWritePort>(
+    port: &mut W,
+    queue: mpsc::Receiver<Vec<u8>>,
+    running: &AtomicBool,
+    mut now: impl FnMut() -> Instant,
+) -> io::Result<usize> {
+    let policy = port.policy();
     let mut submitted = 0;
     while running.load(Ordering::SeqCst) {
         let Ok(data) = queue.recv() else {
@@ -22,28 +48,66 @@ pub(super) fn process_serial_writes<W: Write>(
             if !running.load(Ordering::SeqCst) {
                 return Ok(submitted);
             }
-            let end = data.len().min(offset + WRITE_CHUNK_SIZE);
-            let result = port.write(&data[offset..end]);
-            if let Ok(written) = &result {
-                submitted += written;
-                offset += written;
-            }
-            // A cancelled write may still complete normally or return partial progress.
-            if !running.load(Ordering::SeqCst) {
-                return match result {
-                    Err(error) if !is_cancelled_io(&error) => Err(error),
-                    _ => Ok(submitted),
+            let chunk_end = policy.map_or(data.len(), |policy| {
+                data.len().min(offset + policy.chunk_size())
+            });
+            let deadline = policy.map(|policy| now() + policy.timeout(chunk_end - offset));
+            while offset < chunk_end {
+                if !running.load(Ordering::SeqCst) {
+                    return Ok(submitted);
+                }
+                let result = if let Some(deadline) = deadline {
+                    let remaining = deadline.saturating_duration_since(now());
+                    if remaining.is_zero() {
+                        return deadline_result(running, submitted);
+                    }
+                    match port.set_write_timeout(remaining) {
+                        Ok(()) => {
+                            if !running.load(Ordering::SeqCst) {
+                                return Ok(submitted);
+                            }
+                            if now() >= deadline {
+                                return deadline_result(running, submitted);
+                            }
+                            port.write(&data[offset..chunk_end])
+                        }
+                        Err(error) => Err(error),
+                    }
+                } else {
+                    port.write(&data[offset..data.len().min(offset + WRITE_CHUNK_SIZE)])
                 };
-            }
-            match result {
-                Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
-                Ok(_) => {}
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                Err(error) => return Err(error),
+                if let Ok(written) = &result {
+                    submitted += written;
+                    offset += written;
+                }
+                // A cancelled write may still complete normally or return partial progress.
+                if !running.load(Ordering::SeqCst) {
+                    return match result {
+                        Err(error) if !is_cancelled_io(&error) => Err(error),
+                        _ => Ok(submitted),
+                    };
+                }
+                match result {
+                    Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
+                    Ok(_) => {}
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                    Err(error) => return Err(error),
+                }
             }
         }
     }
     Ok(submitted)
+}
+
+fn deadline_result(running: &AtomicBool, submitted: usize) -> io::Result<usize> {
+    if running.load(Ordering::SeqCst) {
+        Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "Serial transmission deadline exceeded",
+        ))
+    } else {
+        Ok(submitted)
+    }
 }
 
 fn is_cancelled_io(error: &io::Error) -> bool {
@@ -57,7 +121,7 @@ pub(super) fn spawn_serial_writer<W, Error>(
     on_error: Error,
 ) -> io::Result<JoinHandle<io::Result<usize>>>
 where
-    W: Write + Send + 'static,
+    W: SerialWritePort + Send + 'static,
     Error: FnOnce(String) + Send + 'static,
 {
     spawn_serial_writer_with(port, queue, running, on_error, |worker| {
@@ -75,7 +139,7 @@ fn spawn_serial_writer_with<W, Error, Spawn>(
     spawn: Spawn,
 ) -> io::Result<JoinHandle<io::Result<usize>>>
 where
-    W: Write + Send + 'static,
+    W: SerialWritePort + Send + 'static,
     Error: FnOnce(String) + Send + 'static,
     Spawn: FnOnce(
         Box<dyn FnOnce() -> io::Result<usize> + Send>,
@@ -104,7 +168,7 @@ where
             cancellation_error
                 .get_or_insert_with(|| format!("Failed to cancel Serial I/O: {error}"));
         }
-        tokio::time::sleep(SERIAL_IO_TIMEOUT).await;
+        tokio::time::sleep(SERIAL_CANCEL_RETRY_INTERVAL).await;
     }
     let result = writer
         .join()
@@ -168,5 +232,7 @@ pub(super) fn cancel_synchronous_write(_writer: &JoinHandle<io::Result<usize>>) 
     Ok(())
 }
 
+#[cfg(test)]
+mod deadline_tests;
 #[cfg(test)]
 mod tests;

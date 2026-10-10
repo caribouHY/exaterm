@@ -369,6 +369,7 @@ async fn production_cleanup_releases_every_handle_and_drains_output_before_succe
         entered: Option<tokio::sync::oneshot::Sender<()>>,
         cancel: mpsc::Receiver<()>,
     }
+    impl super::writer::SerialWritePort for BlockingPort {}
     impl std::io::Write for BlockingPort {
         fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
             self.entered.take().unwrap().send(()).unwrap();
