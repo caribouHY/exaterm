@@ -7,7 +7,8 @@ use std::sync::{Mutex, OnceLock};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use russh::keys::{Algorithm, PublicKey};
+use russh::keys::key::safe_rng;
+use russh::keys::{Algorithm, EcdsaCurve, PublicKey};
 use russh::{client, server, Channel};
 use tokio::io::{AsyncRead, AsyncWrite, DuplexStream, ReadBuf};
 
@@ -434,10 +435,18 @@ async fn advertised_sha2_rejection_does_not_downgrade() {
 #[tokio::test]
 async fn non_rsa_keys_keep_their_signature_algorithm() {
     assert_auth("ssh-ed25519", true, host_key(), &["ssh-ed25519"]).await;
+    // Keep signature negotiation independent of variable-length OpenSSH private scalars.
+    let ecdsa_key = PrivateKey::random(
+        &mut safe_rng(),
+        Algorithm::Ecdsa {
+            curve: EcdsaCurve::NistP256,
+        },
+    )
+    .unwrap();
     assert_auth(
         "ecdsa-sha2-nistp256",
         true,
-        generated_key("ecdsa"),
+        ecdsa_key,
         &["ecdsa-sha2-nistp256"],
     )
     .await;
