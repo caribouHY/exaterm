@@ -11,6 +11,8 @@ use russh::keys::{Algorithm, PublicKey};
 use russh::{client, server, Channel};
 use tokio::io::{AsyncRead, AsyncWrite, DuplexStream, ReadBuf};
 
+mod passphrase_tests;
+
 fn generated_key(kind: &str) -> PrivateKey {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("target")
