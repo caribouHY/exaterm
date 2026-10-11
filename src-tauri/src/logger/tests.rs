@@ -1,10 +1,15 @@
 use super::*;
 use uuid::Uuid;
 
+fn test_dir(prefix: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("test-logger")
+        .join(format!("{prefix}_{}", Uuid::new_v4()))
+}
+
 fn temp_index_path() -> PathBuf {
-    std::env::temp_dir()
-        .join(format!("exaterm_logger_test_{}", Uuid::new_v4()))
-        .join("index.json")
+    test_dir("test").join("index.json")
 }
 
 fn sample_session(session_id: &str, started_at: &str, target: &str) -> LogSession {
@@ -118,7 +123,7 @@ fn upsert_log_session_keeps_multiple_manual_entries_for_same_session() {
 
 #[test]
 fn append_to_log_sessions_writes_to_active_target() {
-    let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+    let dir = test_dir("test");
     fs::create_dir_all(&dir).expect("temp dir should be created");
     let log_path = dir.join("session.log");
     fs::write(&log_path, "log\n").expect("log file should be created");
@@ -135,7 +140,7 @@ fn append_to_log_sessions_writes_to_active_target() {
 
 #[test]
 fn create_log_session_writes_header_when_enabled() {
-    let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+    let dir = test_dir("test");
     fs::create_dir_all(&dir).expect("temp dir should be created");
 
     let session = create_log_session(
@@ -162,7 +167,7 @@ fn create_log_session_writes_header_when_enabled() {
 
 #[test]
 fn create_log_session_skips_header_when_disabled() {
-    let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+    let dir = test_dir("test");
     fs::create_dir_all(&dir).expect("temp dir should be created");
 
     let session = create_log_session(
@@ -186,7 +191,7 @@ fn create_log_session_skips_header_when_disabled() {
 
 #[tokio::test]
 async fn start_manual_log_without_file_path_uses_log_dir() {
-    let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+    let dir = test_dir("test");
     let index_path = dir.join("index.json");
     let state = LoggerState::with_paths(dir.clone(), index_path.clone());
 
@@ -215,7 +220,7 @@ async fn start_manual_log_without_file_path_uses_log_dir() {
 
 #[tokio::test]
 async fn repeated_manual_start_reuses_the_active_file_without_overwriting_it() {
-    let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+    let dir = test_dir("test");
     fs::create_dir_all(&dir).expect("temp dir should be created");
     let index_path = dir.join("index.json");
     let first_path = dir.join("first.log");
@@ -256,7 +261,7 @@ async fn repeated_manual_start_reuses_the_active_file_without_overwriting_it() {
 
 #[tokio::test]
 async fn connection_and_manual_starts_share_one_active_target() {
-    let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+    let dir = test_dir("test");
     let index_path = dir.join("index.json");
     let state = LoggerState::with_paths(dir.clone(), index_path.clone());
 
@@ -306,7 +311,7 @@ async fn connection_and_manual_starts_share_one_active_target() {
 
 #[test]
 fn create_log_session_overwrite_replaces_existing_file() {
-    let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+    let dir = test_dir("test");
     fs::create_dir_all(&dir).expect("temp dir should be created");
     let path = dir.join("manual.log");
     fs::write(&path, "existing content\n").expect("manual file should be created");
@@ -334,7 +339,7 @@ fn create_log_session_overwrite_replaces_existing_file() {
 
 #[test]
 fn create_log_session_appends_header_to_existing_file() {
-    let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+    let dir = test_dir("test");
     fs::create_dir_all(&dir).expect("temp dir should be created");
     let path = dir.join("manual.log");
     fs::write(&path, "existing content").expect("manual file should be created");
@@ -361,7 +366,7 @@ fn create_log_session_appends_header_to_existing_file() {
 
 #[test]
 fn create_log_session_append_skips_header_when_disabled() {
-    let dir = std::env::temp_dir().join(format!("exaterm_logger_test_{}", Uuid::new_v4()));
+    let dir = test_dir("test");
     fs::create_dir_all(&dir).expect("temp dir should be created");
     let path = dir.join("manual.log");
     fs::write(&path, "existing content\n").expect("manual file should be created");
@@ -884,8 +889,7 @@ fn bulk_delete_skips_auto_file_outside_log_dir() {
     let path = temp_index_path();
     let log_dir = path.parent().unwrap().to_path_buf();
     fs::create_dir_all(&log_dir).expect("log dir should be created");
-    let outside_dir =
-        std::env::temp_dir().join(format!("exaterm_logger_outside_{}", Uuid::new_v4()));
+    let outside_dir = test_dir("outside");
     fs::create_dir_all(&outside_dir).expect("outside dir should be created");
     let outside_path = outside_dir.join("auto.log");
     fs::write(&outside_path, "auto").expect("outside file should be created");
