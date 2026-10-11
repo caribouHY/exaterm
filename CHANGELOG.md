@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Distinguished log history and folder loading failures from empty history, added retry controls, and preserved previously loaded entries when refreshing fails.
+
 ## v0.9.3
 
 ### Added

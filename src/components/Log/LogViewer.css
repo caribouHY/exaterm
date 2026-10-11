@@ -63,6 +63,15 @@
   margin-bottom: 16px;
 }
 
+.log-viewer__refresh-button {
+  min-height: 32px;
+}
+
+.log-viewer__delete-button:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 1px;
+}
+
 .log-viewer__empty {
   padding: 40px;
 }
@@ -135,6 +144,7 @@
   }
 
   .log-viewer__actions,
+  .log-viewer__refresh-button,
   .log-viewer__delete-button {
     width: 100%;
   }
