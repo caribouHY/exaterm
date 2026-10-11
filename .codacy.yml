@@ -3,12 +3,14 @@ engines:
   duplication:
     exclude_paths:
       - "src/**/*.test.ts"
+      - "scripts/*.test.mjs"
       - "scripts/**/*.test.mjs"
       - "src-tauri/src/**/tests.rs"
       - "src-tauri/src/**/*_tests.rs"
   metric:
     exclude_paths:
       - "src/**/*.test.ts"
+      - "scripts/*.test.mjs"
       - "scripts/**/*.test.mjs"
       - "src-tauri/src/**/tests.rs"
       - "src-tauri/src/**/*_tests.rs"
