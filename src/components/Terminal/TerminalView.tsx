@@ -46,6 +46,10 @@ import { clearTerminalBuffer, clearTerminalViewport } from "./terminalClearActio
 import { getTerminalControlInput } from "./terminalControlInput";
 import { focusTerminalUnlessModal } from "./terminalFocus";
 import { createTerminalFitController, type TerminalFitController } from "./terminalFitController";
+import {
+  createTerminalResizeController,
+  type TerminalResizeController,
+} from "./terminalResizeController";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
@@ -166,6 +170,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitControllerRef = useRef<TerminalFitController | null>(null);
+  const resizeControllerRef = useRef<TerminalResizeController | null>(null);
   const isConnectedRef = useRef(isConnected);
   const isActiveRef = useRef(isActive);
   const isManualLoggingRef = useRef(isManualLogging);
@@ -243,6 +248,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
   useEffect(() => {
     isConnectedRef.current = isConnected;
+    resizeControllerRef.current?.setConnected(isConnected);
   }, [isConnected]);
 
   useEffect(() => {
@@ -364,19 +370,31 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     term.open(terminalElement);
 
     termRef.current = term;
+    const protocol = getConnectionCommands(connectionType);
+    const resizeCmd = protocol.resize;
+    const resizeController = createTerminalResizeController({
+      terminal: term,
+      container: terminalElement,
+      isActive: () => isActiveRef.current,
+      isConnected: isConnectedRef.current,
+      sendResize: resizeCmd
+        ? ({ cols, rows }) => invoke(resizeCmd, { sessionId, cols, rows })
+        : null,
+    });
+    resizeControllerRef.current = resizeController;
     const fitController = createTerminalFitController({
       container: terminalElement,
       fitAddon,
       isActive: () => isActiveRef.current,
       onFit: () => {
         decorationController.schedule(term, true);
+        resizeController.synchronize();
       },
     });
     fitControllerRef.current = fitController;
     fitController.fit();
 
     // Terminal input -> backend
-    const protocol = getConnectionCommands(connectionType);
     term.onData((data) => {
       if (!isConnectedRef.current) return;
       invoke(protocol.write, { sessionId, data }).catch(console.error);
@@ -577,12 +595,8 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     void outputSyncController.start().catch(() => {});
 
     // Resize handling
-    const resizeCmd = protocol.resize;
     const handleResize = () => {
-      if (!fitController.fit()) return;
-      if (resizeCmd && sessionId && isConnectedRef.current) {
-        invoke(resizeCmd, { sessionId, cols: term.cols, rows: term.rows }).catch(() => {});
-      }
+      fitController.fit();
     };
 
     const resizeObserver = new ResizeObserver(handleResize);
@@ -591,6 +605,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     return () => {
       disposed = true;
       fitController.dispose();
+      resizeController.dispose();
       terminalElement.removeEventListener("contextmenu", handleContextMenu);
       outputSyncController.dispose();
       if (isManualLoggingRef.current) {
@@ -607,6 +622,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       decorationController.clear();
       term.dispose();
       termRef.current = null;
+      if (resizeControllerRef.current === resizeController) {
+        resizeControllerRef.current = null;
+      }
       if (fitControllerRef.current === fitController) {
         fitControllerRef.current = null;
       }
