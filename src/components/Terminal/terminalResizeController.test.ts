@@ -6,7 +6,9 @@ import { createTerminalResizeController } from "./terminalResizeController";
 const cleanup: (() => void)[] = [];
 
 afterEach(() => {
-  cleanup.splice(0).forEach((dispose) => dispose());
+  cleanup.splice(0).forEach((dispose) => {
+    dispose();
+  });
   vi.useRealTimers();
 });
 
@@ -45,7 +47,11 @@ function createHarness(protocol: "ssh" | "telnet" | "serial" = "ssh", connected 
   const fit = createTerminalFitController({
     container,
     // The Node test runner has no renderer; only cell measurement is substituted.
-    fitAddon: { fit: () => terminal.resize(state.cols, state.rows) },
+    fitAddon: {
+      fit: () => {
+        terminal.resize(state.cols, state.rows);
+      },
+    },
     isActive: () => state.active,
     onFit: resize.synchronize,
   });
@@ -124,7 +130,9 @@ describe("terminalResizeController", () => {
     state.rows = 30;
     fit.schedule();
     expect(fit.fit()).toBe(false);
-    await new Promise<void>((resolve) => terminal.write("SYNTHETIC retained output", resolve));
+    await new Promise<void>((resolve) => {
+      terminal.write("SYNTHETIC retained output", resolve);
+    });
     expect(invoke).not.toHaveBeenCalled();
     expect([terminal.cols, terminal.rows]).toEqual([80, 24]);
     vi.useFakeTimers();

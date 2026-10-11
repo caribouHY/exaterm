@@ -40,6 +40,16 @@ export function createTerminalResizeController(
     options.container.clientWidth > 0 &&
     options.container.clientHeight > 0;
 
+  const completeResize = (size: TerminalSize, sendGeneration: number, succeeded: boolean) => {
+    sending = false;
+    if (disposed) return;
+    if (sendGeneration === generation) {
+      if (succeeded) synchronized = size;
+      else if (pending && sameSize(pending, size)) pending = null;
+    }
+    flush();
+  };
+
   const flush = () => {
     if (sending) return;
     if (!canSend()) {
@@ -47,27 +57,21 @@ export function createTerminalResizeController(
       return;
     }
     const size = pending;
+    const sendResize = options.sendResize;
     pending = null;
-    if (!size || sameSize(synchronized, size)) return;
+    if (!size || !sendResize || sameSize(synchronized, size)) return;
 
     sending = true;
     const sendGeneration = generation;
     void (async () => {
       let succeeded = false;
       try {
-        await options.sendResize!(size);
+        await sendResize(size);
         succeeded = true;
       } catch {
         // A failed size remains unsynchronized until another fit or connection trigger.
-      } finally {
-        sending = false;
-        if (disposed) return;
-        if (sendGeneration === generation) {
-          if (succeeded) synchronized = size;
-          else if (pending && sameSize(pending, size)) pending = null;
-        }
-        flush();
       }
+      completeResize(size, sendGeneration, succeeded);
     })();
   };
 
