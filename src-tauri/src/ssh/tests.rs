@@ -486,7 +486,7 @@ fn public_key_auth_requires_private_key_path() {
 }
 
 #[test]
-fn public_key_auth_trims_path_and_empty_passphrase() {
+fn public_key_auth_trims_path_and_preserves_whitespace_passphrase() {
     let request = build_auth_request(
         Some("public_key".to_string()),
         String::new(),
@@ -500,7 +500,7 @@ fn public_key_auth_trims_path_and_empty_passphrase() {
         request,
         SshAuthRequest::PublicKey {
             private_key_path: "C:\\Users\\me\\.ssh\\id_ed25519".to_string(),
-            key_passphrase: None,
+            key_passphrase: Some("  ".to_string()),
         }
     );
 }
@@ -520,7 +520,7 @@ fn automatic_auth_prefers_connection_key_then_default_key() {
         request,
         SshAuthRequest::Auto {
             private_key_path: Some("connection-key".to_string()),
-            key_passphrase: Some("passphrase".to_string()),
+            key_passphrase: Some(" passphrase ".to_string()),
         }
     );
 

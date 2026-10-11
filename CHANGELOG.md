@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Preserved whitespace in private-key passphrases for SSH public-key and automatic authentication, including jump hosts.
 - Distinguished log history and folder loading failures from empty history, added retry controls, and preserved previously loaded entries when refreshing fails.
 
 ## v0.9.3
