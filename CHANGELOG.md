@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Escaped Telnet NAWS size bytes containing IAC so initial negotiation and resize notifications remain valid at dimensions such as 255 and 511.
 - Preserved whitespace in private-key passphrases for SSH public-key and automatic authentication, including jump hosts.
 - Distinguished log history and folder loading failures from empty history, added retry controls, and preserved previously loaded entries when refreshing fails.
 

@@ -227,9 +227,10 @@ fn build_terminal_type() -> Vec<u8> {
 fn build_naws(cols: u16, rows: u16) -> Vec<u8> {
     let [cols_hi, cols_lo] = cols.to_be_bytes();
     let [rows_hi, rows_lo] = rows.to_be_bytes();
-    vec![
-        IAC, SB, OPT_NAWS, cols_hi, cols_lo, rows_hi, rows_lo, IAC, SE,
-    ]
+    let mut response = vec![IAC, SB, OPT_NAWS];
+    response.extend(escape_iac_bytes(vec![cols_hi, cols_lo, rows_hi, rows_lo]));
+    response.extend([IAC, SE]);
+    response
 }
 
 fn escape_user_data(data: Vec<u8>) -> Vec<u8> {
@@ -649,5 +650,77 @@ mod tests {
             escape_user_data(vec![b'a', IAC, b'b']),
             vec![b'a', IAC, IAC, b'b']
         );
+    }
+
+    const NAWS_DIMENSIONS: [(u16, &[u8]); 5] = [
+        (254, &[0, 254]),
+        (255, &[0, 255, 255]),
+        (256, &[1, 0]),
+        (511, &[1, 255, 255]),
+        (65535, &[255, 255, 255, 255]),
+    ];
+
+    fn expected_naws(cols: &[u8], rows: &[u8]) -> Vec<u8> {
+        let mut expected = vec![255, 250, 31];
+        expected.extend_from_slice(cols);
+        expected.extend_from_slice(rows);
+        expected.extend([255, 240]);
+        expected
+    }
+
+    #[test]
+    fn builds_naws_with_255_columns() {
+        assert_eq!(
+            build_naws(255, 24),
+            vec![255, 250, 31, 0, 255, 255, 0, 24, 255, 240]
+        );
+    }
+
+    #[test]
+    fn builds_and_negotiates_naws_boundary_dimensions() {
+        for (cols, cols_bytes) in NAWS_DIMENSIONS {
+            for (rows, rows_bytes) in NAWS_DIMENSIONS {
+                let expected = expected_naws(cols_bytes, rows_bytes);
+                assert_eq!(build_naws(cols, rows), expected, "{cols}x{rows}");
+
+                let mut parser = TelnetParser::new(cols.into(), rows.into());
+                let (data, response) = parser.parse(&[IAC, DO, OPT_NAWS]);
+                let mut negotiation = vec![255, 251, 31];
+                negotiation.extend(expected);
+                assert!(data.is_empty(), "{cols}x{rows}");
+                assert_eq!(response, negotiation, "{cols}x{rows}");
+            }
+        }
+    }
+
+    fn assert_naws_chunks(cols: u16, rows: u16, chunks: &[&[u8]], expected: &[u8]) {
+        let mut parser = TelnetParser::new(cols.into(), rows.into());
+        let mut responses = Vec::new();
+        for chunk in chunks {
+            let (data, response) = parser.parse(chunk);
+            assert!(data.is_empty(), "{cols}x{rows}: {chunks:?}");
+            responses.extend(response);
+        }
+        assert_eq!(responses, expected, "{cols}x{rows}: {chunks:?}");
+        assert_eq!(parser.state, ParseState::Data);
+        assert!(parser.subnegotiation.is_empty());
+        let (data, response) = parser.parse(b"after NAWS");
+        assert_eq!(data, b"after NAWS");
+        assert!(response.is_empty());
+    }
+
+    #[test]
+    fn parser_handles_naws_at_every_receive_boundary() {
+        for (cols, cols_bytes) in NAWS_DIMENSIONS {
+            for (rows, rows_bytes) in NAWS_DIMENSIONS {
+                let frame = build_naws(cols, rows);
+                let expected = expected_naws(cols_bytes, rows_bytes);
+                for split in 0..=frame.len() {
+                    assert_naws_chunks(cols, rows, &[&frame[..split], &frame[split..]], &expected);
+                }
+                let chunks: Vec<&[u8]> = frame.chunks(1).collect();
+                assert_naws_chunks(cols, rows, &chunks, &expected);
+            }
+        }
     }
 }
