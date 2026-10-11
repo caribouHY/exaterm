@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.9.3
+
 ### Added
 
 - Added CLI and MCP session focus controls that select a terminal tab and bring its owning window to the foreground.
