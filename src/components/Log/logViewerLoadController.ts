@@ -53,19 +53,20 @@ export function createLogViewerLoadController(
   let requestId = 0;
   let disposed = false;
 
-  async function loadResource<K extends keyof LogViewerLoadState>(
-    key: K,
-    read: () => Promise<LogViewerLoadState[K]["data"]>,
+  async function loadResource<T>(
+    read: () => Promise<T>,
+    update: (result: { phase: "success"; data: T } | { phase: "error" }) => void,
     id: number
   ) {
+    let result: { phase: "success"; data: T } | { phase: "error" };
     try {
       const data = await read();
-      if (disposed || id !== requestId) return;
-      state = { ...state, [key]: { phase: "success", data } };
+      result = { phase: "success", data };
     } catch {
-      if (disposed || id !== requestId) return;
-      state = { ...state, [key]: { ...state[key], phase: "error" } };
+      result = { phase: "error" };
     }
+    if (disposed || id !== requestId) return;
+    update(result);
     onChange(state);
   }
 
@@ -80,8 +81,20 @@ export function createLogViewerLoadController(
       };
       onChange(state);
       await Promise.all([
-        loadResource("sessions", source.getSessions, id),
-        loadResource("logDir", source.getLogDir, id),
+        loadResource(
+          source.getSessions,
+          (result) => {
+            state = { ...state, sessions: { ...state.sessions, ...result } };
+          },
+          id
+        ),
+        loadResource(
+          source.getLogDir,
+          (result) => {
+            state = { ...state, logDir: { ...state.logDir, ...result } };
+          },
+          id
+        ),
       ]);
     },
     dispose() {
