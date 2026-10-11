@@ -1,4 +1,5 @@
 use std::{
+    future::Future,
     path::PathBuf,
     process::{Command, Stdio},
     time::Duration,
@@ -23,6 +24,20 @@ const RETRY_INTERVAL: Duration = Duration::from_millis(250);
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ExternalControlClient;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ExternalControlClientDiagnostic {
+    pub(crate) gui_started: bool,
+    pub(crate) control_plane_reachable: bool,
+    pub(crate) protocol_compatible: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ControlPlaneProbeState {
+    Unavailable,
+    Compatible,
+    Incompatible,
+}
+
 impl ExternalControlClient {
     pub(crate) fn new() -> Self {
         Self
@@ -34,13 +49,57 @@ impl ExternalControlClient {
         }
 
         let launch_lock = LaunchLock::acquire()?;
-        if launch_lock.is_some() {
-            start_gui_process()?;
+        launch_gui_if_needed(
+            launch_lock.is_some(),
+            probe_local_control_plane,
+            start_gui_process,
+        )
+        .await?;
+
+        let result = self
+            .wait_for_control_plane(POST_LAUNCH_TIMEOUT)
+            .await
+            .map_err(|_| CONTROL_UNAVAILABLE_MESSAGE.to_string());
+        drop(launch_lock);
+        result
+    }
+
+    pub(crate) fn gui_executable_available(&self) -> bool {
+        resolve_gui_exe_path().is_ok()
+    }
+
+    pub(crate) async fn diagnose_or_start_gui(&self) -> ExternalControlClientDiagnostic {
+        match probe_control_plane_state().await {
+            ControlPlaneProbeState::Compatible => return available_diagnostic(false, true),
+            ControlPlaneProbeState::Incompatible => return available_diagnostic(false, false),
+            ControlPlaneProbeState::Unavailable => {}
         }
 
-        self.wait_for_control_plane(POST_LAUNCH_TIMEOUT)
-            .await
-            .map_err(|_| CONTROL_UNAVAILABLE_MESSAGE.to_string())
+        let launch_lock = match LaunchLock::acquire() {
+            Ok(lock) => lock,
+            Err(_) => return unavailable_diagnostic(false),
+        };
+        let mut gui_started = false;
+
+        if launch_lock.is_some()
+            && probe_control_plane_state().await == ControlPlaneProbeState::Unavailable
+        {
+            if start_gui_process().is_err() {
+                return unavailable_diagnostic(false);
+            }
+            gui_started = true;
+        }
+
+        let probe_state = self
+            .wait_for_reachable_control_plane(POST_LAUNCH_TIMEOUT)
+            .await;
+        drop(launch_lock);
+
+        match probe_state {
+            Some(ControlPlaneProbeState::Compatible) => available_diagnostic(gui_started, true),
+            Some(ControlPlaneProbeState::Incompatible) => available_diagnostic(gui_started, false),
+            Some(ControlPlaneProbeState::Unavailable) | None => unavailable_diagnostic(gui_started),
+        }
     }
 
     pub(crate) async fn call(
@@ -62,6 +121,58 @@ impl ExternalControlClient {
             time::sleep(RETRY_INTERVAL).await;
         }
     }
+
+    async fn wait_for_reachable_control_plane(
+        &self,
+        timeout: Duration,
+    ) -> Option<ControlPlaneProbeState> {
+        let deadline = time::Instant::now() + timeout;
+        loop {
+            let state = probe_control_plane_state().await;
+            if state != ControlPlaneProbeState::Unavailable {
+                return Some(state);
+            }
+            if time::Instant::now() >= deadline {
+                return None;
+            }
+            time::sleep(RETRY_INTERVAL).await;
+        }
+    }
+}
+
+fn available_diagnostic(
+    gui_started: bool,
+    protocol_compatible: bool,
+) -> ExternalControlClientDiagnostic {
+    ExternalControlClientDiagnostic {
+        gui_started,
+        control_plane_reachable: true,
+        protocol_compatible: Some(protocol_compatible),
+    }
+}
+
+fn unavailable_diagnostic(gui_started: bool) -> ExternalControlClientDiagnostic {
+    ExternalControlClientDiagnostic {
+        gui_started,
+        control_plane_reachable: false,
+        protocol_compatible: None,
+    }
+}
+
+async fn launch_gui_if_needed<Probe, ProbeFuture, Launch>(
+    owns_launch_lock: bool,
+    probe: Probe,
+    launch: Launch,
+) -> Result<(), String>
+where
+    Probe: FnOnce() -> ProbeFuture,
+    ProbeFuture: Future<Output = Result<(), String>>,
+    Launch: FnOnce() -> Result<(), String>,
+{
+    if owns_launch_lock && probe().await.is_err() {
+        launch()?;
+    }
+    Ok(())
 }
 
 fn start_gui_process() -> Result<(), String> {
@@ -238,18 +349,46 @@ async fn call_local_control(
 
 #[cfg(windows)]
 async fn probe_local_control_plane() -> Result<(), String> {
-    let stream = connect_named_pipe()
-        .await
-        .map_err(|error| error.message().to_string())?;
-    control_probe_over_stream(stream).await
+    match probe_control_plane_state().await {
+        ControlPlaneProbeState::Compatible => Ok(()),
+        ControlPlaneProbeState::Unavailable | ControlPlaneProbeState::Incompatible => {
+            Err(CONTROL_UNAVAILABLE_MESSAGE.into())
+        }
+    }
 }
 
 #[cfg(not(windows))]
 async fn probe_local_control_plane() -> Result<(), String> {
-    let stream = tokio::net::TcpStream::connect(control_tcp_address())
-        .await
-        .map_err(|error| format!("ExaTerm control TCP connect error: {error}"))?;
-    control_probe_over_stream(stream).await
+    match probe_control_plane_state().await {
+        ControlPlaneProbeState::Compatible => Ok(()),
+        ControlPlaneProbeState::Unavailable | ControlPlaneProbeState::Incompatible => {
+            Err(CONTROL_UNAVAILABLE_MESSAGE.into())
+        }
+    }
+}
+
+#[cfg(windows)]
+async fn probe_control_plane_state() -> ControlPlaneProbeState {
+    let Ok(stream) = connect_named_pipe().await else {
+        return ControlPlaneProbeState::Unavailable;
+    };
+    if control_probe_over_stream(stream).await.is_ok() {
+        ControlPlaneProbeState::Compatible
+    } else {
+        ControlPlaneProbeState::Incompatible
+    }
+}
+
+#[cfg(not(windows))]
+async fn probe_control_plane_state() -> ControlPlaneProbeState {
+    let Ok(stream) = tokio::net::TcpStream::connect(control_tcp_address()).await else {
+        return ControlPlaneProbeState::Unavailable;
+    };
+    if control_probe_over_stream(stream).await.is_ok() {
+        ControlPlaneProbeState::Compatible
+    } else {
+        ControlPlaneProbeState::Incompatible
+    }
 }
 
 #[cfg(windows)]
@@ -298,4 +437,101 @@ fn fnv1a_64(bytes: &[u8]) -> u64 {
         hash = hash.wrapping_mul(0x100000001b3);
     }
     hash
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn compatible_and_incompatible_control_planes_remain_reachable() {
+        assert_eq!(
+            available_diagnostic(false, true),
+            ExternalControlClientDiagnostic {
+                gui_started: false,
+                control_plane_reachable: true,
+                protocol_compatible: Some(true),
+            }
+        );
+        assert_eq!(
+            available_diagnostic(false, false),
+            ExternalControlClientDiagnostic {
+                gui_started: false,
+                control_plane_reachable: true,
+                protocol_compatible: Some(false),
+            }
+        );
+    }
+
+    #[test]
+    fn unavailable_control_plane_skips_protocol_result() {
+        assert_eq!(
+            unavailable_diagnostic(true),
+            ExternalControlClientDiagnostic {
+                gui_started: true,
+                control_plane_reachable: false,
+                protocol_compatible: None,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn launch_owner_rechecks_control_plane_before_starting_gui() {
+        let launches = AtomicUsize::new(0);
+
+        launch_gui_if_needed(
+            true,
+            || async { Ok(()) },
+            || {
+                launches.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(launches.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn launch_owner_starts_gui_when_control_plane_remains_unavailable() {
+        let launches = AtomicUsize::new(0);
+
+        launch_gui_if_needed(
+            true,
+            || async { Err("unavailable".into()) },
+            || {
+                launches.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(launches.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn launch_non_owner_waits_without_probing_or_starting_gui() {
+        let probes = AtomicUsize::new(0);
+        let launches = AtomicUsize::new(0);
+
+        launch_gui_if_needed(
+            false,
+            || async {
+                probes.fetch_add(1, Ordering::SeqCst);
+                Err("unavailable".into())
+            },
+            || {
+                launches.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(probes.load(Ordering::SeqCst), 0);
+        assert_eq!(launches.load(Ordering::SeqCst), 0);
+    }
 }

@@ -17,6 +17,70 @@ impl WorkspaceState {
         last_focused_existing_window(&model).unwrap_or_else(|| "main".to_string())
     }
 
+    pub async fn owner_window_id_for_session(&self, session_id: &str) -> Option<String> {
+        let model = self.model.lock().await;
+        model
+            .tabs
+            .values()
+            .find(|tab| tab.session_id == session_id)
+            .map(|tab| tab.owner_window_id.clone())
+    }
+
+    pub async fn tab_for_session(&self, session_id: &str) -> Option<WorkspaceTab> {
+        let model = self.model.lock().await;
+        model
+            .tabs
+            .values()
+            .find(|tab| tab.session_id == session_id)
+            .cloned()
+    }
+
+    pub async fn activate_session(&self, session_id: &str) -> Option<WorkspaceSnapshot> {
+        let mut model = self.model.lock().await;
+        let tab = model
+            .tabs
+            .values()
+            .find(|tab| tab.session_id == session_id)?
+            .clone();
+        let previous = model.clone();
+        let window = model.windows.get_mut(&tab.owner_window_id)?;
+        if !window.tab_order.contains(&tab.tab_id) {
+            return None;
+        }
+        window.active_tab_id = Some(tab.tab_id);
+        advance_revision_if_changed(&mut model, &previous);
+        Some(snapshot_for_locked(&model, &tab.owner_window_id))
+    }
+
+    pub async fn focus_session_window<F, E>(
+        &self,
+        session_id: &str,
+        window_id: &str,
+        tab_id: &str,
+        focus: F,
+    ) -> Result<bool, E>
+    where
+        F: FnOnce() -> Result<(), E>,
+    {
+        let mut model = self.model.lock().await;
+        let matches =
+            model.tabs.get(tab_id).is_some_and(|tab| {
+                tab.session_id == session_id && tab.owner_window_id == window_id
+            }) && model
+                .windows
+                .get(window_id)
+                .is_some_and(|window| window.active_tab_id.as_deref() == Some(tab_id));
+        if !matches {
+            return Ok(false);
+        }
+        // Keep placement locked until the native focus operation finishes so a moved tab cannot focus its old window.
+        focus()?;
+        let previous = model.clone();
+        set_focused_window(&mut model, window_id);
+        advance_revision_if_changed(&mut model, &previous);
+        Ok(true)
+    }
+
     pub async fn register_window(
         &self,
         window_id: String,

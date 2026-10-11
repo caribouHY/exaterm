@@ -1,10 +1,9 @@
 use super::model::{
-    WorkspaceConnectionInfo, WorkspaceDragDropResult, WorkspaceDragPreview,
-    WorkspacePointerPosition, WorkspaceSnapshot, WorkspaceTabMetadataPatch,
-    WorkspaceTabRegisterInput, WorkspaceWindowCloseResult, WorkspaceWindowCreateResult,
+    WorkspaceDragDropResult, WorkspaceDragPreview, WorkspacePointerPosition, WorkspaceSnapshot,
+    WorkspaceTabMetadataPatch, WorkspaceTabRegisterInput, WorkspaceWindowCloseResult,
+    WorkspaceWindowCreateResult,
 };
 use super::state::WorkspaceState;
-use crate::terminal_control::TerminalProtocol;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use uuid::Uuid;
 
@@ -288,30 +287,9 @@ pub async fn workspace_snapshot_get(
 pub async fn workspace_tab_register(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
-    window_id: Option<String>,
-    session_id: String,
-    connection_type: TerminalProtocol,
-    title: String,
-    encoding: String,
-    terminal_mode: String,
-    connection_info: Option<WorkspaceConnectionInfo>,
-    is_manual_logging: bool,
-    manual_log_file_path: Option<String>,
+    input: WorkspaceTabRegisterInput,
 ) -> Result<WorkspaceSnapshot, String> {
-    let snapshot = state
-        .register_tab(WorkspaceTabRegisterInput {
-            window_id,
-            tab_id: None,
-            session_id,
-            connection_type,
-            title,
-            encoding,
-            terminal_mode,
-            connection_info,
-            is_manual_logging,
-            manual_log_file_path,
-        })
-        .await;
+    let snapshot = state.register_tab(input).await;
     emit_workspace_updated(&app, &snapshot);
     Ok(snapshot)
 }

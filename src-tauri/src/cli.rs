@@ -1,6 +1,8 @@
 use serde::Serialize;
+use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::io::{self, Write};
+use std::sync::Mutex;
 
 const DEFAULT_SSH_PORT: u16 = 22;
 const USAGE: &str = "\
@@ -27,6 +29,55 @@ pub enum CliAction {
 pub enum StartupCliRequest {
     Ssh(StartupSshRequest),
     Telnet(StartupTelnetRequest),
+}
+
+#[derive(Debug)]
+struct PendingStartupCliRequest {
+    window_id: String,
+    request: StartupCliRequest,
+}
+
+#[derive(Debug, Default)]
+pub struct StartupCliState {
+    pending: Mutex<VecDeque<PendingStartupCliRequest>>,
+}
+
+impl StartupCliState {
+    pub fn new(initial_request: Option<StartupCliRequest>) -> Self {
+        let state = Self::default();
+        if let Some(request) = initial_request {
+            state.enqueue("main".into(), request);
+        }
+        state
+    }
+
+    pub fn enqueue(&self, window_id: String, request: StartupCliRequest) {
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.push_back(PendingStartupCliRequest { window_id, request });
+        }
+    }
+
+    pub fn take_for_window(&self, window_id: &str) -> Option<StartupCliRequest> {
+        let mut pending = self.pending.lock().ok()?;
+        let index = pending
+            .iter()
+            .position(|entry| entry.window_id == window_id)?;
+        pending.remove(index).map(|entry| entry.request)
+    }
+
+    pub fn reassign_window(&self, from_window_id: &str, to_window_id: &str) -> usize {
+        let Ok(mut pending) = self.pending.lock() else {
+            return 0;
+        };
+        let mut reassigned = 0;
+        for entry in pending.iter_mut() {
+            if entry.window_id == from_window_id {
+                entry.window_id = to_window_id.to_string();
+                reassigned += 1;
+            }
+        }
+        reassigned
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -70,6 +121,10 @@ impl CliError {
 
 pub fn parse_env_args() -> Result<CliAction, CliError> {
     parse_args(std::env::args_os().skip(1))
+}
+
+pub fn parse_forwarded_args(args: &[String]) -> Result<CliAction, CliError> {
+    parse_args(args.iter().skip(1).map(OsString::from))
 }
 
 fn parse_args<I>(args: I) -> Result<CliAction, CliError>
@@ -434,5 +489,59 @@ mod tests {
     #[test]
     fn telnet_extra_target_is_error() {
         assert!(parse(&["telnet", "example.com", "extra"]).is_err());
+    }
+
+    #[test]
+    fn forwarded_arguments_skip_the_executable_path() {
+        let args = vec![
+            r"C:\Program Files\ExaTerm\exaterm.exe".to_string(),
+            "ssh".to_string(),
+            "user@example.com".to_string(),
+        ];
+
+        assert_eq!(
+            parse_forwarded_args(&args).unwrap(),
+            parse(&["ssh", "user@example.com"]).unwrap()
+        );
+    }
+
+    #[test]
+    fn startup_requests_are_fifo_within_each_window() {
+        let state = StartupCliState::default();
+        let first = StartupCliRequest::Telnet(StartupTelnetRequest {
+            target: "first".into(),
+            port: None,
+        });
+        let other = StartupCliRequest::Telnet(StartupTelnetRequest {
+            target: "other".into(),
+            port: None,
+        });
+        let second = StartupCliRequest::Telnet(StartupTelnetRequest {
+            target: "second".into(),
+            port: None,
+        });
+
+        state.enqueue("main".into(), first.clone());
+        state.enqueue("other".into(), other.clone());
+        state.enqueue("main".into(), second.clone());
+
+        assert_eq!(state.take_for_window("main"), Some(first));
+        assert_eq!(state.take_for_window("main"), Some(second));
+        assert_eq!(state.take_for_window("main"), None);
+        assert_eq!(state.take_for_window("other"), Some(other));
+    }
+
+    #[test]
+    fn startup_requests_move_when_the_target_window_closes() {
+        let state = StartupCliState::default();
+        let request = StartupCliRequest::Telnet(StartupTelnetRequest {
+            target: "queued".into(),
+            port: None,
+        });
+        state.enqueue("closing".into(), request.clone());
+
+        assert_eq!(state.reassign_window("closing", "remaining"), 1);
+        assert_eq!(state.take_for_window("closing"), None);
+        assert_eq!(state.take_for_window("remaining"), Some(request));
     }
 }

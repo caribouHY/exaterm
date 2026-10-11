@@ -187,6 +187,8 @@ HTTP MCP transport は削除されました。古い設定ファイルに残っ�
 MCP が有効な場合、外部クライアントは次のツールを呼び出せます。
 
 - `list_terminal_sessions`: ユーザーが ExaTerm で開いたターミナルセッションを一覧表示します。
+- `disconnect_terminal_session`: 実行中ログをflushして停止した後、タブとスクロールバックを残したままセッションを切断します。
+- `focus_terminal_session`: `session_id` を受け取り、既存タブを選択して所有ウィンドウを表示・最小化解除・前面表示します。GUI反映確認後に `session_id`、`window_id`、`tab_id`、`focused: true` を返します。切断済みタブも対象にでき、表示中のダイアログは維持します。GUI応答の期限は別ウィンドウへの移動時の1回の再要求を含めて5秒です。OSの前面表示制約は適用されます。
 - `read_terminal_output`: 必須の `mode` 引数に応じてセッション出力を読み取るか待機します。
   - `recent`: 保持されている直近出力を即時に読み取ります。
   - `delta`: 必須の `cursor` 以降の出力を即時に読み取ります。
@@ -195,6 +197,9 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
 - `run_terminal_command`: 接続中のセッションへコマンドを送信し、出力待機後に差分出力を返します。
 - `start_terminal_log`: 接続中セッションの平文ログを明示的に開始します。ログは `%AppData%\ExaTerm\logs` 配下に保存され、返却値には作成されたファイルパスが含まれます。
 - `stop_terminal_log`: ExaTerm が表示済み出力をログへ flush した後、セッションで実行中の平文ログを停止します。
+- `get_terminal_log_status`: ログを変更せず、現在の `inactive`、`active`、`paused` 状態、ファイルパス、`auto` または `manual` モードを返します。inactive時のパスとモードは `null` です。
+- `pause_terminal_log`: 表示済みの保留出力をflushしてから実行中ログを一時停止します。停止済み状態での再実行は成功し、`changed: false` を返します。
+- `resume_terminal_log`: 同じログファイルへの記録を再開します。記録中状態での再実行は成功し、`changed: false` を返します。
 
 出力読み取りの例:
 
@@ -235,7 +240,7 @@ GUI で確認し、保存済み鍵との不一致は拒否します。
 
 従来の `read_terminal_output_delta` と `wait_terminal_output` は削除されました。それぞれ `mode: "delta"` と `mode: "wait"` を指定した `read_terminal_output` に置き換えてください。
 
-MCP 互換アダプターと CLI は保存済み認証情報の読み取り、API キーの公開、ログファイル本文の直接読み取りを行いません。外部クライアントがログを開始・停止した場合も、受け取るのはログ状態とファイルパスだけです。すべての外部新規接続には `external_control.connect_enabled=true` が必要で、SSH/Telnet の直接接続にはさらに `external_control.direct_connect_enabled=true` が必要です。プロファイルは `saved_connections[*].external_control_enabled=false` で除外でき、直接接続の踏み台として使う場合も同じ許可が必要です。SSH の known_hosts 検証と ExaTerm UI での認証入力は維持されます。機密情報を含む可能性があるため、外部制御は信頼済みローカルクライアントに対してのみ有効化してください。
+MCP 互換アダプターと CLI は保存済み認証情報の読み取り、API キーの公開、ログファイル本文の直接読み取りを行いません。外部クライアントは自動開始ログを含むログ状態の取得、開始、一時停止、再開、停止ができますが、受け取るのはログ状態とファイルパスだけです。MCP は常に ExaTerm が自動選択する保存先を使用し、明示的な保存先と上書き／追記モードは CLI だけが受け付けます。すべての外部新規接続には `external_control.connect_enabled=true` が必要で、SSH/Telnet の直接接続にはさらに `external_control.direct_connect_enabled=true` が必要です。プロファイルは `saved_connections[*].external_control_enabled=false` で除外でき、直接接続の踏み台として使う場合も同じ許可が必要です。SSH の known_hosts 検証と ExaTerm UI での認証入力は維持されます。機密情報を含む可能性があるため、外部制御は信頼済みローカルクライアントに対してのみ有効化してください。
 
 ## shortcuts
 

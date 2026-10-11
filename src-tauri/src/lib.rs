@@ -17,7 +17,7 @@ mod terminal_cli;
 mod terminal_control;
 mod workspace;
 
-use cli::{CliAction, StartupCliRequest};
+use cli::{CliAction, StartupCliRequest, StartupCliState};
 use connection_history::ConnectionHistoryState;
 use external_control::{
     spawn_gui_control_plane, ExternalControlCredentialState, ExternalControlLogControlState,
@@ -26,8 +26,8 @@ use external_control::{
 use logger::LoggerState;
 use serial::SerialState;
 use ssh::SshState;
-use std::sync::Mutex;
-use tauri::Manager;
+use std::sync::Arc;
+use tauri::{Emitter, Manager};
 use telnet::TelnetState;
 use terminal_control::TerminalControlState;
 use workspace::WorkspaceState;
@@ -35,21 +35,53 @@ use workspace::WorkspaceState;
 pub use mcp::run_stdio_proxy;
 pub use terminal_cli::run_terminal_cli;
 
-pub struct StartupCliState {
-    request: Mutex<Option<StartupCliRequest>>,
+#[tauri::command]
+fn startup_cli_request_take(
+    state: tauri::State<'_, StartupCliState>,
+    window_id: String,
+) -> Option<StartupCliRequest> {
+    state.take_for_window(&window_id)
 }
 
-impl StartupCliState {
-    fn new(request: Option<StartupCliRequest>) -> Self {
-        Self {
-            request: Mutex::new(request),
-        }
+fn focus_window(app: &tauri::AppHandle, window_id: &str) {
+    let Some(window) = app.get_webview_window(window_id) else {
+        return;
+    };
+    if let Err(error) = window.show() {
+        log::warn!("Startup CLI window show failed: {error}");
+    }
+    if let Err(error) = window.unminimize() {
+        log::warn!("Startup CLI window unminimize failed: {error}");
+    }
+    if let Err(error) = window.set_focus() {
+        log::warn!("Startup CLI window focus failed: {error}");
     }
 }
 
-#[tauri::command]
-fn startup_cli_request_get(state: tauri::State<'_, StartupCliState>) -> Option<StartupCliRequest> {
-    state.request.lock().ok()?.take()
+fn handle_forwarded_cli_invocation(app: &tauri::AppHandle, args: Vec<String>) {
+    let action = match cli::parse_forwarded_args(&args) {
+        Ok(action) => action,
+        Err(error) => {
+            log::warn!("Forwarded CLI arguments were rejected: {}", error.message());
+            return;
+        }
+    };
+    let CliAction::RunApp(request) = action else {
+        return;
+    };
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let window_id = app.state::<WorkspaceState>().preferred_window_id().await;
+        if let Some(request) = request {
+            app.state::<StartupCliState>()
+                .enqueue(window_id.clone(), request);
+            if let Err(error) = app.emit_to(&window_id, "startup-cli://request-available", ()) {
+                log::warn!("Startup CLI request notification failed: {error}");
+            }
+        }
+        focus_window(&app, &window_id);
+    });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -77,6 +109,9 @@ pub fn run() {
     let external_control_log_control_state = ExternalControlLogControlState::new();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            handle_forwarded_cli_invocation(app, args);
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -92,6 +127,7 @@ pub fn run() {
         .manage(connection_history_state)
         .manage(external_control_credential_state.clone())
         .manage(external_control_log_control_state.clone())
+        .manage(external_control::ExternalControlFocusState::default())
         .on_window_event({
             let workspace_state = workspace_state.clone();
             let ssh_state = ssh_state.clone();
@@ -119,6 +155,23 @@ pub fn run() {
                         let result = workspace_state.unregister_window(window_id).await;
                         workspace::emit_workspace_updates(&app, &result.snapshots);
                         workspace::emit_workspace_window_closed(&app, &result);
+                        if result.remaining_window_count > 0 {
+                            let destination_window_id = workspace_state.preferred_window_id().await;
+                            let reassigned = app
+                                .state::<StartupCliState>()
+                                .reassign_window(&result.window_id, &destination_window_id);
+                            if reassigned > 0 {
+                                if let Err(error) = app.emit_to(
+                                    &destination_window_id,
+                                    "startup-cli://request-available",
+                                    (),
+                                ) {
+                                    log::warn!(
+                                        "Reassigned startup CLI request notification failed: {error}"
+                                    );
+                                }
+                            }
+                        }
                     });
                 }
                 _ => {}
@@ -133,26 +186,35 @@ pub fn run() {
                     terminal_control_state
                         .set_output_limit_from_scrollback(cfg.terminal.scrollback);
                     if cfg.external_control.enabled {
-                        let runtime = ExternalControlRuntime {
-                            config: external_control::service::ExternalControlPermissions::new(
-                                cfg.external_control.connect_enabled,
-                                cfg.external_control.direct_connect_enabled,
+                        let app_handle = app.handle().clone();
+                        let io = external_control::service::ExternalControlIo::new(
+                            Arc::new(
+                                external_control::service::SystemExternalControlConfigIo,
                             ),
-                            #[cfg(test)]
-                            app_config: None,
-                            #[cfg(test)]
-                            available_serial_ports: None,
-                            #[cfg(not(test))]
-                            app: Some(app.handle().clone()),
+                            Arc::new(
+                                external_control::service::TauriExternalControlProtocolIo::new(
+                                    app_handle.clone(),
+                                    terminal_control_state.clone(),
+                                    workspace_state.clone(),
+                                    ssh_state.clone(),
+                                    serial_state.clone(),
+                                    telnet_state.clone(),
+                                    Some(logger_state.clone()),
+                                ),
+                            ),
+                            Arc::new(external_control::service::TauriExternalControlUiIo::new(
+                                app_handle,
+                                Some(external_control_credential_state.clone()),
+                                Some(external_control_log_control_state.clone()),
+                            )),
+                            Arc::new(external_control::service::LoggerExternalControlIo::new(
+                                Some(logger_state.clone()),
+                            )),
+                        );
+                        let runtime = ExternalControlRuntime {
+                            io,
                             terminals: terminal_control_state.clone(),
                             workspace: workspace_state.clone(),
-                            ssh: ssh_state.clone(),
-                            serial: serial_state.clone(),
-                            telnet: telnet_state.clone(),
-                            logger: Some(logger_state.clone()),
-                            log_control: Some(external_control_log_control_state.clone()),
-                            #[cfg(not(test))]
-                            credentials: Some(external_control_credential_state.clone()),
                         };
                         spawn_gui_control_plane(runtime);
                     }
@@ -167,7 +229,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             // SSH
-            startup_cli_request_get,
+            startup_cli_request_take,
             ssh::ssh_algorithm_catalog,
             ssh::ssh_private_key_requires_passphrase,
             ssh::ssh_connect,
@@ -212,6 +274,7 @@ pub fn run() {
             connection_history::connection_history_clear,
             external_control::protocol::external_control_credential_submit,
             external_control::protocol::external_control_log_control_submit,
+            external_control::focus::external_control_session_focus_submit,
             terminal_control::terminal_encoding_set,
             terminal_control::terminal_output_delta_get,
             terminal_control::terminal_output_snapshot_get,

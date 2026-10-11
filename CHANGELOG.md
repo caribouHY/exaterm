@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## v0.9.3
+
+### Added
+
+- Added CLI and MCP session focus controls that select a terminal tab and bring its owning window to the foreground.
+- Added CLI and MCP log status, pause, and resume controls, plus CLI-only destination and overwrite/append options for starting session logs.
+- Added CLI and MCP session disconnect controls that preserve terminal tabs and scrollback.
+
+### Fixed
+
+- Allowed pending Windows Serial writes to finish and retained recent successful writes' original transmission budgets before port release, avoiding first-reconnect failures during and immediately after healthy bulk transfers.
+- Prevented Windows Serial bulk-write failures caused by the receive polling timeout by using baud-aware transmission deadlines and smaller blocks at low speeds.
+- Stopped accepting Serial input at disconnect, discarded unsent queued output, and made concurrent or error-triggered disconnects wait for worker and port release.
+- Confirmed SSH PTY and shell startup responses before registering connections, and released failed or cancelled attempts, including jump-host connections.
+- Preserved terminal output arriving during the final restoration delta read, and prevented duplicate display of overlapping output events.
+- Preserved retained terminal history when moving tabs between windows by separating the restoration character limit from the scrollback line setting.
+- Selected server-supported RSA SHA-2 signatures for SSH public key authentication, including automatic authentication and jump hosts, while retaining legacy RSA/SHA-1 compatibility when SHA-2 support is unknown or unavailable.
+- Protected actively recorded log files from bulk deletion through older automatic log history entries, including alternate Windows path spellings.
+- Restored Rust 1.99 Clippy compatibility by updating async-trait.
+- Preserved trailing terminal text when switching between Serial terminal and Settings tabs by skipping size adjustments while the terminal is hidden.
+- Prevented duplicate ExaTerm GUI processes and forwarded command-line SSH and Telnet startup requests to the existing application window.
+- Waited for Serial workers and the local port handle to close before reporting a completed disconnect.
+
 ## v0.9.2
 
 ### Added

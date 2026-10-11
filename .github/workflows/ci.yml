@@ -6,6 +6,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   format:
     name: Format check
@@ -108,16 +112,61 @@ jobs:
         run: cargo test
         working-directory: src-tauri
 
+  rust-clippy:
+    name: Rust Clippy
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Run Clippy
+        run: cargo clippy -- -D warnings
+        working-directory: src-tauri
+
   checks:
-    name: Format, build, and test
+    name: Required checks
     runs-on: windows-latest
     timeout-minutes: 5
+    if: ${{ always() }}
     needs:
       - format
       - frontend-build
       - frontend-test
       - rust-test
+      - rust-clippy
+
+    env:
+      FORMAT_RESULT: ${{ needs.format.result }}
+      FRONTEND_BUILD_RESULT: ${{ needs.frontend-build.result }}
+      FRONTEND_TEST_RESULT: ${{ needs.frontend-test.result }}
+      RUST_TEST_RESULT: ${{ needs.rust-test.result }}
+      RUST_CLIPPY_RESULT: ${{ needs.rust-clippy.result }}
 
     steps:
-      - name: Report success
-        run: echo "All CI checks passed."
+      - name: Verify required jobs
+        shell: pwsh
+        run: |
+          $results = @(
+            "format=$env:FORMAT_RESULT",
+            "frontend-build=$env:FRONTEND_BUILD_RESULT",
+            "frontend-test=$env:FRONTEND_TEST_RESULT",
+            "rust-test=$env:RUST_TEST_RESULT",
+            "rust-clippy=$env:RUST_CLIPPY_RESULT"
+          )
+          $failed = $results | Where-Object { $_ -notmatch '=success$' }
+          if ($failed) {
+            Write-Error ("Required CI jobs did not succeed: " + ($failed -join ', '))
+            exit 1
+          }

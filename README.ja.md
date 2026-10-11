@@ -43,6 +43,7 @@ winget install caribouhy.ExaTerm
 ## コマンドラインからの起動
 
 `exaterm.exe`に引数を渡すと、ExaTermを起動してSSHまたはTelnet接続を開始できます。接続先にはホスト名、IPアドレス、または保存済みプロファイル名を指定できます。
+ExaTermが既に起動している場合は、新しいGUIプロセスを起動せず、最後にフォーカスされたExaTermウィンドウへ要求を転送します。
 
 ```powershell
 exaterm.exe ssh <user@hostname-or-ip-address|profile-name>

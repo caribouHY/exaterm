@@ -93,8 +93,6 @@ impl SshDiagnostic {
     }
 }
 
-/// Global SSH session store
-
 pub(super) fn host_key_error_message(result: &HostKeyCheckResult) -> String {
     match result.status {
         HostKeyCheckStatus::Unknown => format!(

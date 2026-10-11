@@ -9,7 +9,7 @@ import type {
   TerminalMode,
   WorkspaceConnectionInfo,
 } from "../../types";
-import type { SshConnectionProgressEvent } from "./sshConnectionAttemptModel";
+import type { SshConnectionProgressEvent } from "./connectionProtocolEvents";
 import type { ConnectionLogState } from "../../features/terminal-logging/connectionLogModel";
 import type {
   SerialConnectionValidationErrors,
@@ -47,8 +47,8 @@ export interface SshCredentialPrompt {
   username: string;
   authMethod: SshAuthMethod;
   privateKeyPath: string;
-  value: string;
-  error: string;
+  requestId: string;
+  promptId: string;
 }
 
 export interface SshDiagnosticEvent {

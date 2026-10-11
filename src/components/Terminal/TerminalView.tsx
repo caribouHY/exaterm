@@ -1,4 +1,12 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -20,16 +28,24 @@ import {
   type TerminalLogShortcutAction,
 } from "../../features/shortcuts/shortcutModel";
 import { shouldAppendManualLog } from "../../features/terminal-logging/terminalLoggingModel";
+import { createManualLogBufferWriter } from "../../features/terminal-logging/manualLogBufferWriter";
 import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
 import {
   createTerminalDecorationController,
   type TerminalDecorationController,
 } from "./terminalDecorationController";
+import {
+  createTerminalOutputSyncController,
+  type TerminalOutputEventPayload,
+  type TerminalOutputSnapshot,
+} from "./terminalOutputSyncController";
 import { getTerminalDecorationProfile } from "./terminalDecorationProfiles";
 import { getTerminalPromptColor, TERMINAL_DECORATION_COLORS } from "./terminalDecorationTheme";
 import type { TerminalPinnedCommand } from "./terminalDecorationTypes";
 import { clearTerminalBuffer, clearTerminalViewport } from "./terminalClearActions";
 import { getTerminalControlInput } from "./terminalControlInput";
+import { focusTerminalUnlessModal } from "./terminalFocus";
+import { createTerminalFitController, type TerminalFitController } from "./terminalFitController";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalView.css";
 
@@ -63,15 +79,6 @@ export interface TerminalViewHandle {
   flushLogBuffersForMove: () => Promise<void>;
 }
 
-interface TerminalOutputSnapshot {
-  session_id: string;
-  output: string;
-  truncated: boolean;
-  available_chars: number;
-  start_cursor: number;
-  cursor: number;
-}
-
 interface TerminalEditActions {
   selectAll: () => void;
   copySelection: () => void;
@@ -82,6 +89,50 @@ const EMPTY_TERMINAL_EDIT_ACTIONS: TerminalEditActions = {
   selectAll: () => {},
   copySelection: () => {},
   paste: () => {},
+};
+
+const CONNECTION_COMMANDS: Record<
+  ConnectionType,
+  {
+    write: string;
+    dataEvent: string;
+    errorEvent: string;
+    errorReplayedBySnapshot: boolean;
+    resize: string | null;
+  }
+> = {
+  ssh: {
+    write: "ssh_write",
+    dataEvent: "ssh://data",
+    errorEvent: "ssh://error",
+    errorReplayedBySnapshot: true,
+    resize: "ssh_resize",
+  },
+  serial: {
+    write: "serial_write",
+    dataEvent: "serial://data",
+    errorEvent: "serial://error",
+    errorReplayedBySnapshot: false,
+    resize: null,
+  },
+  telnet: {
+    write: "telnet_write",
+    dataEvent: "telnet://data",
+    errorEvent: "telnet://error",
+    errorReplayedBySnapshot: false,
+    resize: "telnet_resize",
+  },
+};
+
+const getConnectionCommands = (connectionType: ConnectionType) => {
+  switch (connectionType) {
+    case "ssh":
+      return CONNECTION_COMMANDS.ssh;
+    case "serial":
+      return CONNECTION_COMMANDS.serial;
+    case "telnet":
+      return CONNECTION_COMMANDS.telnet;
+  }
 };
 
 function normalizeCursorStyle(cursorStyle: string | undefined): "block" | "bar" | "underline" {
@@ -98,7 +149,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     connectionType,
     isConnected,
     isActive,
-    encoding,
     isManualLogging,
     isManualLoggingPaused,
     terminalConfig,
@@ -115,8 +165,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const [pinnedCommand, setPinnedCommand] = useState<TerminalPinnedCommand | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
-  const decoderRef = useRef(new TextDecoder(encoding));
+  const fitControllerRef = useRef<TerminalFitController | null>(null);
   const isConnectedRef = useRef(isConnected);
   const isActiveRef = useRef(isActive);
   const isManualLoggingRef = useRef(isManualLogging);
@@ -164,6 +213,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
   useEffect(() => {
     isActiveRef.current = isActive;
+    if (!isActive) fitControllerRef.current?.cancelPending();
   }, [isActive]);
 
   useEffect(() => {
@@ -180,30 +230,16 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const manualLogSanitizerRef = useRef(
     createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
   );
-
-  const connectionCommands: Record<
-    ConnectionType,
-    { write: string; dataEvent: string; errorEvent: string; resize: string | null }
-  > = {
-    ssh: {
-      write: "ssh_write",
-      dataEvent: "ssh://data",
-      errorEvent: "ssh://error",
-      resize: "ssh_resize",
-    },
-    serial: {
-      write: "serial_write",
-      dataEvent: "serial://data",
-      errorEvent: "serial://error",
-      resize: null,
-    },
-    telnet: {
-      write: "telnet_write",
-      dataEvent: "telnet://data",
-      errorEvent: "telnet://error",
-      resize: "telnet_resize",
-    },
-  };
+  const manualLogBufferWriter = useMemo(
+    () =>
+      createManualLogBufferWriter((data) =>
+        invoke("logger_append", {
+          sessionId,
+          data,
+        })
+      ),
+    [sessionId]
+  );
 
   useEffect(() => {
     isConnectedRef.current = isConnected;
@@ -221,12 +257,10 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       isManualLoggingRef.current
     ) {
       const logText = manualLogSanitizerRef.current.flush();
-      if (logText) {
-        invoke("logger_append", { sessionId, data: logText }).catch(() => {});
-      }
+      void manualLogBufferWriter.flush(logText).catch(() => {});
     }
     isManualLoggingPausedRef.current = isManualLoggingPaused;
-  }, [isManualLoggingPaused, sessionId]);
+  }, [isManualLoggingPaused, manualLogBufferWriter, sessionId]);
 
   useImperativeHandle(
     ref,
@@ -261,26 +295,16 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       flushManualLogBuffer: async () => {
         if (!sessionId) return;
         const logText = manualLogSanitizerRef.current.flush();
-        if (!logText) return;
-        await invoke("logger_append", {
-          sessionId,
-          data: logText,
-        });
+        await manualLogBufferWriter.flush(logText);
       },
       flushLogBuffersForMove: async () => {
         if (!sessionId || !isManualLoggingRef.current) return;
         const logText = manualLogSanitizerRef.current.flush();
-        if (!logText) return;
-        await invoke("logger_append", { sessionId, data: logText });
+        await manualLogBufferWriter.flush(logText);
       },
     }),
-    [clearBuffer, clearViewport, sessionId]
+    [clearBuffer, clearViewport, manualLogBufferWriter, sessionId]
   );
-
-  // Update decoder when encoding changes
-  useEffect(() => {
-    decoderRef.current = new TextDecoder(encoding);
-  }, [encoding]);
 
   useEffect(() => {
     manualLogSanitizerRef.current = createTerminalLogSanitizer(
@@ -338,13 +362,21 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     term.loadAddon(searchAddon);
 
     term.open(terminalElement);
-    fitAddon.fit();
 
     termRef.current = term;
-    fitRef.current = fitAddon;
+    const fitController = createTerminalFitController({
+      container: terminalElement,
+      fitAddon,
+      isActive: () => isActiveRef.current,
+      onFit: () => {
+        decorationController.schedule(term, true);
+      },
+    });
+    fitControllerRef.current = fitController;
+    fitController.fit();
 
     // Terminal input -> backend
-    const protocol = connectionCommands[connectionType];
+    const protocol = getConnectionCommands(connectionType);
     term.onData((data) => {
       if (!isConnectedRef.current) return;
       invoke(protocol.write, { sessionId, data }).catch(console.error);
@@ -504,10 +536,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
     terminalElement.addEventListener("contextmenu", handleContextMenu);
 
-    // Backend data -> terminal
-    const eventPrefix = protocol.dataEvent;
-    const errorPrefix = protocol.errorEvent;
-
     const writeTerminalText = (text: string) => {
       if (!text) return;
       term.write(text, () => {
@@ -517,85 +545,41 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       if (shouldAppendManualLog(isManualLoggingRef.current, isManualLoggingPausedRef.current)) {
         const logText = manualLogSanitizerRef.current.push(text);
         if (logText) {
-          invoke("logger_append", { sessionId, data: logText }).catch(() => {});
+          void manualLogBufferWriter.append(logText).catch(() => {});
         }
       }
     };
-
-    const maxInitialDeltaDrains = 5;
-    let bufferedInitialOutput: string[] = [];
-    let bufferedInitialOutputSeen = false;
-    let initialOutputSyncComplete = false;
-
-    const handleData = (event: { payload: number[] }) => {
-      const data = new Uint8Array(event.payload);
-      const text = decoderRef.current.decode(data, { stream: true });
-      if (!initialOutputSyncComplete) {
-        bufferedInitialOutput.push(text);
-        bufferedInitialOutputSeen = true;
-        return;
-      }
-      writeTerminalText(text);
-    };
-
-    let unlistenData: Promise<() => void> | null = null;
-    let unlistenError: Promise<() => void> | null = null;
-
-    const dataListener = listen<number[]>(`${eventPrefix}/${sessionId}`, handleData);
-    const errorListener = listen<number[]>(`${errorPrefix}/${sessionId}`, handleData);
-    unlistenData = dataListener;
-    unlistenError = errorListener;
-
-    Promise.all([dataListener, errorListener])
-      .then(async () => {
-        if (disposed) return;
-        try {
-          const snapshot = await invoke<TerminalOutputSnapshot>("terminal_output_snapshot_get", {
-            sessionId,
-            maxChars: terminalConfig?.scrollback ?? 20000,
-          });
-          if (disposed) return;
-
-          writeTerminalText(snapshot.output);
-          let cursor = snapshot.cursor;
-          for (let attempt = 0; attempt < maxInitialDeltaDrains; attempt += 1) {
-            bufferedInitialOutputSeen = false;
-            const delta = await invoke<TerminalOutputSnapshot>("terminal_output_delta_get", {
-              sessionId,
-              cursor,
-              maxChars: terminalConfig?.scrollback ?? 20000,
-            });
-            if (disposed) return;
-
-            writeTerminalText(delta.output);
-            cursor = delta.cursor;
-
-            if (!bufferedInitialOutputSeen) break;
-          }
-        } catch {
-          if (!disposed) {
-            bufferedInitialOutput.forEach((text) => {
-              writeTerminalText(text);
-            });
-          }
-        } finally {
-          bufferedInitialOutput = [];
-          initialOutputSyncComplete = true;
-        }
-      })
-      .catch(() => {
-        if (!disposed) {
-          bufferedInitialOutput.forEach((text) => writeTerminalText(text));
-          bufferedInitialOutput = [];
-          initialOutputSyncComplete = true;
-        }
-      });
+    const outputSyncController = createTerminalOutputSyncController({
+      sessionId,
+      channels: [
+        { event: `${protocol.dataEvent}/${sessionId}`, replayedBySnapshot: true },
+        {
+          event: `${protocol.errorEvent}/${sessionId}`,
+          replayedBySnapshot: protocol.errorReplayedBySnapshot,
+        },
+      ],
+      write: writeTerminalText,
+      dependencies: {
+        listen: (event, handler) => listen<TerminalOutputEventPayload>(event, handler),
+        getSnapshot: (currentSessionId, maxChars) =>
+          invoke<TerminalOutputSnapshot>("terminal_output_snapshot_get", {
+            sessionId: currentSessionId,
+            maxChars,
+          }),
+        getDelta: (currentSessionId, cursor, maxChars) =>
+          invoke<TerminalOutputSnapshot>("terminal_output_delta_get", {
+            sessionId: currentSessionId,
+            cursor,
+            maxChars,
+          }),
+      },
+    });
+    void outputSyncController.start().catch(() => {});
 
     // Resize handling
     const resizeCmd = protocol.resize;
     const handleResize = () => {
-      fitAddon.fit();
-      decorationController.schedule(term, true);
+      if (!fitController.fit()) return;
       if (resizeCmd && sessionId && isConnectedRef.current) {
         invoke(resizeCmd, { sessionId, cols: term.cols, rows: term.rows }).catch(() => {});
       }
@@ -606,18 +590,12 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
 
     return () => {
       disposed = true;
+      fitController.dispose();
       terminalElement.removeEventListener("contextmenu", handleContextMenu);
-      void unlistenData?.then((fn) => {
-        fn();
-      });
-      void unlistenError?.then((fn) => {
-        fn();
-      });
+      outputSyncController.dispose();
       if (isManualLoggingRef.current) {
         const logText = manualLogSanitizerRef.current.flush();
-        if (logText) {
-          invoke("logger_append", { sessionId, data: logText }).catch(() => {});
-        }
+        void manualLogBufferWriter.flush(logText).catch(() => {});
       }
       resizeObserver.disconnect();
       scrollDecorationDisposable.dispose();
@@ -629,24 +607,21 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       decorationController.clear();
       term.dispose();
       termRef.current = null;
-      fitRef.current = null;
+      if (fitControllerRef.current === fitController) {
+        fitControllerRef.current = null;
+      }
     };
-  }, [sessionId, connectionType, refreshDecorationsAfterClear]);
+  }, [sessionId, connectionType, manualLogBufferWriter, refreshDecorationsAfterClear]);
 
   // Re-fit the terminal whenever this tab becomes active (container goes from display:none to visible)
   useEffect(() => {
-    if (isActive && fitRef.current) {
-      // Small delay to allow the browser to lay out the now-visible container
-      const timer = setTimeout(() => {
-        fitRef.current?.fit();
-        if (termRef.current) {
-          decorationController.schedule(termRef.current, true);
-        }
-        termRef.current?.focus();
-      }, 50);
-      return () => {
-        clearTimeout(timer);
-      };
+    if (isActive) {
+      const terminal = termRef.current;
+      return fitControllerRef.current?.schedule(() => {
+        focusTerminalUnlessModal(() => {
+          terminal?.focus();
+        });
+      });
     }
   }, [isActive]);
 
@@ -658,13 +633,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       termRef.current.options.cursorStyle = normalizeCursorStyle(terminalConfig.cursor_style);
       termRef.current.options.scrollback = terminalConfig.scrollback;
 
-      // Re-fit to adjust for potential size changes
-      setTimeout(() => {
-        fitRef.current?.fit();
-        if (termRef.current) {
-          decorationController.schedule(termRef.current, true);
-        }
-      }, 50);
+      return fitControllerRef.current?.schedule();
     }
   }, [terminalConfig]);
 

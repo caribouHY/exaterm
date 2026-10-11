@@ -242,7 +242,8 @@ fn debug_assert_invariants(model: &WorkspaceModel) {
 #[cfg(not(debug_assertions))]
 fn debug_assert_invariants(_: &WorkspaceModel) {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceTabRegisterInput {
     pub window_id: Option<String>,
     pub tab_id: Option<String>,

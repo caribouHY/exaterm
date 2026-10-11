@@ -3,6 +3,9 @@ use crate::external_control::{
     service::{ExternalControlRuntime, ExternalControlService},
 };
 
+#[cfg(windows)]
+const PIPE_CREATE_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+
 pub fn spawn_gui_control_plane(runtime: ExternalControlRuntime) {
     tauri::async_runtime::spawn(async move {
         if let Err(error) = run_gui_control_plane(runtime).await {
@@ -23,9 +26,14 @@ async fn run_local_control_server(service: ExternalControlService) -> Result<(),
     loop {
         let mut options = ServerOptions::new();
         options.pipe_mode(PipeMode::Byte).max_instances(16);
-        let server = options
-            .create(&pipe_name)
-            .map_err(|error| format!("External control pipe create error: {error}"))?;
+        let server = match options.create(&pipe_name) {
+            Ok(server) => server,
+            Err(error) => {
+                log::warn!("External control pipe create error; retrying: {error}");
+                tokio::time::sleep(PIPE_CREATE_RETRY_INTERVAL).await;
+                continue;
+            }
+        };
         if let Err(error) = server.connect().await {
             log::warn!("External control pipe connect error: {error}");
             continue;

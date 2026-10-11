@@ -45,6 +45,7 @@ Alternatively, download an installer from this repository's [Releases page](http
 ## Command-Line Startup
 
 Pass arguments to `exaterm.exe` to start ExaTerm and open an SSH or Telnet connection. The target can be a hostname, an IP address, or a saved profile name.
+If ExaTerm is already running, the request is forwarded to the most recently focused ExaTerm window instead of starting another GUI process.
 
 ```powershell
 exaterm.exe ssh <user@hostname-or-ip-address|profile-name>

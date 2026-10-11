@@ -127,6 +127,33 @@ async fn preferred_window_tracks_the_last_focused_existing_window() {
 }
 
 #[tokio::test]
+async fn session_owner_lookup_tracks_tab_movement() {
+    let state = WorkspaceState::new();
+    state
+        .register_window("main".into(), "main".into(), true)
+        .await;
+    state
+        .register_window("other".into(), "other".into(), false)
+        .await;
+    state.register_tab(input("s1", Some("main"))).await;
+
+    assert_eq!(
+        state.owner_window_id_for_session("s1").await.as_deref(),
+        Some("main")
+    );
+
+    state
+        .move_tab("s1".into(), "main".into(), "other".into(), 0)
+        .await
+        .expect("tab move should succeed");
+    assert_eq!(
+        state.owner_window_id_for_session("s1").await.as_deref(),
+        Some("other")
+    );
+    assert_eq!(state.owner_window_id_for_session("missing").await, None);
+}
+
+#[tokio::test]
 async fn connected_session_count_spans_windows_and_ignores_disconnected_tabs() {
     let state = WorkspaceState::new();
     state

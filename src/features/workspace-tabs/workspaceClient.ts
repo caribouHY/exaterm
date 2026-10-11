@@ -53,15 +53,7 @@ export const workspaceClient = {
 
   registerTab(input: RegisterWorkspaceTabInput) {
     return invoke<WorkspaceSnapshot>("workspace_tab_register", {
-      windowId: input.windowId,
-      sessionId: input.sessionId,
-      connectionType: input.connectionType,
-      title: input.title,
-      encoding: input.encoding,
-      terminalMode: input.terminalMode,
-      connectionInfo: input.connectionInfo,
-      isManualLogging: input.isManualLogging,
-      manualLogFilePath: input.manualLogFilePath,
+      input,
     });
   },
 

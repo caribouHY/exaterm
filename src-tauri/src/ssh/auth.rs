@@ -5,7 +5,7 @@ use std::sync::Arc;
 use russh::client::{AuthResult, KeyboardInteractiveAuthResponse};
 use russh::keys::decode_secret_key;
 use russh::keys::key::PrivateKeyWithHashAlg;
-use russh::keys::PrivateKey;
+use russh::keys::{HashAlg, PrivateKey};
 use russh::{MethodKind, MethodSet};
 
 use crate::ssh::authentication_prompt::SshAuthenticationContext;
@@ -206,7 +206,7 @@ fn load_private_key_for_auth(path: &str, passphrase: Option<&str>) -> Result<Pri
 }
 
 pub(super) async fn authenticate_ssh(
-    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
     username: &str,
     auth: SshAuthRequest,
     context: &SshAuthenticationContext<'_>,
@@ -269,7 +269,7 @@ pub(super) async fn authenticate_ssh(
 }
 
 async fn authenticate_auto(
-    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
     username: &str,
     private_key_path: Option<String>,
     key_passphrase: Option<String>,
@@ -357,7 +357,7 @@ fn automatic_auth_diagnostic(diagnostic: Option<&SshDiagnostic>, phase: &str, me
 }
 
 async fn authenticate_none(
-    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
     username: &str,
 ) -> Result<AuthResult, String> {
     run_ssh_operation_with_timeout(SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR, async {
@@ -370,17 +370,59 @@ async fn authenticate_none(
 }
 
 async fn authenticate_public_key(
-    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
     username: &str,
     key: PrivateKey,
 ) -> Result<AuthResult, String> {
-    run_ssh_operation_with_timeout(SSH_AUTH_TIMEOUT, SSH_AUTH_TIMEOUT_ERROR, async {
-        handle
-            .authenticate_publickey(username, PrivateKeyWithHashAlg::new(Arc::new(key), None))
-            .await
-            .map_err(|error| format!("SSH public key authentication error: {error}"))
+    authenticate_public_key_with_timeout(handle, username, key, SSH_AUTH_TIMEOUT).await
+}
+
+async fn authenticate_public_key_with_timeout(
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
+    username: &str,
+    key: PrivateKey,
+    timeout: std::time::Duration,
+) -> Result<AuthResult, String> {
+    run_ssh_operation_with_timeout(timeout, SSH_AUTH_TIMEOUT_ERROR, async {
+        let hashes = if key.algorithm().is_rsa() {
+            let supported = handle
+                .best_supported_rsa_hash()
+                .await
+                .map_err(|error| format!("SSH public key authentication error: {error}"))?;
+            rsa_auth_hashes(supported)
+        } else {
+            vec![None]
+        };
+        let key = Arc::new(key);
+        let mut hashes = hashes.into_iter().peekable();
+        while let Some(hash) = hashes.next() {
+            let result = handle
+                .authenticate_publickey(
+                    username,
+                    PrivateKeyWithHashAlg::new(Arc::clone(&key), hash),
+                )
+                .await
+                .map_err(|error| format!("SSH public key authentication error: {error}"))?;
+            if hashes.peek().is_none() || !should_retry_public_key_hash(&result) {
+                return Ok(result);
+            }
+        }
+        unreachable!("public-key authentication always has at least one hash candidate")
     })
     .await
+}
+
+fn rsa_auth_hashes(supported: Option<Option<HashAlg>>) -> Vec<Option<HashAlg>> {
+    match supported {
+        Some(hash) => vec![hash],
+        // Missing extension information does not establish that SHA-2 is unsupported.
+        None => vec![Some(HashAlg::Sha512), Some(HashAlg::Sha256), None],
+    }
+}
+
+fn should_retry_public_key_hash(result: &AuthResult) -> bool {
+    matches!(result, AuthResult::Failure { remaining_methods, partial_success: false }
+        if supports(remaining_methods, MethodKind::PublicKey))
 }
 
 fn should_continue_public_key(remaining_methods: &MethodSet, partial_success: bool) -> bool {
@@ -388,7 +430,7 @@ fn should_continue_public_key(remaining_methods: &MethodSet, partial_success: bo
 }
 
 async fn authenticate_password(
-    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
     username: &str,
     password: String,
 ) -> Result<AuthResult, String> {
@@ -402,7 +444,7 @@ async fn authenticate_password(
 }
 
 async fn authenticate_keyboard_interactive(
-    handle: &mut russh::client::Handle<impl russh::client::Handler + Send + 'static>,
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
     username: &str,
     context: &SshAuthenticationContext<'_>,
 ) -> Result<AuthResult, String> {
@@ -470,6 +512,9 @@ fn keyboard_interactive_failure() -> String {
 fn public_key_failure() -> String {
     "SSH public key authentication failed: check the username, private key, public key registration, passphrase, or required additional authentication.".to_string()
 }
+
+#[cfg(test)]
+mod rsa_tests;
 
 #[cfg(test)]
 mod authentication_flow_tests {

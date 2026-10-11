@@ -11,7 +11,7 @@ use crate::external_control::{
 pub(super) enum McpTarget {
     #[cfg_attr(not(test), allow(dead_code))]
     Service {
-        service: ExternalControlService,
+        service: Box<ExternalControlService>,
     },
     Client {
         client: ExternalControlClient,
@@ -21,7 +21,9 @@ pub(super) enum McpTarget {
 impl McpTarget {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn with_service(service: ExternalControlService) -> Self {
-        Self::Service { service }
+        Self::Service {
+            service: Box::new(service),
+        }
     }
 
     pub(super) fn with_client(client: ExternalControlClient) -> Self {
@@ -35,7 +37,7 @@ impl McpTarget {
             Self::Client { client } => client.call(request).await,
         };
         response
-            .map(ExternalControlResponse::into_value)
+            .and_then(ExternalControlResponse::into_value)
             .map_err(external_error_to_mcp)
     }
 }
@@ -45,7 +47,13 @@ pub(super) fn request_from_tool(
     args: Value,
 ) -> Result<ExternalControlRequest, McpError> {
     match name {
+        "focus_terminal_session" => Ok(ExternalControlRequest::FocusTerminalSession(
+            parse_tool_args(args)?,
+        )),
         "list_terminal_sessions" => Ok(ExternalControlRequest::ListTerminalSessions),
+        "disconnect_terminal_session" => Ok(ExternalControlRequest::DisconnectTerminalSession(
+            parse_tool_args(args)?,
+        )),
         "list_connection_profiles" => Ok(ExternalControlRequest::ListConnectionProfiles(
             parse_tool_args(args)?,
         )),
@@ -66,10 +74,26 @@ pub(super) fn request_from_tool(
         "send_terminal_input" => Ok(ExternalControlRequest::SendTerminalInput(parse_tool_args(
             args,
         )?)),
-        "start_terminal_log" => Ok(ExternalControlRequest::StartTerminalLog(parse_tool_args(
+        "start_terminal_log" => {
+            let args = parse_tool_args::<crate::external_control::TerminalLogSessionArgs>(args)?;
+            Ok(ExternalControlRequest::StartTerminalLog(
+                crate::external_control::StartTerminalLogArgs {
+                    session_id: args.session_id,
+                    file_path: None,
+                    write_mode: None,
+                },
+            ))
+        }
+        "stop_terminal_log" => Ok(ExternalControlRequest::StopTerminalLog(parse_tool_args(
             args,
         )?)),
-        "stop_terminal_log" => Ok(ExternalControlRequest::StopTerminalLog(parse_tool_args(
+        "get_terminal_log_status" => Ok(ExternalControlRequest::GetTerminalLogStatus(
+            parse_tool_args(args)?,
+        )),
+        "pause_terminal_log" => Ok(ExternalControlRequest::PauseTerminalLog(parse_tool_args(
+            args,
+        )?)),
+        "resume_terminal_log" => Ok(ExternalControlRequest::ResumeTerminalLog(parse_tool_args(
             args,
         )?)),
         "run_terminal_command" => Ok(ExternalControlRequest::RunTerminalCommand(parse_tool_args(

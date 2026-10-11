@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::io::Read;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
@@ -12,6 +12,17 @@ use crate::connect_attempt::{run_with_attempt, ConnectAttempt, ConnectAttemptSta
 use crate::terminal_control::{TerminalControlState, TerminalProtocol};
 use crate::workspace::{emit_workspace_updated, WorkspaceState};
 use crate::{logger, logger::LoggerState};
+
+mod lifecycle;
+#[cfg(windows)]
+mod windows_io;
+mod writer;
+
+use lifecycle::{
+    enqueue_data, request_shutdown, spawn_shutdown_coordinator, RegistrationGuard, SerialSession,
+    SerialSessions, SerialShutdown,
+};
+use writer::{cancel_synchronous_write, finish_serial_workers, spawn_serial_writer};
 
 pub fn list_ports() -> Result<Vec<PortInfo>, String> {
     let ports =
@@ -35,7 +46,7 @@ pub fn list_ports() -> Result<Vec<PortInfo>, String> {
         .collect())
 }
 
-const SERIAL_IO_TIMEOUT: Duration = Duration::from_millis(5);
+const SERIAL_READ_TIMEOUT: Duration = Duration::from_millis(5);
 const SERIAL_CONNECT_CANCELLED: &str = "The Serial connection attempt was cancelled";
 const SERIAL_CONNECT_DUPLICATE: &str =
     "A Serial connection attempt with this request ID already exists";
@@ -47,6 +58,29 @@ pub struct SerialConfig {
     pub parity: String,
     pub stop_bits: u8,
     pub flow_control: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SerialConnectInput {
+    pub port: String,
+    pub config: SerialConfig,
+    pub encoding: Option<String>,
+    pub request_id: Option<String>,
+}
+
+pub(crate) struct SerialConnectRuntime<'a> {
+    pub app: &'a AppHandle,
+    pub state: &'a SerialState,
+    pub terminals: &'a TerminalControlState,
+    pub workspace: &'a WorkspaceState,
+    pub logger: Option<&'a LoggerState>,
+}
+
+pub(crate) struct SerialConnectRequest {
+    pub port: String,
+    pub config: SerialConfig,
+    pub encoding: Option<String>,
 }
 
 impl Default for SerialConfig {
@@ -61,27 +95,22 @@ impl Default for SerialConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PortInfo {
     pub name: String,
     pub port_type: String,
 }
 
-struct SerialSession {
-    running: Arc<AtomicBool>,
-    writer: mpsc::Sender<Vec<u8>>,
-}
-
 #[derive(Clone)]
 pub struct SerialState {
-    sessions: Arc<Mutex<HashMap<String, SerialSession>>>,
+    sessions: SerialSessions,
     connect_attempts: ConnectAttemptState,
 }
 
 impl SerialState {
     pub fn new() -> Self {
         Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            sessions: std::sync::Arc::new(Mutex::new(HashMap::new())),
             connect_attempts: ConnectAttemptState::new(
                 SERIAL_CONNECT_CANCELLED,
                 SERIAL_CONNECT_DUPLICATE,
@@ -119,61 +148,11 @@ fn to_flow_control(f: &str) -> serialport::FlowControl {
     }
 }
 
-async fn remove_session_from_state(
-    terminals: &TerminalControlState,
-    logger_state: Option<&LoggerState>,
-    sessions: &Arc<Mutex<HashMap<String, SerialSession>>>,
-    session_id: &str,
-) -> Option<SerialSession> {
-    let session = {
-        let mut sessions = sessions.lock().await;
-        sessions.remove(session_id)
-    };
-    if let Some(session) = &session {
-        session.running.store(false, Ordering::SeqCst);
-        terminals.mark_disconnected(session_id).await;
+async fn shutdown_session(sessions: &SerialSessions, session_id: &str) -> Result<(), String> {
+    if let Some(shutdown) = request_shutdown(sessions, session_id).await {
+        shutdown.wait().await?;
     }
-    if let Some(logger_state) = logger_state {
-        logger::clear_session_logs(logger_state, session_id).await;
-    }
-    session
-}
-
-async fn remove_session(
-    app: &AppHandle,
-    terminals: &TerminalControlState,
-    workspace: &WorkspaceState,
-    logger_state: Option<&LoggerState>,
-    sessions: &Arc<Mutex<HashMap<String, SerialSession>>>,
-    session_id: &str,
-) -> Option<SerialSession> {
-    let session = remove_session_from_state(terminals, logger_state, sessions, session_id).await;
-    if session.is_some() {
-        if let Some(snapshot) = workspace.mark_disconnected(session_id).await {
-            emit_workspace_updated(app, &snapshot);
-        }
-        let _ = app.emit("serial://disconnected", session_id);
-    }
-    session
-}
-
-async fn mark_disconnected(
-    app: &AppHandle,
-    terminals: &TerminalControlState,
-    workspace: &WorkspaceState,
-    logger_state: Option<&LoggerState>,
-    sessions: &Arc<Mutex<HashMap<String, SerialSession>>>,
-    session_id: &str,
-) {
-    let _ = remove_session(
-        app,
-        terminals,
-        workspace,
-        logger_state,
-        sessions,
-        session_id,
-    )
-    .await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -188,11 +167,14 @@ pub async fn serial_connect(
     terminals: tauri::State<'_, TerminalControlState>,
     workspace: tauri::State<'_, WorkspaceState>,
     logger: tauri::State<'_, LoggerState>,
-    port: String,
-    config: SerialConfig,
-    encoding: Option<String>,
-    request_id: Option<String>,
+    input: SerialConnectInput,
 ) -> Result<String, crate::command_error::BackendCommandError> {
+    let SerialConnectInput {
+        port,
+        config,
+        encoding,
+        request_id,
+    } = input;
     let request_id = request_id
         .as_deref()
         .map(str::trim)
@@ -209,33 +191,42 @@ pub async fn serial_connect(
         .register(request_id)
         .map_err(crate::command_error::BackendCommandError::from)?;
     connect(
-        &app,
-        &state,
-        &terminals,
-        &workspace,
-        Some(&logger),
-        port,
-        config,
-        encoding,
+        SerialConnectRuntime {
+            app: &app,
+            state: &state,
+            terminals: &terminals,
+            workspace: &workspace,
+            logger: Some(&logger),
+        },
+        SerialConnectRequest {
+            port,
+            config,
+            encoding,
+        },
         Some(attempt),
     )
     .await
     .map_err(Into::into)
 }
 
-pub async fn connect(
-    app: &AppHandle,
-    state: &SerialState,
-    terminals: &TerminalControlState,
-    workspace: &WorkspaceState,
-    logger_state: Option<&LoggerState>,
-    port: String,
-    config: SerialConfig,
-    encoding: Option<String>,
+pub(crate) async fn connect(
+    runtime: SerialConnectRuntime<'_>,
+    request: SerialConnectRequest,
     mut attempt: Option<ConnectAttempt>,
 ) -> Result<String, String> {
+    let SerialConnectRuntime {
+        app,
+        state,
+        terminals,
+        workspace,
+        logger: logger_state,
+    } = runtime;
+    let SerialConnectRequest {
+        port,
+        config,
+        encoding,
+    } = request;
     let session_id = Uuid::new_v4().to_string();
-    let running = Arc::new(AtomicBool::new(true));
 
     let open_port = port.clone();
     let open_config = config.clone();
@@ -246,26 +237,125 @@ pub async fn connect(
     };
     // Dropping the join handle cannot stop every platform driver, but it ensures a late result is
     // dropped without registering a session after cancellation.
-    let (serial_port, mut writer_port) =
+    let (serial_port, writer_port) =
         run_with_attempt(attempt.as_ref(), Box::pin(open_operation)).await?;
+    let control_port = serial_port
+        .try_clone()
+        .map_err(|error| format!("Failed to clone the serial port handle: {error}"))?;
     if attempt
         .as_mut()
         .is_some_and(|attempt| !attempt.begin_completion())
     {
         return Err(SERIAL_CONNECT_CANCELLED.to_string());
     }
+    let shutdown = SerialShutdown::new();
+    let running = shutdown.running.clone();
     let (writer, write_rx) = mpsc::channel::<Vec<u8>>();
+    let write_sid = session_id.clone();
+    let write_sessions = state.sessions.clone();
+    let write_app = app.clone();
+    let write_runtime = tokio::runtime::Handle::current();
+    let writer_thread = spawn_serial_writer(writer_port, write_rx, running.clone(), move |error| {
+        let _ = write_app.emit(&format!("serial://error/{write_sid}"), error);
+        write_runtime.spawn(async move {
+            request_shutdown(&write_sessions, &write_sid).await;
+        });
+    })
+    .map_err(|error| format!("Failed to start the Serial writer: {error}"))?;
 
-    let session = SerialSession {
-        running: running.clone(),
-        writer: writer.clone(),
-    };
-    state
-        .sessions
-        .lock()
-        .await
-        .insert(session_id.clone(), session);
+    let (output_tx, output_rx) = tokio::sync::mpsc::unbounded_channel();
+    let output_app = app.clone();
+    let output_terminals = terminals.clone();
+    let output_sessions = state.sessions.clone();
+    let output_sid = session_id.clone();
+    let output_worker = tokio::spawn(async move {
+        let app = &output_app;
+        let terminals = &output_terminals;
+        let sid = &output_sid;
+        process_serial_output(
+            output_rx,
+            |data| async move {
+                if let Some(output) = terminals.append_output(sid, &data).await {
+                    let _ = app.emit(&format!("serial://data/{sid}"), output);
+                }
+            },
+            |error| async move {
+                let _ = app.emit(&format!("serial://error/{sid}"), error);
+                // This worker must return before the coordinator can finish shutdown.
+                request_shutdown(&output_sessions, sid).await;
+            },
+        )
+        .await;
+    });
 
+    let (start_reader, reader_ready) = mpsc::channel();
+    let read_running = running.clone();
+    let read_sessions = state.sessions.clone();
+    let read_sid = session_id.clone();
+    let read_runtime = tokio::runtime::Handle::current();
+    let reader_worker = tokio::task::spawn_blocking(move || {
+        let mut port = serial_port;
+        let mut buf = [0u8; 4096];
+        if reader_ready.recv().is_err() {
+            return;
+        }
+        while read_running.load(Ordering::SeqCst) {
+            match port.read(&mut buf) {
+                Ok(n) if n > 0 => {
+                    let _ = output_tx.send(SerialReadEvent::Data(buf[..n].to_vec()));
+                }
+                Err(ref error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(error) => {
+                    if read_running.load(Ordering::SeqCst) {
+                        let _ = output_tx.send(SerialReadEvent::Error(error.to_string()));
+                        // Stop transmission without waiting for the receive FIFO to drain.
+                        read_runtime.spawn(async move {
+                            request_shutdown(&read_sessions, &read_sid).await;
+                        });
+                    }
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    let cleanup = finish_serial_workers(
+        writer_thread,
+        cancel_synchronous_write,
+        move || {
+            let result = control_port
+                .clear(serialport::ClearBuffer::Output)
+                .map_err(|error| format!("Failed to discard Serial output: {error}"));
+            drop(control_port);
+            result
+        },
+        reader_worker,
+        output_worker,
+    );
+    let finalize_app = app.clone();
+    let finalize_terminals = terminals.clone();
+    let finalize_workspace = workspace.clone();
+    let finalize_logger = logger_state.cloned();
+    let finalize_sid = session_id.clone();
+    spawn_shutdown_coordinator(
+        state.sessions.clone(),
+        session_id.clone(),
+        shutdown.clone(),
+        cleanup,
+        move || async move {
+            finalize_terminals.mark_disconnected(&finalize_sid).await;
+            if let Some(snapshot) = finalize_workspace.mark_disconnected(&finalize_sid).await {
+                emit_workspace_updated(&finalize_app, &snapshot);
+            }
+            if let Some(logger) = finalize_logger {
+                logger::clear_session_logs(&logger, &finalize_sid).await;
+            }
+            let _ = finalize_app.emit("serial://disconnected", &finalize_sid);
+            Ok(())
+        },
+    );
+    let mut registration = RegistrationGuard(Some(shutdown.clone()));
     terminals
         .register_session_with_encoding(
             session_id.clone(),
@@ -274,124 +364,87 @@ pub async fn connect(
             encoding,
         )
         .await;
-
-    let write_sid = session_id.clone();
-    let write_app = app.clone();
-    let write_sessions = state.sessions.clone();
-    let write_terminals = terminals.clone();
-    let write_workspace = workspace.clone();
-    let write_logger = logger_state.cloned();
-    let write_runtime = tokio::runtime::Handle::current();
-    tokio::task::spawn_blocking(move || {
-        while let Ok(data) = write_rx.recv() {
-            if let Err(e) = writer_port.write_all(&data) {
-                let _ = write_app.emit(&format!("serial://error/{}", write_sid), e.to_string());
-                let disconnect_app = write_app.clone();
-                let disconnect_sessions = write_sessions.clone();
-                let disconnect_terminals = write_terminals.clone();
-                let disconnect_workspace = write_workspace.clone();
-                let disconnect_logger = write_logger.clone();
-                let disconnect_sid = write_sid.clone();
-                write_runtime.spawn(async move {
-                    mark_disconnected(
-                        &disconnect_app,
-                        &disconnect_terminals,
-                        &disconnect_workspace,
-                        disconnect_logger.as_ref(),
-                        &disconnect_sessions,
-                        &disconnect_sid,
-                    )
-                    .await;
-                });
-                break;
-            }
-        }
-    });
-
-    // Background read loop
-    let sid = session_id.clone();
-    let app_clone = app.clone();
-    let run_flag = running.clone();
-    let read_sessions = state.sessions.clone();
-    let read_terminals = terminals.clone();
-    let read_workspace = workspace.clone();
-    let read_logger = logger_state.cloned();
-    let read_runtime = tokio::runtime::Handle::current();
-    let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-    let output_terminals = terminals.clone();
-    let output_sid = session_id.clone();
-    tokio::spawn(async move {
-        while let Some(data) = output_rx.recv().await {
-            output_terminals.append_output(&output_sid, &data).await;
-        }
-    });
-
-    tokio::task::spawn_blocking(move || {
-        let mut port = serial_port;
-        let mut buf = [0u8; 4096];
-        loop {
-            if !run_flag.load(Ordering::SeqCst) {
-                break;
-            }
-            match port.read(&mut buf) {
-                Ok(n) if n > 0 => {
-                    let data = buf[..n].to_vec();
-                    let _ = output_tx.send(data.clone());
-                    let _ = app_clone.emit(&format!("serial://data/{}", sid), data);
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
-                Err(e) => {
-                    let _ = app_clone.emit(&format!("serial://error/{}", sid), e.to_string());
-                    let disconnect_app = app_clone.clone();
-                    let disconnect_sessions = read_sessions.clone();
-                    let disconnect_terminals = read_terminals.clone();
-                    let disconnect_workspace = read_workspace.clone();
-                    let disconnect_logger = read_logger.clone();
-                    let disconnect_sid = sid.clone();
-                    read_runtime.spawn(async move {
-                        mark_disconnected(
-                            &disconnect_app,
-                            &disconnect_terminals,
-                            &disconnect_workspace,
-                            disconnect_logger.as_ref(),
-                            &disconnect_sessions,
-                            &disconnect_sid,
-                        )
-                        .await;
-                    });
-                    break;
-                }
-                _ => {}
-            }
-        }
-    });
+    state.sessions.lock().await.insert(
+        session_id.clone(),
+        SerialSession {
+            shutdown,
+            writer: Some(writer),
+        },
+    );
+    registration.0 = None;
+    let _ = start_reader.send(());
 
     let _ = app.emit("serial://connected", &session_id);
     Ok(session_id)
 }
 
-fn open_serial_port_pair(
-    port: String,
-    config: SerialConfig,
-) -> Result<
-    (
-        Box<dyn serialport::SerialPort>,
-        Box<dyn serialport::SerialPort>,
-    ),
-    String,
-> {
-    let serial_port = serialport::new(&port, config.baud_rate)
+enum SerialReadEvent {
+    Data(Vec<u8>),
+    Error(String),
+}
+
+async fn process_serial_output<Data, DataFuture, Error, ErrorFuture>(
+    mut output: tokio::sync::mpsc::UnboundedReceiver<SerialReadEvent>,
+    mut on_data: Data,
+    on_error: Error,
+) where
+    Data: FnMut(Vec<u8>) -> DataFuture,
+    DataFuture: std::future::Future<Output = ()>,
+    Error: FnOnce(String) -> ErrorFuture,
+    ErrorFuture: std::future::Future<Output = ()>,
+{
+    while let Some(event) = output.recv().await {
+        match event {
+            SerialReadEvent::Data(data) => on_data(data).await,
+            SerialReadEvent::Error(error) => {
+                // Finish queued output before error notification and session/log teardown.
+                on_error(error).await;
+                break;
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+type SerialWriterPort = windows_io::WindowsWriterPort;
+#[cfg(not(windows))]
+type SerialWriterPort = Box<dyn serialport::SerialPort>;
+
+type SerialPortPair = (Box<dyn serialport::SerialPort>, SerialWriterPort);
+
+fn open_serial_port_pair(port: String, config: SerialConfig) -> Result<SerialPortPair, String> {
+    #[cfg(windows)]
+    if config.baud_rate == 0 {
+        return Err("Serial baud rate must be greater than zero".into());
+    }
+    let builder = serialport::new(&port, config.baud_rate)
         .data_bits(to_data_bits(config.data_bits))
         .parity(to_parity(&config.parity))
         .stop_bits(to_stop_bits(config.stop_bits))
         .flow_control(to_flow_control(&config.flow_control))
-        .timeout(SERIAL_IO_TIMEOUT)
-        .open()
-        .map_err(|error| format!("Failed to open the serial port: {}", error))?;
-    let writer_port = serial_port
-        .try_clone()
-        .map_err(|error| format!("Failed to clone the serial port handle: {}", error))?;
-    Ok((serial_port, writer_port))
+        .timeout(SERIAL_READ_TIMEOUT);
+    #[cfg(windows)]
+    {
+        let serial_port = builder
+            .open_native()
+            .map_err(|error| format!("Failed to open the serial port: {error}"))?;
+        let writer_port = serial_port
+            .try_clone_native()
+            .map_err(|error| format!("Failed to clone the serial port handle: {error}"))?;
+        let writer_port = windows_io::WindowsWriterPort::new(writer_port)
+            .map_err(|error| format!("Failed to configure Serial transmission: {error}"))?;
+        Ok((Box::new(serial_port), writer_port))
+    }
+    #[cfg(not(windows))]
+    {
+        let serial_port = builder
+            .open()
+            .map_err(|error| format!("Failed to open the serial port: {}", error))?;
+        let writer_port = serial_port
+            .try_clone()
+            .map_err(|error| format!("Failed to clone the serial port handle: {}", error))?;
+        Ok((serial_port, writer_port))
+    }
 }
 
 #[tauri::command]
@@ -420,18 +473,8 @@ pub async fn write_data(
     session_id: &str,
     data: String,
 ) -> Result<(), String> {
-    let writer = {
-        let sessions = state.sessions.lock().await;
-        sessions
-            .get(session_id)
-            .ok_or("Session not found")?
-            .writer
-            .clone()
-    };
-
-    writer
-        .send(terminals.encode_input(session_id, &data).await?)
-        .map_err(|e| format!("Failed to send data: {}", e))
+    let encoded = terminals.encode_input(session_id, &data).await?;
+    enqueue_data(&state.sessions, session_id, encoded).await
 }
 
 #[tauri::command]
@@ -443,105 +486,29 @@ pub async fn serial_disconnect(
     logger: tauri::State<'_, LoggerState>,
     session_id: String,
 ) -> Result<(), crate::command_error::BackendCommandError> {
-    let _ = remove_session(
+    disconnect(
         &app,
+        &state,
         &terminals,
         &workspace,
         Some(&logger),
-        &state.sessions,
         &session_id,
     )
-    .await;
-    Ok(())
+    .await
+    .map_err(Into::into)
+}
+
+pub(crate) async fn disconnect(
+    app: &AppHandle,
+    state: &SerialState,
+    terminals: &TerminalControlState,
+    workspace: &WorkspaceState,
+    logger: Option<&LoggerState>,
+    session_id: &str,
+) -> Result<(), String> {
+    let _ = (app, terminals, workspace, logger);
+    shutdown_session(&state.sessions, session_id).await
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::logger::{manual_log_session, start_log_on_connection, LoggerState};
-    use crate::terminal_control::{TerminalControlState, TerminalStatus};
-
-    async fn register_fake_session(
-        state: &SerialState,
-        terminals: &TerminalControlState,
-    ) -> (String, Arc<AtomicBool>) {
-        let session_id = Uuid::new_v4().to_string();
-        let running = Arc::new(AtomicBool::new(true));
-        let (writer, _rx) = mpsc::channel();
-        state.sessions.lock().await.insert(
-            session_id.clone(),
-            SerialSession {
-                running: running.clone(),
-                writer,
-            },
-        );
-        terminals
-            .register_session(session_id.clone(), TerminalProtocol::Serial, "COM1".into())
-            .await;
-
-        (session_id, running)
-    }
-
-    #[tokio::test]
-    async fn remove_session_marks_terminal_disconnected_and_stops_running_flag() {
-        let state = SerialState::new();
-        let terminals = TerminalControlState::new();
-        let (session_id, running) = register_fake_session(&state, &terminals).await;
-
-        let removed =
-            remove_session_from_state(&terminals, None, &state.sessions, &session_id).await;
-
-        assert!(removed.is_some());
-        assert!(!running.load(Ordering::SeqCst));
-        assert!(state.sessions.lock().await.get(&session_id).is_none());
-        assert_eq!(
-            terminals.session_info(&session_id).await.unwrap().status,
-            TerminalStatus::Disconnected
-        );
-    }
-
-    #[tokio::test]
-    async fn remove_session_is_idempotent() {
-        let state = SerialState::new();
-        let terminals = TerminalControlState::new();
-        let (session_id, _running) = register_fake_session(&state, &terminals).await;
-
-        assert!(
-            remove_session_from_state(&terminals, None, &state.sessions, &session_id)
-                .await
-                .is_some()
-        );
-        assert!(
-            remove_session_from_state(&terminals, None, &state.sessions, &session_id)
-                .await
-                .is_none()
-        );
-        assert_eq!(
-            terminals.session_info(&session_id).await.unwrap().status,
-            TerminalStatus::Disconnected
-        );
-    }
-
-    #[tokio::test]
-    async fn remove_session_clears_logger_state() {
-        let state = SerialState::new();
-        let terminals = TerminalControlState::new();
-        let (session_id, _running) = register_fake_session(&state, &terminals).await;
-        let dir =
-            std::env::temp_dir().join(format!("exaterm_serial_logger_test_{}", Uuid::new_v4()));
-        let logger = LoggerState::with_paths(dir.clone(), dir.join("index.json"));
-
-        start_log_on_connection(&logger, session_id.clone(), "serial".into(), "COM1".into())
-            .await
-            .expect("connection log should start");
-
-        assert!(manual_log_session(&logger, &session_id).await.is_some());
-        let removed =
-            remove_session_from_state(&terminals, Some(&logger), &state.sessions, &session_id)
-                .await;
-
-        assert!(removed.is_some());
-        assert!(manual_log_session(&logger, &session_id).await.is_none());
-        let _ = std::fs::remove_dir_all(dir);
-    }
-}
+mod tests;

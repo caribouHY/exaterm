@@ -218,7 +218,7 @@ fn is_ssh(entry: &ConnectionHistoryEntry) -> bool {
 }
 
 fn sort_and_limit(entries: &mut Vec<ConnectionHistoryEntry>) {
-    entries.sort_by(|left, right| right.last_connected_at.cmp(&left.last_connected_at));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.last_connected_at));
     let mut ssh_count = 0;
     let mut telnet_count = 0;
     entries.retain(|entry| {

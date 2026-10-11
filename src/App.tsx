@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useRef, useCallback, useEffect } from "react";
+import { lazy, Suspense, useState, useRef, useCallback, useEffect, useMemo } from "react";
 import TitleBar from "./components/TitleBar/TitleBar";
 import TerminalTabs from "./components/Terminal/TerminalTabs";
 import type { TerminalViewHandle } from "./components/Terminal/TerminalView";
@@ -23,10 +23,7 @@ import type { ConnectionDialogInitialValues } from "./components/Connection/conn
 import type { ConnectionLogState } from "./features/terminal-logging/connectionLogModel";
 import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  backendCommandErrorMessage,
-  translateBackendCommandError,
-} from "./features/backend-errors/backendCommandError";
+import { translateBackendCommandError } from "./features/backend-errors/backendCommandError";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
@@ -42,6 +39,8 @@ import {
   ModalTitle,
 } from "./components/Common";
 import { useWindowTabs } from "./features/workspace-tabs/useWindowTabs";
+import { useExternalSessionFocus } from "./features/workspace-tabs/useExternalSessionFocus";
+import { focusTerminalUnlessModal } from "./components/Terminal/terminalFocus";
 import { useTerminalTabLifecycle } from "./features/workspace-tabs/useTerminalTabLifecycle";
 import { useWorkspaceTabMovement } from "./features/workspace-tabs/useWorkspaceTabMovement";
 import { DEFAULT_SHORTCUT_CONFIG, findShortcutAction } from "./features/shortcuts/shortcutModel";
@@ -50,6 +49,15 @@ import {
   canPauseManualLog,
   canResumeManualLog,
 } from "./features/terminal-logging/terminalLoggingModel";
+import {
+  createManualLogController,
+  manualLogOperationCause,
+  ManualLogOperationError,
+} from "./features/terminal-logging/manualLogController";
+import {
+  createExternalLogControlHandlers,
+  subscribeExternalLogControl,
+} from "./features/terminal-logging/externalLogControl";
 import { AppUpdateDialog } from "./features/app-update/AppUpdateDialog";
 import { useAppUpdate } from "./features/app-update/useAppUpdate";
 import { AppExitDialog } from "./features/app-exit/AppExitDialog";
@@ -58,6 +66,8 @@ import { SshAuthenticationPromptDialog } from "./features/ssh-authentication/Ssh
 import { SshHostKeyPromptDialog } from "./features/ssh-authentication/SshHostKeyPromptDialog";
 import { useSshPrompts } from "./features/ssh-authentication/useSshPrompts";
 import { useAppConfig } from "./features/language/LanguageCoordinator";
+import { startupCliClient } from "./features/startup-cli/startupCliClient";
+import { createStartupCliRequestCoordinator } from "./features/startup-cli/startupCliRequestCoordinator";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -98,13 +108,6 @@ interface McpCredentialPromptState extends McpCredentialRequestPayload {
   submitting: boolean;
 }
 
-interface McpLogControlRequestPayload {
-  request_id: string;
-  session_id: string;
-  connection_type: ConnectionType;
-  target: string;
-}
-
 export default function App() {
   const { t } = useTranslation();
   const config = useAppConfig();
@@ -126,10 +129,29 @@ export default function App() {
   const [showConnection, setShowConnection] = useState(false);
   const [connectionInitialValues, setConnectionInitialValues] =
     useState<ConnectionDialogInitialValues | null>(null);
+  const [startupCliRequest, setStartupCliRequest] = useState<StartupCliRequest | null>(null);
+  const startupCliRequestCoordinator = useMemo(
+    () =>
+      createStartupCliRequestCoordinator({
+        takeNext: () => startupCliClient.takeNext(windowTabs.windowId),
+        onRequest: (request) => {
+          setStartupCliRequest(request);
+          void loadConnectionDialog();
+          setConnectionInitialValues(null);
+          setShowConnection(true);
+        },
+        onError: (error) => {
+          console.error("Failed to load startup CLI request:", error);
+        },
+      }),
+    [windowTabs.windowId]
+  );
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [aiPanelWidth, setAiPanelWidth] = useState(AI_PANEL_DEFAULT_WIDTH);
   const [isDragging, setIsDragging] = useState(false);
-  const [manualLogBusyTabId, setManualLogBusyTabId] = useState<string | null>(null);
+  const [manualLogBusySessionIds, setManualLogBusySessionIds] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
   const [logStatusMessage, setLogStatusMessage] = useState("");
   const showTemporaryLogStatus = useCallback((message: string) => {
     setLogStatusMessage(message);
@@ -141,7 +163,6 @@ export default function App() {
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiSelectedProvider, setAiSelectedProvider] = useState("");
   const [aiSelectedModel, setAiSelectedModel] = useState("");
-  const [startupCliRequest, setStartupCliRequest] = useState<StartupCliRequest | null>(null);
   const [mcpCredentialPrompts, setMcpCredentialPrompts] = useState<McpCredentialPromptState[]>([]);
   const [terminalSelectionByTab, setTerminalSelectionByTab] = useState<
     ReadonlyMap<string, boolean>
@@ -149,7 +170,32 @@ export default function App() {
   const activeTerminalBuffer = useRef("");
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
+  useExternalSessionFocus(windowTabs, (tabId) => {
+    focusTerminalUnlessModal(() => terminalViewRefs.current.get(tabId)?.focus());
+  });
   const restoreTerminalFocusAfterPaletteRef = useRef(false);
+  const manualLogController = useMemo(
+    () =>
+      createManualLogController({
+        getTabBySessionId: (sessionId) =>
+          getCurrentWindowTabsState().tabs.find((tab) => tab.sessionId === sessionId) ?? null,
+        startBackend: (input) => invoke<string>("logger_start_manual", input),
+        stopBackend: (sessionId) => invoke("logger_stop_manual", { sessionId }),
+        isBackendActive: (sessionId) => invoke<boolean>("logger_is_manual_active", { sessionId }),
+        flush: async (tabId) => {
+          await terminalViewRefs.current.get(tabId)?.flushManualLogBuffer();
+        },
+        updateMetadata: updateWorkspaceTabMetadata,
+        onBusyChange: setManualLogBusySessionIds,
+      }),
+    [getCurrentWindowTabsState, updateWorkspaceTabMetadata]
+  );
+  const stopManualLogBeforeDisconnect = useCallback(
+    async (sessionId: string) => {
+      await manualLogController.stop({ sessionId });
+    },
+    [manualLogController]
+  );
   const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
   const shortcuts = config?.shortcuts ?? DEFAULT_SHORTCUT_CONFIG;
   const appUpdate = useAppUpdate({
@@ -214,11 +260,11 @@ export default function App() {
   useEffect(() => {
     if (
       openStatusBarMenu === "log" &&
-      (!activeTab?.isConnected || manualLogBusyTabId === activeTab.id)
+      (!activeTab?.isConnected || manualLogBusySessionIds.has(activeTab.sessionId))
     ) {
       setOpenStatusBarMenu(null);
     }
-  }, [activeTab, manualLogBusyTabId, openStatusBarMenu]);
+  }, [activeTab, manualLogBusySessionIds, openStatusBarMenu]);
 
   const removeTerminalFromState = useCallback(
     (tabId: string) => {
@@ -281,6 +327,7 @@ export default function App() {
   const terminalTabLifecycle = useTerminalTabLifecycle({
     tabs: windowTabs,
     onTerminalRemoved: removeTerminalFromState,
+    stopManualLog: stopManualLogBeforeDisconnect,
   });
   const workspaceTabMovement = useWorkspaceTabMovement({
     tabs: windowTabs,
@@ -364,114 +411,20 @@ export default function App() {
           }, 0);
         });
       });
+    const handlers = createExternalLogControlHandlers({
+      controller: manualLogController,
+      waitForUiUpdate,
+      submit: ({ requestId, filePath, error }) =>
+        invoke("external_control_log_control_submit", { requestId, filePath, error }),
+      onSubmitError: (error) => {
+        console.error("Failed to submit MCP log control response:", error);
+      },
+    });
 
-    const submitLogControl = async (
-      requestId: string,
-      filePath: string | null,
-      error: string | null
-    ) => {
-      try {
-        await invoke("external_control_log_control_submit", {
-          requestId,
-          filePath,
-          error,
-        });
-      } catch (submitError) {
-        console.error("Failed to submit MCP log control response:", submitError);
-      }
-    };
-
-    const unlistenStart = listen<McpLogControlRequestPayload>(
-      "external-control://log-start-request",
-      async (event) => {
-        const payload = event.payload;
-        const tab = getCurrentWindowTabsState().tabs.find(
-          (item) => item.sessionId === payload.session_id
-        );
-        if (!tab) {
-          await submitLogControl(payload.request_id, null, "セッションが見つかりません");
-          return;
-        }
-        if (!tab.isConnected) {
-          await submitLogControl(payload.request_id, null, "セッションは切断済みです");
-          return;
-        }
-        if (tab.isManualLogging && tab.manualLogFilePath) {
-          if (tab.isManualLoggingPaused) {
-            await updateWorkspaceTabMetadata(tab.id, { isManualLoggingPaused: false });
-            await waitForUiUpdate();
-          }
-          await submitLogControl(payload.request_id, tab.manualLogFilePath, null);
-          return;
-        }
-
-        try {
-          const filePath = await invoke<string>("logger_start_manual", {
-            sessionId: payload.session_id,
-            connectionType: payload.connection_type,
-            target: payload.target,
-            filePath: null,
-            writeMode: "overwrite",
-          });
-          await updateWorkspaceTabMetadata(payload.session_id, {
-            isManualLogging: true,
-            isManualLoggingPaused: false,
-            manualLogFilePath: filePath,
-          });
-          await waitForUiUpdate();
-          await submitLogControl(payload.request_id, filePath, null);
-        } catch (error) {
-          console.error("Failed to start the MCP log:", error);
-          await submitLogControl(
-            payload.request_id,
-            null,
-            backendCommandErrorMessage(error, "Failed to start the external control log.")
-          );
-        }
-      }
-    );
-
-    const unlistenStop = listen<McpLogControlRequestPayload>(
-      "external-control://log-stop-request",
-      async (event) => {
-        const payload = event.payload;
-        const tab = getCurrentWindowTabsState().tabs.find(
-          (item) => item.sessionId === payload.session_id
-        );
-        if (!tab) {
-          await submitLogControl(payload.request_id, null, "セッションが見つかりません");
-          return;
-        }
-        if (!tab.isManualLogging) {
-          await submitLogControl(payload.request_id, null, null);
-          return;
-        }
-
-        try {
-          await terminalViewRefs.current.get(tab.id)?.flushManualLogBuffer();
-          await invoke("logger_stop_manual", { sessionId: payload.session_id });
-          await updateWorkspaceTabMetadata(payload.session_id, {
-            isManualLogging: false,
-            isManualLoggingPaused: false,
-          });
-          await waitForUiUpdate();
-          await submitLogControl(payload.request_id, null, null);
-        } catch (error) {
-          console.error("Failed to stop the MCP log:", error);
-          await submitLogControl(
-            payload.request_id,
-            null,
-            backendCommandErrorMessage(error, "Failed to stop the external control log.")
-          );
-        }
-      }
-    );
-
-    return () => {
-      unlistenStart.then((fn) => fn());
-      unlistenStop.then((fn) => fn());
-    };
-  }, [getCurrentWindowTabsState, updateWorkspaceTabMetadata]);
+    return subscribeExternalLogControl(listen, handlers, (error) => {
+      console.error("Failed to register an external log control listener:", error);
+    });
+  }, [manualLogController]);
 
   const handleTerminalData = useCallback(
     (tabId: string, data: string) => {
@@ -567,7 +520,23 @@ export default function App() {
     async (writeMode: ManualLogWriteMode) => {
       if (!activeTab?.sessionId || !activeTab.isConnected || activeTab.isManualLogging) return;
 
-      setManualLogBusyTabId(activeTab.id);
+      const target = {
+        sessionId: activeTab.sessionId,
+        expectedTabId: activeTab.id,
+        connectionType: activeTab.connectionType,
+        target: activeTab.title,
+      };
+      let operation;
+      try {
+        operation = manualLogController.beginStart(target);
+      } catch (error) {
+        if (!(error instanceof ManualLogOperationError && error.code === "operation_in_progress")) {
+          console.error("Failed to prepare the log operation:", manualLogOperationCause(error));
+          showTemporaryLogStatus("statusbar.log_start_failed");
+        }
+        return;
+      }
+
       try {
         const selectedPath = await save({
           title: "Save ExaTerm Log",
@@ -576,55 +545,51 @@ export default function App() {
         });
         if (!selectedPath) return;
 
-        const filePath = await invoke<string>("logger_start_manual", {
-          sessionId: activeTab.sessionId,
-          connectionType: activeTab.connectionType,
-          target: activeTab.title,
-          filePath: selectedPath,
-          writeMode,
-        });
-        await updateWorkspaceTabMetadata(activeTab.id, {
-          isManualLogging: true,
-          isManualLoggingPaused: false,
-          manualLogFilePath: filePath,
-        });
+        await operation.commit({ filePath: selectedPath, writeMode });
       } catch (error) {
-        console.error("Failed to start the log:", error);
+        console.error("Failed to start the log:", manualLogOperationCause(error));
         showTemporaryLogStatus("statusbar.log_start_failed");
       } finally {
-        setManualLogBusyTabId(null);
+        operation.release();
       }
     },
-    [activeTab, buildManualLogFileName, showTemporaryLogStatus, updateWorkspaceTabMetadata]
+    [activeTab, buildManualLogFileName, manualLogController, showTemporaryLogStatus]
   );
 
   const handleStopManualLog = useCallback(async () => {
     if (!activeTab?.sessionId || !activeTab.isManualLogging) return;
 
-    setManualLogBusyTabId(activeTab.id);
     try {
-      await terminalViewRefs.current.get(activeTab.id)?.flushManualLogBuffer();
-      await invoke("logger_stop_manual", { sessionId: activeTab.sessionId });
-      await updateWorkspaceTabMetadata(activeTab.id, {
-        isManualLogging: false,
-        isManualLoggingPaused: false,
+      await manualLogController.stop({
+        sessionId: activeTab.sessionId,
+        expectedTabId: activeTab.id,
       });
     } catch (error) {
-      console.error("Failed to stop the log:", error);
+      if (error instanceof ManualLogOperationError && error.code === "operation_in_progress") {
+        return;
+      }
+      console.error("Failed to stop the log:", manualLogOperationCause(error));
       showTemporaryLogStatus("statusbar.log_stop_failed");
-    } finally {
-      setManualLogBusyTabId(null);
     }
-  }, [activeTab, showTemporaryLogStatus, updateWorkspaceTabMetadata]);
+  }, [activeTab, manualLogController, showTemporaryLogStatus]);
 
   const handleSetManualLoggingPaused = useCallback(
     (paused: boolean) => {
       if (!activeTab?.isConnected || !activeTab.isManualLogging) return;
-      updateWorkspaceTabMetadata(activeTab.id, { isManualLoggingPaused: paused }).catch(
-        console.error
-      );
+      void manualLogController
+        .setPaused({ sessionId: activeTab.sessionId, expectedTabId: activeTab.id }, paused)
+        .catch((error) => {
+          if (
+            !(error instanceof ManualLogOperationError && error.code === "operation_in_progress")
+          ) {
+            console.error(
+              "Failed to update manual log pause state:",
+              manualLogOperationCause(error)
+            );
+          }
+        });
     },
-    [activeTab, updateWorkspaceTabMetadata]
+    [activeTab, manualLogController]
   );
 
   const handleTerminalLogShortcut = useCallback(
@@ -633,7 +598,7 @@ export default function App() {
         !activeTab ||
         activeTab.id !== tabId ||
         !activeTab.isConnected ||
-        manualLogBusyTabId === tabId
+        manualLogBusySessionIds.has(activeTab.sessionId)
       ) {
         return;
       }
@@ -681,26 +646,31 @@ export default function App() {
       handleSetManualLoggingPaused,
       handleStartManualLog,
       handleStopManualLog,
-      manualLogBusyTabId,
+      manualLogBusySessionIds,
     ]
   );
 
   const openConnection = useCallback(() => {
+    startupCliRequestCoordinator.setBlocked(true);
     void loadConnectionDialog();
     setConnectionInitialValues(null);
     setShowConnection(true);
-  }, []);
+  }, [startupCliRequestCoordinator]);
 
-  const openSameDestination = useCallback((tab: TabInfo) => {
-    if (!tab.connectionInfo || tab.connectionType === "serial") return;
-    void loadConnectionDialog();
-    setConnectionInitialValues({
-      connectionInfo: tab.connectionInfo,
-      encoding: tab.encoding,
-      terminalMode: tab.terminalMode,
-    });
-    setShowConnection(true);
-  }, []);
+  const openSameDestination = useCallback(
+    (tab: TabInfo) => {
+      if (!tab.connectionInfo || tab.connectionType === "serial") return;
+      startupCliRequestCoordinator.setBlocked(true);
+      void loadConnectionDialog();
+      setConnectionInitialValues({
+        connectionInfo: tab.connectionInfo,
+        encoding: tab.encoding,
+        terminalMode: tab.terminalMode,
+      });
+      setShowConnection(true);
+    },
+    [startupCliRequestCoordinator]
+  );
 
   const openWindow = windowTabs.createWorkspaceWindow;
 
@@ -756,17 +726,24 @@ export default function App() {
   }, [appExit.requestExit, openConnection, openUtilityTab, openWindow, shortcuts]);
 
   useEffect(() => {
-    invoke<StartupCliRequest | null>("startup_cli_request_get")
-      .then((request) => {
-        if (!request) return;
-        setStartupCliRequest(request);
-        void loadConnectionDialog();
-        setShowConnection(true);
+    startupCliRequestCoordinator.setBlocked(showConnection);
+  }, [showConnection, startupCliRequestCoordinator]);
+
+  useEffect(() => {
+    const unlisten = startupCliClient.listenRequestAvailable(() => {
+      startupCliRequestCoordinator.check();
+    });
+    void unlisten
+      .then(() => {
+        startupCliRequestCoordinator.check();
       })
       .catch((error) => {
-        console.error("Failed to load startup CLI request:", error);
+        console.error("Failed to listen for startup CLI requests:", error);
       });
-  }, []);
+    return () => {
+      void unlisten.then((stopListening) => stopListening()).catch(() => {});
+    };
+  }, [startupCliRequestCoordinator]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -983,7 +960,7 @@ export default function App() {
             openMenu={openStatusBarMenu}
             onMenuToggle={handleStatusBarMenuToggle}
             onMenuTriggerPointerDown={handleStatusBarMenuTriggerPointerDown}
-            manualLogBusy={Boolean(activeTab && manualLogBusyTabId === activeTab.id)}
+            manualLogBusy={Boolean(activeTab && manualLogBusySessionIds.has(activeTab.sessionId))}
             logStatusMessage={logStatusMessage}
           />
         </div>

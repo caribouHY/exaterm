@@ -5,7 +5,7 @@ pub struct SshConnectResult {
     pub session_id: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SshConnectOptions {
     pub host: String,

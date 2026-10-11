@@ -187,6 +187,8 @@ The HTTP MCP transport has been removed. Existing HTTP-only `mcp.host` and `mcp.
 When MCP is enabled, external clients can call these tools:
 
 - `list_terminal_sessions`: lists ExaTerm terminal sessions opened by the user.
+- `disconnect_terminal_session`: flushes and stops an active log, then disconnects the session while preserving its tab and scrollback.
+- `focus_terminal_session`: accepts `session_id`, selects its existing tab, and shows, restores, and focuses its owning window. It returns `session_id`, `window_id`, `tab_id`, and `focused: true` after GUI acknowledgement. Disconnected tabs are supported; open dialogs remain active. The GUI acknowledgement deadline is five seconds, including one retry after a tab moves to another window. OS foreground restrictions still apply.
 - `read_terminal_output`: reads or waits for session output using the required `mode` argument:
   - `recent`: immediately reads the most recent retained output.
   - `delta`: immediately reads output after the required `cursor`.
@@ -195,6 +197,9 @@ When MCP is enabled, external clients can call these tools:
 - `run_terminal_command`: sends a command to a connected session, waits for output, and returns the output delta.
 - `start_terminal_log`: explicitly starts a plaintext log for a connected session. The log is saved under `%AppData%\ExaTerm\logs`, and the result returns the created file path.
 - `stop_terminal_log`: stops the active plaintext log for a session after ExaTerm flushes pending displayed output to the log.
+- `get_terminal_log_status`: returns the current `inactive`, `active`, or `paused` state, file path, and `auto` or `manual` mode without changing the log. Inactive path and mode fields are `null`.
+- `pause_terminal_log`: flushes pending displayed output and pauses the active log. Repeating it while paused succeeds with `changed: false`.
+- `resume_terminal_log`: resumes the same active log file. Repeating it while active succeeds with `changed: false`.
 
 Example output reads:
 
@@ -235,7 +240,7 @@ The `wait` mode and `run_terminal_command` wait for up to 60 seconds. `run_termi
 
 The previous `read_terminal_output_delta` and `wait_terminal_output` tools were removed. Replace them with `read_terminal_output` using `mode: "delta"` and `mode: "wait"`, respectively.
 
-The MCP compatibility adapter and CLI do not read saved credentials, expose API keys, or read log files directly. External clients can explicitly start and stop session logs, but they receive only the log state and file path, not the log contents. All new external connections require `external_control.connect_enabled=true`; direct SSH/Telnet targets additionally require `external_control.direct_connect_enabled=true`. Saved profiles can opt out with `saved_connections[*].external_control_enabled=false`, and the same permission is required when a saved SSH profile is used as a direct connection's jump host. SSH connections enforce known-host checks and request required credentials in the ExaTerm UI. Terminal output and log files can contain sensitive information, so enable external control only for trusted local clients.
+The MCP compatibility adapter and CLI do not read saved credentials, expose API keys, or read log files directly. External clients can inspect, start, pause, resume, and stop session logs, including automatically started logs, but they receive only the log state and file path, not the log contents. MCP always uses ExaTerm's automatically selected log destination; only the CLI accepts an explicit destination and overwrite/append mode. All new external connections require `external_control.connect_enabled=true`; direct SSH/Telnet targets additionally require `external_control.direct_connect_enabled=true`. Saved profiles can opt out with `saved_connections[*].external_control_enabled=false`, and the same permission is required when a saved SSH profile is used as a direct connection's jump host. SSH connections enforce known-host checks and request required credentials in the ExaTerm UI. Terminal output and log files can contain sensitive information, so enable external control only for trusted local clients.
 
 ## shortcuts
 

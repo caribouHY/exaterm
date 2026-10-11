@@ -1,23 +1,30 @@
 use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 
 use clap::{error::ErrorKind, Args, Parser, Subcommand, ValueEnum};
+use serde::Serialize;
 use serde_json::json;
 
+use crate::external_control::service::ExternalControlLogWriteMode;
 use crate::{
     config,
     external_control::{
-        client::ExternalControlClient,
+        client::{ExternalControlClient, ExternalControlClientDiagnostic},
+        protocol::CONTROL_PROTOCOL_VERSION,
         service::{
             normalize_direct_host, ExternalControlEncoding, ExternalControlSerialFlowControl,
             ExternalControlSerialParity, ExternalControlSshAuthMethod, ExternalControlTerminalMode,
             ListConnectionProfilesArgs, SavedProfileConnectionType,
         },
         ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs,
-        ExternalControlError, ExternalControlRequest, ExternalControlResponse,
-        ReadTerminalOutputArgs, RunTerminalCommandArgs, SendTerminalInputArgs,
-        StartTerminalLogArgs, StopTerminalLogArgs,
+        DisconnectTerminalSessionArgs, ExternalControlError, ExternalControlRequest,
+        ExternalControlResponse, ReadTerminalOutputArgs, RunTerminalCommandArgs,
+        SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs, TerminalLogSessionArgs,
     },
 };
+
+mod follow;
+use follow::{run_follow, FollowOptions};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -33,6 +40,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum RootCommand {
+    /// Diagnose ExaTerm CLI availability.
+    Doctor,
     Sessions(SessionsArgs),
     Profiles(ProfilesArgs),
     Ssh(SshArgs),
@@ -50,6 +59,9 @@ struct SessionsArgs {
 #[derive(Debug, Subcommand)]
 enum SessionsCommand {
     List,
+    /// Select a session tab and bring its window to the foreground.
+    Focus(SessionArg),
+    Disconnect(SessionArg),
 }
 
 #[derive(Debug, Args)]
@@ -253,6 +265,12 @@ struct OutputArgs {
     timeout_ms: Option<u64>,
     #[arg(long)]
     max_chars: Option<usize>,
+    #[arg(long)]
+    duration_ms: Option<u64>,
+    #[arg(long)]
+    max_total_chars: Option<usize>,
+    #[arg(long)]
+    until: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -260,6 +278,7 @@ enum OutputMode {
     Recent,
     Delta,
     Wait,
+    Follow,
 }
 
 #[derive(Debug, Args)]
@@ -296,8 +315,27 @@ struct LogArgs {
 
 #[derive(Debug, Subcommand)]
 enum LogCommand {
-    Start(SessionArg),
+    Start(StartLogArgs),
     Stop(SessionArg),
+    Status(SessionArg),
+    Pause(SessionArg),
+    Resume(SessionArg),
+}
+
+#[derive(Debug, Args)]
+struct StartLogArgs {
+    #[arg(long)]
+    session_id: String,
+    #[arg(long)]
+    file_path: Option<String>,
+    #[arg(long, value_enum)]
+    write_mode: Option<LogWriteMode>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum LogWriteMode {
+    Overwrite,
+    Append,
 }
 
 #[derive(Debug, Args)]
@@ -324,8 +362,20 @@ pub async fn run_terminal_cli() -> i32 {
         }
     };
 
-    let request = match build_request(cli.command, &mut io::stdin()) {
-        Ok(request) => request,
+    if matches!(&cli.command, RootCommand::Doctor) {
+        return run_doctor().await;
+    }
+
+    let command = match cli.command {
+        RootCommand::Terminal(TerminalArgs {
+            command: TerminalCommand::Output(args),
+        }) if matches!(args.mode, OutputMode::Follow) => {
+            follow::build_options(args).map(CliExecution::Follow)
+        }
+        command => build_request(command, &mut io::stdin()).map(CliExecution::Once),
+    };
+    let command = match command {
+        Ok(command) => command,
         Err(error) => {
             print_error("invalid_arguments", &error);
             return 2;
@@ -353,6 +403,30 @@ pub async fn run_terminal_cli() -> i32 {
         return 1;
     }
 
+    if let CliExecution::Follow(options) = command {
+        return match run_follow(&client, &mut io::stdout(), options, async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .await
+        {
+            Ok(()) => 0,
+            Err(follow::FollowError::Control(error)) => {
+                let (code, exit_code) = classify_external_control_error(&error);
+                print_error(code, error.message());
+                exit_code
+            }
+            Err(follow::FollowError::Output(error)) => {
+                print_error(
+                    "tool_error",
+                    &format!("Failed to write follow output: {error}"),
+                );
+                1
+            }
+        };
+    }
+    let CliExecution::Once(request) = command else {
+        unreachable!();
+    };
     match client.call(request).await {
         Ok(result) => {
             print_response(result);
@@ -366,14 +440,226 @@ pub async fn run_terminal_cli() -> i32 {
     }
 }
 
+enum CliExecution {
+    Once(ExternalControlRequest),
+    Follow(FollowOptions),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum DoctorCheckStatus {
+    Pass,
+    Fail,
+    Skipped,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct DoctorCheck {
+    id: &'static str,
+    status: DoctorCheckStatus,
+    message: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    remediation: Option<&'static str>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct DoctorReport {
+    ok: bool,
+    version: &'static str,
+    protocol_version: u32,
+    gui_started: bool,
+    checks: Vec<DoctorCheck>,
+}
+
+async fn run_doctor() -> i32 {
+    let config = config::config_read().map(|config| {
+        (
+            config.external_control.enabled,
+            config.external_control.cli_enabled,
+        )
+    });
+    let client = ExternalControlClient::new();
+    let gui_executable_available = client.gui_executable_available();
+    let client_diagnostic = client.diagnose_or_start_gui().await;
+    let report = build_doctor_report(
+        config.map_err(|_| ()),
+        gui_executable_available,
+        client_diagnostic,
+    );
+    let exit_code = doctor_exit_code(&report);
+    let output = serde_json::to_string(&report).unwrap_or_else(|_| "{}".into());
+    println!("{output}");
+    exit_code
+}
+
+fn doctor_exit_code(report: &DoctorReport) -> i32 {
+    if report.ok {
+        0
+    } else {
+        1
+    }
+}
+
+fn build_doctor_report(
+    config_permissions: Result<(bool, bool), ()>,
+    gui_executable_available: bool,
+    client: ExternalControlClientDiagnostic,
+) -> DoctorReport {
+    let mut checks = Vec::with_capacity(6);
+
+    match config_permissions {
+        Ok((external_control_enabled, cli_enabled)) => {
+            checks.push(passed_check(
+                "config",
+                "ExaTerm configuration loaded successfully.",
+            ));
+            checks.push(if external_control_enabled {
+                passed_check("external_control", "ExaTerm external control is enabled.")
+            } else {
+                failed_check(
+                    "external_control",
+                    "ExaTerm external control is disabled.",
+                    "Set external_control.enabled=true and restart ExaTerm.",
+                )
+            });
+            checks.push(if cli_enabled {
+                passed_check("cli_permission", "ExaTerm CLI access is enabled.")
+            } else {
+                failed_check(
+                    "cli_permission",
+                    "ExaTerm CLI access is disabled.",
+                    "Set external_control.cli_enabled=true and restart ExaTerm.",
+                )
+            });
+        }
+        Err(()) => {
+            checks.push(failed_check(
+                "config",
+                "ExaTerm configuration could not be loaded.",
+                "Repair or replace the ExaTerm configuration file.",
+            ));
+            checks.push(skipped_check(
+                "external_control",
+                "External control setting was not checked because configuration loading failed.",
+                "Repair the ExaTerm configuration file, then run doctor again.",
+            ));
+            checks.push(skipped_check(
+                "cli_permission",
+                "CLI permission was not checked because configuration loading failed.",
+                "Repair the ExaTerm configuration file, then run doctor again.",
+            ));
+        }
+    }
+
+    checks.push(if gui_executable_available {
+        passed_check("gui_executable", "ExaTerm GUI executable was found.")
+    } else {
+        failed_check(
+            "gui_executable",
+            "ExaTerm GUI executable was not found near the CLI.",
+            "Install exaterm-cli beside the ExaTerm GUI executable.",
+        )
+    });
+
+    checks.push(if client.control_plane_reachable {
+        passed_check("control_plane", "ExaTerm control plane is reachable.")
+    } else {
+        failed_check(
+            "control_plane",
+            "ExaTerm control plane is unavailable.",
+            "Confirm that ExaTerm can start, then run doctor again.",
+        )
+    });
+
+    checks.push(match client.protocol_compatible {
+        Some(true) => passed_check(
+            "protocol",
+            "ExaTerm external control protocol is compatible.",
+        ),
+        Some(false) => failed_check(
+            "protocol",
+            "ExaTerm external control protocol handshake failed.",
+            "Use matching ExaTerm GUI and CLI versions, restart ExaTerm, then run doctor again.",
+        ),
+        None => skipped_check(
+            "protocol",
+            "Protocol compatibility was not checked because the control plane is unavailable.",
+            "Restore the ExaTerm control plane, then run doctor again.",
+        ),
+    });
+
+    let ok = checks
+        .iter()
+        .all(|check| check.status == DoctorCheckStatus::Pass);
+    DoctorReport {
+        ok,
+        version: env!("CARGO_PKG_VERSION"),
+        protocol_version: CONTROL_PROTOCOL_VERSION,
+        gui_started: client.gui_started,
+        checks,
+    }
+}
+
+fn passed_check(id: &'static str, message: &'static str) -> DoctorCheck {
+    DoctorCheck {
+        id,
+        status: DoctorCheckStatus::Pass,
+        message,
+        remediation: None,
+    }
+}
+
+fn failed_check(id: &'static str, message: &'static str, remediation: &'static str) -> DoctorCheck {
+    DoctorCheck {
+        id,
+        status: DoctorCheckStatus::Fail,
+        message,
+        remediation: Some(remediation),
+    }
+}
+
+fn skipped_check(
+    id: &'static str,
+    message: &'static str,
+    remediation: &'static str,
+) -> DoctorCheck {
+    DoctorCheck {
+        id,
+        status: DoctorCheckStatus::Skipped,
+        message,
+        remediation: Some(remediation),
+    }
+}
+
 fn build_request(
     command: RootCommand,
     stdin: &mut impl Read,
 ) -> Result<ExternalControlRequest, String> {
     match command {
+        RootCommand::Doctor => Err("doctor does not create an external control request".into()),
         RootCommand::Sessions(SessionsArgs {
             command: SessionsCommand::List,
         }) => Ok(ExternalControlRequest::ListTerminalSessions),
+        RootCommand::Sessions(SessionsArgs {
+            command: SessionsCommand::Focus(args),
+        }) => {
+            require_non_empty("--session-id", &args.session_id)?;
+            Ok(ExternalControlRequest::FocusTerminalSession(
+                crate::external_control::FocusTerminalSessionArgs {
+                    session_id: args.session_id,
+                },
+            ))
+        }
+        RootCommand::Sessions(SessionsArgs {
+            command: SessionsCommand::Disconnect(args),
+        }) => {
+            require_non_empty("--session-id", &args.session_id)?;
+            Ok(ExternalControlRequest::DisconnectTerminalSession(
+                DisconnectTerminalSessionArgs {
+                    session_id: args.session_id,
+                },
+            ))
+        }
         RootCommand::Profiles(ProfilesArgs {
             command: ProfilesCommand::List(args),
         }) => Ok(ExternalControlRequest::ListConnectionProfiles(
@@ -517,9 +803,25 @@ fn build_request(
                 }),
         }) => {
             require_non_empty("--session-id", &args.session_id)?;
+            let (file_path, write_mode) = match (args.file_path, args.write_mode) {
+                (None, None) => (None, None),
+                (Some(file_path), Some(write_mode)) => {
+                    require_non_empty("--file-path", &file_path)?;
+                    let base_dir = std::env::current_dir().map_err(|error| {
+                        format!("Failed to resolve the current directory: {error}")
+                    })?;
+                    (
+                        Some(resolve_log_file_path(&file_path, &base_dir)),
+                        Some(write_mode.into_request_write_mode()),
+                    )
+                }
+                _ => return Err("--file-path and --write-mode must be specified together".into()),
+            };
             Ok(ExternalControlRequest::StartTerminalLog(
                 StartTerminalLogArgs {
                     session_id: args.session_id,
+                    file_path,
+                    write_mode,
                 },
             ))
         }
@@ -536,12 +838,53 @@ fn build_request(
                 },
             ))
         }
+        RootCommand::Terminal(TerminalArgs {
+            command:
+                TerminalCommand::Log(LogArgs {
+                    command: LogCommand::Status(args),
+                }),
+        }) => build_log_session_request(args, ExternalControlRequest::GetTerminalLogStatus),
+        RootCommand::Terminal(TerminalArgs {
+            command:
+                TerminalCommand::Log(LogArgs {
+                    command: LogCommand::Pause(args),
+                }),
+        }) => build_log_session_request(args, ExternalControlRequest::PauseTerminalLog),
+        RootCommand::Terminal(TerminalArgs {
+            command:
+                TerminalCommand::Log(LogArgs {
+                    command: LogCommand::Resume(args),
+                }),
+        }) => build_log_session_request(args, ExternalControlRequest::ResumeTerminalLog),
     }
+}
+
+fn build_log_session_request(
+    args: SessionArg,
+    build: impl FnOnce(TerminalLogSessionArgs) -> ExternalControlRequest,
+) -> Result<ExternalControlRequest, String> {
+    require_non_empty("--session-id", &args.session_id)?;
+    Ok(build(TerminalLogSessionArgs {
+        session_id: args.session_id,
+    }))
+}
+
+fn resolve_log_file_path(file_path: &str, base_dir: &Path) -> String {
+    let path = PathBuf::from(file_path);
+    let absolute = if path.is_absolute() {
+        path
+    } else {
+        base_dir.join(path)
+    };
+    absolute.to_string_lossy().to_string()
 }
 
 fn build_output_request(args: OutputArgs) -> Result<ExternalControlRequest, String> {
     require_non_empty("--session-id", &args.session_id)?;
     validate_optional_range("--max-chars", args.max_chars, 1, 20_000)?;
+    if args.duration_ms.is_some() || args.max_total_chars.is_some() || args.until.is_some() {
+        return Err("--duration-ms, --max-total-chars, and --until require follow mode".into());
+    }
     let request = match args.mode {
         OutputMode::Recent => {
             if args.cursor.is_some() || args.contains.is_some() || args.timeout_ms.is_some() {
@@ -577,6 +920,7 @@ fn build_output_request(args: OutputArgs) -> Result<ExternalControlRequest, Stri
                 max_chars: args.max_chars,
             })
         }
+        OutputMode::Follow => unreachable!("follow is handled by the CLI runner"),
     };
 
     Ok(request)
@@ -632,10 +976,12 @@ fn validate_input_length(value: &str) -> Result<(), String> {
 }
 
 fn print_response(response: ExternalControlResponse) {
-    println!(
-        "{}",
-        serde_json::to_string(&response.into_value()).unwrap_or_else(|_| "{}".into())
-    );
+    let output = response
+        .into_value()
+        .ok()
+        .and_then(|value| serde_json::to_string(&value).ok())
+        .unwrap_or_else(|| "{}".into());
+    println!("{output}");
 }
 
 fn print_error(code: &str, message: &str) {
@@ -672,6 +1018,15 @@ impl SshAuthMethod {
             Self::Password => ExternalControlSshAuthMethod::Password,
             Self::KeyboardInteractive => ExternalControlSshAuthMethod::KeyboardInteractive,
             Self::PublicKey => ExternalControlSshAuthMethod::PublicKey,
+        }
+    }
+}
+
+impl LogWriteMode {
+    fn into_request_write_mode(self) -> ExternalControlLogWriteMode {
+        match self {
+            Self::Overwrite => ExternalControlLogWriteMode::Overwrite,
+            Self::Append => ExternalControlLogWriteMode::Append,
         }
     }
 }
@@ -722,768 +1077,4 @@ impl TerminalMode {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::external_control::service::ListTerminalSessionsResult;
-    use serde_json::{json, Value};
-
-    fn parse(args: &[&str]) -> RootCommand {
-        Cli::try_parse_from(args).unwrap().command
-    }
-
-    #[test]
-    fn profile_connect_includes_connection_type() {
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "profiles",
-                "connect",
-                "--type",
-                "telnet",
-                "--profile-id",
-                "router",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap();
-        assert_eq!(
-            request,
-            ExternalControlRequest::ConnectSavedProfile(ConnectSavedProfileArgs {
-                profile_id: "router".into(),
-                connection_type: SavedProfileConnectionType::Telnet,
-                cols: None,
-                rows: None,
-            })
-        );
-    }
-
-    #[test]
-    fn direct_ssh_connect_builds_a_typed_request() {
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "ssh",
-                "connect",
-                "--host",
-                "router.example.test",
-                "--port",
-                "2222",
-                "--username",
-                "admin",
-                "--auth-method",
-                "public-key",
-                "--private-key-path",
-                "id_ed25519",
-                "--jump-profile-id",
-                "bastion",
-                "--encoding",
-                "shift-jis",
-                "--terminal-mode",
-                "juniper-junos",
-                "--cols",
-                "132",
-                "--rows",
-                "43",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            request,
-            ExternalControlRequest::ConnectSsh(ConnectSshArgs {
-                host: "router.example.test".into(),
-                port: Some(2222),
-                username: "admin".into(),
-                auth_method: Some(ExternalControlSshAuthMethod::PublicKey),
-                private_key_path: Some("id_ed25519".into()),
-                jump_profile_id: Some("bastion".into()),
-                encoding: Some(ExternalControlEncoding::ShiftJis),
-                terminal_mode: Some(ExternalControlTerminalMode::JuniperJunos),
-                cols: Some(132),
-                rows: Some(43),
-            })
-        );
-    }
-
-    #[test]
-    fn direct_telnet_connect_builds_a_typed_request() {
-        let request = build_request(
-            parse(&["exaterm-cli", "telnet", "connect", "--host", "192.0.2.10"]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            request,
-            ExternalControlRequest::ConnectTelnet(ConnectTelnetArgs {
-                host: "192.0.2.10".into(),
-                port: None,
-                encoding: None,
-                terminal_mode: None,
-                cols: None,
-                rows: None,
-            })
-        );
-    }
-
-    #[test]
-    fn direct_connect_rejects_zero_port_and_missing_username() {
-        let port_error = build_request(
-            parse(&[
-                "exaterm-cli",
-                "telnet",
-                "connect",
-                "--host",
-                "router.example.test",
-                "--port",
-                "0",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap_err();
-        assert!(port_error.contains("--port"));
-
-        let username_error = build_request(
-            parse(&[
-                "exaterm-cli",
-                "ssh",
-                "connect",
-                "--host",
-                "router.example.test",
-                "--username",
-                " ",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap_err();
-        assert!(username_error.contains("--username"));
-
-        let host_error = build_request(
-            parse(&[
-                "exaterm-cli",
-                "telnet",
-                "connect",
-                "--host",
-                "router.example.test:23",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap_err();
-        assert!(host_error.contains("port"));
-    }
-
-    #[test]
-    fn profile_list_without_type_requests_all_profiles() {
-        let request = build_request(
-            parse(&["exaterm-cli", "profiles", "list"]),
-            &mut io::empty(),
-        )
-        .unwrap();
-        assert_eq!(
-            request,
-            ExternalControlRequest::ListConnectionProfiles(ListConnectionProfilesArgs {
-                connection_type: None,
-            })
-        );
-    }
-
-    #[test]
-    fn profile_list_includes_connection_type() {
-        let ssh_request = build_request(
-            parse(&["exaterm-cli", "profiles", "list", "--type", "ssh"]),
-            &mut io::empty(),
-        )
-        .unwrap();
-        let telnet_request = build_request(
-            parse(&["exaterm-cli", "profiles", "list", "--type", "telnet"]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            ssh_request,
-            ExternalControlRequest::ListConnectionProfiles(ListConnectionProfilesArgs {
-                connection_type: Some(SavedProfileConnectionType::Ssh),
-            })
-        );
-        assert_eq!(
-            telnet_request,
-            ExternalControlRequest::ListConnectionProfiles(ListConnectionProfilesArgs {
-                connection_type: Some(SavedProfileConnectionType::Telnet),
-            })
-        );
-    }
-
-    #[test]
-    fn profile_list_rejects_unknown_connection_type() {
-        let error = Cli::try_parse_from(["exaterm-cli", "profiles", "list", "--type", "serial"])
-            .unwrap_err();
-        assert_eq!(error.kind(), ErrorKind::InvalidValue);
-    }
-
-    #[test]
-    fn output_delta_requires_cursor() {
-        let error = build_request(
-            parse(&[
-                "exaterm-cli",
-                "terminal",
-                "output",
-                "--session-id",
-                "s1",
-                "--mode",
-                "delta",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap_err();
-        assert!(error.contains("requires --cursor"));
-    }
-
-    #[test]
-    fn output_recent_rejects_wait_arguments() {
-        let error = build_request(
-            parse(&[
-                "exaterm-cli",
-                "terminal",
-                "output",
-                "--session-id",
-                "s1",
-                "--mode",
-                "recent",
-                "--timeout-ms",
-                "1000",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap_err();
-        assert!(error.contains("recent mode"));
-    }
-
-    #[test]
-    fn send_reads_dash_value_from_stdin() {
-        let mut input = "show version\n".as_bytes();
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "terminal",
-                "send",
-                "--session-id",
-                "s1",
-                "--data",
-                "-",
-            ]),
-            &mut input,
-        )
-        .unwrap();
-        assert_eq!(
-            request,
-            ExternalControlRequest::SendTerminalInput(SendTerminalInputArgs {
-                session_id: "s1".into(),
-                data: "show version\n".into(),
-            })
-        );
-    }
-
-    #[test]
-    fn serial_rejects_invalid_data_bits() {
-        let error = build_request(
-            parse(&[
-                "exaterm-cli",
-                "serial",
-                "connect",
-                "--port",
-                "COM3",
-                "--data-bits",
-                "9",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap_err();
-        assert!(error.contains("--data-bits"));
-    }
-
-    #[test]
-    fn log_rejects_empty_session_id() {
-        let error = build_request(
-            parse(&[
-                "exaterm-cli",
-                "terminal",
-                "log",
-                "start",
-                "--session-id",
-                " ",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap_err();
-        assert!(error.contains("--session-id"));
-    }
-
-    #[test]
-    fn sessions_list_builds_request() {
-        assert_eq!(
-            build_request(
-                parse(&["exaterm-cli", "sessions", "list"]),
-                &mut io::empty()
-            )
-            .unwrap(),
-            ExternalControlRequest::ListTerminalSessions
-        );
-    }
-
-    #[test]
-    fn serial_ports_builds_request() {
-        assert_eq!(
-            build_request(parse(&["exaterm-cli", "serial", "ports"]), &mut io::empty()).unwrap(),
-            ExternalControlRequest::ListSerialPorts
-        );
-    }
-
-    #[test]
-    fn serial_connect_builds_request() {
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "serial",
-                "connect",
-                "--port",
-                "COM3",
-                "--baud-rate",
-                "115200",
-                "--data-bits",
-                "7",
-                "--parity",
-                "even",
-                "--stop-bits",
-                "2",
-                "--flow-control",
-                "hardware",
-                "--terminal-mode",
-                "cisco-ios",
-                "--cols",
-                "140",
-                "--rows",
-                "40",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            request,
-            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
-                port: "COM3".into(),
-                baud_rate: Some(115200),
-                data_bits: Some(7),
-                parity: Some(ExternalControlSerialParity::Even),
-                stop_bits: Some(2),
-                flow_control: Some(ExternalControlSerialFlowControl::Hardware),
-                terminal_mode: Some(ExternalControlTerminalMode::CiscoIos),
-                cols: Some(140),
-                rows: Some(40),
-            })
-        );
-    }
-
-    #[test]
-    fn serial_connect_accepts_arista_eos_terminal_mode() {
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "serial",
-                "connect",
-                "--port",
-                "COM3",
-                "--terminal-mode",
-                "arista-eos",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            request,
-            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
-                port: "COM3".into(),
-                baud_rate: None,
-                data_bits: None,
-                parity: None,
-                stop_bits: None,
-                flow_control: None,
-                terminal_mode: Some(ExternalControlTerminalMode::AristaEos),
-                cols: None,
-                rows: None,
-            })
-        );
-    }
-
-    #[test]
-    fn serial_connect_accepts_juniper_junos_terminal_mode() {
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "serial",
-                "connect",
-                "--port",
-                "COM3",
-                "--terminal-mode",
-                "juniper-junos",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            request,
-            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
-                port: "COM3".into(),
-                baud_rate: None,
-                data_bits: None,
-                parity: None,
-                stop_bits: None,
-                flow_control: None,
-                terminal_mode: Some(ExternalControlTerminalMode::JuniperJunos),
-                cols: None,
-                rows: None,
-            })
-        );
-    }
-
-    #[test]
-    fn serial_connect_accepts_vyos_terminal_mode() {
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "serial",
-                "connect",
-                "--port",
-                "COM3",
-                "--terminal-mode",
-                "vyos",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            request,
-            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
-                port: "COM3".into(),
-                baud_rate: None,
-                data_bits: None,
-                parity: None,
-                stop_bits: None,
-                flow_control: None,
-                terminal_mode: Some(ExternalControlTerminalMode::Vyos),
-                cols: None,
-                rows: None,
-            })
-        );
-    }
-
-    #[test]
-    fn serial_connect_accepts_fujitsu_sir_terminal_mode() {
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "serial",
-                "connect",
-                "--port",
-                "COM3",
-                "--terminal-mode",
-                "fujitsu-sir",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            request,
-            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
-                port: "COM3".into(),
-                baud_rate: None,
-                data_bits: None,
-                parity: None,
-                stop_bits: None,
-                flow_control: None,
-                terminal_mode: Some(ExternalControlTerminalMode::FujitsuSir),
-                cols: None,
-                rows: None,
-            })
-        );
-    }
-
-    #[test]
-    fn serial_connect_accepts_allied_telesis_awplus_terminal_mode() {
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "serial",
-                "connect",
-                "--port",
-                "COM3",
-                "--terminal-mode",
-                "allied-telesis-awplus",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            request,
-            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
-                port: "COM3".into(),
-                baud_rate: None,
-                data_bits: None,
-                parity: None,
-                stop_bits: None,
-                flow_control: None,
-                terminal_mode: Some(ExternalControlTerminalMode::AlliedTelesisAwplus),
-                cols: None,
-                rows: None,
-            })
-        );
-    }
-
-    #[test]
-    fn serial_connect_accepts_furukawa_fitelnet_terminal_mode() {
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "serial",
-                "connect",
-                "--port",
-                "COM3",
-                "--terminal-mode",
-                "furukawa-fitelnet",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            request,
-            ExternalControlRequest::ConnectSerialConsole(ConnectSerialConsoleArgs {
-                port: "COM3".into(),
-                baud_rate: None,
-                data_bits: None,
-                parity: None,
-                stop_bits: None,
-                flow_control: None,
-                terminal_mode: Some(ExternalControlTerminalMode::FurukawaFitelnet),
-                cols: None,
-                rows: None,
-            })
-        );
-    }
-
-    #[test]
-    fn output_recent_builds_request() {
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "terminal",
-                "output",
-                "--session-id",
-                "s1",
-                "--mode",
-                "recent",
-                "--max-chars",
-                "1200",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            request,
-            ExternalControlRequest::ReadTerminalOutput(ReadTerminalOutputArgs::Recent {
-                session_id: "s1".into(),
-                max_chars: Some(1200),
-            })
-        );
-    }
-
-    #[test]
-    fn output_delta_builds_request() {
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "terminal",
-                "output",
-                "--session-id",
-                "s1",
-                "--mode",
-                "delta",
-                "--cursor",
-                "120",
-                "--max-chars",
-                "800",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            request,
-            ExternalControlRequest::ReadTerminalOutput(ReadTerminalOutputArgs::Delta {
-                session_id: "s1".into(),
-                cursor: 120,
-                max_chars: Some(800),
-            })
-        );
-    }
-
-    #[test]
-    fn output_wait_builds_request() {
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "terminal",
-                "output",
-                "--session-id",
-                "s1",
-                "--mode",
-                "wait",
-                "--cursor",
-                "121",
-                "--contains",
-                "router#",
-                "--timeout-ms",
-                "30000",
-                "--max-chars",
-                "900",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            request,
-            ExternalControlRequest::ReadTerminalOutput(ReadTerminalOutputArgs::Wait {
-                session_id: "s1".into(),
-                cursor: Some(121),
-                contains: Some("router#".into()),
-                timeout_ms: Some(30000),
-                max_chars: Some(900),
-            })
-        );
-    }
-
-    #[test]
-    fn terminal_run_builds_request() {
-        let request = build_request(
-            parse(&[
-                "exaterm-cli",
-                "terminal",
-                "run",
-                "--session-id",
-                "s1",
-                "--command",
-                "show version",
-                "--append-newline",
-                "false",
-                "--wait-contains",
-                "router#",
-                "--timeout-ms",
-                "5000",
-                "--settle-ms",
-                "10",
-                "--max-chars",
-                "1500",
-            ]),
-            &mut io::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            request,
-            ExternalControlRequest::RunTerminalCommand(RunTerminalCommandArgs {
-                session_id: "s1".into(),
-                command: "show version".into(),
-                append_newline: Some(false),
-                wait_contains: Some("router#".into()),
-                timeout_ms: Some(5000),
-                settle_ms: Some(10),
-                max_chars: Some(1500),
-            })
-        );
-    }
-
-    #[test]
-    fn terminal_log_start_builds_request() {
-        assert_eq!(
-            build_request(
-                parse(&[
-                    "exaterm-cli",
-                    "terminal",
-                    "log",
-                    "start",
-                    "--session-id",
-                    "s1",
-                ]),
-                &mut io::empty()
-            )
-            .unwrap(),
-            ExternalControlRequest::StartTerminalLog(StartTerminalLogArgs {
-                session_id: "s1".into(),
-            })
-        );
-    }
-
-    #[test]
-    fn terminal_log_stop_builds_request() {
-        assert_eq!(
-            build_request(
-                parse(&[
-                    "exaterm-cli",
-                    "terminal",
-                    "log",
-                    "stop",
-                    "--session-id",
-                    "s1",
-                ]),
-                &mut io::empty()
-            )
-            .unwrap(),
-            ExternalControlRequest::StopTerminalLog(StopTerminalLogArgs {
-                session_id: "s1".into(),
-            })
-        );
-    }
-
-    #[test]
-    fn not_found_uses_invalid_arguments_exit_code() {
-        assert_eq!(
-            classify_external_control_error(&ExternalControlError::NotFound("missing".into())),
-            ("invalid_arguments", 2)
-        );
-    }
-
-    #[test]
-    fn permission_denied_uses_tool_error_exit_code() {
-        assert_eq!(
-            classify_external_control_error(&ExternalControlError::PermissionDenied(
-                "denied".into()
-            )),
-            ("tool_error", 1)
-        );
-    }
-
-    #[test]
-    fn print_response_serializes_result_value() {
-        let response =
-            ExternalControlResponse::ListTerminalSessions(ListTerminalSessionsResult(json!({
-                "sessions": [{"session_id": "s1"}]
-            })));
-
-        let serialized = serde_json::to_string(&response.into_value()).unwrap();
-        assert_eq!(
-            serde_json::from_str::<Value>(&serialized).unwrap(),
-            json!({
-                "sessions": [{"session_id": "s1"}]
-            })
-        );
-    }
-}
+mod tests;

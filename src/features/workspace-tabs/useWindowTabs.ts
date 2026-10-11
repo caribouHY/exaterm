@@ -125,6 +125,19 @@ export function useWindowTabs() {
     [applyWorkspaceSnapshot, setSelectedTab]
   );
 
+  const selectSessionForExternalFocus = useCallback(
+    (snapshot: WorkspaceSnapshot, sessionId: string, tabId: string) => {
+      if (snapshot.window_id !== windowIdRef.current) return false;
+      applyWorkspaceSnapshot(snapshot);
+      const current = stateRef.current;
+      const tab = current.tabs.find((tab) => tab.id === tabId && tab.sessionId === sessionId);
+      if (!tab || current.closingTabIds.includes(tabId)) return false;
+      setSelectedTab(tabId, true);
+      return true;
+    },
+    [applyWorkspaceSnapshot, setSelectedTab]
+  );
+
   const selectTabProgrammatically = useCallback(
     (id: string | null) => {
       if (!id) {
@@ -385,6 +398,7 @@ export function useWindowTabs() {
     dragPreview: state.dragPreview,
     applyWorkspaceSnapshot,
     selectTab,
+    selectSessionForExternalFocus,
     selectTabProgrammatically,
     openUtilityTab,
     showTerminalView,

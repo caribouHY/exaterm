@@ -2,6 +2,17 @@
 
 This document describes the current runtime architecture and durable ownership boundaries of ExaTerm. Update it when a change alters responsibilities across the React frontend, Rust backend, workspace model, protocol sessions, logging, or external-control interfaces.
 
+## Reading by Ownership
+
+Start with [Design Principles](#design-principles) and the sections for the responsibilities being changed. Follow related ownership boundaries when needed; a local change does not require the complete runtime map.
+
+- **Protocol connection, cancellation, or finalization:** [Backend Runtime](#backend-runtime), [Terminal Session Flow](#terminal-session-flow), and [GUI Connection Attempts](#gui-connection-attempts).
+- **CLI/MCP operation results, JSON contracts, or permissions:** [Backend Runtime](#backend-runtime) and [External Control, MCP, and CLI](#external-control-mcp-and-cli). Connection operations also use the connection sections above; focus or placement uses workspace ownership; log operations use logging.
+- **Tab placement, moving tabs, or window lifecycle:** [Workspace and Window Ownership](#workspace-and-window-ownership); also [Frontend Runtime](#frontend-runtime) when changing React projections and [Terminal Session Flow](#terminal-session-flow) when restoring output.
+- **Log capture or lifecycle:** [Logging](#logging); also workspace ownership for cross-window movement and external control for client operations.
+- **Configuration storage, credentials, or trust:** [Backend Runtime](#backend-runtime) and [Data and Storage](#data-and-storage); also terminal session flow for SSH host-key policy.
+- **Frontend composition:** [Frontend Runtime](#frontend-runtime). Visual-only changes use the relevant sections of [CSS Architecture](CSS_ARCHITECTURE.md) instead of the full runtime architecture.
+
 ## System Shape
 
 ExaTerm is a Windows-focused Tauri v2 desktop application.
@@ -39,6 +50,22 @@ Major frontend areas are:
 
 Terminal views may remount when a tab moves between windows, but a move must not disconnect or recreate the backend session. The destination restores bounded recent output from the backend and resumes live output handling.
 
+The backend decodes retained output once and tags protocol output events with the same Unicode code-point cursor ranges used by snapshots and deltas. SSH stdout and extended data share the session decoder and cursor. Serial/Telnet errors and the local SSH queue-overflow notice are non-retained strings. The frontend applies only ranges beyond its displayed cursor, including events that cross the final restoration response; equal text at different cursors is separate output.
+
+Restoration requests the backend retention ceiling and performs at most five initial delta reads. Remaining events continue in scheduled tasks, each writing at most 20,000 code points and processing at most 256 events. Cursor gaps use one delta request at a time, with at most five reads before yielding. A failed or non-advancing recovery keeps pending events and retries when another event arrives. Backend retention truncation may advance past unavailable history; the restoration drain limit never discards pending events. Disposal cancels scheduled continuations and ignores late results without changing the backend session.
+
+### GUI Connection Attempts
+
+The connection-attempt controller owns the authoritative state of one GUI connection attempt. It applies transitions synchronously and publishes a read-only snapshot to React. The dialog owns editable form values and renders the snapshot; it does not maintain a second attempt reducer or execution flags. Connection inputs are captured when an attempt starts.
+
+The controller issues request IDs and coordinates preparation, credential submission, cancellation, and session registration. Each pre-connection credential prompt also has its own ID, and submission consumes that prompt synchronously before asynchronous work starts. Secret values are excluded from the attempt snapshot and reducer; they remain in the credential input and short-lived execution state.
+
+SSH credential preparation and protocol command construction remain separate from common attempt orchestration. Diagnostics subscribe using the controller's request ID and reject callbacks from obsolete subscriptions. Handshake authentication and host-key confirmation remain owned by Rust and the application-level SSH prompt queue.
+
+Backend connection success starts finalization. A late cancellation response cannot reverse that transition. Logging starts at most once for the new session, terminal registration can retry using that same session, and history is recorded only after successful registration. A logging or history failure does not discard a successful connection. Existing sessions, terminal buffers, and logs are not reset by attempt transitions.
+
+When the dialog is disposed, pending preparation is abandoned and an in-flight connection is cancelled where possible. A late successful connection that has not entered terminal registration is released individually. If registration is already pending, the controller waits for its result: successful registration transfers ownership to the workspace, while failure releases the attempt's session after disposal. Normal dialog closure caused by successful registration does not disconnect that session.
+
 ## Backend Runtime
 
 Backend state is created in `src-tauri/src/lib.rs` and managed through Tauri `State` values.
@@ -52,6 +79,8 @@ Backend state is created in `src-tauri/src/lib.rs` and managed through Tauri `St
 - `command_error.rs` defines stable structured Tauri command errors. React localizes known GUI errors through `src/features/backend-errors/`.
 
 The backend does not retain GUI language state. External-control, MCP, and terminal CLI errors remain English and machine-readable.
+
+The desktop application runs as a single GUI process. A later `exaterm.exe` invocation forwards its arguments to the existing process, which restores and focuses the most recently focused workspace window. SSH and Telnet startup requests are retained in a backend FIFO until that window can process them; an active connection dialog is never replaced by a later request.
 
 ## Workspace and Window Ownership
 
@@ -76,15 +105,27 @@ Settings and Logs are window-local utility views. Rust owns terminal placement; 
 
 GUI SSH connections verify and, when necessary, confirm the host key within the active handshake so authentication continues on the same TCP connection. Saved-profile external-control SSH connections require an already trusted key. Direct external-control SSH connections may confirm an unknown key in the preferred GUI window, but reject a mismatch with an existing known-hosts entry.
 
+SSH session setup requests PTY allocation and shell startup sequentially, requiring each server success reply within a 10-second send-and-reply deadline. The setup owner retains the channel outside cancellable futures and registers a session only after both replies and the attempt completion check. Failed or cancelled setup closes the channel and disconnects the target and jump transports within a shared five-second cleanup deadline. Startup output stays queued in the handler until the registered session starts its output processor.
+
+Serial disconnect closes input acceptance under the session lock and discards unsent application output. A separate shutdown coordinator survives caller cancellation, clears the driver output buffer after the writer exits, waits for the read, write, and receive-FIFO workers and every local port handle to be released, and finalizes session state and logging once. Concurrent explicit and error-triggered disconnects share that completion.
+
+Serial writes submit at most 4 KiB at a time and check shutdown between partial writes. Windows uses separate receive polling and transmission timeouts: receive polling remains 5 ms, while each fixed transmission block receives a monotonic deadline based on twice its nominal wire time plus one second, with a five-second minimum. Low baud rates reduce block size to keep the configured deadline at most 30 seconds. Partial writes and interrupted operations consume the same block deadline rather than extending it. Native timeout updates preserve the receive settings shared by cloned handles. Zero-byte writes, deadline exhaustion with unsent data, timeout-setting failures, and ordinary I/O errors use the existing error-triggered shutdown path.
+
+On Windows, the writer publishes the original block deadline under a lock before starting each native write, checking the existing shutdown flag while holding that lock. After closing input acceptance, the coordinator reads that deadline and allows only the pending operation to finish within its remaining budget; neither disconnect nor partial progress starts a new budget. The writer retains that cutoff deadline even if its result arrives before the coordinator reads it, and stops before submitting any remainder or later queued block. Successful writes separately retain the latest original deadline for port release, including when the writer is already idle. A subsequent short write cannot shorten an earlier release budget or extend its own cancellation deadline. If cleanup completes successfully, the coordinator keeps the control port handle open until the retained deadline before clearing output and releasing it. Successful synchronous writes and even driver buffer flushes did not make immediate reuse reliable on the tested FTDI/device combination. This conservative hold uses the existing finite budgets rather than extending them or flushing queued application input. Writers with no recent transmission or expired deadlines receive no additional wait.
+
+Once the original deadline expires, the coordinator requests `CancelSynchronousIo` on the dedicated writer thread every 5 ms until it exits. Cancellation is a request, not proof that the driver stopped immediately; an in-flight operation may complete partly or normally before cancellation takes effect. The configured transmission deadline likewise does not guarantee a driver's wall-clock completion time or physical wire delivery. Port release does not guarantee device responsiveness after a forced cancellation or failed write. Other platforms retain the existing I/O timeout and write behavior. Already transmitted bytes cannot be recalled, and successful input submission means queue acceptance rather than device delivery.
+
 ## Logging
 
 Logging is opt-in. A terminal session has at most one active log, regardless of whether it was started automatically or manually.
 
-- Automatic logging continues independently of manual log pause state.
-- Manual pause and resume controls only manual logging behavior.
+- Automatic and manually started logs share the same active, paused, and stopped lifecycle.
+- The backend logger is authoritative for whether a log is active; workspace pause metadata never makes an inactive logger appear active.
 - Frontend sanitizer buffers must be flushed before operations that require all rendered output to be persisted.
 - Moving a tab preserves the backend log state and does not stop logging.
 - MCP and the terminal CLI can control an allowed session log but cannot read log files directly.
+
+`src/features/terminal-logging/` owns session-scoped manual-log operation coordination for GUI and external-control entry points. It resolves the current owner tab, serializes start, stop, pause, and resume per session, flushes frontend buffers before pause or stop, invokes the logger backend, and then updates workspace metadata. GUI entry points retain save-dialog and status-message behavior; external-control entry points retain request acknowledgements and wait for changed metadata to reach the UI before replying. External log-control events are delivered only to the session's current owner window.
 
 Plaintext logs can contain commands, output, prompts, hostnames, usernames, device data, and accidental secrets. Changes to capture, storage, or control behavior must preserve the existing privacy boundary.
 
@@ -92,15 +133,22 @@ Plaintext logs can contain commands, output, prompts, hostnames, usernames, devi
 
 `src-tauri/src/external_control/` owns the transport-neutral terminal-operation service, local control protocol, GUI discovery, and connection permissions used by external clients.
 
+The service keeps each operation result as a concrete Rust struct or state-specific enum through permission checks, connection preparation, terminal operations, and response assembly. Serialization to dynamic JSON occurs only in the CLI and MCP adapter boundary; the local control protocol serializes the typed response envelope directly.
+
+Configuration and port discovery, protocol connection and writes, GUI credential/log requests and workspace notifications, and logger access are narrow runtime I/O boundaries. Production adapters call the existing Tauri, protocol, configuration, workspace, credential, host-key, and logger APIs. Tests replace only those boundary effects, while permission evaluation, credential policy, host-key mode selection, connection finalization, workspace registration, and result construction follow the production service path.
+
 - The normal ExaTerm GUI process remains the single owner of sessions, logs, credentials, and UI prompts.
 - `exaterm-cli` exposes typed subcommands and JSON output for local automation.
 - `exaterm-mcp` is a bundled stdio MCP proxy. It discovers or launches the GUI and forwards tool calls over the current-user local control plane.
 - Windows uses a current-user named pipe and protocol handshake. The non-Windows fallback uses a local TCP transport.
+- External clients serialize GUI startup with a current-user launch lock and recheck the control plane after acquiring it. The Windows named-pipe listener retries transient instance-creation failures instead of permanently stopping the control plane.
 - HTTP MCP has been removed and is not a compatibility target.
 
 External control requires `external_control.enabled`. The CLI and MCP compatibility adapter additionally require their respective `cli_enabled` or `mcp_enabled` flags. Creating new connections also requires `connect_enabled`, and saved profiles must individually allow external-control access. Direct SSH/Telnet targets additionally require `direct_connect_enabled`; a saved SSH profile used as a direct connection's jump host must also allow external control.
 
-The local control plane rejects invalid protocol versions and requests without the negotiated nonce. MCP stdout is reserved for JSON-RPC; diagnostics belong on stderr or in privacy-safe logs.
+The local control protocol is version 6. It carries typed session focus, disconnect, and log status, pause, resume, start, and stop operations. CLI start requests may include an absolute destination with overwrite or append mode, while the MCP start schema remains session-ID-only. The local control plane rejects invalid protocol versions and requests without the negotiated nonce. MCP stdout is reserved for JSON-RPC; diagnostics belong on stderr or in privacy-safe logs.
+
+CLI and MCP session focus requests select the existing terminal tab in its current owner window and await a request-scoped GUI acknowledgement after React commits the selection. The native window is then shown, restored, and focused while workspace placement is locked. A tab ownership change can trigger one retry within the five-second acknowledgement deadline. Pending requests are removed on completion or cancellation, and acknowledgements are checked against the caller window and expected tab. Open dialogs retain input focus while the terminal tab is selected behind them. Native focus-call success does not override operating-system foreground restrictions.
 
 See [ADR 0001](decisions/0001-local-external-control-and-mcp-stdio.md) for the durable transport and ownership decision.
 

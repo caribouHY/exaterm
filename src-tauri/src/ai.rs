@@ -11,7 +11,7 @@ pub use types::{AiModelInfo, AiProvider, AiSecretStatus, ChatMessage};
 
 use catalog::{fallback_cloud_models, fallback_models_for};
 use debug_log::{append_chat_debug_log, ChatDebugLogInput, ChatDebugLogOutcome};
-use providers::{fetch_provider_models, send_chat_request};
+use providers::{fetch_provider_models, send_chat_request, ChatRequest};
 use secrets::{
     is_secret_present, load_provider_secret_optional, provider_secret_key, KEY_ANTHROPIC,
     KEY_AZURE_OPENAI, KEY_GEMINI, KEY_OPENAI, KEY_OPENROUTER,
@@ -200,13 +200,15 @@ pub async fn ai_chat(
 
     let result = send_chat_request(
         &client,
-        provider.clone(),
-        &model,
-        &messages,
-        &system_prompt,
-        &language,
-        ollama_base_url.as_deref(),
-        effective_azure_openai_endpoint.as_deref(),
+        ChatRequest::new(
+            provider.clone(),
+            &model,
+            &messages,
+            &system_prompt,
+            &language,
+            ollama_base_url.as_deref(),
+            effective_azure_openai_endpoint.as_deref(),
+        ),
     )
     .await;
 

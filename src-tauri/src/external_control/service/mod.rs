@@ -1,23 +1,18 @@
-#[cfg(not(test))]
-use tauri::AppHandle;
-
-#[cfg(not(test))]
-use crate::config;
 use crate::config::AppConfig;
-#[cfg(not(test))]
-use crate::external_control::protocol::ExternalControlCredentialState;
-use crate::external_control::protocol::ExternalControlLogControlState;
-use crate::logger::LoggerState;
-use crate::serial::SerialState;
-use crate::ssh::SshState;
-use crate::telnet::TelnetState;
 use crate::terminal_control::TerminalControlState;
 use crate::workspace::WorkspaceState;
 
 mod connections;
+mod focus;
+mod io;
 mod profiles;
 mod terminal;
 mod types;
+
+pub(crate) use io::*;
+pub(crate) use types::{
+    ExternalControlFocusRequestPayload, FocusTerminalSessionArgs, FocusTerminalSessionResult,
+};
 
 pub(crate) use profiles::normalize_direct_host;
 #[cfg(test)]
@@ -33,30 +28,29 @@ pub(crate) use profiles::{
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use terminal::{normalize_max_chars, normalize_timeout_ms};
-pub(crate) use types::ExternalControlConnectionCreatedPayload;
 pub(super) use types::{internal_error, invalid_params, not_found, permission_denied, unavailable};
 pub(crate) use types::{
     ConnectSavedProfileArgs, ConnectSerialConsoleArgs, ConnectSshArgs, ConnectTelnetArgs,
-    ExternalControlConnectionProfile, ExternalControlEncoding, ExternalControlLogControlAck,
-    ExternalControlSerialFlowControl, ExternalControlSerialParity, ExternalControlSshAuthMethod,
-    ExternalControlTerminalMode, ListConnectionProfilesArgs, PreparedConnection,
-    PreparedConnectionKind, PreparedSerialConnection, ReadTerminalOutputArgs,
-    RunTerminalCommandArgs, SavedProfileConnectionType, SendTerminalInputArgs,
-    StartTerminalLogArgs, StopTerminalLogArgs,
+    DisconnectTerminalSessionArgs, ExternalControlConnectionProfile, ExternalControlEncoding,
+    ExternalControlLogControlAck, ExternalControlLogWriteMode, ExternalControlSerialFlowControl,
+    ExternalControlSerialParity, ExternalControlSshAuthMethod, ExternalControlTerminalMode,
+    ListConnectionProfilesArgs, PreparedConnection, PreparedConnectionKind,
+    PreparedSerialConnection, ReadTerminalOutputArgs, RunTerminalCommandArgs,
+    SavedProfileConnectionType, SendTerminalInputArgs, StartTerminalLogArgs, StopTerminalLogArgs,
 };
-use types::{
-    ConnectSavedProfileResult, ConnectSerialConsoleResult, ConnectSshResult, ConnectTelnetResult,
-    ListConnectionProfilesResult, ListSerialPortsResult, ReadTerminalOutputResult,
-    RunTerminalCommandResult, SendTerminalInputResult, StartTerminalLogResult,
-    StopTerminalLogResult,
+pub(crate) use types::{
+    ConnectionCreatedResult, DisconnectTerminalSessionResult, ListConnectionProfilesResult,
+    ListSerialPortsResult, ReadTerminalOutputResult, RunTerminalCommandResult,
+    SendTerminalInputResult, SetTerminalLogPausedResult, StartTerminalLogResult,
+    StopTerminalLogResult, TerminalLogState, TerminalLogStatusResult, TerminalOutputResult,
+    WaitTerminalOutputResult,
 };
-#[cfg(not(test))]
 pub(crate) use types::{
     ExternalControlCredentialRequestPayload, ExternalControlLogControlRequestPayload,
 };
 pub use types::{
     ExternalControlError, ExternalControlRequest, ExternalControlResponse,
-    ListTerminalSessionsResult,
+    ListTerminalSessionsResult, TerminalLogSessionArgs,
 };
 
 pub(crate) const DEFAULT_READ_CHARS: usize = 2_000;
@@ -75,42 +69,9 @@ pub(super) const DEFAULT_SERIAL_STOP_BITS: u8 = 1;
 
 #[derive(Clone)]
 pub struct ExternalControlRuntime {
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub config: ExternalControlPermissions,
-    #[cfg(test)]
-    pub app_config: Option<AppConfig>,
-    #[cfg(test)]
-    pub available_serial_ports: Option<Vec<crate::serial::PortInfo>>,
-    #[cfg(not(test))]
-    pub app: Option<AppHandle>,
+    pub(crate) io: ExternalControlIo,
     pub terminals: TerminalControlState,
-    #[cfg_attr(test, allow(dead_code))]
     pub workspace: WorkspaceState,
-    pub ssh: SshState,
-    pub serial: SerialState,
-    pub telnet: TelnetState,
-    pub logger: Option<LoggerState>,
-    #[cfg_attr(test, allow(dead_code))]
-    pub log_control: Option<ExternalControlLogControlState>,
-    #[cfg(not(test))]
-    pub credentials: Option<ExternalControlCredentialState>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ExternalControlPermissions {
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub connect_enabled: bool,
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub direct_connect_enabled: bool,
-}
-
-impl ExternalControlPermissions {
-    pub fn new(connect_enabled: bool, direct_connect_enabled: bool) -> Self {
-        Self {
-            connect_enabled,
-            direct_connect_enabled,
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -128,66 +89,74 @@ impl ExternalControlService {
         request: ExternalControlRequest,
     ) -> Result<ExternalControlResponse, ExternalControlError> {
         match request {
+            ExternalControlRequest::FocusTerminalSession(args) => self
+                .focus_terminal_session(args)
+                .await
+                .map(ExternalControlResponse::FocusTerminalSession),
             ExternalControlRequest::ListTerminalSessions => self
                 .list_terminal_sessions()
                 .await
-                .map(ListTerminalSessionsResult)
                 .map(ExternalControlResponse::ListTerminalSessions),
             ExternalControlRequest::ListConnectionProfiles(args) => self
                 .list_connection_profiles(args)
                 .await
-                .map(ListConnectionProfilesResult)
                 .map(ExternalControlResponse::ListConnectionProfiles),
             ExternalControlRequest::ConnectSavedProfile(args) => self
                 .connect_saved_profile(args)
                 .await
-                .map(ConnectSavedProfileResult)
                 .map(ExternalControlResponse::ConnectSavedProfile),
             ExternalControlRequest::ConnectSsh(args) => self
                 .connect_ssh(args)
                 .await
-                .map(ConnectSshResult)
                 .map(ExternalControlResponse::ConnectSsh),
             ExternalControlRequest::ConnectTelnet(args) => self
                 .connect_telnet(args)
                 .await
-                .map(ConnectTelnetResult)
                 .map(ExternalControlResponse::ConnectTelnet),
             ExternalControlRequest::ListSerialPorts => self
                 .list_serial_ports()
                 .await
-                .map(ListSerialPortsResult)
                 .map(ExternalControlResponse::ListSerialPorts),
             ExternalControlRequest::ConnectSerialConsole(args) => self
                 .connect_serial_console(args)
                 .await
-                .map(ConnectSerialConsoleResult)
                 .map(ExternalControlResponse::ConnectSerialConsole),
             ExternalControlRequest::ReadTerminalOutput(args) => self
                 .read_terminal_output(args)
                 .await
-                .map(ReadTerminalOutputResult)
                 .map(ExternalControlResponse::ReadTerminalOutput),
             ExternalControlRequest::SendTerminalInput(args) => self
                 .send_terminal_input(args)
                 .await
-                .map(SendTerminalInputResult)
                 .map(ExternalControlResponse::SendTerminalInput),
             ExternalControlRequest::StartTerminalLog(args) => self
                 .start_terminal_log(args)
                 .await
-                .map(StartTerminalLogResult)
                 .map(ExternalControlResponse::StartTerminalLog),
             ExternalControlRequest::StopTerminalLog(args) => self
                 .stop_terminal_log(args)
                 .await
-                .map(StopTerminalLogResult)
                 .map(ExternalControlResponse::StopTerminalLog),
+            ExternalControlRequest::GetTerminalLogStatus(args) => self
+                .get_terminal_log_status(args)
+                .await
+                .map(ExternalControlResponse::GetTerminalLogStatus),
+            ExternalControlRequest::PauseTerminalLog(args) => self
+                .set_terminal_log_paused(args, true)
+                .await
+                .map(ExternalControlResponse::PauseTerminalLog),
+            ExternalControlRequest::ResumeTerminalLog(args) => self
+                .set_terminal_log_paused(args, false)
+                .await
+                .map(ExternalControlResponse::ResumeTerminalLog),
             ExternalControlRequest::RunTerminalCommand(args) => self
                 .run_terminal_command(args)
                 .await
-                .map(RunTerminalCommandResult)
                 .map(ExternalControlResponse::RunTerminalCommand),
+            ExternalControlRequest::DisconnectTerminalSession(args) => self
+                .disconnect_terminal_session(args)
+                .await
+                .map(ExternalControlResponse::DisconnectTerminalSession),
         }
     }
 
@@ -213,65 +182,30 @@ impl ExternalControlService {
     }
 
     fn connect_enabled_now(&self) -> Result<bool, ExternalControlError> {
-        #[cfg(test)]
-        {
-            Ok(self.runtime.config.connect_enabled)
-        }
-
-        #[cfg(not(test))]
-        {
-            config::config_read()
-                .map(|config| config.external_control.connect_enabled)
-                .map_err(|error| {
-                    internal_error(format!("Failed to load the configuration: {error}"))
-                })
-        }
+        load_app_config(&self.runtime).map(|config| config.external_control.connect_enabled)
     }
 
     fn direct_connect_enabled_now(&self) -> Result<bool, ExternalControlError> {
-        #[cfg(test)]
-        {
-            Ok(self.runtime.config.direct_connect_enabled)
-        }
-
-        #[cfg(not(test))]
-        {
-            config::config_read()
-                .map(|config| config.external_control.direct_connect_enabled)
-                .map_err(|error| {
-                    internal_error(format!("Failed to load the configuration: {error}"))
-                })
-        }
+        load_app_config(&self.runtime).map(|config| config.external_control.direct_connect_enabled)
     }
 }
 
-#[cfg_attr(not(test), allow(unused_variables))]
 pub(super) fn load_app_config(
     runtime: &ExternalControlRuntime,
 ) -> Result<AppConfig, ExternalControlError> {
-    #[cfg(test)]
-    {
-        Ok(runtime.app_config.clone().unwrap_or_default())
-    }
-
-    #[cfg(not(test))]
-    {
-        config::config_read()
-            .map_err(|error| internal_error(format!("Failed to load the configuration: {error}")))
-    }
+    runtime
+        .io
+        .config
+        .load_config()
+        .map_err(|error| internal_error(format!("Failed to load the configuration: {error}")))
 }
 
-#[cfg_attr(not(test), allow(unused_variables))]
 pub(super) fn load_serial_ports(
     runtime: &ExternalControlRuntime,
 ) -> Result<Vec<crate::serial::PortInfo>, ExternalControlError> {
-    #[cfg(test)]
-    {
-        Ok(runtime.available_serial_ports.clone().unwrap_or_default())
-    }
-
-    #[cfg(not(test))]
-    {
-        crate::serial::list_ports().map_err(internal_error)
-    }
+    runtime
+        .io
+        .config
+        .list_serial_ports()
+        .map_err(internal_error)
 }

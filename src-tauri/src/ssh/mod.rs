@@ -8,15 +8,16 @@ mod host_key_prompt;
 mod io;
 mod jump;
 mod profiles;
+mod shell;
 mod types;
 
 #[cfg(test)]
 mod tests;
 
 pub use auth::private_key_requires_passphrase;
-#[allow(unused_imports)]
-pub use connection::connect;
+pub(crate) use connection::{connect, SshConnectRequest, SshConnectRuntime};
 pub use host_key::HostKeyHandling;
+pub(crate) use io::disconnect;
 pub use io::{write_data, SshState};
 pub use profiles::resolve_jump_profile;
 pub use types::{SshConnectOptions, SshConnectResult, SshJumpProfile};
@@ -75,16 +76,20 @@ pub async fn ssh_connect(
     // Keep the large SSH connection future off Tauri's command-dispatch stack. In optimized
     // builds, embedding it in the generated IPC future can overflow the Windows main thread.
     command_result(
-        Box::pin(connection::connect(
-            &app,
-            &state,
-            &terminals,
-            &workspace,
-            Some(&logger),
-            window.label().to_string(),
-            HostKeyHandling::Prompt,
-            options,
-            Some(attempt),
+        Box::pin(connect(
+            SshConnectRuntime {
+                app: &app,
+                state: &state,
+                terminals: &terminals,
+                workspace: &workspace,
+                logger: Some(&logger),
+            },
+            SshConnectRequest {
+                prompt_window_id: window.label().to_string(),
+                host_key_handling: HostKeyHandling::Prompt,
+                options,
+                attempt: Some(attempt),
+            },
         ))
         .await,
     )
