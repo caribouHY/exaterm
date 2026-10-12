@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Enabled Escape to cancel pending connection attempts while preserving connection form values and prioritizing foreground SSH prompts.
 - Synchronized SSH PTY and Telnet NAWS dimensions after terminal font changes, including settings updates from another window and returning to a hidden tab.
 - Escaped Telnet NAWS size bytes containing IAC so initial negotiation and resize notifications remain valid at dimensions such as 255 and 511.
 - Preserved whitespace in private-key passphrases for SSH public-key and automatic authentication, including jump hosts.

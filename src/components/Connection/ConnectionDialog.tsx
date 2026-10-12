@@ -46,6 +46,7 @@ import {
 import "./ConnectionDialog.css";
 
 export default function ConnectionDialog({
+  shortcutsEnabled = true,
   initialValues,
   startupRequest,
   onStartupRequestHandled,
@@ -504,12 +505,15 @@ export default function ConnectionDialog({
   }, [connectionActions, pendingStartupConnect]);
 
   useConnectionDialogShortcuts({
-    connecting,
+    attemptStatus: attempt.status,
+    enabled: shortcutsEnabled,
     canConnect,
     credentialPrompt,
     onClose,
     onCloseCredentialPrompt: connectionActions.handleCredentialCancel,
-
+    onCancelConnection: () => {
+      void connectionActions.handleCancelConnection();
+    },
     onConnect: () => {
       void connectionActions.handleConnect();
     },
@@ -542,6 +546,7 @@ export default function ConnectionDialog({
     return (
       <CredentialPromptModal
         key={credentialPrompt.promptId}
+        shortcutsEnabled={shortcutsEnabled}
         credentialPrompt={credentialPrompt}
         connecting={false}
         diagnostics={diagnosticsPanelProps}
