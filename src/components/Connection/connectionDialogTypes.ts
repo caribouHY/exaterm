@@ -24,6 +24,7 @@ export interface ConnectionDialogInitialValues {
 }
 
 export interface ConnectionDialogProps {
+  shortcutsEnabled?: boolean;
   initialValues?: ConnectionDialogInitialValues | null;
   startupRequest?: import("../../types").StartupCliRequest | null;
   onStartupRequestHandled?: () => void;

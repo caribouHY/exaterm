@@ -968,6 +968,7 @@ export default function App() {
       {showConnection && (
         <Suspense fallback={<div aria-hidden="true" />}>
           <ConnectionDialog
+            shortcutsEnabled={!sshPrompts.activePrompt}
             initialValues={connectionInitialValues}
             startupRequest={startupCliRequest}
             onStartupRequestHandled={() => {
