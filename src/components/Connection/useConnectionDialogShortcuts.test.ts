@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { EffectCallback } from "react";
 import { useConnectionDialogShortcuts } from "./useConnectionDialogShortcuts";
 import { createConnectionAttemptController } from "./connectionAttemptController";
 import type { AttemptStatus } from "./connectionAttemptState";
 
 const effects = vi.hoisted(() => ({ cleanups: [] as (() => void)[] }));
 vi.mock("react", () => ({
-  useEffect: (effect: () => void | (() => void)) => {
+  useEffect: (effect: EffectCallback) => {
     const cleanup = effect();
     if (cleanup) effects.cleanups.push(cleanup);
   },
