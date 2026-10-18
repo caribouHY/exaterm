@@ -289,9 +289,9 @@ async fn connection_and_manual_starts_share_one_active_target() {
     .expect("manual log should start");
     let manual_session = manual_log_session(&state, "session-1")
         .await
-        .expect("manual log should replace the active target");
-    assert_eq!(manual_session.log_mode, "manual");
-    assert_ne!(manual_session.file_path, auto_session.file_path);
+        .expect("manual start should retain the active target");
+    assert_eq!(manual_session.log_mode, "auto");
+    assert_eq!(manual_session.file_path, auto_session.file_path);
     assert_eq!(state.sessions.lock().await.len(), 1);
 
     clear_session_logs(&state, "session-1").await;
@@ -304,7 +304,7 @@ async fn connection_and_manual_starts_share_one_active_target() {
     let loaded = read_log_index(&index_path).expect("index should read");
 
     assert_eq!(result.skipped_active_count, 0);
-    assert_eq!(result.removed_history_count, 2);
+    assert_eq!(result.removed_history_count, 1);
     assert!(loaded.is_empty());
     let _ = fs::remove_dir_all(&dir);
 }
@@ -907,4 +907,365 @@ fn bulk_delete_skips_auto_file_outside_log_dir() {
     assert!(outside_path.exists());
     cleanup(&path);
     let _ = fs::remove_dir_all(outside_dir);
+}
+
+#[tokio::test]
+async fn backend_capture_preserves_recording_intervals_across_view_restoration() {
+    use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+    let dir = test_dir("capture_intervals");
+    let logger = LoggerState::with_paths(dir.clone(), dir.join("index.json"));
+    let terminals = TerminalControlState::new();
+    terminals.set_logger(logger.clone());
+    terminals
+        .register_session("s1".into(), TerminalProtocol::Telnet, "synthetic".into())
+        .await;
+    terminals.append_output("s1", b"before start\n").await;
+    let path = start_manual_log(
+        &logger,
+        "s1".into(),
+        "telnet".into(),
+        "synthetic".into(),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    logger
+        .captures
+        .lock()
+        .await
+        .get_mut("s1")
+        .unwrap()
+        .sanitizer = TerminalLogSanitizer::new("display");
+    let first = terminals
+        .append_output("s1", "recorded界😀\n".as_bytes())
+        .await
+        .unwrap();
+    // Recovery readers never own capture, even when several views restore the same range.
+    logger.capture_output(&first).await.unwrap();
+    logger.capture_output(&first).await.unwrap();
+    terminals.append_output("s1", b"partial").await;
+    set_manual_log_paused(&logger, "s1", true).await.unwrap();
+    terminals.append_output("s1", b"paused secret\n").await;
+    set_manual_log_paused(&logger, "s1", false).await.unwrap();
+    // No frontend is mounted while output continues.
+    terminals.append_output("s1", b"resumed\n").await;
+    terminals.append_output("s1", b"last unterminated").await;
+    clear_session_logs(&logger, "s1").await;
+    let data = fs::read_to_string(path).unwrap();
+    assert!(data.ends_with("recorded界😀\npartialresumed\nlast unterminated"));
+    assert_eq!(data.matches("recorded界😀").count(), 1);
+    assert!(!data.contains("before start"));
+    assert!(!data.contains("paused secret"));
+    assert!(!manual_log_status(&logger, "s1").await.active);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn backend_capture_clips_overlapping_unicode_cursor_ranges() {
+    use crate::terminal_control::TerminalOutputEvent;
+    let dir = test_dir("capture_cursor");
+    let logger = LoggerState::with_paths(dir.clone(), dir.join("index.json"));
+    let path = start_manual_log(
+        &logger,
+        "s1".into(),
+        "ssh".into(),
+        "synthetic".into(),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    logger
+        .captures
+        .lock()
+        .await
+        .get_mut("s1")
+        .unwrap()
+        .sanitizer = TerminalLogSanitizer::new("display");
+    logger
+        .capture_output(&TerminalOutputEvent {
+            session_id: "s1".into(),
+            output: "界😀".into(),
+            start_cursor: 10,
+            cursor: 12,
+        })
+        .await
+        .unwrap();
+    logger
+        .capture_output(&TerminalOutputEvent {
+            session_id: "s1".into(),
+            output: "😀X\n".into(),
+            start_cursor: 11,
+            cursor: 14,
+        })
+        .await
+        .unwrap();
+    stop_manual_log(&logger, "s1").await.unwrap();
+    assert!(fs::read_to_string(path).unwrap().ends_with("界😀X\n"));
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn pending_flush_serializes_with_pause_and_received_output() {
+    use crate::terminal_control::TerminalOutputEvent;
+    let dir = test_dir("capture_pending_flush");
+    let logger = LoggerState::with_paths(dir.clone(), dir.join("index.json"));
+    let path = start_manual_log(
+        &logger,
+        "s1".into(),
+        "ssh".into(),
+        "synthetic".into(),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    logger
+        .captures
+        .lock()
+        .await
+        .get_mut("s1")
+        .unwrap()
+        .sanitizer = TerminalLogSanitizer::new("display");
+    logger
+        .capture_output(&TerminalOutputEvent {
+            session_id: "s1".into(),
+            output: "partial".into(),
+            start_cursor: 0,
+            cursor: 7,
+        })
+        .await
+        .unwrap();
+    let guard = logger.sessions.lock().await;
+    let flush_logger = logger.clone();
+    let flush = tokio::spawn(async move { flush_manual_log(&flush_logger, "s1").await });
+    let pause_logger = logger.clone();
+    let pause = tokio::spawn(async move { set_manual_log_paused(&pause_logger, "s1", true).await });
+    drop(guard);
+    flush.await.unwrap().unwrap();
+    pause.await.unwrap().unwrap();
+    logger
+        .capture_output(&TerminalOutputEvent {
+            session_id: "s1".into(),
+            output: "hidden".into(),
+            start_cursor: 7,
+            cursor: 13,
+        })
+        .await
+        .unwrap();
+    stop_manual_log(&logger, "s1").await.unwrap();
+    let data = fs::read_to_string(path).unwrap();
+    assert!(data.ends_with("partial"));
+    assert!(!data.contains("hidden"));
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn backend_capture_retries_failed_io_without_replaying_or_losing_output() {
+    use crate::terminal_control::TerminalOutputEvent;
+    let dir = test_dir("capture_write_retry");
+    let logger = LoggerState::with_paths(dir.clone(), dir.join("index.json"));
+    let path = PathBuf::from(
+        start_manual_log(
+            &logger,
+            "s1".into(),
+            "ssh".into(),
+            "synthetic".into(),
+            None,
+            None,
+        )
+        .await
+        .unwrap(),
+    );
+    logger
+        .captures
+        .lock()
+        .await
+        .get_mut("s1")
+        .unwrap()
+        .sanitizer = TerminalLogSanitizer::new("display");
+    let original = fs::read(&path).unwrap();
+    fs::remove_file(&path).unwrap();
+    let first = TerminalOutputEvent {
+        session_id: "s1".into(),
+        output: "once\n".into(),
+        start_cursor: 0,
+        cursor: 5,
+    };
+    assert!(logger.capture_output(&first).await.is_err());
+    fs::write(&path, original).unwrap();
+    logger
+        .capture_output(&TerminalOutputEvent {
+            session_id: "s1".into(),
+            output: "twice\n".into(),
+            start_cursor: 5,
+            cursor: 11,
+        })
+        .await
+        .unwrap();
+    logger.capture_output(&first).await.unwrap();
+    stop_manual_log(&logger, "s1").await.unwrap();
+    let data = fs::read_to_string(path).unwrap();
+    assert!(data.ends_with("once\ntwice\n"));
+    assert_eq!(data.matches("once").count(), 1);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn operations_on_another_session_do_not_wait_for_a_busy_session() {
+    use std::future::Future;
+    use std::task::{Context, Poll, Waker};
+    let dir = test_dir("operation_scope");
+    let logger = LoggerState::with_paths(dir.clone(), dir.join("index.json"));
+    let first = logger.operation_lock("s1").await;
+    let mut pending = Box::pin(logger.operation_lock("s1"));
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert!(matches!(pending.as_mut().poll(&mut context), Poll::Pending));
+    assert!(logger.operations.try_lock().is_ok());
+    let other = logger.operation_lock("s2").await;
+    drop(other);
+    drop(first);
+    drop(pending.await);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn finishing_all_logs_saves_each_unterminated_tail_and_stops_capture() {
+    use crate::terminal_control::TerminalOutputEvent;
+    let dir = test_dir("capture_finish_all");
+    let logger = LoggerState::with_paths(dir.clone(), dir.join("index.json"));
+    let mut paths = Vec::new();
+    for id in ["s1", "s2"] {
+        paths.push(
+            start_manual_log(
+                &logger,
+                id.into(),
+                "ssh".into(),
+                "synthetic".into(),
+                None,
+                None,
+            )
+            .await
+            .unwrap(),
+        );
+        logger.captures.lock().await.get_mut(id).unwrap().sanitizer =
+            TerminalLogSanitizer::new("display");
+        logger
+            .capture_output(&TerminalOutputEvent {
+                session_id: id.into(),
+                output: "tail".into(),
+                start_cursor: 0,
+                cursor: 4,
+            })
+            .await
+            .unwrap();
+    }
+    finish_all_logs(&logger).await.unwrap();
+    finish_all_logs(&logger).await.unwrap();
+    for path in paths {
+        assert!(fs::read_to_string(path).unwrap().ends_with("tail"));
+    }
+    assert!(logger.sessions.lock().await.is_empty());
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn backend_notices_share_capture_boundaries_without_replaying_retained_output() {
+    use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+    for protocol in [
+        TerminalProtocol::Ssh,
+        TerminalProtocol::Serial,
+        TerminalProtocol::Telnet,
+    ] {
+        let dir = test_dir("capture_notice");
+        let logger = LoggerState::with_paths(dir.clone(), dir.join("index.json"));
+        let terminals = TerminalControlState::new();
+        terminals.set_logger(logger.clone());
+        terminals
+            .register_session("s1".into(), protocol, "synthetic".into())
+            .await;
+        terminals.capture_notice("s1", "before start").await;
+        let path = start_manual_log(
+            &logger,
+            "s1".into(),
+            "synthetic".into(),
+            "synthetic".into(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        logger
+            .captures
+            .lock()
+            .await
+            .get_mut("s1")
+            .unwrap()
+            .sanitizer = TerminalLogSanitizer::new("display");
+        terminals.append_output("s1", b"before ").await;
+        terminals.capture_notice("s1", "notice界😀\n").await;
+        let snapshot = terminals.read_output("s1", 100).await.unwrap();
+        assert_eq!(snapshot.output, "before ");
+        assert_eq!(snapshot.cursor, 7);
+        assert_eq!(snapshot, terminals.read_output("s1", 100).await.unwrap());
+        set_manual_log_paused(&logger, "s1", true).await.unwrap();
+        terminals.capture_notice("s1", "paused notice").await;
+        set_manual_log_paused(&logger, "s1", false).await.unwrap();
+        terminals.append_output("s1", b"after ").await;
+        terminals.capture_notice("s1", "final notice").await;
+        terminals.mark_disconnected("s1").await;
+        clear_session_logs(&logger, "s1").await;
+        let output = fs::read_to_string(path).unwrap();
+        assert!(output.ends_with("before notice界😀\nafter final notice"));
+        assert_eq!(output.matches("notice界😀").count(), 1);
+        assert!(!output.contains("paused notice"));
+        assert!(!output.contains("before start"));
+        let _ = fs::remove_dir_all(dir);
+    }
+}
+
+#[tokio::test]
+async fn backend_notice_retries_pending_output_in_receive_order() {
+    use crate::terminal_control::TerminalOutputEvent;
+    let dir = test_dir("capture_notice_retry");
+    let logger = LoggerState::with_paths(dir.clone(), dir.join("index.json"));
+    let path = PathBuf::from(
+        start_manual_log(
+            &logger,
+            "s1".into(),
+            "ssh".into(),
+            "synthetic".into(),
+            None,
+            None,
+        )
+        .await
+        .unwrap(),
+    );
+    logger
+        .captures
+        .lock()
+        .await
+        .get_mut("s1")
+        .unwrap()
+        .sanitizer = TerminalLogSanitizer::new("display");
+    let header = fs::read(&path).unwrap();
+    fs::remove_file(&path).unwrap();
+    assert!(logger
+        .capture_output(&TerminalOutputEvent {
+            session_id: "s1".into(),
+            output: "queued\n".into(),
+            start_cursor: 0,
+            cursor: 7
+        })
+        .await
+        .is_err());
+    fs::write(&path, header).unwrap();
+    logger.capture_notice("s1", "notice").await.unwrap();
+    stop_manual_log(&logger, "s1").await.unwrap();
+    assert!(fs::read_to_string(path)
+        .unwrap()
+        .ends_with("queued\nnotice"));
+    let _ = fs::remove_dir_all(dir);
 }

@@ -1,12 +1,4 @@
-import {
-  forwardRef,
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -27,9 +19,6 @@ import {
   findShortcutAction,
   type TerminalLogShortcutAction,
 } from "../../features/shortcuts/shortcutModel";
-import { shouldAppendManualLog } from "../../features/terminal-logging/terminalLoggingModel";
-import { createManualLogBufferWriter } from "../../features/terminal-logging/manualLogBufferWriter";
-import { createTerminalLogSanitizer } from "../../utils/logSanitizer";
 import {
   createTerminalDecorationController,
   type TerminalDecorationController,
@@ -79,8 +68,6 @@ export interface TerminalViewHandle {
   paste: () => void;
   clearViewport: () => void;
   clearBuffer: () => void;
-  flushManualLogBuffer: () => Promise<void>;
-  flushLogBuffersForMove: () => Promise<void>;
 }
 
 interface TerminalEditActions {
@@ -153,8 +140,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
     connectionType,
     isConnected,
     isActive,
-    isManualLogging,
-    isManualLoggingPaused,
     terminalConfig,
     shortcuts,
     terminalMode,
@@ -173,8 +158,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   const resizeControllerRef = useRef<TerminalResizeController | null>(null);
   const isConnectedRef = useRef(isConnected);
   const isActiveRef = useRef(isActive);
-  const isManualLoggingRef = useRef(isManualLogging);
-  const isManualLoggingPausedRef = useRef(isManualLoggingPaused);
   const shortcutsRef = useRef(shortcuts);
   const onTerminalModeShortcutRef = useRef(onTerminalModeShortcut);
   const onTerminalLogShortcutRef = useRef(onTerminalLogShortcut);
@@ -232,41 +215,10 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
   useEffect(() => {
     onTerminalSelectionChangeRef.current = onTerminalSelectionChange;
   }, [onTerminalSelectionChange]);
-  const manualLogSanitizerRef = useRef(
-    createTerminalLogSanitizer(terminalConfig?.log_format ?? "display")
-  );
-  const manualLogBufferWriter = useMemo(
-    () =>
-      createManualLogBufferWriter((data) =>
-        invoke("logger_append", {
-          sessionId,
-          data,
-        })
-      ),
-    [sessionId]
-  );
-
   useEffect(() => {
     isConnectedRef.current = isConnected;
     resizeControllerRef.current?.setConnected(isConnected);
   }, [isConnected]);
-
-  useEffect(() => {
-    isManualLoggingRef.current = isManualLogging;
-  }, [isManualLogging]);
-
-  useEffect(() => {
-    if (
-      isManualLoggingPaused &&
-      !isManualLoggingPausedRef.current &&
-      sessionId &&
-      isManualLoggingRef.current
-    ) {
-      const logText = manualLogSanitizerRef.current.flush();
-      void manualLogBufferWriter.flush(logText).catch(() => {});
-    }
-    isManualLoggingPausedRef.current = isManualLoggingPaused;
-  }, [isManualLoggingPaused, manualLogBufferWriter, sessionId]);
 
   useImperativeHandle(
     ref,
@@ -298,25 +250,9 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       },
       clearViewport,
       clearBuffer,
-      flushManualLogBuffer: async () => {
-        if (!sessionId) return;
-        const logText = manualLogSanitizerRef.current.flush();
-        await manualLogBufferWriter.flush(logText);
-      },
-      flushLogBuffersForMove: async () => {
-        if (!sessionId || !isManualLoggingRef.current) return;
-        const logText = manualLogSanitizerRef.current.flush();
-        await manualLogBufferWriter.flush(logText);
-      },
     }),
-    [clearBuffer, clearViewport, manualLogBufferWriter, sessionId]
+    [clearBuffer, clearViewport, sessionId]
   );
-
-  useEffect(() => {
-    manualLogSanitizerRef.current = createTerminalLogSanitizer(
-      terminalConfig?.log_format ?? "display"
-    );
-  }, [terminalConfig?.log_format]);
 
   useEffect(() => {
     decorationController.setProfile(decorationProfile, termRef.current ?? undefined);
@@ -560,12 +496,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         decorationController.schedule(term);
       });
       if (onTerminalData) onTerminalData(text);
-      if (shouldAppendManualLog(isManualLoggingRef.current, isManualLoggingPausedRef.current)) {
-        const logText = manualLogSanitizerRef.current.push(text);
-        if (logText) {
-          void manualLogBufferWriter.append(logText).catch(() => {});
-        }
-      }
     };
     const outputSyncController = createTerminalOutputSyncController({
       sessionId,
@@ -608,10 +538,6 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
       resizeController.dispose();
       terminalElement.removeEventListener("contextmenu", handleContextMenu);
       outputSyncController.dispose();
-      if (isManualLoggingRef.current) {
-        const logText = manualLogSanitizerRef.current.flush();
-        void manualLogBufferWriter.flush(logText).catch(() => {});
-      }
       resizeObserver.disconnect();
       scrollDecorationDisposable.dispose();
       selectionDisposable.dispose();
@@ -629,7 +555,7 @@ const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(function 
         fitControllerRef.current = null;
       }
     };
-  }, [sessionId, connectionType, manualLogBufferWriter, refreshDecorationsAfterClear]);
+  }, [sessionId, connectionType, refreshDecorationsAfterClear]);
 
   // Re-fit the terminal whenever this tab becomes active (container goes from display:none to visible)
   useEffect(() => {

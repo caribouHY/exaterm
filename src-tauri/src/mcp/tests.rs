@@ -264,8 +264,9 @@ impl ExternalControlUiIo for TestUiIo {
         })?;
         let state = self.log_control.clone();
         let event = event.to_string();
+        let response_window_id = window_id.to_owned();
         self.log_control
-            .request_with_sender(payload, Duration::from_secs(1), move |payload| {
+            .request_with_sender(window_id, payload, Duration::from_secs(1), move |payload| {
                 let payload = payload.clone();
                 tokio::spawn(async move {
                     let result = match event.as_str() {
@@ -284,13 +285,23 @@ impl ExternalControlUiIo for TestUiIo {
                                 .await
                                 .map(|_| None)
                         }
+                        "external-control://log-pause-request"
+                        | "external-control://log-resume-request" => logger::set_manual_log_paused(
+                            &logger,
+                            &payload.session_id,
+                            event == "external-control://log-pause-request",
+                        )
+                        .await
+                        .map(|_| None),
                         _ => Ok(None),
                     };
                     let (file_path, error) = match result {
                         Ok(file_path) => (file_path, None),
                         Err(error) => (None, Some(error)),
                     };
-                    let _ = state.submit(payload.request_id, file_path, error).await;
+                    let _ = state
+                        .submit(&response_window_id, payload.request_id, file_path, error)
+                        .await;
                 });
                 Ok(())
             })
@@ -321,6 +332,11 @@ impl ExternalControlLogIo for TestLogIo {
     async fn active_log_session(&self, session_id: &str) -> Option<logger::LogSession> {
         let state = self.state.as_ref()?;
         logger::active_log_session(state, session_id).await
+    }
+
+    async fn active_log_state(&self, session_id: &str) -> Option<(logger::LogSession, bool)> {
+        let state = self.state.as_ref()?;
+        logger::active_log_state(state, session_id).await
     }
 
     async fn start_auto_log(
@@ -376,6 +392,9 @@ fn test_runtime_parts(
         terminals: TerminalControlState::new(),
         workspace: WorkspaceState::new(),
     };
+    if let Some(logger) = log_io.state.as_ref() {
+        runtime.terminals.set_logger(logger.clone());
+    }
     (runtime, config_io, protocol_io, ui_io, log_io, trace)
 }
 
@@ -3339,21 +3358,7 @@ async fn service_reports_inactive_active_paused_and_auto_log_status() {
     assert_eq!(active.file_path.as_deref(), Some(auto_path.as_str()));
     assert_eq!(active.log_mode.as_deref(), Some("auto"));
 
-    let tab = runtime.workspace.tab_for_session("s1").await.unwrap();
-    runtime
-        .workspace
-        .update_tab_metadata(
-            tab.tab_id,
-            WorkspaceTabMetadataPatch {
-                title: None,
-                encoding: None,
-                terminal_mode: None,
-                is_connected: None,
-                is_manual_logging: Some(true),
-                is_manual_logging_paused: Some(true),
-                manual_log_file_path: Some(auto_path.clone()),
-            },
-        )
+    logger::set_manual_log_paused(logger.state.as_ref().unwrap(), "s1", true)
         .await
         .unwrap();
     let paused = service
@@ -3434,23 +3439,6 @@ async fn service_pause_and_resume_are_idempotent_and_owner_window_scoped() {
                 && payload.session_id == "s1"
     )));
 
-    let tab = runtime.workspace.tab_for_session("s1").await.unwrap();
-    runtime
-        .workspace
-        .update_tab_metadata(
-            tab.tab_id,
-            WorkspaceTabMetadataPatch {
-                title: None,
-                encoding: None,
-                terminal_mode: None,
-                is_connected: None,
-                is_manual_logging: Some(true),
-                is_manual_logging_paused: Some(true),
-                manual_log_file_path: paused.file_path.clone(),
-            },
-        )
-        .await
-        .unwrap();
     let pause_again = service
         .set_terminal_log_paused(
             TerminalLogSessionArgs {
@@ -3673,4 +3661,102 @@ async fn service_rejects_empty_run_terminal_command() {
 
     assert!(matches!(&error, ExternalControlError::InvalidArguments(_)));
     assert!(error.message().contains("must not be empty"));
+}
+
+#[tokio::test]
+async fn service_uses_backend_pause_state_when_workspace_metadata_is_stale() {
+    let (runtime, _config, _protocol, _ui, logger, _trace) =
+        test_runtime_parts(AppConfig::default(), Vec::new(), Some(test_logger()));
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Ssh, "synthetic").await;
+    logger
+        .start_auto_log("s1".into(), "ssh".into(), "synthetic".into())
+        .await
+        .unwrap();
+    let tab = runtime.workspace.tab_for_session("s1").await.unwrap();
+    runtime
+        .workspace
+        .update_tab_metadata(
+            tab.tab_id,
+            WorkspaceTabMetadataPatch {
+                title: None,
+                encoding: None,
+                terminal_mode: None,
+                is_connected: None,
+                is_manual_logging: Some(true),
+                is_manual_logging_paused: Some(true),
+                manual_log_file_path: None,
+            },
+        )
+        .await
+        .unwrap();
+    let service = ExternalControlService::new(runtime.clone());
+    assert_eq!(
+        service
+            .get_terminal_log_status(TerminalLogSessionArgs {
+                session_id: "s1".into()
+            })
+            .await
+            .unwrap()
+            .state,
+        TerminalLogState::Active
+    );
+    let paused = service
+        .set_terminal_log_paused(
+            TerminalLogSessionArgs {
+                session_id: "s1".into(),
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    assert!(paused.changed);
+    assert!(
+        logger::active_log_state(logger.state.as_ref().unwrap(), "s1")
+            .await
+            .unwrap()
+            .1
+    );
+    let tab = runtime.workspace.tab_for_session("s1").await.unwrap();
+    runtime
+        .workspace
+        .update_tab_metadata(
+            tab.tab_id,
+            WorkspaceTabMetadataPatch {
+                title: None,
+                encoding: None,
+                terminal_mode: None,
+                is_connected: None,
+                is_manual_logging: Some(true),
+                is_manual_logging_paused: Some(false),
+                manual_log_file_path: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        service
+            .get_terminal_log_status(TerminalLogSessionArgs {
+                session_id: "s1".into()
+            })
+            .await
+            .unwrap()
+            .state,
+        TerminalLogState::Paused
+    );
+    let resumed = service
+        .set_terminal_log_paused(
+            TerminalLogSessionArgs {
+                session_id: "s1".into(),
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    assert!(resumed.changed);
+    assert!(
+        !logger::active_log_state(logger.state.as_ref().unwrap(), "s1")
+            .await
+            .unwrap()
+            .1
+    );
 }

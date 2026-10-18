@@ -66,6 +66,7 @@ pub struct TerminalControlState {
     sessions: Arc<Mutex<HashMap<String, TerminalSession>>>,
     output_notify: Arc<Notify>,
     output_limit: Arc<AtomicUsize>,
+    logger: Arc<std::sync::OnceLock<crate::logger::LoggerState>>,
 }
 
 impl TerminalControlState {
@@ -74,6 +75,7 @@ impl TerminalControlState {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             output_notify: Arc::new(Notify::new()),
             output_limit: Arc::new(AtomicUsize::new(DEFAULT_OUTPUT_LIMIT)),
+            logger: Arc::new(std::sync::OnceLock::new()),
         }
     }
 
@@ -83,7 +85,12 @@ impl TerminalControlState {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             output_notify: Arc::new(Notify::new()),
             output_limit: Arc::new(AtomicUsize::new(output_limit)),
+            logger: Arc::new(std::sync::OnceLock::new()),
         }
+    }
+
+    pub fn set_logger(&self, logger: crate::logger::LoggerState) {
+        let _ = self.logger.set(logger);
     }
 
     pub fn set_output_limit_from_scrollback(&self, scrollback: u32) {
@@ -134,6 +141,17 @@ impl TerminalControlState {
         self.sessions.lock().await.insert(session_id, session);
     }
 
+    pub async fn capture_notice(&self, session_id: &str, text: &str) {
+        let sessions = self.sessions.lock().await;
+        if sessions.contains_key(session_id) {
+            if let Some(logger) = self.logger.get() {
+                if logger.capture_notice(session_id, text).await.is_err() {
+                    log::warn!("Failed to capture terminal log notice");
+                }
+            }
+        }
+    }
+
     pub async fn append_output(
         &self,
         session_id: &str,
@@ -148,14 +166,20 @@ impl TerminalControlState {
         session.cursor = cursor;
         session.output.push_str(&text);
         trim_to_recent_chars(session, self.output_limit.load(Ordering::Relaxed));
-        drop(sessions);
-        self.output_notify.notify_waiters();
-        Some(TerminalOutputEvent {
+        let event = TerminalOutputEvent {
             session_id: session_id.to_string(),
             output: text,
             start_cursor,
             cursor,
-        })
+        };
+        if let Some(logger) = self.logger.get() {
+            if logger.capture_output(&event).await.is_err() {
+                log::warn!("Failed to capture terminal log output");
+            }
+        }
+        drop(sessions);
+        self.output_notify.notify_waiters();
+        Some(event)
     }
 
     pub async fn set_encoding(&self, session_id: &str, encoding: &str) -> Result<(), String> {

@@ -1,5 +1,4 @@
 import type { ConnectionType, ManualLogWriteMode, TabInfo } from "../../types";
-import type { WorkspaceTabMetadataPatch } from "../workspace-tabs/workspaceClient";
 
 export type ManualLogOperationStage = "busy" | "session" | "flush" | "backend" | "metadata";
 
@@ -68,13 +67,16 @@ export interface ManualLogControllerDependencies {
     writeMode: ManualLogWriteMode;
   }): Promise<string>;
   stopBackend(sessionId: string): Promise<void>;
-  isBackendActive(sessionId: string): Promise<boolean>;
-  flush(tabId: string): Promise<void>;
-  updateMetadata(tabId: string, patch: WorkspaceTabMetadataPatch): Promise<void>;
+  getBackendStatus(sessionId: string): Promise<ManualLogStatus>;
+  setBackendPaused(sessionId: string, paused: boolean): Promise<void>;
   onBusyChange?(busySessionIds: ReadonlySet<string>): void;
 }
 
-type PendingMetadata = { kind: "started"; filePath: string } | { kind: "stopped" };
+export interface ManualLogStatus {
+  active: boolean;
+  paused: boolean;
+  filePath: string | null;
+}
 
 export interface ManualLogController {
   beginStart(target: ManualLogStartTarget): ManualLogStartLease;
@@ -103,8 +105,6 @@ export function createManualLogController(
   dependencies: ManualLogControllerDependencies
 ): ManualLogController {
   const busySessionIds = new Set<string>();
-  const pendingMetadata = new Map<string, PendingMetadata>();
-
   const publishBusy = () => {
     dependencies.onBusyChange?.(new Set(busySessionIds));
   };
@@ -143,11 +143,11 @@ export function createManualLogController(
     return tab;
   };
 
-  const updateMetadata = async (tabId: string, patch: WorkspaceTabMetadataPatch) => {
+  const backend = async <T>(operation: () => Promise<T>): Promise<T> => {
     try {
-      await dependencies.updateMetadata(tabId, patch);
+      return await operation();
     } catch (error) {
-      throw operationError("metadata", null, error);
+      throw operationError("backend", null, error);
     }
   };
 
@@ -155,91 +155,35 @@ export function createManualLogController(
     target: ManualLogStartTarget,
     options: ManualLogStartOptions
   ): Promise<ManualLogStartResult> => {
-    let tab = resolveTab(target.sessionId, target.expectedTabId, true);
-    const pending = pendingMetadata.get(target.sessionId);
-
-    if (pending?.kind === "stopped") {
-      await updateMetadata(tab.id, {
-        isManualLogging: false,
-        isManualLoggingPaused: false,
-      });
-      pendingMetadata.delete(target.sessionId);
-      tab = resolveTab(target.sessionId, target.expectedTabId, true);
-    }
-
-    const pendingStart = pendingMetadata.get(target.sessionId);
-    if (pendingStart?.kind === "started") {
-      await updateMetadata(tab.id, {
-        isManualLogging: true,
-        isManualLoggingPaused: false,
-        manualLogFilePath: pendingStart.filePath,
-      });
-      pendingMetadata.delete(target.sessionId);
-      return {
-        filePath: pendingStart.filePath,
-        alreadyActive: true,
-        metadataChanged: true,
-      };
-    }
-
-    if (tab.isManualLogging && tab.manualLogFilePath) {
-      if (tab.isManualLoggingPaused) {
-        await updateMetadata(tab.id, { isManualLoggingPaused: false });
-        return {
-          filePath: tab.manualLogFilePath,
-          alreadyActive: true,
-          metadataChanged: true,
-        };
-      }
-      return {
-        filePath: tab.manualLogFilePath,
-        alreadyActive: true,
-        metadataChanged: false,
-      };
-    }
-
-    let filePath: string;
-    try {
-      filePath = await dependencies.startBackend({
-        sessionId: target.sessionId,
-        connectionType: target.connectionType,
-        target: target.target,
-        filePath: options.filePath,
-        writeMode: options.writeMode,
-      });
-    } catch (error) {
-      throw operationError("backend", null, error);
-    }
-
-    pendingMetadata.set(target.sessionId, { kind: "started", filePath });
-    await updateMetadata(tab.id, {
-      isManualLogging: true,
-      isManualLoggingPaused: false,
-      manualLogFilePath: filePath,
-    });
-    pendingMetadata.delete(target.sessionId);
-    return { filePath, alreadyActive: false, metadataChanged: true };
+    resolveTab(target.sessionId, target.expectedTabId, true);
+    const status = await backend(() => dependencies.getBackendStatus(target.sessionId));
+    resolveTab(target.sessionId, target.expectedTabId, true);
+    const filePath = await backend(() => dependencies.startBackend({ ...target, ...options }));
+    return { filePath, alreadyActive: status.active, metadataChanged: true };
   };
 
   const beginStart = (target: ManualLogStartTarget): ManualLogStartLease => {
-    const release = reserve(target.sessionId);
+    const releaseReservation = reserve(target.sessionId);
     try {
       resolveTab(target.sessionId, target.expectedTabId, true);
     } catch (error) {
-      release();
+      releaseReservation();
       throw error;
     }
-
     let committed = false;
+    let released = false;
     return {
       commit: (options) => {
-        if (committed) {
+        if (committed || released) {
           return Promise.reject(operationError("busy", "operation_in_progress"));
         }
         committed = true;
         return commitStart(target, options);
       },
-      release,
+      release: () => {
+        released = true;
+        releaseReservation();
+      },
     };
   };
 
@@ -255,51 +199,11 @@ export function createManualLogController(
   const stop = async (target: ManualLogStopTarget): Promise<ManualLogStopResult> => {
     const release = reserve(target.sessionId);
     try {
-      const tab = resolveTab(target.sessionId, target.expectedTabId, false);
-      const pending = pendingMetadata.get(target.sessionId);
-
-      if (pending?.kind === "stopped") {
-        await updateMetadata(tab.id, {
-          isManualLogging: false,
-          isManualLoggingPaused: false,
-        });
-        pendingMetadata.delete(target.sessionId);
-        return { alreadyInactive: true, metadataChanged: true };
-      }
-
-      if (!tab.isManualLogging && pending?.kind !== "started") {
-        // Metadata recovery is window-local; a moved tab may still have an active backend log.
-        let active: boolean;
-        try {
-          active = await dependencies.isBackendActive(target.sessionId);
-        } catch (error) {
-          throw operationError("backend", null, error);
-        }
-        if (!active) return { alreadyInactive: true, metadataChanged: false };
-        resolveTab(target.sessionId, target.expectedTabId, false);
-      }
-
-      if (tab.isManualLogging) {
-        try {
-          await dependencies.flush(tab.id);
-        } catch (error) {
-          throw operationError("flush", null, error);
-        }
-      }
-
-      try {
-        await dependencies.stopBackend(target.sessionId);
-      } catch (error) {
-        throw operationError("backend", null, error);
-      }
-
-      pendingMetadata.set(target.sessionId, { kind: "stopped" });
-      await updateMetadata(tab.id, {
-        isManualLogging: false,
-        isManualLoggingPaused: false,
-      });
-      pendingMetadata.delete(target.sessionId);
-      return { alreadyInactive: false, metadataChanged: true };
+      resolveTab(target.sessionId, target.expectedTabId, false);
+      const status = await backend(() => dependencies.getBackendStatus(target.sessionId));
+      resolveTab(target.sessionId, target.expectedTabId, false);
+      await backend(() => dependencies.stopBackend(target.sessionId));
+      return { alreadyInactive: !status.active, metadataChanged: true };
     } finally {
       release();
     }
@@ -311,32 +215,16 @@ export function createManualLogController(
   ): Promise<ManualLogPauseResult> => {
     const release = reserve(target.sessionId);
     try {
-      const tab = resolveTab(target.sessionId, target.expectedTabId, true);
-      if (!tab.isManualLogging) {
-        throw operationError("session", "logging_not_active");
-      }
-      if (Boolean(tab.isManualLoggingPaused) === paused) {
-        return { changed: false };
-      }
-      if (paused) {
-        try {
-          await dependencies.flush(tab.id);
-        } catch (error) {
-          throw operationError("flush", null, error);
-        }
-      }
-      await updateMetadata(tab.id, { isManualLoggingPaused: paused });
-      return { changed: true };
+      resolveTab(target.sessionId, target.expectedTabId, true);
+      const status = await backend(() => dependencies.getBackendStatus(target.sessionId));
+      resolveTab(target.sessionId, target.expectedTabId, true);
+      if (!status.active) throw operationError("session", "logging_not_active");
+      await backend(() => dependencies.setBackendPaused(target.sessionId, paused));
+      return { changed: status.paused !== paused };
     } finally {
       release();
     }
   };
 
-  return {
-    beginStart,
-    start,
-    stop,
-    setPaused,
-    isBusy: (sessionId) => busySessionIds.has(sessionId),
-  };
+  return { beginStart, start, stop, setPaused, isBusy: (id) => busySessionIds.has(id) };
 }

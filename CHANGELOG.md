@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Scoped external log-control requests and acknowledgements to their intended window, preventing false "Session not found" errors after moving terminal tabs.
+- Recorded session logs independently of terminal views, preventing replayed history and paused output from being logged again after tab moves while preserving output received during moves.
+- Corrected display-log overwriting after carriage returns and cursor movement, and preserved insertion, deletion, and unfinished-line state across window transfers.
 - Enabled Escape to cancel pending connection attempts while preserving connection form values and prioritizing foreground SSH prompts.
 - Synchronized SSH PTY and Telnet NAWS dimensions after terminal font changes, including settings updates from another window and returning to a hidden tab.
 - Escaped Telnet NAWS size bytes containing IAC so initial negotiation and resize notifications remain valid at dimensions such as 255 and 511.

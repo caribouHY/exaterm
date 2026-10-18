@@ -11,13 +11,9 @@ import type { RemovalFocusContext, WindowTabsController } from "./useWindowTabs"
 
 interface UseWorkspaceTabMovementOptions {
   tabs: WindowTabsController;
-  flushLogBuffersForMove: (tabId: string) => Promise<void>;
 }
 
-export function useWorkspaceTabMovement({
-  tabs,
-  flushLogBuffersForMove,
-}: UseWorkspaceTabMovementOptions) {
+export function useWorkspaceTabMovement({ tabs }: UseWorkspaceTabMovementOptions) {
   const reorderTabs = useCallback(
     (draggedId: string, targetId: string, dropSide: "before" | "after") => {
       const currentAppTabs = tabs.getCurrentState().appTabs;
@@ -103,21 +99,9 @@ export function useWorkspaceTabMovement({
     [tabs]
   );
 
-  const flushBeforeMove = useCallback(
-    async (tabId: string) => {
-      try {
-        await flushLogBuffersForMove(tabId);
-      } catch (error) {
-        console.warn("Failed to flush terminal log buffers before tab move:", error);
-      }
-    },
-    [flushLogBuffersForMove]
-  );
-
   const dropCrossWindowDrag = useCallback(
     async (tabId: string, pointerScreenPosition: WorkspacePointerPosition) => {
       const focusContext = tabs.captureRemovalFocus(tabId);
-      await flushBeforeMove(tabId);
 
       try {
         await completeMove(await workspaceClient.dropDrag(pointerScreenPosition), focusContext);
@@ -126,13 +110,12 @@ export function useWorkspaceTabMovement({
         cancelCrossWindowDrag();
       }
     },
-    [cancelCrossWindowDrag, completeMove, flushBeforeMove, tabs]
+    [cancelCrossWindowDrag, completeMove, tabs]
   );
 
   const moveTabToNewWindow = useCallback(
     async (tabId: string) => {
       const focusContext = tabs.captureRemovalFocus(tabId);
-      await flushBeforeMove(tabId);
 
       try {
         await completeMove(await workspaceClient.detachTab(tabId, tabs.windowId), focusContext);
@@ -140,7 +123,7 @@ export function useWorkspaceTabMovement({
         console.error("Failed to move workspace tab to a new window:", error);
       }
     },
-    [completeMove, flushBeforeMove, tabs]
+    [completeMove, tabs]
   );
 
   return {
