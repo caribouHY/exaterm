@@ -350,6 +350,8 @@ it.each(["start", "stop", "pause", "resume"] as const)(
     if (action === "stop") expect(stopBackend).toHaveBeenCalledOnce();
     if (action === "pause" || action === "resume")
       expect(setBackendPaused).toHaveBeenCalledWith(payload.session_id, action === "pause");
-    disposers.forEach((dispose) => dispose());
+    disposers.forEach((dispose) => {
+      dispose();
+    });
   }
 );
