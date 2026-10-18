@@ -41,7 +41,7 @@ Windows is the primary beta target. Cross-platform changes must preserve the Win
 Major frontend areas are:
 
 - `src/features/workspace-tabs/`: window-local workspace projection, revision filtering, terminal and utility tab ordering, workspace event subscriptions, tab lifecycle, and cross-window movement requests.
-- `src/components/Terminal/`: xterm.js rendering, terminal input and output, resize handling, encoding support, scrollback restoration, and frontend log-buffer flushing.
+- `src/components/Terminal/`: xterm.js rendering, terminal input and output, resize handling, encoding support, and scrollback restoration.
 - `src/components/Connection/`: SSH, Serial, and Telnet forms, saved profiles, connection history, SSH host-key confirmation, and session creation.
 - `src/components/Settings/`: configuration editing and AI API-key save or clear flows.
 - `src/components/AI/`: provider and model selection and AI chat presentation.
@@ -121,11 +121,14 @@ Logging is opt-in. A terminal session has at most one active log, regardless of 
 
 - Automatic and manually started logs share the same active, paused, and stopped lifecycle.
 - The backend logger is authoritative for whether a log is active; workspace pause metadata never makes an inactive logger appear active.
-- Frontend sanitizer buffers must be flushed before operations that require all rendered output to be persisted.
+- The backend retains each active log's sanitizer, pending writes, recording cursor, and pause state independently of terminal views. Decoded protocol output is captured once at reception; snapshots and deltas used for display never append logs.
+- Start, pause, resume, stop, and final flush serialize with capture. Output received before start or during pause is excluded; moving a tab does not flush or reset an unfinished display-log line. The log format is selected when recording starts.
 - Moving a tab preserves the backend log state and does not stop logging.
 - MCP and the terminal CLI can control an allowed session log but cannot read log files directly.
 
-`src/features/terminal-logging/` owns session-scoped manual-log operation coordination for GUI and external-control entry points. It resolves the current owner tab, serializes start, stop, pause, and resume per session, flushes frontend buffers before pause or stop, invokes the logger backend, and then updates workspace metadata. GUI entry points retain save-dialog and status-message behavior; external-control entry points retain request acknowledgements and wait for changed metadata to reach the UI before replying. External log-control events are delivered only to the session's current owner window.
+`src/features/terminal-logging/` resolves GUI targets and reserves window-local save dialogs. Backend logger operations serialize per session through capture changes and workspace metadata synchronization using the current tab owner. Their responses carry the workspace snapshot so the caller applies the revision before acknowledging an external request, even if event delivery is delayed. Window-local controllers never replay stale metadata after a transfer. GUI entry points retain save-dialog and status-message behavior; external-control entry points retain request acknowledgements and wait for changed metadata to reach the UI before replying. External log-control events are delivered only to the session's current owner window.
+
+External log requests use window-scoped subscriptions, and each pending acknowledgement is bound to the delivery window. The backend validates the invoking webview's window label before consuming a response; a response from another window leaves the request pending. Moving a tab during a request does not redeliver or repeat the operation: the original recipient can finish or reject that request, otherwise its existing deadline expires. Cancellation removes pending acknowledgement state.
 
 Plaintext logs can contain commands, output, prompts, hostnames, usernames, device data, and accidental secrets. Changes to capture, storage, or control behavior must preserve the existing privacy boundary.
 

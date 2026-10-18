@@ -301,6 +301,8 @@ In sensitive environments, enable session logging only when necessary.
 
 When `terminal.log_format` is `"display"`, common line edits such as Backspace, cursor-left, and erase-to-end-of-line are applied before text is saved. When it is `"strip_controls"`, control sequences are removed, but partially edited text may remain.
 
+The format is selected when a log starts. Changes apply to the next recording; an active recording keeps its unfinished line state when tabs move between windows.
+
 When `terminal.include_log_header` is `false`, new session logs start directly with terminal content instead of the ExaTerm header. Existing log files are not changed. The session log history shows `Auto` or `Manual` as the log mode.
 
 ## ssh

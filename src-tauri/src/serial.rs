@@ -254,8 +254,10 @@ pub(crate) async fn connect(
     let write_sid = session_id.clone();
     let write_sessions = state.sessions.clone();
     let write_app = app.clone();
+    let write_terminals = terminals.clone();
     let write_runtime = tokio::runtime::Handle::current();
     let writer_thread = spawn_serial_writer(writer_port, write_rx, running.clone(), move |error| {
+        write_runtime.block_on(write_terminals.capture_notice(&write_sid, &error));
         let _ = write_app.emit(&format!("serial://error/{write_sid}"), error);
         write_runtime.spawn(async move {
             request_shutdown(&write_sessions, &write_sid).await;
@@ -280,6 +282,7 @@ pub(crate) async fn connect(
                 }
             },
             |error| async move {
+                terminals.capture_notice(sid, &error).await;
                 let _ = app.emit(&format!("serial://error/{sid}"), error);
                 // This worker must return before the coordinator can finish shutdown.
                 request_shutdown(&output_sessions, sid).await;

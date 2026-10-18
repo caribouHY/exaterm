@@ -1,3 +1,4 @@
+use crate::logger::{finish_all_logs, LoggerState};
 use crate::workspace::WorkspaceState;
 use serde::Serialize;
 use tauri::{AppHandle, State};
@@ -36,12 +37,18 @@ fn ensure_active_sessions_allowed(
 pub async fn app_exit(
     app: AppHandle,
     workspace: State<'_, WorkspaceState>,
+    logger: State<'_, LoggerState>,
     allow_active_sessions: bool,
 ) -> Result<(), AppExitCommandError> {
-    ensure_active_sessions_allowed(
-        workspace.connected_session_count().await,
-        allow_active_sessions,
-    )?;
+    let active_session_count = workspace.connected_session_count().await;
+    ensure_active_sessions_allowed(active_session_count, allow_active_sessions)?;
+    finish_all_logs(&logger)
+        .await
+        .map_err(|_| AppExitCommandError {
+            code: "log_flush_failed".into(),
+            message: "Failed to save pending terminal log output before exiting.".into(),
+            active_session_count,
+        })?;
     app.exit(0);
     Ok(())
 }

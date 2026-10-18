@@ -389,6 +389,9 @@ pub(crate) async fn connect(
     let write_task = tokio::spawn(async move {
         while let Some(data) = write_rx.recv().await {
             if let Err(e) = writer_stream.write_all(&data).await {
+                write_terminals
+                    .capture_notice(&write_sid, &e.to_string())
+                    .await;
                 let _ = write_app.emit(&format!("telnet://error/{}", write_sid), e.to_string());
                 mark_disconnected(
                     &write_app,
@@ -448,6 +451,9 @@ pub(crate) async fn connect(
                     }
                 }
                 Err(e) => {
+                    read_terminals
+                        .capture_notice(&read_sid, &e.to_string())
+                        .await;
                     let _ = read_app.emit(&format!("telnet://error/{}", read_sid), e.to_string());
                     mark_disconnected(
                         &read_app,

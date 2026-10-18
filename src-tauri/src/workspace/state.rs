@@ -435,6 +435,29 @@ impl WorkspaceState {
         Ok(snapshot_for_locked(&model, &owner_window_id))
     }
 
+    pub async fn sync_log_state(
+        &self,
+        session_id: &str,
+        active: bool,
+        paused: bool,
+        file_path: Option<String>,
+    ) -> Option<WorkspaceSnapshot> {
+        let mut model = self.model.lock().await;
+        let previous = model.clone();
+        let owner = {
+            let tab = model
+                .tabs
+                .values_mut()
+                .find(|tab| tab.session_id == session_id)?;
+            tab.is_manual_logging = active;
+            tab.is_manual_logging_paused = active && paused;
+            tab.manual_log_file_path = if active { file_path } else { None };
+            tab.owner_window_id.clone()
+        };
+        advance_revision_if_changed(&mut model, &previous);
+        Some(snapshot_for_locked(&model, &owner))
+    }
+
     pub async fn mark_disconnected(&self, session_id: &str) -> Option<WorkspaceSnapshot> {
         let mut model = self.model.lock().await;
         let previous = model.clone();
