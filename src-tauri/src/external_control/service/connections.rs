@@ -230,6 +230,7 @@ async fn connect_prepared_ssh_profile(
         ProfileCredentialRequest {
             payload: ExternalControlCredentialRequestPayload {
                 request_id: String::new(),
+                profile_name: prepared.profile_name.clone(),
                 profile_id: prepared.profile_id.clone(),
                 host: parts.host.to_string(),
                 port: parts.port,
@@ -289,6 +290,7 @@ async fn request_jump_credential(
         ProfileCredentialRequest {
             payload: ExternalControlCredentialRequestPayload {
                 request_id: String::new(),
+                profile_name: Some(jump_profile.id.clone()),
                 profile_id: jump_profile.id.clone(),
                 host: jump_profile.host.clone(),
                 port: jump_profile.port,
@@ -323,6 +325,7 @@ fn build_ssh_connect_options(
     };
 
     ssh::SshConnectOptions {
+        profile_name: prepared.profile_name.clone(),
         host: parts.host.to_string(),
         port: parts.port,
         username: parts.username.to_string(),

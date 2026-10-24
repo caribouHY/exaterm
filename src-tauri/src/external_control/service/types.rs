@@ -31,6 +31,8 @@ pub(crate) struct ExternalControlConnectionProfile {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) struct ExternalControlCredentialRequestPayload {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) profile_name: Option<String>,
     pub(crate) request_id: String,
     pub(crate) profile_id: String,
     pub(crate) host: String,
@@ -273,6 +275,7 @@ pub(crate) struct ConnectSerialConsoleArgs {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PreparedConnection {
+    pub(crate) profile_name: Option<String>,
     pub(crate) kind: PreparedConnectionKind,
     pub(crate) profile_id: String,
     pub(crate) connection_type: String,

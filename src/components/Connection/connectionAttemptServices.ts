@@ -24,6 +24,7 @@ export interface ConnectionInput {
   tab: ConnectionType;
   selectedProfileIds: ProfileSelectionState;
   sshProfiles: SavedConnection[];
+  telnetProfiles: SavedConnection[];
   ssh: SshAttemptInput;
   telnet: { host: string; port: string; encoding: Encoding; terminalMode: TerminalMode };
   serial: {
@@ -77,7 +78,15 @@ export function createConnectionDependencies(
       let encoding: Encoding;
       let terminalMode: TerminalMode;
       if (tab === "ssh") {
-        const prepared = await prepareSshConnection(ssh, input.sshProfiles, context, invoke);
+        const profileName = input.sshProfiles.find(
+          (profile) => profile.id === input.selectedProfileIds.ssh
+        )?.id;
+        const prepared = await prepareSshConnection(
+          { ...ssh, profileName },
+          input.sshProfiles,
+          context,
+          invoke
+        );
         connect = prepared.connect;
         clearCredentials = prepared.clearCredentials;
         info = {
@@ -91,8 +100,8 @@ export function createConnectionDependencies(
             : null,
           jump_profile_id: ssh.jumpProfileId || null,
         };
-        title = `${ssh.username}@${ssh.host}`;
-        target = `${title}:${ssh.port}`;
+        title = profileName || `${ssh.username}@${ssh.host}`;
+        target = `${ssh.username}@${ssh.host}:${ssh.port}`;
         encoding = ssh.encoding;
         terminalMode = ssh.terminalMode;
       } else if (tab === "telnet") {
@@ -108,7 +117,10 @@ export function createConnectionDependencies(
             },
           });
         info = { kind: "telnet", host: telnet.host, port: Number(telnet.port) };
-        title = target = `${telnet.host}:${telnet.port}`;
+        target = `${telnet.host}:${telnet.port}`;
+        title =
+          input.telnetProfiles.find((profile) => profile.id === input.selectedProfileIds.telnet)
+            ?.id || target;
         encoding = telnet.encoding;
         terminalMode = telnet.terminalMode;
       } else {

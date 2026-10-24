@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Displayed saved SSH/Telnet profile names in terminal tabs and SSH authentication prompts across GUI, startup arguments, CLI, and MCP connections while retaining actual connection targets.
+
 - Scoped external log-control requests and acknowledgements to their intended window, preventing false "Session not found" errors after moving terminal tabs.
 - Recorded session logs independently of terminal views, preventing replayed history and paused output from being logged again after tab moves while preserving output received during moves.
 - Corrected display-log overwriting after carriage returns and cursor movement, and preserved insertion, deletion, and unfinished-line state across window transfers.

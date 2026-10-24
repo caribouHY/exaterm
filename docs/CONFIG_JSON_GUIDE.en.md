@@ -224,7 +224,7 @@ Example output reads:
 When `external_control.connect_enabled` is also `true`, external clients can call these additional tools:
 
 - `list_connection_profiles`: lists saved SSH/Telnet profiles that individually allow external control access. Private key paths and credentials are not returned.
-- `connect_saved_profile`: opens a new SSH/Telnet session from a saved profile and shows it as a tab in ExaTerm. It requires both `profile_id` and `connection_type` (`"ssh"` or `"telnet"`), so profiles of different types may share an ID. SSH credentials are requested in the ExaTerm UI.
+- `connect_saved_profile`: opens a new SSH/Telnet session from a saved profile and shows it as a tab in ExaTerm. It requires both `profile_id` and `connection_type` (`"ssh"` or `"telnet"`), so profiles of different types may share an ID. SSH credentials are requested in the ExaTerm UI. The tab and result `title` use the profile name, while `target` retains the actual endpoint. Authentication prompts show both the profile name and endpoint, including the jump profile for jump-host authentication. The tab and result `title` use the profile name, while `target` retains the actual endpoint. Authentication prompts show both the profile name and endpoint, including the jump profile for jump-host authentication.
 - `list_serial_ports`: lists currently available Serial ports.
 - `connect_serial_console`: opens a new Serial console session from explicit port and line settings and shows it as a tab in ExaTerm. The port name must match an available Serial port exactly.
 

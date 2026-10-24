@@ -20,7 +20,10 @@ import type {
   WorkspaceConnectionInfo,
 } from "./types";
 import type { ConnectionDialogInitialValues } from "./components/Connection/connectionDialogTypes";
-import type { ConnectionLogState } from "./features/terminal-logging/connectionLogModel";
+import {
+  connectionLogTarget,
+  type ConnectionLogState,
+} from "./features/terminal-logging/connectionLogModel";
 import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
 import { translateBackendCommandError } from "./features/backend-errors/backendCommandError";
@@ -93,6 +96,7 @@ function clampAiPanelWidth(width: number, viewportWidth: number) {
 }
 
 interface McpCredentialRequestPayload {
+  profile_name?: string | null;
   request_id: string;
   profile_id: string;
   host: string;
@@ -514,7 +518,7 @@ export default function App() {
         sessionId: activeTab.sessionId,
         expectedTabId: activeTab.id,
         connectionType: activeTab.connectionType,
-        target: activeTab.title,
+        target: connectionLogTarget(activeTab),
       };
       let operation;
       try {
@@ -1019,6 +1023,9 @@ export default function App() {
             </ModalHeader>
             <ModalBody className="app-credential-modal__body">
               <ModalTarget className="app-credential-modal__target">
+                {activeMcpCredentialPrompt.profile_name && (
+                  <div>{activeMcpCredentialPrompt.profile_name}</div>
+                )}
                 {activeMcpCredentialPrompt.target}
               </ModalTarget>
               <ModalDescription

@@ -189,6 +189,11 @@ or `telnet`.
 values from 1 through 1000. Profile connections require
 `external_control.connect_enabled=true`.
 
+Saved-profile connections return the profile name in `title` and use it as the tab title.
+`target` remains the actual endpoint; identify sessions by `session_id`, since titles can repeat.
+SSH credential prompts show the profile name and actual endpoint, using the jump profile name
+when authenticating a jump host. MCP `connect_saved_profile` follows the same behavior.
+
 SSH passwords and encrypted private-key passphrases are entered through the visible ExaTerm
 UI and must never be supplied as CLI arguments.
 

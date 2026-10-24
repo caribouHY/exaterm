@@ -41,6 +41,7 @@ export interface ConnectionDialogProps {
 }
 
 export interface SshCredentialPrompt {
+  profileName?: string;
   phase: "jump" | "target";
   host: string;
   port: number;
