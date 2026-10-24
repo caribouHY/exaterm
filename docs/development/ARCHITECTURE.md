@@ -71,6 +71,7 @@ When the dialog is disposed, pending preparation is abandoned and an in-flight c
 Backend state is created in `src-tauri/src/lib.rs` and managed through Tauri `State` values.
 
 - `ssh.rs`, `serial.rs`, and `telnet.rs` own active protocol sessions, writes, resize behavior where supported, and disconnect handling.
+- Telnet's codec bounds decoded subnegotiation payloads to 4 KiB and discards oversized or malformed frames until an unescaped terminator. Its session owner publishes retained-output and protocol registration before starting I/O, serializes resize with negotiation responses, and finalizes reader, writer, and explicit-disconnect completion once. Explicit disconnect also clears logs started late by GUI finalization.
 - `ssh_known_hosts.rs` owns the ExaTerm known-hosts file and fingerprint trust decisions.
 - `terminal_control.rs` retains decoded output and session status for external control and cross-window snapshot recovery.
 - `logger.rs` owns at most one active plaintext log per session and distinguishes automatic and manual logging behavior.
@@ -102,6 +103,8 @@ Settings and Logs are window-local utility views. Rust owns terminal placement; 
 4. `TerminalView` subscribes to protocol output and writes it to xterm.js.
 5. User input is sent to the matching backend write command.
 6. Disconnect state is projected through the workspace without discarding the visible terminal buffer.
+
+Workspace tab registration reads retained session status while holding placement ownership. Protocol teardown marks retained status before updating workspace state, so a tab registered after an early EOF remains disconnected.
 
 GUI SSH connections verify and, when necessary, confirm the host key within the active handshake so authentication continues on the same TCP connection. Saved-profile external-control SSH connections require an already trusted key. Direct external-control SSH connections may confirm an unknown key in the preferred GUI window, but reject a mismatch with an existing known-hosts entry.
 

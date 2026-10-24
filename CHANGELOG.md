@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Bounded incomplete Telnet subnegotiations and discarded oversized or malformed frames through their terminator, preventing unbounded memory growth.
+- Registered Telnet sessions before starting I/O, preserving immediate banners and negotiation replies and consistently finalizing early EOF, I/O failures, and concurrent disconnects.
+- Preserved disconnected status when terminal tabs are registered after an early connection close, and used current Telnet dimensions for subsequent NAWS negotiation.
+
 - Displayed saved SSH/Telnet profile names in terminal tabs and SSH authentication prompts across GUI, startup arguments, CLI, and MCP connections while retaining actual connection targets.
 
 - Scoped external log-control requests and acknowledgements to their intended window, preventing false "Session not found" errors after moving terminal tabs.

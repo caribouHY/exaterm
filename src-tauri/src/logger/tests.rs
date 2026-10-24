@@ -33,6 +33,29 @@ fn empty_active_keys() -> HashSet<ActiveLogKey> {
     HashSet::new()
 }
 
+#[tokio::test]
+async fn telnet_disconnect_clears_a_log_started_after_protocol_finalization() {
+    let dir = test_dir("telnet-late-log");
+    let logger = LoggerState::with_paths(dir.clone(), dir.join("index.json"));
+    logger.sessions.lock().await.insert(
+        "finished-telnet".into(),
+        LogSession {
+            session_id: "finished-telnet".into(),
+            connection_type: "telnet".into(),
+            target: "synthetic".into(),
+            started_at: "2026-10-24T00:00:00Z".into(),
+            file_path: dir.join("synthetic.log").to_string_lossy().into_owned(),
+            log_mode: "auto".into(),
+        },
+    );
+    let telnet = crate::telnet::TelnetState::new();
+    crate::telnet::disconnect_session(&telnet, Some(&logger), "finished-telnet").await;
+    assert!(active_log_session(&logger, "finished-telnet")
+        .await
+        .is_none());
+    cleanup(&dir.join("index.json"));
+}
+
 #[test]
 fn read_log_index_returns_empty_when_missing() {
     let path = temp_index_path();

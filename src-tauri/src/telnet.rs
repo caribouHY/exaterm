@@ -1,34 +1,21 @@
 use serde::Deserialize;
 use std::collections::HashMap;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
-use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
 use crate::connect_attempt::{run_with_attempt, ConnectAttempt, ConnectAttemptState};
-use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+use crate::logger::LoggerState;
+use crate::terminal_control::TerminalControlState;
 use crate::workspace::{emit_workspace_updated, WorkspaceState};
-use crate::{logger, logger::LoggerState};
 
-const IAC: u8 = 255;
-const DONT: u8 = 254;
-const DO: u8 = 253;
-const WONT: u8 = 252;
-const WILL: u8 = 251;
-const SB: u8 = 250;
-const SE: u8 = 240;
-
-const OPT_ECHO: u8 = 1;
-const OPT_SUPPRESS_GO_AHEAD: u8 = 3;
-const OPT_TERMINAL_TYPE: u8 = 24;
-const OPT_NAWS: u8 = 31;
-
-const TERMINAL_TYPE_IS: u8 = 0;
-const TERMINAL_TYPE_SEND: u8 = 1;
+mod codec;
+mod session;
+use codec::*;
+use session::{SessionEvents, TelnetSession};
 
 const TELNET_CONNECT_CANCELLED: &str = "The Telnet connection attempt was cancelled";
 const TELNET_CONNECT_DUPLICATE: &str =
@@ -61,12 +48,6 @@ pub(crate) struct TelnetConnectRequest {
     pub encoding: Option<String>,
 }
 
-struct TelnetSession {
-    writer: mpsc::Sender<Vec<u8>>,
-    read_task: JoinHandle<()>,
-    write_task: JoinHandle<()>,
-}
-
 #[derive(Clone)]
 pub struct TelnetState {
     sessions: Arc<Mutex<HashMap<String, TelnetSession>>>,
@@ -83,210 +64,6 @@ impl TelnetState {
             ),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ParseState {
-    Data,
-    Iac,
-    Negotiation(u8),
-    Subnegotiation,
-    SubnegotiationIac,
-}
-
-#[derive(Debug, Clone)]
-struct TelnetParser {
-    state: ParseState,
-    subnegotiation: Vec<u8>,
-    cols: u16,
-    rows: u16,
-}
-
-impl TelnetParser {
-    fn new(cols: u32, rows: u32) -> Self {
-        Self {
-            state: ParseState::Data,
-            subnegotiation: Vec::new(),
-            cols: clamp_dimension(cols),
-            rows: clamp_dimension(rows),
-        }
-    }
-
-    fn parse(&mut self, input: &[u8]) -> (Vec<u8>, Vec<u8>) {
-        let mut data = Vec::new();
-        let mut response = Vec::new();
-
-        for &byte in input {
-            match self.state.clone() {
-                ParseState::Data => {
-                    if byte == IAC {
-                        self.state = ParseState::Iac;
-                    } else {
-                        data.push(byte);
-                    }
-                }
-                ParseState::Iac => match byte {
-                    IAC => {
-                        data.push(IAC);
-                        self.state = ParseState::Data;
-                    }
-                    DO | DONT | WILL | WONT => {
-                        self.state = ParseState::Negotiation(byte);
-                    }
-                    SB => {
-                        self.subnegotiation.clear();
-                        self.state = ParseState::Subnegotiation;
-                    }
-                    SE => {
-                        self.state = ParseState::Data;
-                    }
-                    _ => {
-                        self.state = ParseState::Data;
-                    }
-                },
-                ParseState::Negotiation(command) => {
-                    response.extend(negotiate(command, byte, self.cols, self.rows));
-                    self.state = ParseState::Data;
-                }
-                ParseState::Subnegotiation => {
-                    if byte == IAC {
-                        self.state = ParseState::SubnegotiationIac;
-                    } else {
-                        self.subnegotiation.push(byte);
-                    }
-                }
-                ParseState::SubnegotiationIac => {
-                    if byte == IAC {
-                        self.subnegotiation.push(IAC);
-                        self.state = ParseState::Subnegotiation;
-                    } else if byte == SE {
-                        response.extend(handle_subnegotiation(
-                            &self.subnegotiation,
-                            self.cols,
-                            self.rows,
-                        ));
-                        self.subnegotiation.clear();
-                        self.state = ParseState::Data;
-                    } else {
-                        self.state = ParseState::Data;
-                    }
-                }
-            }
-        }
-
-        (data, response)
-    }
-}
-
-fn clamp_dimension(value: u32) -> u16 {
-    u16::try_from(value.max(1).min(u16::MAX as u32)).unwrap_or(u16::MAX)
-}
-
-fn command_response(command: u8, option: u8) -> Vec<u8> {
-    vec![IAC, command, option]
-}
-
-fn negotiate(command: u8, option: u8, cols: u16, rows: u16) -> Vec<u8> {
-    match command {
-        WILL => match option {
-            OPT_ECHO | OPT_SUPPRESS_GO_AHEAD => command_response(DO, option),
-            _ => command_response(DONT, option),
-        },
-        DO => match option {
-            OPT_SUPPRESS_GO_AHEAD | OPT_TERMINAL_TYPE => command_response(WILL, option),
-            OPT_NAWS => {
-                let mut response = command_response(WILL, option);
-                response.extend(build_naws(cols, rows));
-                response
-            }
-            _ => command_response(WONT, option),
-        },
-        WONT => command_response(DONT, option),
-        DONT => command_response(WONT, option),
-        _ => Vec::new(),
-    }
-}
-
-fn handle_subnegotiation(data: &[u8], cols: u16, rows: u16) -> Vec<u8> {
-    if data == [OPT_TERMINAL_TYPE, TERMINAL_TYPE_SEND] {
-        build_terminal_type()
-    } else if data.first() == Some(&OPT_NAWS) {
-        build_naws(cols, rows)
-    } else {
-        Vec::new()
-    }
-}
-
-fn build_terminal_type() -> Vec<u8> {
-    let mut response = vec![IAC, SB, OPT_TERMINAL_TYPE, TERMINAL_TYPE_IS];
-    response.extend(b"xterm-256color");
-    response.extend([IAC, SE]);
-    response
-}
-
-fn build_naws(cols: u16, rows: u16) -> Vec<u8> {
-    let [cols_hi, cols_lo] = cols.to_be_bytes();
-    let [rows_hi, rows_lo] = rows.to_be_bytes();
-    let mut response = vec![IAC, SB, OPT_NAWS];
-    response.extend(escape_iac_bytes(vec![cols_hi, cols_lo, rows_hi, rows_lo]));
-    response.extend([IAC, SE]);
-    response
-}
-
-fn escape_user_data(data: Vec<u8>) -> Vec<u8> {
-    escape_iac_bytes(data)
-}
-
-fn escape_iac_bytes(data: Vec<u8>) -> Vec<u8> {
-    let mut escaped = Vec::with_capacity(data.len());
-    for byte in data {
-        escaped.push(byte);
-        if byte == IAC {
-            escaped.push(IAC);
-        }
-    }
-    escaped
-}
-
-async fn remove_session(
-    app: &AppHandle,
-    terminals: &TerminalControlState,
-    workspace: &WorkspaceState,
-    logger_state: Option<&LoggerState>,
-    sessions: &Arc<Mutex<HashMap<String, TelnetSession>>>,
-    session_id: &str,
-) -> Option<TelnetSession> {
-    let session = sessions.lock().await.remove(session_id);
-    if session.is_some() {
-        terminals.mark_disconnected(session_id).await;
-        if let Some(snapshot) = workspace.mark_disconnected(session_id).await {
-            emit_workspace_updated(app, &snapshot);
-        }
-        let _ = app.emit("telnet://disconnected", session_id);
-    }
-    if let Some(logger_state) = logger_state {
-        logger::clear_session_logs(logger_state, session_id).await;
-    }
-    session
-}
-
-async fn mark_disconnected(
-    app: &AppHandle,
-    terminals: &TerminalControlState,
-    workspace: &WorkspaceState,
-    logger_state: Option<&LoggerState>,
-    sessions: &Arc<Mutex<HashMap<String, TelnetSession>>>,
-    session_id: &str,
-) {
-    let _ = remove_session(
-        app,
-        terminals,
-        workspace,
-        logger_state,
-        sessions,
-        session_id,
-    )
-    .await;
 }
 
 #[tauri::command]
@@ -345,7 +122,7 @@ pub async fn telnet_connect(
 pub(crate) async fn connect(
     runtime: TelnetConnectRuntime<'_>,
     request: TelnetConnectRequest,
-    mut attempt: Option<ConnectAttempt>,
+    attempt: Option<ConnectAttempt>,
 ) -> Result<String, String> {
     let TelnetConnectRuntime {
         app,
@@ -362,134 +139,63 @@ pub(crate) async fn connect(
         encoding,
     } = request;
     let session_id = Uuid::new_v4().to_string();
-    let stream = run_with_attempt(
-        attempt.as_ref(),
-        Box::pin(async {
-            TcpStream::connect((host.as_str(), port))
+    let address = (host.clone(), port);
+    session::connect(
+        state,
+        session::SessionOwner {
+            terminals: terminals.clone(),
+            workspace: workspace.clone(),
+            logger: logger_state.cloned(),
+            events: Arc::new(AppSessionEvents(app.clone())),
+            session_id: session_id.clone(),
+        },
+        TelnetConnectRequest {
+            host,
+            port,
+            cols,
+            rows,
+            encoding,
+        },
+        attempt,
+        Box::pin(async move {
+            TcpStream::connect(address)
                 .await
                 .map_err(|e| format!("Failed to connect over Telnet: {}", e))
         }),
     )
     .await?;
-    if attempt
-        .as_mut()
-        .is_some_and(|attempt| !attempt.begin_completion())
-    {
-        return Err(TELNET_CONNECT_CANCELLED.to_string());
-    }
-    let (mut reader, mut writer_stream) = stream.into_split();
-    let (writer, mut write_rx) = mpsc::channel::<Vec<u8>>(64);
-
-    let write_sid = session_id.clone();
-    let write_app = app.clone();
-    let write_sessions = state.sessions.clone();
-    let write_terminals = terminals.clone();
-    let write_workspace = workspace.clone();
-    let write_logger = logger_state.cloned();
-    let write_task = tokio::spawn(async move {
-        while let Some(data) = write_rx.recv().await {
-            if let Err(e) = writer_stream.write_all(&data).await {
-                write_terminals
-                    .capture_notice(&write_sid, &e.to_string())
-                    .await;
-                let _ = write_app.emit(&format!("telnet://error/{}", write_sid), e.to_string());
-                mark_disconnected(
-                    &write_app,
-                    &write_terminals,
-                    &write_workspace,
-                    write_logger.as_ref(),
-                    &write_sessions,
-                    &write_sid,
-                )
-                .await;
-                break;
-            }
-        }
-    });
-
-    let read_sid = session_id.clone();
-    let read_app = app.clone();
-    let read_sessions = state.sessions.clone();
-    let read_terminals = terminals.clone();
-    let read_workspace = workspace.clone();
-    let read_logger = logger_state.cloned();
-    let read_task = tokio::spawn(async move {
-        let mut parser = TelnetParser::new(cols, rows);
-        let mut buf = [0u8; 4096];
-
-        loop {
-            match reader.read(&mut buf).await {
-                Ok(0) => {
-                    mark_disconnected(
-                        &read_app,
-                        &read_terminals,
-                        &read_workspace,
-                        read_logger.as_ref(),
-                        &read_sessions,
-                        &read_sid,
-                    )
-                    .await;
-                    break;
-                }
-                Ok(n) => {
-                    let (data, response) = parser.parse(&buf[..n]);
-                    if !data.is_empty() {
-                        if let Some(output) = read_terminals.append_output(&read_sid, &data).await {
-                            let _ = read_app.emit(&format!("telnet://data/{}", read_sid), output);
-                        }
-                    }
-                    if !response.is_empty() {
-                        let writer = {
-                            let sessions = read_sessions.lock().await;
-                            sessions
-                                .get(&read_sid)
-                                .map(|session| session.writer.clone())
-                        };
-                        if let Some(writer) = writer {
-                            let _ = writer.send(response).await;
-                        }
-                    }
-                }
-                Err(e) => {
-                    read_terminals
-                        .capture_notice(&read_sid, &e.to_string())
-                        .await;
-                    let _ = read_app.emit(&format!("telnet://error/{}", read_sid), e.to_string());
-                    mark_disconnected(
-                        &read_app,
-                        &read_terminals,
-                        &read_workspace,
-                        read_logger.as_ref(),
-                        &read_sessions,
-                        &read_sid,
-                    )
-                    .await;
-                    break;
-                }
-            }
-        }
-    });
-
-    state.sessions.lock().await.insert(
-        session_id.clone(),
-        TelnetSession {
-            writer: writer.clone(),
-            read_task,
-            write_task,
-        },
-    );
-
-    terminals
-        .register_session_with_encoding(
-            session_id.clone(),
-            TerminalProtocol::Telnet,
-            format!("{}:{}", host, port),
-            encoding,
-        )
-        .await;
-
-    let _ = app.emit("telnet://connected", &session_id);
     Ok(session_id)
+}
+
+struct AppSessionEvents(AppHandle);
+
+impl SessionEvents for AppSessionEvents {
+    fn connected(&self, session_id: &str) {
+        let _ = self.0.emit("telnet://connected", session_id);
+    }
+
+    fn data(&self, session_id: &str, output: crate::terminal_control::TerminalOutputEvent) {
+        let _ = self
+            .0
+            .emit(&format!("telnet://data/{}", session_id), output);
+    }
+
+    fn error(&self, session_id: &str, error: &str) {
+        let _ = self
+            .0
+            .emit(&format!("telnet://error/{}", session_id), error);
+    }
+
+    fn disconnected(
+        &self,
+        session_id: &str,
+        snapshot: Option<crate::workspace::WorkspaceSnapshot>,
+    ) {
+        if let Some(snapshot) = snapshot {
+            emit_workspace_updated(&self.0, &snapshot);
+        }
+        let _ = self.0.emit("telnet://disconnected", session_id);
+    }
 }
 
 #[tauri::command]
@@ -542,24 +248,9 @@ pub async fn telnet_resize(
     cols: u32,
     rows: u32,
 ) -> Result<(), crate::command_error::BackendCommandError> {
-    let writer = {
-        let sessions = state.sessions.lock().await;
-        sessions
-            .get(&session_id)
-            .ok_or("Session not found")?
-            .writer
-            .clone()
-    };
-
-    writer
-        .send(build_naws(clamp_dimension(cols), clamp_dimension(rows)))
+    session::resize(&state, &session_id, cols, rows)
         .await
-        .map_err(|e| {
-            crate::command_error::BackendCommandError::from_message(format!(
-                "Failed to send the resize request: {}",
-                e
-            ))
-        })
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -591,142 +282,20 @@ pub(crate) async fn disconnect(
     logger: Option<&LoggerState>,
     session_id: &str,
 ) -> Result<(), String> {
-    if let Some(session) = remove_session(
-        app,
-        terminals,
-        workspace,
-        logger,
-        &state.sessions,
-        session_id,
-    )
-    .await
-    {
-        session.read_task.abort();
-        session.write_task.abort();
-    }
+    let _ = (app, terminals, workspace);
+    disconnect_session(state, logger, session_id).await;
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parser_passes_plain_data_through() {
-        let mut parser = TelnetParser::new(120, 30);
-        let (data, response) = parser.parse(b"login: ");
-
-        assert_eq!(data, b"login: ");
-        assert!(response.is_empty());
-    }
-
-    #[test]
-    fn parser_negotiates_supported_and_unsupported_options() {
-        let mut parser = TelnetParser::new(120, 30);
-        let (_data, response) = parser.parse(&[
-            IAC, WILL, OPT_ECHO, IAC, DO, OPT_NAWS, IAC, DO, 99, IAC, WILL, 100,
-        ]);
-
-        let mut expected = vec![IAC, DO, OPT_ECHO, IAC, WILL, OPT_NAWS];
-        expected.extend(build_naws(120, 30));
-        expected.extend([IAC, WONT, 99, IAC, DONT, 100]);
-        assert_eq!(response, expected);
-    }
-
-    #[test]
-    fn parser_responds_to_terminal_type_send() {
-        let mut parser = TelnetParser::new(120, 30);
-        let (_data, response) =
-            parser.parse(&[IAC, SB, OPT_TERMINAL_TYPE, TERMINAL_TYPE_SEND, IAC, SE]);
-
-        assert_eq!(response, build_terminal_type());
-    }
-
-    #[test]
-    fn builds_naws_payload() {
-        assert_eq!(
-            build_naws(120, 30),
-            vec![IAC, SB, OPT_NAWS, 0, 120, 0, 30, IAC, SE]
-        );
-    }
-
-    #[test]
-    fn user_data_escapes_iac_bytes() {
-        assert_eq!(
-            escape_user_data(vec![b'a', IAC, b'b']),
-            vec![b'a', IAC, IAC, b'b']
-        );
-    }
-
-    const NAWS_DIMENSIONS: [(u16, &[u8]); 5] = [
-        (254, &[0, 254]),
-        (255, &[0, 255, 255]),
-        (256, &[1, 0]),
-        (511, &[1, 255, 255]),
-        (65535, &[255, 255, 255, 255]),
-    ];
-
-    fn expected_naws(cols: &[u8], rows: &[u8]) -> Vec<u8> {
-        let mut expected = vec![255, 250, 31];
-        expected.extend_from_slice(cols);
-        expected.extend_from_slice(rows);
-        expected.extend([255, 240]);
-        expected
-    }
-
-    #[test]
-    fn builds_naws_with_255_columns() {
-        assert_eq!(
-            build_naws(255, 24),
-            vec![255, 250, 31, 0, 255, 255, 0, 24, 255, 240]
-        );
-    }
-
-    #[test]
-    fn builds_and_negotiates_naws_boundary_dimensions() {
-        for (cols, cols_bytes) in NAWS_DIMENSIONS {
-            for (rows, rows_bytes) in NAWS_DIMENSIONS {
-                let expected = expected_naws(cols_bytes, rows_bytes);
-                assert_eq!(build_naws(cols, rows), expected, "{cols}x{rows}");
-
-                let mut parser = TelnetParser::new(cols.into(), rows.into());
-                let (data, response) = parser.parse(&[IAC, DO, OPT_NAWS]);
-                let mut negotiation = vec![255, 251, 31];
-                negotiation.extend(expected);
-                assert!(data.is_empty(), "{cols}x{rows}");
-                assert_eq!(response, negotiation, "{cols}x{rows}");
-            }
-        }
-    }
-
-    fn assert_naws_chunks(cols: u16, rows: u16, chunks: &[&[u8]], expected: &[u8]) {
-        let mut parser = TelnetParser::new(cols.into(), rows.into());
-        let mut responses = Vec::new();
-        for chunk in chunks {
-            let (data, response) = parser.parse(chunk);
-            assert!(data.is_empty(), "{cols}x{rows}: {chunks:?}");
-            responses.extend(response);
-        }
-        assert_eq!(responses, expected, "{cols}x{rows}: {chunks:?}");
-        assert_eq!(parser.state, ParseState::Data);
-        assert!(parser.subnegotiation.is_empty());
-        let (data, response) = parser.parse(b"after NAWS");
-        assert_eq!(data, b"after NAWS");
-        assert!(response.is_empty());
-    }
-
-    #[test]
-    fn parser_handles_naws_at_every_receive_boundary() {
-        for (cols, cols_bytes) in NAWS_DIMENSIONS {
-            for (rows, rows_bytes) in NAWS_DIMENSIONS {
-                let frame = build_naws(cols, rows);
-                let expected = expected_naws(cols_bytes, rows_bytes);
-                for split in 0..=frame.len() {
-                    assert_naws_chunks(cols, rows, &[&frame[..split], &frame[split..]], &expected);
-                }
-                let chunks: Vec<&[u8]> = frame.chunks(1).collect();
-                assert_naws_chunks(cols, rows, &chunks, &expected);
-            }
-        }
+pub(crate) async fn disconnect_session(
+    state: &TelnetState,
+    logger: Option<&LoggerState>,
+    session_id: &str,
+) {
+    session::disconnect(state, session_id).await;
+    // GUI finalization can start logging after EOF cleanup. Explicit teardown
+    // must also close that late log after waiting for the I/O owner.
+    if let Some(logger) = logger {
+        crate::logger::clear_session_logs(logger, session_id).await;
     }
 }
