@@ -59,8 +59,8 @@ function fixture() {
 }
 async function setup() {
   const configSave = deferred<AppConfig>();
-  const keySave = deferred<void>();
-  const clear = deferred<void>();
+  const keySave = deferred<undefined>();
+  const clear = deferred<undefined>();
   const notify = vi.fn(async () => {});
   const invoke = vi.fn(
     async (command: string, _args?: Record<string, unknown>): Promise<unknown> => {
@@ -113,7 +113,7 @@ describe("settings saving through the production controller", () => {
     configSave.resolve(font(16)(fixture()));
     await tick();
     c.updateConfig(font(20));
-    keySave.resolve();
+    keySave.resolve(undefined);
     await save;
     expect(c.getSnapshot()).toMatchObject({
       config: { terminal: { font_size: 20 } },
@@ -146,7 +146,7 @@ describe("settings saving through the production controller", () => {
     const refresh = c.loadSecretStatus();
     c.editSecret("gemini", "fake-key");
     const save = c.save();
-    keySave.resolve();
+    keySave.resolve(undefined);
     await save;
     stale.resolve({ openai: true, gemini: false });
     await refresh;
@@ -210,7 +210,7 @@ describe("settings saving through the production controller", () => {
     const save = c.save();
     await tick();
     c.editSecret("openai", "fake-second");
-    keySave.resolve();
+    keySave.resolve(undefined);
     await save;
     expect(invoke.mock.calls.filter(([cmd]) => cmd === "ai_secret_set")).toEqual([
       ["ai_secret_set", { provider: "OpenAi", value: "fake-first" }],
@@ -241,7 +241,7 @@ describe("settings saving through the production controller", () => {
     });
     const save = c.save();
     configSave.resolve(font(16)(fixture()));
-    keySave.resolve();
+    keySave.resolve(undefined);
     await save;
     expect(c.getSnapshot()).toMatchObject({
       configResult: "success",
@@ -268,7 +268,7 @@ describe("settings saving through the production controller", () => {
     c.editSecret("openai", "fake-key");
     const save = c.save();
     configSave.reject(new Error("failure"));
-    keySave.resolve();
+    keySave.resolve(undefined);
     await save;
     expect(c.getSnapshot()).toMatchObject({
       configResult: "failed",
@@ -291,12 +291,12 @@ describe("settings saving through the production controller", () => {
     await tick();
     expect(invoke.mock.calls.filter(([cmd]) => cmd === "ai_secret_clear")).toHaveLength(0);
     c.editSecret("openai", "fake-new");
-    keySave.resolve();
+    keySave.resolve(undefined);
     await save;
     await duplicate;
     await tick();
     expect(c.getSnapshot().isSaving).toBe(true);
-    clear.resolve();
+    clear.resolve(undefined);
     await deletion;
     expect(c.getSecretInputs().openai).toBe("fake-new");
     expect(c.getSnapshot()).toMatchObject({
@@ -311,7 +311,7 @@ describe("settings saving through the production controller", () => {
     notify.mockRejectedValueOnce(new Error("notification failed"));
     c.editSecret("openai", "fake-key");
     const save = c.save();
-    keySave.resolve();
+    keySave.resolve(undefined);
     await save;
     expect(c.getSnapshot().hasUnsavedChanges).toBe(true);
     await c.save();
@@ -351,7 +351,7 @@ describe("settings saving through the production controller", () => {
     const listener = vi.fn();
     c.subscribe(listener);
     c.dispose();
-    keySave.resolve();
+    keySave.resolve(undefined);
     await save;
     await deletion;
     expect(listener).not.toHaveBeenCalled();

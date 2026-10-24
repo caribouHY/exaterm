@@ -39,7 +39,9 @@ export default function SettingsPanel() {
   } = controller.getSnapshot();
   const secretEdits = controller.getSecretInputs();
   const error = errorKey ? t(errorKey) : "";
-  const setConfig = (update: (previous: AppConfig) => AppConfig) => controller.updateConfig(update);
+  const setConfig = (update: (previous: AppConfig) => AppConfig) => {
+    controller.updateConfig(update);
+  };
   const [sshAlgorithmCatalog, setSshAlgorithmCatalog] = useState<SshAlgorithmCatalog | null>(null);
   const [sshAlgorithmCatalogLoadFailed, setSshAlgorithmCatalogLoadFailed] = useState(false);
   const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>("general");
@@ -59,7 +61,9 @@ export default function SettingsPanel() {
     // A fresh owner also supports React StrictMode's setup/cleanup replay.
     const owner = createSettingsSaveController(invoke, () => emit("config://updated"));
     setController(owner);
-    const unsubscribe = owner.subscribe(() => refresh((value) => value + 1));
+    const unsubscribe = owner.subscribe(() => {
+      refresh((value) => value + 1);
+    });
     void owner.load();
     void owner.loadSecretStatus();
     void loadSshAlgorithmCatalog();
@@ -70,51 +74,41 @@ export default function SettingsPanel() {
   }, []);
 
   const updateLanguage = (language: AppConfig["language"]) => {
-    setConfig((previous) => (previous ? { ...previous, language } : previous));
+    setConfig((previous) => ({ ...previous, language }));
   };
 
   const updateAiConfig = (patch: Partial<AppConfig["ai"]>) => {
-    setConfig((previous) =>
-      previous ? { ...previous, ai: { ...previous.ai, ...patch } } : previous
-    );
+    setConfig((previous) => ({ ...previous, ai: { ...previous.ai, ...patch } }));
   };
 
   const updateUpdateConfig = (patch: Partial<AppConfig["updates"]>) => {
-    setConfig((previous) =>
-      previous ? { ...previous, updates: { ...previous.updates, ...patch } } : previous
-    );
+    setConfig((previous) => ({ ...previous, updates: { ...previous.updates, ...patch } }));
   };
 
   const updateExternalControlConfig = (patch: Partial<AppConfig["external_control"]>) => {
-    setConfig((previous) =>
-      previous
-        ? { ...previous, external_control: { ...previous.external_control, ...patch } }
-        : previous
-    );
+    setConfig((previous) => ({
+      ...previous,
+      external_control: { ...previous.external_control, ...patch },
+    }));
   };
 
   const updateConnectionHistoryConfig = (patch: Partial<AppConfig["connection_history"]>) => {
-    setConfig((previous) =>
-      previous
-        ? { ...previous, connection_history: { ...previous.connection_history, ...patch } }
-        : previous
-    );
+    setConfig((previous) => ({
+      ...previous,
+      connection_history: { ...previous.connection_history, ...patch },
+    }));
   };
 
   const updateTerminalConfig = (patch: Partial<AppConfig["terminal"]>) => {
-    setConfig((previous) =>
-      previous ? { ...previous, terminal: { ...previous.terminal, ...patch } } : previous
-    );
+    setConfig((previous) => ({ ...previous, terminal: { ...previous.terminal, ...patch } }));
   };
 
   const updateSshConfig = (patch: Partial<AppConfig["ssh"]>) => {
-    setConfig((previous) =>
-      previous ? { ...previous, ssh: { ...previous.ssh, ...patch } } : previous
-    );
+    setConfig((previous) => ({ ...previous, ssh: { ...previous.ssh, ...patch } }));
   };
 
   const updateShortcutConfig = (shortcuts: AppConfig["shortcuts"]) => {
-    setConfig((previous) => (previous ? { ...previous, shortcuts } : previous));
+    setConfig((previous) => ({ ...previous, shortcuts }));
   };
 
   const clearSecret = async (_provider: SecretProvider, key: SecretKey) => {
@@ -216,7 +210,9 @@ export default function SettingsPanel() {
         error={error}
         isSaving={isSaving}
         onSave={() => void controller.save()}
-        onRevert={() => controller.revert()}
+        onRevert={() => {
+          controller.revert();
+        }}
       />
     </div>
   );

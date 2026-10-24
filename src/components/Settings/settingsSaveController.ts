@@ -2,15 +2,25 @@ import type { AiSecretStatus, AppConfig } from "../../types";
 import {
   SECRET_FIELDS,
   areConfigsEqual,
-  createSecretEdits,
-  createSecretEditMode,
-  createSecretStatus,
   normalizeExternalControlConfig,
   type SecretKey,
   type SecretEdits,
+  type SecretEditMode,
+  type SecretProvider,
 } from "./settingsModel";
 
 type Result = "idle" | "saving" | "success" | "failed";
+interface SecretState {
+  key: SecretKey;
+  provider: SecretProvider;
+  value: string;
+  editing: boolean;
+  configured: boolean;
+  generation: number;
+  statusVersion: number;
+  result: Result;
+}
+
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
 // Rebase only edits made after submission onto the backend's merged result.
@@ -29,34 +39,42 @@ function rebase(sent: unknown, current: unknown, saved: unknown, path: string[] 
     !Array.isArray(sent) &&
     !Array.isArray(current)
   ) {
-    const before = sent as Record<string, unknown>;
-    const draft = current as Record<string, unknown>;
-    const result = { ...(saved as Record<string, unknown>) };
-    for (const key of Object.keys(draft))
-      result[key] = rebase(before[key], draft[key], result[key], [...path, key]);
-    return result;
+    const before = new Map(Object.entries(sent));
+    const result = new Map(Object.entries(saved));
+    for (const [key, value] of Object.entries(current))
+      result.set(key, rebase(before.get(key), value, result.get(key), [...path, key]));
+    return Object.fromEntries(result);
   }
   return current;
 }
 
 export function createSettingsSaveController(invoke: Invoke, notify: () => Promise<void>) {
-  let active = true;
+  const lifetime = new AbortController();
+  const isActive = () => !lifetime.signal.aborted;
   let loadId = 0;
   let statusLoadId = 0;
   let config: AppConfig | null = null;
   let baseline: AppConfig | null = null;
-  let values = createSecretEdits();
-  let modes = createSecretEditMode();
-  let status = createSecretStatus();
-  const generations = Object.fromEntries(SECRET_FIELDS.map(({ key }) => [key, 0])) as Record<
-    SecretKey,
-    number
-  >;
-  const statusVersions = { ...generations };
-  let results = Object.fromEntries(SECRET_FIELDS.map(({ key }) => [key, "idle"])) as Record<
-    SecretKey,
-    Result
-  >;
+  const secrets = new Map<SecretKey, SecretState>(
+    SECRET_FIELDS.map(({ key, provider }) => [
+      key,
+      {
+        key,
+        provider,
+        value: "",
+        editing: false,
+        configured: false,
+        generation: 0,
+        statusVersion: 0,
+        result: "idle",
+      },
+    ])
+  );
+  const getSecret = (key: SecretKey) => {
+    const secret = secrets.get(key);
+    if (!secret) throw new Error("Unknown secret provider.");
+    return secret;
+  };
   let configResult: Result = "idle";
   let loading = true;
   let loadFailed = false;
@@ -68,14 +86,20 @@ export function createSettingsSaveController(invoke: Invoke, notify: () => Promi
   const listeners = new Set<() => void>();
   const dirty = () =>
     !areConfigsEqual(config, baseline) ||
-    SECRET_FIELDS.some(({ key }) => Boolean(values[key].trim()) || modes[key]) ||
+    Array.from(secrets.values()).some((secret) => Boolean(secret.value.trim()) || secret.editing) ||
     notificationPending;
   const snapshot = () => ({
     config: structuredClone(config),
     baseline: structuredClone(baseline),
-    secretStatus: { ...status },
-    secretEditMode: { ...modes },
-    results: { ...results },
+    secretStatus: Object.fromEntries(
+      Array.from(secrets.values(), (secret) => [secret.key, secret.configured])
+    ) as Record<SecretKey, boolean>,
+    secretEditMode: Object.fromEntries(
+      Array.from(secrets.values(), (secret) => [secret.key, secret.editing])
+    ) as SecretEditMode,
+    results: Object.fromEntries(
+      Array.from(secrets.values(), (secret) => [secret.key, secret.result])
+    ) as Record<SecretKey, Result>,
     configResult,
     isLoadingConfig: loading,
     loadFailed,
@@ -85,12 +109,13 @@ export function createSettingsSaveController(invoke: Invoke, notify: () => Promi
     hasUnsavedChanges: dirty(),
   });
   const publish = () => {
-    if (active) for (const listener of listeners) listener();
+    if (isActive()) for (const listener of listeners) listener();
   };
   const resetInput = (key: SecretKey) => {
-    values[key] = "";
-    modes[key] = false;
-    generations[key]++;
+    const secret = getSecret(key);
+    secret.value = "";
+    secret.editing = false;
+    secret.generation++;
   };
   const enqueue = (operation: () => Promise<void>) => {
     pending++;
@@ -98,7 +123,7 @@ export function createSettingsSaveController(invoke: Invoke, notify: () => Promi
     error = "";
     publish();
     const task = tail.then(async () => {
-      if (active) await operation();
+      if (isActive()) await operation();
     });
     tail = task.catch(() => {});
     return task.finally(() => {
@@ -112,13 +137,16 @@ export function createSettingsSaveController(invoke: Invoke, notify: () => Promi
       await notify();
       notificationPending = false;
     } catch {
-      if (active) error = "settings.save_failed";
+      if (isActive()) error = "settings.save_failed";
     }
   };
   return {
     getSnapshot: snapshot,
     // Only the password inputs consume these values; snapshots and diagnostics never do.
-    getSecretInputs: (): SecretEdits => ({ ...values }),
+    getSecretInputs: (): SecretEdits =>
+      Object.fromEntries(
+        Array.from(secrets.values(), (secret) => [secret.key, secret.value])
+      ) as SecretEdits,
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => {
@@ -126,68 +154,73 @@ export function createSettingsSaveController(invoke: Invoke, notify: () => Promi
       };
     },
     async load() {
-      if (!active || pending) return;
+      if (!isActive() || pending) return;
       const id = ++loadId;
       loading = true;
       loadFailed = false;
       publish();
       try {
         const loaded = normalizeExternalControlConfig(await invoke<AppConfig>("config_load"));
-        if (!active || id !== loadId) return;
+        if (!isActive() || id !== loadId) return;
         config = loaded;
         baseline = loaded;
       } catch {
-        if (active && id === loadId) loadFailed = true;
+        if (isActive() && id === loadId) loadFailed = true;
       } finally {
-        if (active && id === loadId) {
+        if (isActive() && id === loadId) {
           loading = false;
           publish();
         }
       }
     },
     async loadSecretStatus() {
-      if (!active) return;
+      if (!isActive()) return;
       const id = ++statusLoadId;
-      const versions = { ...statusVersions };
+      const versions = new Map(
+        Array.from(secrets.values(), (secret) => [secret.key, secret.statusVersion])
+      );
       try {
         const loaded = await invoke<AiSecretStatus>("ai_secret_status");
-        if (!active || id !== statusLoadId) return;
-        for (const { key } of SECRET_FIELDS)
-          if (versions[key] === statusVersions[key]) status[key] = loaded[key];
+        if (!isActive() || id !== statusLoadId) return;
+        const statuses = new Map(Object.entries(loaded));
+        for (const secret of secrets.values())
+          if (versions.get(secret.key) === secret.statusVersion)
+            secret.configured = statuses.get(secret.key) === true;
         publish();
       } catch {
         /* Availability stays unknown until a successful operation or refresh. */
       }
     },
     updateConfig(update: (previous: AppConfig) => AppConfig) {
-      if (!active || !config) return;
+      if (!isActive() || !config) return;
       config = update(config);
       saved = false;
       publish();
     },
     editSecret(key: SecretKey, value: string) {
-      if (!active) return;
-      values[key] = value;
-      generations[key]++;
+      if (!isActive()) return;
+      const secret = getSecret(key);
+      secret.value = value;
+      secret.generation++;
       saved = false;
       publish();
     },
     beginSecretEdit(key: SecretKey) {
-      if (active) {
+      if (isActive()) {
         resetInput(key);
-        modes[key] = true;
+        getSecret(key).editing = true;
         saved = false;
         publish();
       }
     },
     cancelSecretEdit(key: SecretKey) {
-      if (active) {
+      if (isActive()) {
         resetInput(key);
         publish();
       }
     },
     revert() {
-      if (!active || pending) return;
+      if (!isActive() || pending) return;
       config = baseline;
       for (const { key } of SECRET_FIELDS) resetInput(key);
       error = "";
@@ -195,11 +228,18 @@ export function createSettingsSaveController(invoke: Invoke, notify: () => Promi
       publish();
     },
     save() {
-      if (!active || !config || !baseline || pending || !dirty()) return Promise.resolve();
+      if (!isActive() || !config || !baseline || pending || !dirty()) return Promise.resolve();
       const sent = normalizeExternalControlConfig(structuredClone(config));
       const base = structuredClone(baseline);
-      let submitted = { ...values };
-      const versions = { ...generations };
+      const submitted = new Map(
+        Array.from(secrets.values(), (secret) => [
+          secret.key,
+          {
+            value: secret.value,
+            generation: secret.generation,
+          },
+        ])
+      );
       return enqueue(async () => {
         if (!areConfigsEqual(sent, base)) {
           configResult = "saving";
@@ -208,70 +248,71 @@ export function createSettingsSaveController(invoke: Invoke, notify: () => Promi
             const merged = normalizeExternalControlConfig(
               await invoke<AppConfig>("config_save", { baseConfig: base, editedConfig: sent })
             );
-            if (!active) return;
+            if (!isActive()) return;
             config = rebase(sent, config, merged) as AppConfig;
             baseline = merged;
             configResult = "success";
           } catch {
-            if (active) {
+            if (isActive()) {
               configResult = "failed";
               error = "settings.save_failed";
             }
           }
           publish();
         }
-        for (const { key, provider } of SECRET_FIELDS) {
-          if (!active) break;
-          const value = submitted[key].trim();
+        for (const [key, input] of submitted) {
+          const secret = getSecret(key);
+          if (!isActive()) break;
+          const value = input.value.trim();
           if (!value) {
-            if (versions[key] === generations[key]) resetInput(key);
+            if (input.generation === secret.generation) resetInput(key);
             continue;
           }
-          results[key] = "saving";
+          secret.result = "saving";
           publish();
           try {
-            await invoke("ai_secret_set", { provider, value });
+            await invoke("ai_secret_set", { provider: secret.provider, value });
             notificationPending = true;
-            if (!active) break;
-            status[key] = true;
-            statusVersions[key]++;
-            results[key] = "success";
-            if (versions[key] === generations[key]) resetInput(key);
+            if (!isActive()) break;
+            secret.configured = true;
+            secret.statusVersion++;
+            secret.result = "success";
+            if (input.generation === secret.generation) resetInput(key);
           } catch {
-            if (active) {
-              results[key] = "failed";
+            if (isActive()) {
+              secret.result = "failed";
               error = "settings.save_failed";
             }
           }
-          submitted[key] = "";
+          input.value = "";
           publish();
         }
-        submitted = createSecretEdits();
+        submitted.clear();
         await flushNotification();
-        if (active) saved = !error;
+        if (isActive()) saved = !error;
       }).finally(() => {
-        submitted = createSecretEdits();
+        submitted.clear();
       });
     },
     clearSecret(key: SecretKey) {
-      if (!active) return Promise.resolve();
-      const field = SECRET_FIELDS.find((candidate) => candidate.key === key)!;
-      const version = generations[key];
+      if (!isActive()) return Promise.resolve();
+      const secret = getSecret(key);
+      const version = secret.generation;
       return enqueue(async () => {
-        results[key] = "saving";
+        secret.result = "saving";
         publish();
         try {
-          await invoke("ai_secret_clear", { provider: field.provider });
+          await invoke("ai_secret_clear", { provider: secret.provider });
           notificationPending = true;
-          if (active) {
-            status[key] = false;
-            statusVersions[key]++;
-            results[key] = "success";
-            if (version === generations[key]) resetInput(key);
+          if (isActive()) {
+            secret.configured = false;
+            secret.statusVersion++;
+            secret.result = "success";
+            if (version === secret.generation) resetInput(key);
           }
         } catch {
-          if (active) {
-            results[key] = "failed";
+          if (isActive()) {
+            secret.result = "failed";
             error = "settings.secret_clear_failed";
           }
         }
@@ -279,9 +320,9 @@ export function createSettingsSaveController(invoke: Invoke, notify: () => Promi
       });
     },
     dispose() {
-      active = false;
+      lifetime.abort();
       loadId++;
-      values = createSecretEdits();
+      for (const secret of secrets.values()) secret.value = "";
       listeners.clear();
     },
   };
