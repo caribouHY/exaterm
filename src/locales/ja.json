@@ -448,5 +448,10 @@
   "backend_errors.ai_server_error": "{{provider}} 側で一時的な障害が発生しています。時間を置いて再試行してください。{{detail}}",
   "backend_errors.ai_http_error": "{{provider}} が HTTP {{status}} を返しました。設定と選択したモデルを確認してください。{{detail}}",
   "settings.save_failed": "設定の保存に失敗しました。",
-  "ai.error_unknown": "不明なAIプロバイダーエラーです。"
+  "ai.error_unknown": "不明なAIプロバイダーエラーです。",
+  "connection.remember_ssh_password": "ExaTerm終了までパスワードを記憶する",
+  "settings.ssh_password_cache_clear": "記憶したパスワードを消去",
+  "settings.ssh_password_cache_help": "起動中だけ記憶したSSHパスワードをすべて消去します。接続中のセッションは維持されます。",
+  "settings.ssh_password_cache_cleared": "記憶したSSHパスワードを消去しました。",
+  "settings.ssh_password_cache_clear_failed": "記憶したSSHパスワードの消去に失敗しました。"
 }

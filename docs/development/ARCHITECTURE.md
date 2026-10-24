@@ -168,6 +168,7 @@ Windows user data is stored under the ExaTerm application-data directory:
 - `%AppData%/ExaTerm/logs/index.json`: log-session index.
 - `%AppData%/ExaTerm/known_hosts`: SSH trust entries.
 - Operating-system credential store: cloud AI API keys.
+- Rust SSH state: opt-in password-authentication cache shared by all GUI windows and GUI/CLI/MCP connections, scoped to host, port, username, and verified host key. It is never persisted. Only accepted password authentication can populate it; keyboard-interactive and key passphrases are excluded. Clear advances a generation to reject writes from older attempts, while per-key revisions prevent stale failures or successes from replacing newer entries. Cancelled attempts cannot populate it. SSH settings can clear the cache without affecting sessions.
 
 Do not move cloud API keys into `config.json`, logs, terminal buffers, or external-control responses.
 

@@ -2,11 +2,28 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::host_key::HostKeyVerifier;
+use super::password_auth::PasswordAnswer;
+use super::password_cache::{PasswordCache, PasswordCacheKey};
+use crate::connect_attempt::ConnectAttempt;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Mutex};
 use tokio::time;
 use uuid::Uuid;
+use zeroize::Zeroizing;
+
+struct AuthenticationResponse {
+    responses: Vec<String>,
+    remember_password: bool,
+}
+
+impl std::fmt::Debug for AuthenticationResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthenticationResponse")
+            .finish_non_exhaustive()
+    }
+}
 
 const AUTHENTICATION_PROMPT_EVENT: &str = "ssh://authentication-prompt";
 const AUTHENTICATION_PROMPT_DISMISSED_EVENT: &str = "ssh://authentication-prompt-dismissed";
@@ -52,7 +69,8 @@ struct PendingAuthenticationPrompt {
     window_id: String,
     connect_request_id: Option<String>,
     expected_responses: usize,
-    sender: oneshot::Sender<Option<Vec<String>>>,
+    password_prompt: bool,
+    sender: oneshot::Sender<Option<AuthenticationResponse>>,
 }
 
 #[derive(Clone, Default)]
@@ -66,6 +84,8 @@ pub(super) struct SshAuthenticationPrompter {
     state: SshAuthenticationPromptState,
     window_id: String,
     connect_request_id: Option<String>,
+    pub(super) cache: PasswordCache,
+    pub(super) cache_generation: u64,
 }
 
 pub(super) struct SshAuthenticationContext<'a> {
@@ -75,6 +95,8 @@ pub(super) struct SshAuthenticationContext<'a> {
     pub(super) port: u16,
     pub(super) username: &'a str,
     pub(super) profile_name: Option<&'a str>,
+    pub(super) cache_key: Option<PasswordCacheKey>,
+    pub(super) attempt: Option<&'a ConnectAttempt>,
 }
 
 impl SshAuthenticationPrompter {
@@ -83,12 +105,15 @@ impl SshAuthenticationPrompter {
         state: SshAuthenticationPromptState,
         window_id: String,
         connect_request_id: Option<String>,
+        cache: PasswordCache,
     ) -> Self {
         Self {
             app: app.clone(),
             state,
             window_id,
             connect_request_id,
+            cache_generation: cache.generation(),
+            cache,
         }
     }
 
@@ -107,15 +132,20 @@ impl SshAuthenticationPrompter {
             host,
             port,
             username,
+            cache_key: None,
+            attempt: None,
         }
     }
 
     async fn request(
         &self,
         mut payload: SshAuthenticationPromptPayload,
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<AuthenticationResponse, String> {
         if let Some(responses) = zero_prompt_responses(&payload.prompts) {
-            return Ok(responses);
+            return Ok(AuthenticationResponse {
+                responses,
+                remember_password: false,
+            });
         }
 
         let request_id = Uuid::new_v4().to_string();
@@ -127,6 +157,7 @@ impl SshAuthenticationPrompter {
                 window_id: self.window_id.clone(),
                 connect_request_id: self.connect_request_id.clone(),
                 expected_responses,
+                password_prompt: payload.method == "password",
                 sender,
             },
         );
@@ -185,7 +216,7 @@ mod tests {
         request_id: &str,
         window_id: &str,
         expected_responses: usize,
-    ) -> oneshot::Receiver<Option<Vec<String>>> {
+    ) -> oneshot::Receiver<Option<AuthenticationResponse>> {
         let (sender, receiver) = oneshot::channel();
         state.pending.lock().await.insert(
             request_id.to_string(),
@@ -193,10 +224,43 @@ mod tests {
                 window_id: window_id.to_string(),
                 connect_request_id: None,
                 expected_responses,
+                password_prompt: true,
                 sender,
             },
         );
         receiver
+    }
+
+    #[tokio::test]
+    async fn remembers_only_password_prompts_and_rejects_late_responses() {
+        let state = SshAuthenticationPromptState::default();
+        let receiver = insert_prompt(&state, "password", "main", 1).await;
+        state
+            .submit_with_remember("password".into(), Some(vec!["secret".into()]), true)
+            .await
+            .unwrap();
+        assert!(receiver.await.unwrap().unwrap().remember_password);
+        assert!(state
+            .submit_with_remember("password".into(), Some(vec!["late".into()]), true)
+            .await
+            .is_err());
+        let receiver = insert_prompt(&state, "interactive", "main", 1).await;
+        state
+            .pending
+            .lock()
+            .await
+            .get_mut("interactive")
+            .unwrap()
+            .password_prompt = false;
+        assert!(state
+            .submit_with_remember("interactive".into(), Some(vec!["otp".into()]), true)
+            .await
+            .is_err());
+        state
+            .submit("interactive".into(), Some(vec!["otp".into()]))
+            .await
+            .unwrap();
+        assert!(!receiver.await.unwrap().unwrap().remember_password);
     }
 
     #[tokio::test]
@@ -219,7 +283,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            receiver.await.unwrap(),
+            receiver.await.unwrap().map(|answer| answer.responses),
             Some(vec!["first".to_string(), "second".to_string()])
         );
         assert_eq!(state.pending_count().await, 0);
@@ -233,13 +297,16 @@ mod tests {
 
         state.cancel_window("main").await;
 
-        assert_eq!(first.await.unwrap(), None);
+        assert_eq!(first.await.unwrap().map(|answer| answer.responses), None);
         assert_eq!(state.pending_count().await, 1);
         state
             .submit("second".to_string(), Some(vec!["answer".to_string()]))
             .await
             .unwrap();
-        assert_eq!(second.await.unwrap(), Some(vec!["answer".to_string()]));
+        assert_eq!(
+            second.await.unwrap().map(|answer| answer.responses),
+            Some(vec!["answer".to_string()])
+        );
     }
 
     #[tokio::test]
@@ -254,6 +321,7 @@ mod tests {
                 window_id: "main".to_string(),
                 connect_request_id: Some("connect-1".to_string()),
                 expected_responses: 1,
+                password_prompt: true,
                 sender: matching_sender,
             },
         );
@@ -263,6 +331,7 @@ mod tests {
                 window_id: "main".to_string(),
                 connect_request_id: Some("connect-2".to_string()),
                 expected_responses: 1,
+                password_prompt: true,
                 sender: other_sender,
             },
         );
@@ -270,7 +339,13 @@ mod tests {
 
         state.cancel_connect_attempt("connect-1").await;
 
-        assert_eq!(matching_receiver.await.unwrap(), None);
+        assert_eq!(
+            matching_receiver
+                .await
+                .unwrap()
+                .map(|answer| answer.responses),
+            None
+        );
         assert_eq!(state.pending_count().await, 1);
     }
 
@@ -281,7 +356,7 @@ mod tests {
 
         state.submit("request".to_string(), None).await.unwrap();
 
-        assert_eq!(receiver.await.unwrap(), None);
+        assert_eq!(receiver.await.unwrap().map(|answer| answer.responses), None);
         assert_eq!(state.pending_count().await, 0);
     }
 
@@ -340,8 +415,23 @@ mod tests {
     }
 }
 
-impl SshAuthenticationContext<'_> {
-    pub(super) async fn request_password(&self) -> Result<String, String> {
+impl<'a> SshAuthenticationContext<'a> {
+    pub(super) fn with_verified_host(
+        mut self,
+        verifier: &HostKeyVerifier,
+        attempt: Option<&'a ConnectAttempt>,
+    ) -> Self {
+        self.cache_key = verifier.last_result().map(|result| PasswordCacheKey {
+            host: self.host.to_string(),
+            port: self.port,
+            username: self.username.to_string(),
+            host_key: format!("{}:{}", result.algorithm, result.fingerprint),
+        });
+        self.attempt = attempt;
+        self
+    }
+
+    pub(super) async fn request_password(&self) -> Result<PasswordAnswer, String> {
         let responses = self
             .request(
                 "password",
@@ -353,9 +443,17 @@ impl SshAuthenticationContext<'_> {
                 }],
             )
             .await?;
-        responses.into_iter().next().ok_or_else(|| {
-            "The SSH password authentication prompt did not return a response".to_string()
-        })
+        responses
+            .responses
+            .into_iter()
+            .next()
+            .map(|password| PasswordAnswer {
+                password: Zeroizing::new(password),
+                remember: responses.remember_password,
+            })
+            .ok_or_else(|| {
+                "The SSH password authentication prompt did not return a response".to_string()
+            })
     }
 
     pub(super) async fn request_keyboard_interactive(
@@ -367,6 +465,7 @@ impl SshAuthenticationContext<'_> {
         let prompts = map_keyboard_interactive_prompts(prompts);
         self.request("keyboard_interactive", name, instructions, prompts)
             .await
+            .map(|answer| answer.responses)
     }
 
     async fn request(
@@ -375,7 +474,7 @@ impl SshAuthenticationContext<'_> {
         name: String,
         instructions: String,
         prompts: Vec<SshAuthenticationPrompt>,
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<AuthenticationResponse, String> {
         self.prompter
             .request(SshAuthenticationPromptPayload {
                 request_id: String::new(),
@@ -411,9 +510,9 @@ impl SshAuthenticationPromptState {
     async fn wait_for_response(
         &self,
         request_id: &str,
-        receiver: oneshot::Receiver<Option<Vec<String>>>,
+        receiver: oneshot::Receiver<Option<AuthenticationResponse>>,
         timeout: Duration,
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<AuthenticationResponse, String> {
         match time::timeout(timeout, receiver).await {
             Ok(Ok(Some(responses))) => Ok(responses),
             Ok(Ok(None)) => Err(AUTHENTICATION_PROMPT_CANCELLED.to_string()),
@@ -425,15 +524,29 @@ impl SshAuthenticationPromptState {
         }
     }
 
+    #[cfg(test)]
     pub async fn submit(
         &self,
         request_id: String,
         responses: Option<Vec<String>>,
     ) -> Result<(), String> {
+        self.submit_with_remember(request_id, responses, false)
+            .await
+    }
+
+    pub async fn submit_with_remember(
+        &self,
+        request_id: String,
+        responses: Option<Vec<String>>,
+        remember_password: bool,
+    ) -> Result<(), String> {
         let mut pending = self.pending.lock().await;
         let prompt = pending
             .get(&request_id)
             .ok_or_else(|| "The SSH authentication prompt request was not found".to_string())?;
+        if remember_password && !prompt.password_prompt {
+            return Err("Only SSH password authentication can be remembered".to_string());
+        }
         if let Some(responses) = &responses {
             if responses.len() != prompt.expected_responses {
                 return Err(AUTHENTICATION_PROMPT_RESPONSE_MISMATCH.to_string());
@@ -444,7 +557,10 @@ impl SshAuthenticationPromptState {
             .expect("the pending SSH authentication prompt was checked above");
         prompt
             .sender
-            .send(responses)
+            .send(responses.map(|responses| AuthenticationResponse {
+                responses,
+                remember_password,
+            }))
             .map_err(|_| "The SSH authentication prompt request has already finished".to_string())
     }
 

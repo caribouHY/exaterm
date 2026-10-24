@@ -980,6 +980,7 @@ export default function App() {
         <SshAuthenticationPromptDialog
           prompt={sshPrompts.activePrompt.value}
           onResponseChange={sshPrompts.updateResponse}
+          onRememberPasswordChange={sshPrompts.updateRememberPassword}
           onSubmit={() => {
             void sshPrompts.submit();
           }}

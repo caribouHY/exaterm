@@ -15,6 +15,7 @@ import type { SshAuthenticationPromptState } from "./sshAuthenticationPromptMode
 interface SshAuthenticationPromptDialogProps {
   prompt: SshAuthenticationPromptState;
   onResponseChange: (index: number, value: string) => void;
+  onRememberPasswordChange: (remember: boolean) => void;
   onSubmit: () => void;
   onCancel: () => void;
 }
@@ -22,6 +23,7 @@ interface SshAuthenticationPromptDialogProps {
 export function SshAuthenticationPromptDialog({
   prompt,
   onResponseChange,
+  onRememberPasswordChange,
   onSubmit,
   onCancel,
 }: SshAuthenticationPromptDialogProps) {
@@ -42,6 +44,12 @@ export function SshAuthenticationPromptDialog({
         ariaDescribedBy={prompt.instructions ? "ssh-auth-prompt-instructions" : undefined}
       >
         <form
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || event.defaultPrevented) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (!event.repeat && !prompt.submitting) onCancel();
+          }}
           onSubmit={(event) => {
             event.preventDefault();
             onSubmit();
@@ -98,17 +106,24 @@ export function SshAuthenticationPromptDialog({
                       onChange={(event) => {
                         onResponseChange(index, event.target.value);
                       }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          onCancel();
-                        }
-                      }}
                     />
                   </div>
                 );
               })}
             </div>
+            {prompt.method === "password" && (
+              <label className="ssh-auth-prompt__remember">
+                <input
+                  type="checkbox"
+                  checked={prompt.rememberPassword}
+                  disabled={prompt.submitting}
+                  onChange={(event) => {
+                    onRememberPasswordChange(event.target.checked);
+                  }}
+                />
+                {t("connection.remember_ssh_password")}
+              </label>
+            )}
             {prompt.error && (
               <FeedbackMessage tone="error" className="app-credential-modal__error">
                 {prompt.error}

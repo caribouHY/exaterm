@@ -177,6 +177,7 @@ where
 pub struct SshState {
     pub(super) sessions: SshSessions,
     pub(super) connect_attempts: crate::connect_attempt::ConnectAttemptState,
+    pub(super) password_cache: super::password_cache::PasswordCache,
     pub(crate) authentication_prompts: SshAuthenticationPromptState,
     pub(crate) host_key_prompts: SshHostKeyPromptState,
 }
@@ -191,6 +192,7 @@ impl SshState {
                 "The SSH connection attempt was cancelled",
                 "An SSH connection attempt with this request ID already exists",
             ),
+            password_cache: super::password_cache::PasswordCache::default(),
             authentication_prompts: SshAuthenticationPromptState::default(),
             host_key_prompts: SshHostKeyPromptState::default(),
         }

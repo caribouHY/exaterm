@@ -70,13 +70,16 @@ pub(super) async fn connect_jump_profile(
         )),
     )
     .await?;
-    let auth_context = context.authentication_prompter.context(
-        "jump",
-        &profile.host,
-        profile.port,
-        &profile.username,
-        Some(&profile.id),
-    );
+    let auth_context = context
+        .authentication_prompter
+        .context(
+            "jump",
+            &profile.host,
+            profile.port,
+            &profile.username,
+            Some(&profile.id),
+        )
+        .with_verified_host(&jump_verifier, context.attempt);
     if let Err(error) = run_with_attempt(
         context.attempt,
         Box::pin(authenticate_jump(

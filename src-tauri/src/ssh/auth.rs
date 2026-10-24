@@ -232,12 +232,7 @@ pub(super) async fn authenticate_ssh(
             .await
         }
         SshAuthRequest::Password { password } => {
-            let password = if password.is_empty() {
-                context.request_password().await?
-            } else {
-                password
-            };
-            match authenticate_password(handle, username, password).await? {
+            match authenticate_remembered_password(handle, username, password, context).await? {
                 AuthResult::Success => Ok(()),
                 AuthResult::Failure { .. } => Err(password_failure()),
             }
@@ -341,14 +336,13 @@ async fn authenticate_auto(
         }
     }
 
-    if supports(&remaining_methods, MethodKind::Password) {
-        let password = context.request_password().await?;
-        if matches!(
-            authenticate_password(handle, username, password).await?,
+    if supports(&remaining_methods, MethodKind::Password)
+        && matches!(
+            authenticate_remembered_password(handle, username, String::new(), context).await?,
             AuthResult::Success
-        ) {
-            return Ok(());
-        }
+        )
+    {
+        return Ok(());
     }
 
     Err("SSH automatic authentication failed".to_string())
@@ -538,4 +532,49 @@ mod authentication_flow_tests {
             true
         ));
     }
+}
+
+struct SessionPasswordAuth<'a, 'b, H: russh::client::Handler> {
+    handle: &'a mut russh::client::Handle<H>,
+    username: &'a str,
+    context: &'a SshAuthenticationContext<'b>,
+}
+
+impl<H: russh::client::Handler + 'static> super::password_auth::PasswordAuthIo
+    for SessionPasswordAuth<'_, '_, H>
+{
+    async fn authenticate(&mut self, password: String) -> Result<AuthResult, String> {
+        authenticate_password(self.handle, self.username, password).await
+    }
+    async fn prompt(&mut self) -> Result<super::password_auth::PasswordAnswer, String> {
+        self.context.request_password().await
+    }
+    fn attempt(&self) -> Option<&crate::connect_attempt::ConnectAttempt> {
+        self.context.attempt
+    }
+}
+
+async fn authenticate_remembered_password(
+    handle: &mut russh::client::Handle<impl russh::client::Handler + 'static>,
+    username: &str,
+    password: String,
+    context: &SshAuthenticationContext<'_>,
+) -> Result<AuthResult, String> {
+    let key = context
+        .cache_key
+        .clone()
+        .ok_or_else(|| "SSH host key verification is required before authentication".to_string())?;
+    let mut io = SessionPasswordAuth {
+        handle,
+        username,
+        context,
+    };
+    super::password_auth::authenticate_with_cache(
+        &mut io,
+        &context.prompter.cache,
+        key,
+        context.prompter.cache_generation,
+        password,
+    )
+    .await
 }

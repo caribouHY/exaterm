@@ -6,6 +6,12 @@ validation, JSON results, and credential prompts as the MCP integration.
 
 This CLI is available in ExaTerm v0.7.0 and later.
 
+## Remembering SSH passwords during this run
+
+Select “Remember password until ExaTerm exits” in an SSH password authentication prompt to retain the accepted password only in the GUI process memory. The checkbox starts unchecked. GUI, CLI, and MCP connections reuse it for the same host, port, username, and verified host key; jump-host authentication has its own opt-in. This also applies when `auto` reaches password authentication. Keyboard-interactive responses, OTPs, and private-key passphrases are never remembered. A rejected cached password is discarded, and one manual entry is requested if the connection still allows password authentication. If the server disconnects, enter the password on the next connection attempt.
+
+Remembered passwords are never persisted to files or the OS credential store and are lost when ExaTerm exits. Closing a window retains them if the GUI process keeps running. “Clear remembered passwords” in SSH settings immediately clears all entries without disconnecting sessions. Operations already in progress cannot repopulate the cache after clearing it; authentication requests already sent cannot be recalled. Host-key verification and external-control permissions still apply.
+
 ## Installation and Setup
 
 The Windows installer places `exaterm-cli.exe` beside the main ExaTerm executable. Run it

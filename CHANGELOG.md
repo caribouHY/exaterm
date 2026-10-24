@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added opt-in SSH password reuse until ExaTerm exits across GUI, CLI, MCP, and jump-host connections, with a clear action in SSH settings and no persistent password storage.
+
 ### Fixed
 
 - Bounded incomplete Telnet subnegotiations and discarded oversized or malformed frames through their terminator, preventing unbounded memory growth.
