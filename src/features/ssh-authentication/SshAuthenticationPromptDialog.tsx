@@ -117,7 +117,9 @@ export function SshAuthenticationPromptDialog({
                   type="checkbox"
                   checked={prompt.rememberPassword}
                   disabled={prompt.submitting}
-                  onChange={(event) => onRememberPasswordChange(event.target.checked)}
+                  onChange={(event) => {
+                    onRememberPasswordChange(event.target.checked);
+                  }}
                 />
                 {t("connection.remember_ssh_password")}
               </label>
