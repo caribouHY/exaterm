@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { translateBackendCommandError } from "../../features/backend-errors/backendCommandError";
+import { emit } from "@tauri-apps/api/event";
+import { createSettingsSaveController } from "./settingsSaveController";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
-import type { AiSecretStatus, AppConfig, SshAlgorithmCatalog } from "../../types";
+import type { AppConfig, SshAlgorithmCatalog } from "../../types";
 import { AiSettings } from "./AiSettings";
 import { ExternalControlSettings } from "./ExternalControlSettings";
 import { GeneralSettings } from "./GeneralSettings";
@@ -12,18 +13,7 @@ import { SettingsError, SettingsFooter } from "./SettingsFooter";
 import { SettingsSidebar } from "./SettingsSidebar";
 import { ShortcutsSettings } from "./ShortcutsSettings";
 import {
-  SECRET_FIELDS,
-  areConfigsEqual,
-  areSecretEditModesEqual,
-  areSecretEditsEqual,
-  createSecretEditMode,
-  createSecretEdits,
-  createSecretStatus,
-  getSecretEdit,
-  normalizeExternalControlConfig,
   type AiProviderId,
-  type SecretEditMode,
-  type SecretEdits,
   type SecretKey,
   type SecretProvider,
   type SettingsCategoryId,
@@ -32,35 +22,28 @@ import "./SettingsPanel.css";
 
 export default function SettingsPanel() {
   const { t } = useTranslation();
-  const [config, setConfig] = useState<AppConfig | null>(null);
-  const [initialConfigSnapshot, setInitialConfigSnapshot] = useState<AppConfig | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState("");
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const [controller, setController] = useState(() =>
+    createSettingsSaveController(invoke, () => emit("config://updated"))
+  );
+  const [, refresh] = useState(0);
+  const {
+    config,
+    saved,
+    error: errorKey,
+    loadFailed,
+    isLoadingConfig,
+    isSaving,
+    secretStatus,
+    secretEditMode,
+    hasUnsavedChanges,
+  } = controller.getSnapshot();
+  const secretEdits = controller.getSecretInputs();
+  const error = errorKey ? t(errorKey) : "";
+  const setConfig = (update: (previous: AppConfig) => AppConfig) => controller.updateConfig(update);
   const [sshAlgorithmCatalog, setSshAlgorithmCatalog] = useState<SshAlgorithmCatalog | null>(null);
   const [sshAlgorithmCatalogLoadFailed, setSshAlgorithmCatalogLoadFailed] = useState(false);
-  const [secretStatus, setSecretStatus] = useState<AiSecretStatus>(createSecretStatus);
-  const [secretEdits, setSecretEdits] = useState<SecretEdits>(createSecretEdits);
-  const [initialSecretEditsSnapshot, setInitialSecretEditsSnapshot] =
-    useState<SecretEdits>(createSecretEdits);
-  const [secretEditMode, setSecretEditMode] = useState<SecretEditMode>(createSecretEditMode);
-  const [initialSecretEditModeSnapshot, setInitialSecretEditModeSnapshot] =
-    useState<SecretEditMode>(createSecretEditMode);
   const [activeCategory, setActiveCategory] = useState<SettingsCategoryId>("general");
   const [expandedOtherProvider, setExpandedOtherProvider] = useState<AiProviderId | null>(null);
-  const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const refreshSecretStatus = async () => {
-    try {
-      setSecretStatus(await invoke<AiSecretStatus>("ai_secret_status"));
-    } catch (refreshError) {
-      console.error("Failed to load AI secret status:", refreshError);
-      setSecretStatus(createSecretStatus());
-    }
-  };
-
   const loadSshAlgorithmCatalog = async () => {
     setSshAlgorithmCatalogLoadFailed(false);
     try {
@@ -72,103 +55,19 @@ export default function SettingsPanel() {
     }
   };
 
-  const clearSavedTimer = () => {
-    if (!savedTimeoutRef.current) return;
-    clearTimeout(savedTimeoutRef.current);
-    savedTimeoutRef.current = null;
-  };
-
-  const loadConfig = async () => {
-    setIsLoadingConfig(true);
-    setLoadFailed(false);
-    setError("");
-    try {
-      const normalizedConfig = normalizeExternalControlConfig(
-        await invoke<AppConfig>("config_load")
-      );
-      const emptySecretEdits = createSecretEdits();
-      const emptySecretEditMode = createSecretEditMode();
-      setConfig(normalizedConfig);
-      setInitialConfigSnapshot(normalizedConfig);
-      setSecretEdits(emptySecretEdits);
-      setInitialSecretEditsSnapshot(emptySecretEdits);
-      setSecretEditMode(emptySecretEditMode);
-      setInitialSecretEditModeSnapshot(emptySecretEditMode);
-      setSaved(false);
-    } catch (loadError) {
-      console.error("Failed to load settings:", loadError);
-      setConfig(null);
-      setInitialConfigSnapshot(null);
-      setLoadFailed(true);
-    } finally {
-      setIsLoadingConfig(false);
-    }
-  };
-
   useEffect(() => {
-    void loadConfig();
-    void refreshSecretStatus();
+    // A fresh owner also supports React StrictMode's setup/cleanup replay.
+    const owner = createSettingsSaveController(invoke, () => emit("config://updated"));
+    setController(owner);
+    const unsubscribe = owner.subscribe(() => refresh((value) => value + 1));
+    void owner.load();
+    void owner.loadSecretStatus();
     void loadSshAlgorithmCatalog();
-    return clearSavedTimer;
+    return () => {
+      unsubscribe();
+      owner.dispose();
+    };
   }, []);
-
-  const hasUnsavedChanges =
-    !areConfigsEqual(config, initialConfigSnapshot) ||
-    !areSecretEditsEqual(secretEdits, initialSecretEditsSnapshot) ||
-    !areSecretEditModesEqual(secretEditMode, initialSecretEditModeSnapshot);
-
-  const handleSave = async () => {
-    if (!config || !initialConfigSnapshot || isSaving || !hasUnsavedChanges) return;
-    try {
-      setIsSaving(true);
-      setError("");
-      clearSavedTimer();
-      const normalizedConfig = normalizeExternalControlConfig(config);
-      setConfig(normalizedConfig);
-      const savedConfig = normalizeExternalControlConfig(
-        await invoke<AppConfig>("config_save", {
-          baseConfig: initialConfigSnapshot,
-          editedConfig: normalizedConfig,
-        })
-      );
-      setConfig(savedConfig);
-      setInitialConfigSnapshot(savedConfig);
-
-      for (const { key, provider } of SECRET_FIELDS) {
-        const value = getSecretEdit(secretEdits, key).trim();
-        if (value) await invoke("ai_secret_set", { provider, value });
-      }
-
-      const emptySecretEdits = createSecretEdits();
-      const emptySecretEditMode = createSecretEditMode();
-      setSecretEdits(emptySecretEdits);
-      setInitialSecretEditsSnapshot(emptySecretEdits);
-      setSecretEditMode(emptySecretEditMode);
-      setInitialSecretEditModeSnapshot(emptySecretEditMode);
-      await refreshSecretStatus();
-
-      setSaved(true);
-      savedTimeoutRef.current = setTimeout(() => {
-        setSaved(false);
-        savedTimeoutRef.current = null;
-      }, 2000);
-    } catch (saveError) {
-      console.error(saveError);
-      setError(translateBackendCommandError(saveError, t, t("settings.save_failed")));
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleRevert = () => {
-    if (!initialConfigSnapshot || isSaving) return;
-    clearSavedTimer();
-    setConfig(initialConfigSnapshot);
-    setSecretEdits(initialSecretEditsSnapshot);
-    setSecretEditMode(initialSecretEditModeSnapshot);
-    setSaved(false);
-    setError("");
-  };
 
   const updateLanguage = (language: AppConfig["language"]) => {
     setConfig((previous) => (previous ? { ...previous, language } : previous));
@@ -218,7 +117,7 @@ export default function SettingsPanel() {
     setConfig((previous) => (previous ? { ...previous, shortcuts } : previous));
   };
 
-  const clearSecret = async (provider: SecretProvider, key: SecretKey) => {
+  const clearSecret = async (_provider: SecretProvider, key: SecretKey) => {
     const confirmed = await confirm(t("settings.secret_clear_confirm_message"), {
       title: t("settings.secret_clear_confirm_title"),
       kind: "warning",
@@ -227,16 +126,7 @@ export default function SettingsPanel() {
     });
     if (!confirmed) return;
 
-    try {
-      setError("");
-      await invoke("ai_secret_clear", { provider });
-      setSecretEdits((previous) => ({ ...previous, [key]: "" }));
-      setSecretEditMode((previous) => ({ ...previous, [key]: false }));
-      setSecretStatus((previous) => ({ ...previous, [key]: false }));
-    } catch {
-      console.error("Failed to clear AI secret.");
-      setError(t("settings.secret_clear_failed"));
-    }
+    await controller.clearSecret(key);
   };
 
   if (!config) {
@@ -246,7 +136,7 @@ export default function SettingsPanel() {
         {loadFailed && (
           <>
             <SettingsError message={t("settings.load_failed")} />
-            <button className="btn btn-primary" onClick={() => void loadConfig()}>
+            <button className="btn btn-primary" onClick={() => void controller.load()}>
               {t("settings.reload")}
             </button>
           </>
@@ -288,15 +178,13 @@ export default function SettingsPanel() {
               setExpandedOtherProvider(provider);
             }}
             onSecretValueChange={(key, value) => {
-              setSecretEdits((previous) => ({ ...previous, [key]: value }));
+              controller.editSecret(key, value);
             }}
             onBeginSecretEdit={(key) => {
-              setSecretEditMode((previous) => ({ ...previous, [key]: true }));
-              setSecretEdits((previous) => ({ ...previous, [key]: "" }));
+              controller.beginSecretEdit(key);
             }}
             onCancelSecretEdit={(key) => {
-              setSecretEditMode((previous) => ({ ...previous, [key]: false }));
-              setSecretEdits((previous) => ({ ...previous, [key]: "" }));
+              controller.cancelSecretEdit(key);
             }}
             onClearSecret={(provider, key) => void clearSecret(provider, key)}
           />
@@ -327,8 +215,8 @@ export default function SettingsPanel() {
         saved={saved}
         error={error}
         isSaving={isSaving}
-        onSave={() => void handleSave()}
-        onRevert={handleRevert}
+        onSave={() => void controller.save()}
+        onRevert={() => controller.revert()}
       />
     </div>
   );
