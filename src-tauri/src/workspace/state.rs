@@ -188,46 +188,27 @@ impl WorkspaceState {
         model.tabs.values().filter(|tab| tab.is_connected).count()
     }
 
+    #[cfg(test)]
     pub async fn register_tab(&self, input: WorkspaceTabRegisterInput) -> WorkspaceSnapshot {
         let mut model = self.model.lock().await;
-        let previous = model.clone();
-        let owner_window_id = choose_owner_window(&mut model, input.window_id.as_deref());
-        let tab_id = input.tab_id.unwrap_or_else(|| input.session_id.clone());
-        remove_tab_from_all_windows(&mut model, &tab_id);
+        register_tab_locked(&mut model, input, true)
+    }
 
-        let tab = WorkspaceTab {
-            tab_id: tab_id.clone(),
-            session_id: input.session_id,
-            connection_type: input.connection_type,
-            title: input.title,
-            owner_window_id: owner_window_id.clone(),
-            encoding: input.encoding,
-            terminal_mode: input.terminal_mode,
-            connection_info: input.connection_info,
-            is_connected: true,
-            is_manual_logging: input.is_manual_logging,
-            is_manual_logging_paused: false,
-            manual_log_file_path: if input.is_manual_logging {
-                input.manual_log_file_path
-            } else {
-                None
-            },
-        };
-        model.tabs.insert(tab_id.clone(), tab);
-
-        let window = model
-            .windows
-            .get_mut(&owner_window_id)
-            .expect("owner window is ensured before tab registration");
-        if !window.tab_order.contains(&tab_id) {
-            window.tab_order.push(tab_id.clone());
-        }
-        window.active_tab_id = Some(tab_id.clone());
-
-        advance_revision_if_changed(&mut model, &previous);
-        let mut snapshot = snapshot_for_locked(&model, &owner_window_id);
-        snapshot.tab_update = Some(WorkspaceTabUpdate::Connected { tab_id });
-        snapshot
+    pub async fn register_session_tab(
+        &self,
+        input: WorkspaceTabRegisterInput,
+        terminals: &crate::terminal_control::TerminalControlState,
+    ) -> WorkspaceSnapshot {
+        // Hold placement through the status read. Disconnect marks terminal
+        // state before taking this lock, so neither ordering can revive a tab.
+        let mut model = self.model.lock().await;
+        let is_connected = terminals
+            .session_info(&input.session_id)
+            .await
+            .is_none_or(|session| {
+                session.status == crate::terminal_control::TerminalStatus::Connected
+            });
+        register_tab_locked(&mut model, input, is_connected)
     }
 
     pub async fn activate_tab(
@@ -586,4 +567,49 @@ impl WorkspaceState {
             target_index: drag.target_index.unwrap_or(0),
         })
     }
+}
+
+fn register_tab_locked(
+    model: &mut WorkspaceModel,
+    input: WorkspaceTabRegisterInput,
+    is_connected: bool,
+) -> WorkspaceSnapshot {
+    let previous = model.clone();
+    let owner_window_id = choose_owner_window(model, input.window_id.as_deref());
+    let tab_id = input.tab_id.unwrap_or_else(|| input.session_id.clone());
+    remove_tab_from_all_windows(model, &tab_id);
+
+    let tab = WorkspaceTab {
+        tab_id: tab_id.clone(),
+        session_id: input.session_id,
+        connection_type: input.connection_type,
+        title: input.title,
+        owner_window_id: owner_window_id.clone(),
+        encoding: input.encoding,
+        terminal_mode: input.terminal_mode,
+        connection_info: input.connection_info,
+        is_connected,
+        is_manual_logging: input.is_manual_logging,
+        is_manual_logging_paused: false,
+        manual_log_file_path: if input.is_manual_logging {
+            input.manual_log_file_path
+        } else {
+            None
+        },
+    };
+    model.tabs.insert(tab_id.clone(), tab);
+
+    let window = model
+        .windows
+        .get_mut(&owner_window_id)
+        .expect("owner window is ensured before tab registration");
+    if !window.tab_order.contains(&tab_id) {
+        window.tab_order.push(tab_id.clone());
+    }
+    window.active_tab_id = Some(tab_id.clone());
+
+    advance_revision_if_changed(model, &previous);
+    let mut snapshot = snapshot_for_locked(model, &owner_window_id);
+    snapshot.tab_update = Some(WorkspaceTabUpdate::Connected { tab_id });
+    snapshot
 }

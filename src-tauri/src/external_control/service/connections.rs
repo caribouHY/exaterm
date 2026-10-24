@@ -437,18 +437,21 @@ async fn finish_created_session(
 
     let workspace_snapshot = runtime
         .workspace
-        .register_tab(WorkspaceTabRegisterInput {
-            window_id: None,
-            tab_id: None,
-            session_id,
-            connection_type: protocol,
-            title,
-            encoding,
-            terminal_mode,
-            connection_info,
-            is_manual_logging: auto_logging,
-            manual_log_file_path: auto_log_file_path,
-        })
+        .register_session_tab(
+            WorkspaceTabRegisterInput {
+                window_id: None,
+                tab_id: None,
+                session_id,
+                connection_type: protocol,
+                title,
+                encoding,
+                terminal_mode,
+                connection_info,
+                is_manual_logging: auto_logging,
+                manual_log_file_path: auto_log_file_path,
+            },
+            &runtime.terminals,
+        )
         .await;
     runtime.io.ui.emit_workspace_updated(&workspace_snapshot);
 
