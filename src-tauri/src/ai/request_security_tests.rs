@@ -73,8 +73,11 @@ fn assert_safe_error(error: &str, expected: &str) {
     }
 
     for enabled in [false, true] {
-        let dir =
-            std::env::temp_dir().join(format!("exaterm_ai_security_{}", uuid::Uuid::new_v4()));
+        let temp_dir = tempfile::Builder::new()
+            .prefix("exaterm_ai_security_")
+            .tempdir()
+            .unwrap();
+        let dir = temp_dir.path().join("logs");
         let mut written = false;
         append_chat_debug_log_if_enabled(
             enabled,
@@ -104,9 +107,7 @@ fn assert_safe_error(error: &str, expected: &str) {
         .unwrap();
         assert_eq!(written, enabled);
         assert_eq!(dir.exists(), enabled);
-        if enabled {
-            std::fs::remove_dir_all(dir).unwrap();
-        }
+        temp_dir.close().unwrap();
     }
 }
 
