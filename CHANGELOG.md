@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- Kept Gemini API keys out of request URLs and prevented AI transport and response errors from exposing credentials in displayed errors or AI debug logs, and limited AI redirects to the same origin.
+
 - Bounded incomplete Telnet subnegotiations and discarded oversized or malformed frames through their terminator, preventing unbounded memory growth.
 - Registered Telnet sessions before starting I/O, preserving immediate banners and negotiation replies and consistently finalizing early EOF, I/O failures, and concurrent disconnects.
 - Preserved disconnected status when terminal tabs are registered after an early connection close, and used current Telnet dimensions for subsequent NAWS negotiation.

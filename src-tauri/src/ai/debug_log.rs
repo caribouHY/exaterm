@@ -50,11 +50,24 @@ pub fn default_ai_debug_log_dir() -> PathBuf {
         .join("ai-debug")
 }
 
-pub fn append_chat_debug_log(input: ChatDebugLogInput<'_>) -> Result<PathBuf, String> {
-    append_chat_debug_log_to_dir(&default_ai_debug_log_dir(), input)
+pub fn append_chat_debug_log(enabled: bool, input: ChatDebugLogInput<'_>) -> Result<(), String> {
+    append_chat_debug_log_if_enabled(enabled, input, |input| {
+        append_chat_debug_log_to_dir(&default_ai_debug_log_dir(), input).map(|_| ())
+    })
 }
 
-fn append_chat_debug_log_to_dir(
+pub(super) fn append_chat_debug_log_if_enabled(
+    enabled: bool,
+    input: ChatDebugLogInput<'_>,
+    append: impl FnOnce(ChatDebugLogInput<'_>) -> Result<(), String>,
+) -> Result<(), String> {
+    if enabled {
+        append(input)?;
+    }
+    Ok(())
+}
+
+pub(super) fn append_chat_debug_log_to_dir(
     log_dir: &Path,
     input: ChatDebugLogInput<'_>,
 ) -> Result<PathBuf, String> {
