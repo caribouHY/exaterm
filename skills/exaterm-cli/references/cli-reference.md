@@ -197,6 +197,15 @@ when authenticating a jump host. MCP `connect_saved_profile` follows the same be
 SSH passwords and encrypted private-key passphrases are entered through the visible ExaTerm
 UI and must never be supplied as CLI arguments.
 
+The password prompt offers an unchecked “Remember password until ExaTerm exits” checkbox.
+After successful password authentication, opt-in values are reused across GUI, CLI and MCP
+connections to the same host, port, username and verified host key, including jump hosts.
+`auto` can use this when it reaches password authentication; keyboard-interactive, OTPs
+and key passphrases are excluded. Rejected cached values are discarded, with one manual
+entry requested if password authentication remains possible on the connection. No automatic
+reconnect is performed. SSH settings can clear all remembered passwords without disconnecting
+sessions; process exit also discards them. Nothing is persisted.
+
 ## Focusing a Session
 
 Use an exact session ID returned by `sessions list`:

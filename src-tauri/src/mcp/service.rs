@@ -101,7 +101,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "connect_saved_profile",
-        description = "Open a new ExaTerm SSH or Telnet session selected by profile ID and connection type when external profile connections are enabled. SSH passwords and encrypted key passphrases are requested in the ExaTerm UI."
+        description = "Open a new ExaTerm SSH or Telnet session selected by profile ID and connection type when external profile connections are enabled. SSH credentials are requested in the ExaTerm UI when needed. Password authentication may reuse passwords explicitly remembered in the GUI until ExaTerm exits; keyboard-interactive responses and key passphrases are not remembered."
     )]
     async fn connect_saved_profile(
         &self,
@@ -113,7 +113,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "connect_ssh",
-        description = "Open a new ExaTerm SSH session for an explicitly specified host when direct external connections are enabled. Passwords and passphrases are requested in the ExaTerm UI."
+        description = "Open a new ExaTerm SSH session for an explicitly specified host when direct external connections are enabled. Credentials are requested in the ExaTerm UI when needed. Password authentication may reuse passwords explicitly remembered in the GUI until ExaTerm exits; keyboard-interactive responses and key passphrases are not remembered."
     )]
     async fn connect_ssh(
         &self,

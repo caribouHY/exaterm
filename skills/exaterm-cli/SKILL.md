@@ -89,3 +89,11 @@ Read only the relevant sections:
 Report verified results, the relevant selected session or profile, and any timeout, missing
 completion evidence, truncation, or gap. Distinguish input sent, output observed, completion
 confirmed, and command success; a prompt alone does not prove the command succeeded.
+
+## Remembered SSH Passwords
+
+Password authentication may reuse a password explicitly remembered in the GUI for this
+ExaTerm process. Do not assume that every connection requires a new prompt or that the
+password can be retrieved through the CLI. `auto` only benefits when it reaches password
+authentication; keyboard-interactive, OTPs and key passphrases remain interactive. The user
+can clear all remembered passwords in SSH settings without disconnecting sessions.

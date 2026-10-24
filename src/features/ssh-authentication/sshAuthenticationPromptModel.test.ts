@@ -5,6 +5,7 @@ import {
   removeSshAuthenticationPrompt,
   updateSshAuthenticationPrompt,
   updateSshAuthenticationResponse,
+  updateSshPasswordMemory,
   type SshAuthenticationPromptPayload,
 } from "./sshAuthenticationPromptModel";
 
@@ -26,6 +27,26 @@ function prompt(
 }
 
 describe("SSH authentication prompt state", () => {
+  it("requires fresh opt-in for each password prompt and rejects interactive memory", () => {
+    const interactive = createSshAuthenticationPromptState(
+      prompt("interactive", [{ prompt: "Password:", echo: false }])
+    );
+    expect(updateSshPasswordMemory(interactive, true).rememberPassword).toBe(false);
+    const password = createSshAuthenticationPromptState({
+      ...interactive,
+      requestId: "password",
+      method: "password",
+    });
+    expect(password.rememberPassword).toBe(false);
+    expect(updateSshPasswordMemory(password, true).rememberPassword).toBe(true);
+    expect(
+      updateSshPasswordMemory(updateSshPasswordMemory(password, true), false).rememberPassword
+    ).toBe(false);
+    expect(
+      createSshAuthenticationPromptState({ ...password, requestId: "retry" }).rememberPassword
+    ).toBe(false);
+  });
+
   it("creates fields for multiple visible and hidden responses", () => {
     const state = createSshAuthenticationPromptState(
       prompt("request-1", [

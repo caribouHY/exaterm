@@ -2,6 +2,12 @@
 
 この資料は、ExaTerm のユーザー設定ファイル `config.json` を手動で確認・編集するための説明です。
 
+## 起動中のSSHパスワード記憶
+
+SSHのpassword認証画面で「ExaTerm終了までパスワードを記憶する」を選ぶと、認証に成功したパスワードをGUIプロセスのメモリ内だけに保持します。初期状態はオフです。同じホスト・ポート・ユーザー名・検証済みホスト鍵へのGUI、CLI、MCP接続で再利用し、踏み台の認証にも個別に指定できます。`auto`でpassword認証を使う場合も対象ですが、keyboard-interactive、OTP、秘密鍵のパスフレーズは記憶しません。記憶した値が拒否された場合は破棄し、接続が維持されていてpassword認証を続けられる場合に手入力を1回受け付けます。切断された場合は次回接続で入力します。
+
+記憶したパスワードはファイルやOS資格情報ストアには保存せず、ExaTerm終了時に失われます。ウィンドウを閉じてもGUIプロセスが残る場合は保持されます。SSH設定の「記憶したパスワードを消去」で全件を即時消去でき、接続中のセッションには影響しません。消去前から進行中の処理は再記憶できませんが、すでに送信した認証要求は取り消せません。ホスト鍵の確認・検証と外部制御の許可は引き続き必要です。
+
 ## ファイルの場所
 
 Windows では、設定ファイルは通常次の場所に保存されます。
@@ -170,13 +176,13 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 
 ## external_control
 
-| パラメータ                                | 型      | 既定値  | 説明                                                                                                                                                                                                                        |
-| ----------------------------------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `external_control.enabled`                | boolean | `false` | ローカル外部制御アクセスのマスター許可です。`true` にしても各インターフェースは自動で有効にならないため、`external_control.cli_enabled` または `external_control.mcp_enabled` を別途有効化します。                          |
-| `external_control.connect_enabled`        | boolean | `false` | `true` にすると、信頼済み外部制御クライアントが保存済み SSH/Telnet プロファイルやシリアルコンソールを開けます。SSH 認証情報は ExaTerm UI で入力し、外部クライアントへは公開されず保存もされません。                         |
-| `external_control.direct_connect_enabled` | boolean | `false` | `connect_enabled` とともに `true` にすると、信頼済み外部制御クライアントが明示指定した SSH/Telnet ホストへ直接接続できます。                                                                                                |
-| `external_control.mcp_enabled`            | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、ローカル MCP クライアントから `exaterm-mcp` 互換アダプターを使用できます。                                                                                      |
-| `external_control.cli_enabled`            | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、信頼済みローカルプログラムが `exaterm-cli` から共通のターミナル操作を呼び出し、JSON 結果を取得できます。詳細は[CLI ガイド](CLI_GUIDE.ja.md)を参照してください。 |
+| パラメータ                                | 型      | 既定値  | 説明                                                                                                                                                                                                                                                      |
+| ----------------------------------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `external_control.enabled`                | boolean | `false` | ローカル外部制御アクセスのマスター許可です。`true` にしても各インターフェースは自動で有効にならないため、`external_control.cli_enabled` または `external_control.mcp_enabled` を別途有効化します。                                                        |
+| `external_control.connect_enabled`        | boolean | `false` | `true` にすると、信頼済み外部制御クライアントが保存済み SSH/Telnet プロファイルやシリアルコンソールを開けます。SSH 認証情報は ExaTerm UI で入力し、外部クライアントへは公開されず永続保存もされません。password認証では上記の起動中の記憶を選択できます。 |
+| `external_control.direct_connect_enabled` | boolean | `false` | `connect_enabled` とともに `true` にすると、信頼済み外部制御クライアントが明示指定した SSH/Telnet ホストへ直接接続できます。                                                                                                                              |
+| `external_control.mcp_enabled`            | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、ローカル MCP クライアントから `exaterm-mcp` 互換アダプターを使用できます。                                                                                                                    |
+| `external_control.cli_enabled`            | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、信頼済みローカルプログラムが `exaterm-cli` から共通のターミナル操作を呼び出し、JSON 結果を取得できます。詳細は[CLI ガイド](CLI_GUIDE.ja.md)を参照してください。                               |
 
 古い設定ファイルには、従来の `mcp` オブジェクトや `saved_connections[*].mcp_enabled` が残っている場合があります。ExaTerm は読み込み時にそれらを自動移行します。新旧設定が併存する場合は、新しい `external_control` 側を優先し、旧設定は不足値の補完だけに使います。ExaTerm が設定を保存すると、新しい `external_control` と `external_control_enabled` だけが残ります。
 

@@ -24,6 +24,7 @@ struct TestServer {
     shell: Reply,
     requests: mpsc::UnboundedSender<(&'static str, server::Handle, ChannelId)>,
     target: Option<Box<TestServer>>,
+    runtime: bool,
 }
 
 fn host_key() -> PrivateKey {
@@ -97,6 +98,14 @@ impl server::Handler for TestServer {
     type Error = russh::Error;
 
     async fn auth_none(&mut self, user: &str) -> Result<server::Auth, Self::Error> {
+        if user == "password-runtime" {
+            return Ok(server::Auth::Reject {
+                proceed_with_methods: Some(russh::MethodSet::from(
+                    &[russh::MethodKind::Password][..],
+                )),
+                partial_success: false,
+            });
+        }
         match user {
             "pty-reject" => self.pty = Reply::Failure,
             "shell-reject" => self.shell = Reply::Failure,
@@ -107,6 +116,25 @@ impl server::Handler for TestServer {
             _ => {}
         }
         Ok(server::Auth::Accept)
+    }
+
+    async fn auth_password(
+        &mut self,
+        user: &str,
+        password: &str,
+    ) -> Result<server::Auth, Self::Error> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/sh03-runtime");
+        let expected = std::fs::read_to_string(root.join("expected-password")).unwrap_or_default();
+        if user == "password-runtime" && !expected.is_empty() && password == expected {
+            Ok(server::Auth::Accept)
+        } else {
+            Ok(server::Auth::Reject {
+                proceed_with_methods: Some(russh::MethodSet::from(
+                    &[russh::MethodKind::Password][..],
+                )),
+                partial_success: false,
+            })
+        }
     }
 
     async fn channel_open_session(
@@ -128,7 +156,9 @@ impl server::Handler for TestServer {
         _modes: &[(Pty, u32)],
         session: &mut server::Session,
     ) -> Result<(), Self::Error> {
-        assert_eq!((cols, rows), (80, 24));
+        if !self.runtime {
+            assert_eq!((cols, rows), (80, 24));
+        }
         self.requests
             .send(("pty", session.handle(), channel))
             .unwrap();
@@ -214,6 +244,7 @@ async fn fixture(pty: Reply, shell: Reply, jump: bool) -> Fixture {
         shell,
         requests: requests.clone(),
         target: None,
+        runtime: false,
     };
     let server = if jump {
         TestServer {
@@ -221,6 +252,7 @@ async fn fixture(pty: Reply, shell: Reply, jump: bool) -> Fixture {
             shell,
             requests,
             target: Some(Box::new(target)),
+            runtime: false,
         }
     } else {
         target
@@ -349,7 +381,7 @@ async fn optimized_runtime_endpoint() {
             accepted = listener.accept() => {
                 let (stream, _) = accepted.unwrap();
                 let server = TestServer { pty: Reply::Success, shell: Reply::Success,
-                    requests: requests.clone(), target: None };
+                    requests: requests.clone(), target: None, runtime: true };
                 tokio::spawn(async move {
                     if let Ok(session) = server::run_stream(server_config(), stream, server).await {
                         let _ = session.await;

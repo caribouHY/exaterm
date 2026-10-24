@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { FeedbackMessage } from "../Common";
 import { open } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, FolderOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -41,6 +44,20 @@ export function SshSettings({
   onReloadCatalog,
 }: SshSettingsProps) {
   const { t } = useTranslation();
+  const [clearingPasswords, setClearingPasswords] = useState(false);
+  const [passwordClearResult, setPasswordClearResult] = useState<"success" | "error" | "">("");
+  const clearRememberedPasswords = async () => {
+    setClearingPasswords(true);
+    setPasswordClearResult("");
+    try {
+      await invoke("ssh_password_cache_clear");
+      setPasswordClearResult("success");
+    } catch {
+      setPasswordClearResult("error");
+    } finally {
+      setClearingPasswords(false);
+    }
+  };
 
   const selectDefaultPrivateKey = async () => {
     try {
@@ -75,6 +92,26 @@ export function SshSettings({
   return (
     <div className="settings-ssh">
       <div className="settings-section__title">{t("settings.ssh_settings")}</div>
+      <div className="settings-row">
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={clearingPasswords}
+          onClick={() => void clearRememberedPasswords()}
+        >
+          {t("settings.ssh_password_cache_clear")}
+        </button>
+        <p className="settings-help">{t("settings.ssh_password_cache_help")}</p>
+      </div>
+      {passwordClearResult && (
+        <FeedbackMessage tone={passwordClearResult === "success" ? "success" : "error"}>
+          {t(
+            passwordClearResult === "success"
+              ? "settings.ssh_password_cache_cleared"
+              : "settings.ssh_password_cache_clear_failed"
+          )}
+        </FeedbackMessage>
+      )}
       <div className="settings-row">
         <div className="settings-ssh__mode">
           <label className="label" htmlFor="settings-ssh-default-private-key">

@@ -448,5 +448,10 @@
   "backend_errors.ai_server_error": "{{provider}} is currently returning a server error. Try again later. {{detail}}",
   "backend_errors.ai_http_error": "{{provider}} returned HTTP {{status}}. Check your settings and selected model. {{detail}}",
   "settings.save_failed": "Failed to save settings.",
-  "ai.error_unknown": "Unknown AI provider error."
+  "ai.error_unknown": "Unknown AI provider error.",
+  "connection.remember_ssh_password": "Remember password until ExaTerm exits",
+  "settings.ssh_password_cache_clear": "Clear remembered passwords",
+  "settings.ssh_password_cache_help": "Clear all SSH passwords remembered during this run. Connected sessions stay connected.",
+  "settings.ssh_password_cache_cleared": "Remembered SSH passwords cleared.",
+  "settings.ssh_password_cache_clear_failed": "Failed to clear remembered SSH passwords."
 }

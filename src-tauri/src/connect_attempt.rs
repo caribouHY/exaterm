@@ -100,6 +100,16 @@ impl ConnectAttempt {
         }
     }
 
+    pub(crate) fn if_active(&self, operation: impl FnOnce()) {
+        let pending = self.state.pending.lock().unwrap_or_else(|e| e.into_inner());
+        if pending
+            .get(&self.request_id)
+            .is_some_and(|sender| !*sender.borrow())
+        {
+            operation();
+        }
+    }
+
     pub fn begin_completion(&mut self) -> bool {
         let mut pending = self
             .state
