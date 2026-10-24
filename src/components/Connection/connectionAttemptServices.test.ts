@@ -258,12 +258,14 @@ describe("production connection services with the real controller", () => {
       const h = setup();
       const data = input();
       data.tab = protocol;
-      data.selectedProfileIds[protocol] = "office-router";
+      if (protocol === "ssh") data.selectedProfileIds.ssh = "office-router";
+      else data.selectedProfileIds.telnet = "office-router";
       const profile = { id: "office-router", connection_type: protocol, host: "saved.invalid" };
       data.sshProfiles = protocol === "ssh" ? [profile] : [];
       data.telnetProfiles = protocol === "telnet" ? [profile] : [];
       const pending = h.controller.start(protocol, data);
-      data.selectedProfileIds[protocol] = "later-selection";
+      if (protocol === "ssh") data.selectedProfileIds.ssh = "later-selection";
+      else data.selectedProfileIds.telnet = "later-selection";
       profile.id = "renamed-after-start";
       await tick();
       if (protocol === "ssh") {
