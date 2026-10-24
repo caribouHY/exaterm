@@ -43,7 +43,7 @@ Major frontend areas are:
 - `src/features/workspace-tabs/`: window-local workspace projection, revision filtering, terminal and utility tab ordering, workspace event subscriptions, tab lifecycle, and cross-window movement requests.
 - `src/components/Terminal/`: xterm.js rendering, terminal input and output, resize handling, encoding support, and scrollback restoration.
 - `src/components/Connection/`: SSH, Serial, and Telnet forms, saved profiles, connection history, SSH host-key confirmation, and session creation.
-- `src/components/Settings/`: configuration editing and AI API-key save or clear flows.
+- `src/components/Settings/`: configuration editing and AI API-key save or clear flows. `settingsSaveController` owns the draft, saved baseline, submission snapshots, provider edit generations, resource results, and serialized key mutations. Successful config responses rebase subsequent edits onto the backend three-way merge result; successful key operations clear only their submitted input generation. Secret inputs remain private to the controller and password controls, outside public snapshots and errors. Key-only completion emits the existing configuration-update event so AI availability reloads.
 - `src/components/AI/`: provider and model selection and AI chat presentation.
 - `src/components/Log/`: session-log listing.
 - `src/components/TitleBar/`, `src/components/Terminal/TerminalTabs`, and `src/components/StatusBar/`: application navigation and terminal controls.

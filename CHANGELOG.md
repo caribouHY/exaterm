@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- Preserved edits made while settings or API keys are saving, tracked partial saves independently for safe retries, and refreshed AI availability after key-only saves and deletions.
+
 - Kept Gemini API keys out of request URLs and prevented AI transport and response errors from exposing credentials in displayed errors or AI debug logs, and limited AI redirects to the same origin.
 
 - Bounded incomplete Telnet subnegotiations and discarded oversized or malformed frames through their terminator, preventing unbounded memory growth.
