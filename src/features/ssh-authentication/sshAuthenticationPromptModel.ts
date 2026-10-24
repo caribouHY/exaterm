@@ -4,6 +4,7 @@ export interface SshAuthenticationPromptField {
 }
 
 export interface SshAuthenticationPromptPayload {
+  profileName?: string | null;
   requestId: string;
   phase: "jump" | "target";
   host: string;

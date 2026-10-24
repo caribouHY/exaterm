@@ -28,6 +28,7 @@ function input(): ConnectionInput {
     tab: "ssh",
     selectedProfileIds: { ssh: "", telnet: "" },
     sshProfiles: [],
+    telnetProfiles: [],
     ssh: {
       host: "target.invalid",
       port: "22",
@@ -101,6 +102,7 @@ describe("production connection services with the real controller", () => {
     expect(commandCalls(h, "ssh_connect")).toHaveLength(1);
     const options = commandCalls(h, "ssh_connect")[0][1]?.options;
     expect(options).toEqual({
+      profileName: null,
       host: "target.invalid",
       port: 22,
       username: "test",
@@ -159,6 +161,7 @@ describe("production connection services with the real controller", () => {
     await tick();
     const jump = currentPrompt(h);
     expect(jump.host).toBe("jump.invalid");
+    expect(jump.profileName).toBe("jump");
     h.controller.submitCredential(jump.requestId, jump.promptId, "jump-secret");
     await tick();
     const target = currentPrompt(h);
@@ -250,4 +253,46 @@ describe("production connection services with the real controller", () => {
       expect(recordHistoryMock).toHaveBeenCalledTimes(protocol === "telnet" ? 1 : 0);
     });
   }
+  for (const protocol of ["ssh", "telnet"] as const) {
+    it(`uses the selected ${protocol} profile name with edited endpoints and preserves log targets`, async () => {
+      const h = setup();
+      const data = input();
+      data.tab = protocol;
+      if (protocol === "ssh") data.selectedProfileIds.ssh = "office-router";
+      else data.selectedProfileIds.telnet = "office-router";
+      const profile = { id: "office-router", connection_type: protocol, host: "saved.invalid" };
+      data.sshProfiles = protocol === "ssh" ? [profile] : [];
+      data.telnetProfiles = protocol === "telnet" ? [profile] : [];
+      const pending = h.controller.start(protocol, data);
+      if (protocol === "ssh") data.selectedProfileIds.ssh = "later-selection";
+      else data.selectedProfileIds.telnet = "later-selection";
+      profile.id = "renamed-after-start";
+      await tick();
+      if (protocol === "ssh") {
+        const prompt = currentPrompt(h);
+        expect(prompt.profileName).toBe("office-router");
+        expect(prompt.host).toBe("target.invalid");
+        h.controller.submitCredential(prompt.requestId, prompt.promptId, "passphrase");
+        await tick();
+        expect(commandCalls(h, "ssh_connect")[0][1]).toMatchObject({
+          options: { profileName: "office-router", host: "target.invalid" },
+        });
+        h.connection.resolve({ session_id: "session" });
+      }
+      await pending;
+      expect(h.onConnect.mock.calls[0][2]).toBe("office-router");
+      expect(commandCalls(h, "logger_start_on_connection")[0][1]).toMatchObject({
+        target: protocol === "ssh" ? "test@target.invalid:22" : "telnet.invalid:23",
+      });
+      expect(recordHistoryMock).not.toHaveBeenCalled();
+    });
+  }
+  it("keeps endpoint titles when a profile is not selected", async () => {
+    const h = setup();
+    const data = input();
+    data.tab = "telnet";
+    data.telnetProfiles = [{ id: "unselected", connection_type: "telnet", host: data.telnet.host }];
+    await h.controller.start("telnet", data);
+    expect(h.onConnect.mock.calls[0][2]).toBe("telnet.invalid:23");
+  });
 });

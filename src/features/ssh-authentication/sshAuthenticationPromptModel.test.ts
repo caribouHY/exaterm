@@ -48,14 +48,19 @@ describe("SSH authentication prompt state", () => {
   });
 
   it("queues prompts in FIFO order and removes only the completed request", () => {
-    const first = prompt("first", [{ prompt: "Password:", echo: false }]);
+    const first = {
+      ...prompt("first", [{ prompt: "Password:", echo: false }]),
+      profileName: "target-profile",
+    };
     const second = {
       ...prompt("second", [{ prompt: "OTP:", echo: false }]),
       phase: "jump" as const,
+      profileName: "jump-profile",
     };
 
     const queue = enqueueSshAuthenticationPrompt(enqueueSshAuthenticationPrompt([], first), second);
     expect(queue.map((item) => item.requestId)).toEqual(["first", "second"]);
+    expect(queue.map((item) => item.profileName)).toEqual(["target-profile", "jump-profile"]);
     expect(removeSshAuthenticationPrompt(queue, "first").map((item) => item.requestId)).toEqual([
       "second",
     ]);

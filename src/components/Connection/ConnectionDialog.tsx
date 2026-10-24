@@ -405,6 +405,7 @@ export default function ConnectionDialog({
 
     selectedProfileIds,
     sshProfiles,
+    telnetProfiles,
     ssh: {
       host,
       port,

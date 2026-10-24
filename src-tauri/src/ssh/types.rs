@@ -8,6 +8,7 @@ pub struct SshConnectResult {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SshConnectOptions {
+    pub profile_name: Option<String>,
     pub host: String,
     pub port: u16,
     pub username: String,

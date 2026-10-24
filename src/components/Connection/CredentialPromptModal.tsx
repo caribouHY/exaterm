@@ -96,6 +96,7 @@ export function CredentialPromptModal({
         </ModalHeader>
         <ModalBody className="connection-credential-modal__body">
           <ModalTarget className="connection-credential-modal__target">
+            {credentialPrompt.profileName && <div>{credentialPrompt.profileName}</div>}
             {credentialPrompt.username}@{credentialPrompt.host}:{credentialPrompt.port}
           </ModalTarget>
           <ModalDescription className="connection-credential-modal__description">

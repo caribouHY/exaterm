@@ -60,6 +60,7 @@ export function SshAuthenticationPromptDialog({
           </ModalHeader>
           <ModalBody className="app-credential-modal__body">
             <ModalTarget className="app-credential-modal__target">
+              {prompt.profileName && <div>{prompt.profileName}</div>}
               {prompt.username}@{prompt.host}:{prompt.port}
             </ModalTarget>
             {prompt.instructions && (

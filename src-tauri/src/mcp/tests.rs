@@ -1948,7 +1948,8 @@ fn prepare_saved_profile_builds_connection_metadata() {
     assert_eq!(prepared.connection_type, "ssh");
     assert_eq!(prepared.profile_id, "dev");
     assert_eq!(prepared.target, "admin@192.0.2.10:2222");
-    assert_eq!(prepared.title, "admin@192.0.2.10");
+    assert_eq!(prepared.title, "dev");
+    assert_eq!(prepared.profile_name.as_deref(), Some("dev"));
     assert_eq!(prepared.encoding, "shift-jis");
     assert_eq!(prepared.terminal_mode, "arista_eos");
     assert_eq!(prepared.cols, 80);
@@ -2091,7 +2092,7 @@ async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
     let session_id = result.session_id.as_str();
     assert_eq!(result.connection_type, "ssh");
     assert_eq!(result.target, "admin@192.0.2.10:2200");
-    assert_eq!(result.title, "admin@192.0.2.10");
+    assert_eq!(result.title, "inside");
     assert_eq!(result.encoding, "shift-jis");
     assert_eq!(result.terminal_mode, "cisco_ios");
     assert!(result.auto_logging);
@@ -2099,7 +2100,7 @@ async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
     let snapshot = runtime.workspace.snapshot_for_window("main".into()).await;
     assert_eq!(snapshot.tabs.len(), 1);
     assert_eq!(snapshot.tabs[0].session_id, session_id);
-    assert_eq!(snapshot.tabs[0].title, "admin@192.0.2.10");
+    assert_eq!(snapshot.tabs[0].title, "inside");
     assert_eq!(snapshot.tabs[0].encoding, "shift-jis");
     assert_eq!(snapshot.tabs[0].terminal_mode, "cisco_ios");
     assert!(snapshot.tabs[0].is_manual_logging);
@@ -2182,7 +2183,7 @@ async fn service_connects_saved_telnet_profile_with_default_port() {
 
     assert_eq!(result.connection_type, "telnet");
     assert_eq!(result.target, "192.0.2.20:23");
-    assert_eq!(result.title, "192.0.2.20:23");
+    assert_eq!(result.title, "legacy");
     assert_eq!(result.encoding, "euc-jp");
     assert_eq!(result.terminal_mode, "general");
     let snapshot = runtime.workspace.snapshot_for_window("main".into()).await;
@@ -3759,4 +3760,107 @@ async fn service_uses_backend_pause_state_when_workspace_metadata_is_stale() {
             .unwrap()
             .1
     );
+}
+
+#[tokio::test]
+async fn profile_display_names_distinguish_saved_direct_from_direct_connections() {
+    let mut config = AppConfig::default();
+    config.external_control.connect_enabled = true;
+    config.external_control.direct_connect_enabled = true;
+    config.saved_connections = vec![
+        SavedConnection {
+            id: "direct".into(),
+            connection_type: "ssh".into(),
+            host: Some("target.example.test".into()),
+            username: Some("admin".into()),
+            auth_method: Some("public_key".into()),
+            private_key_path: Some("fixture-key".into()),
+            jump_profile_id: Some("bastion".into()),
+            ..SavedConnection::default()
+        },
+        SavedConnection {
+            id: "bastion".into(),
+            connection_type: "ssh".into(),
+            host: Some("jump.example.test".into()),
+            username: Some("jump-user".into()),
+            auth_method: Some("public_key".into()),
+            private_key_path: Some("fixture-key".into()),
+            ..SavedConnection::default()
+        },
+    ];
+    let (runtime, _config, protocol, ui, _logger, _trace) =
+        test_runtime_parts(config, Vec::new(), Some(test_logger()));
+    *ui.credential_result.lock().unwrap() = Ok(Some("credential".into()));
+    *ui.private_key_requires_passphrase.lock().unwrap() = Ok(true);
+    let service = ExternalControlService::new(runtime);
+    let result = service
+        .connect_saved_profile(ConnectSavedProfileArgs {
+            profile_id: "direct".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
+            cols: None,
+            rows: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(result.title, "direct");
+    assert_eq!(result.target, "admin@target.example.test:22");
+    let names = ui
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|call| match call {
+            TestUiCall::Credential(payload) => {
+                Some((payload.profile_name.clone(), payload.target.clone()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec![
+            (
+                Some("bastion".into()),
+                "jump-user@jump.example.test:22".into()
+            ),
+            (Some("direct".into()), "admin@target.example.test:22".into()),
+        ]
+    );
+    match &protocol.calls.lock().unwrap()[0] {
+        TestProtocolCall::ConnectSsh(request) => {
+            assert_eq!(request.options.profile_name.as_deref(), Some("direct"))
+        }
+        other => panic!("expected SSH request, got {other:?}"),
+    }
+    ui.calls.lock().unwrap().clear();
+    protocol.calls.lock().unwrap().clear();
+    let result = service
+        .connect_ssh(ConnectSshArgs {
+            host: "direct.example.test".into(),
+            username: "admin".into(),
+            port: None,
+            auth_method: Some(ExternalControlSshAuthMethod::PublicKey),
+            private_key_path: Some("fixture-key".into()),
+            jump_profile_id: None,
+            encoding: None,
+            terminal_mode: None,
+            cols: None,
+            rows: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(result.title, "admin@direct.example.test");
+    match &protocol.calls.lock().unwrap()[0] {
+        TestProtocolCall::ConnectSsh(request) => assert_eq!(request.options.profile_name, None),
+        other => panic!("expected SSH request, got {other:?}"),
+    }
+    for call in ui.calls.lock().unwrap().iter() {
+        if let TestUiCall::Credential(payload) = call {
+            assert_eq!(payload.profile_name, None);
+            assert!(serde_json::to_value(payload)
+                .unwrap()
+                .get("profile_name")
+                .is_none());
+        }
+    }
 }

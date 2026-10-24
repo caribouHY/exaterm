@@ -31,6 +31,8 @@ pub struct SshAuthenticationPrompt {
 pub struct SshAuthenticationPromptPayload {
     pub request_id: String,
     pub phase: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_name: Option<String>,
     pub host: String,
     pub port: u16,
     pub username: String,
@@ -72,6 +74,7 @@ pub(super) struct SshAuthenticationContext<'a> {
     pub(super) host: &'a str,
     pub(super) port: u16,
     pub(super) username: &'a str,
+    pub(super) profile_name: Option<&'a str>,
 }
 
 impl SshAuthenticationPrompter {
@@ -95,9 +98,11 @@ impl SshAuthenticationPrompter {
         host: &'a str,
         port: u16,
         username: &'a str,
+        profile_name: Option<&'a str>,
     ) -> SshAuthenticationContext<'a> {
         SshAuthenticationContext {
             prompter: self,
+            profile_name,
             phase,
             host,
             port,
@@ -375,6 +380,7 @@ impl SshAuthenticationContext<'_> {
             .request(SshAuthenticationPromptPayload {
                 request_id: String::new(),
                 phase: self.phase.to_string(),
+                profile_name: self.profile_name.map(ToOwned::to_owned),
                 host: self.host.to_string(),
                 port: self.port,
                 username: self.username.to_string(),

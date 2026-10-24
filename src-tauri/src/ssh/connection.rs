@@ -243,7 +243,13 @@ async fn authenticate_target_session(
     diagnostic: &SshDiagnostic,
     prompter: &SshAuthenticationPrompter,
 ) -> Result<(), String> {
-    let auth_context = prompter.context("target", &options.host, options.port, &options.username);
+    let auth_context = prompter.context(
+        "target",
+        &options.host,
+        options.port,
+        &options.username,
+        options.profile_name.as_deref(),
+    );
     authenticate_target(handle, &options.username, auth, diagnostic, &auth_context).await?;
     Ok(())
 }

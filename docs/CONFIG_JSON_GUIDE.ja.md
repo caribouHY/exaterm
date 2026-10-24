@@ -224,7 +224,7 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
 `external_control.connect_enabled` も `true` の場合、外部クライアントは次の追加ツールを呼び出せます。
 
 - `list_connection_profiles`: 個別に外部制御利用を許可した保存済み SSH/Telnet プロファイルを一覧表示します。秘密鍵パスや認証情報は返しません。
-- `connect_saved_profile`: 保存済みプロファイルから新しい SSH/Telnet セッションを開きます。`profile_id` と `connection_type`（`"ssh"` または `"telnet"`）の両方が必須なので、異なる種別で同じ ID を使用できます。SSH 認証情報は ExaTerm UI で入力します。
+- `connect_saved_profile`: 保存済みプロファイルから新しい SSH/Telnet セッションを開きます。`profile_id` と `connection_type`（`"ssh"` または `"telnet"`）の両方が必須なので、異なる種別で同じ ID を使用できます。SSH 認証情報は ExaTerm UI で入力します。タブと結果の `title` はプロファイル名を使用し、`target` は実際の接続先を保持します。認証画面には名前と接続先を併記し、踏み台の認証では踏み台のプロファイル名を表示します。
 - `list_serial_ports`: 現在利用可能なシリアルポートを一覧表示します。
 - `connect_serial_console`: MCP ツール引数で指定したポート名と通信設定から新しいシリアルコンソールセッションを開き、ExaTerm のタブとして表示します。ポート名は利用可能なシリアルポートと完全一致する必要があります。
 

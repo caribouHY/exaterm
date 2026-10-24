@@ -92,6 +92,8 @@ exaterm-cli profiles connect --type ssh --profile-id router
 exaterm-cli profiles connect --type telnet --profile-id router
 ```
 
+保存済みプロファイル接続では、タブタイトルと結果の `title` にプロファイル名を使用し、`target` は実際の接続先を保持します。SSH認証画面には名前と実際の接続先を併記し、踏み台の認証には踏み台の名前を表示します。MCP の `connect_saved_profile` も同様です。
+
 `profiles list` で `--type` を省略すると、SSH と Telnet の両方を返します。
 ID と種別の両方が一致する必要があります。接続には `external_control.connect_enabled=true` と、
 対象プロファイルの外部制御許可が必要です。SSH パスワードや暗号化鍵のパスフレーズは

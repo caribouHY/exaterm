@@ -93,6 +93,8 @@ exaterm-cli profiles connect --type ssh --profile-id router
 exaterm-cli profiles connect --type telnet --profile-id router
 ```
 
+Saved-profile connections use the profile name as the tab title and result `title`; `target` remains the actual connection endpoint. SSH authentication prompts show the profile name alongside the actual endpoint, including the jump profile during jump-host authentication. This also applies to MCP `connect_saved_profile`.
+
 Omit `--type` from `profiles list` to return both SSH and Telnet profiles.
 The ID and type must match one profile. Profile connections require
 `external_control.connect_enabled=true`, and the selected profile must allow external

@@ -75,6 +75,7 @@ pub(super) async fn connect_jump_profile(
         &profile.host,
         profile.port,
         &profile.username,
+        Some(&profile.id),
     );
     if let Err(error) = run_with_attempt(
         context.attempt,
