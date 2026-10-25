@@ -4,6 +4,8 @@
 
 ### Added
 
+- Added saved SSH/Telnet profile duplication into an editable new-profile draft, retaining groups and connection settings without modifying the original profile.
+
 - Added searchable SSH/Telnet connection and SSH jump-profile selectors, with profile name, host, group, and memo matching while preserving recent connections and manual entry.
 
 - Added optional groups for saved SSH/Telnet profiles, with theme-matched group suggestions and grouped connection selection.

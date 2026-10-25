@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { ConnectionSearchSelect } from "./ConnectionSearchSelect";
 import { profileSearchSections } from "./connectionSearchModel";
 import { parseConnectionSource } from "./connectionHistoryModel";
@@ -34,6 +35,7 @@ export function SshConnectionForm({
 }: SshConnectionFormProps) {
   const { t } = useTranslation();
   const errors = formState.validationErrors;
+  const profileNameRef = useRef<HTMLInputElement>(null);
 
   return (
     <>
@@ -47,8 +49,15 @@ export function SshConnectionForm({
         onSelectSource={formActions.onSelectSource}
         onDeleteProfile={formActions.onDeleteProfile}
         onDeleteHistory={formActions.onDeleteHistory}
+        onCopyProfile={() => {
+          if (formActions.onCopyProfile()) profileNameRef.current?.focus();
+        }}
       />
-      <ProfileNameField value={formState.profileName} onChange={formActions.onProfileNameChange} />
+      <ProfileNameField
+        value={formState.profileName}
+        onChange={formActions.onProfileNameChange}
+        inputRef={profileNameRef}
+      />
       <ProfileGroupField
         value={formState.group}
         groupNames={profileOptions.groupNames}

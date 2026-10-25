@@ -2,6 +2,7 @@ import { useCallback, type Dispatch, type SetStateAction } from "react";
 import type { Encoding, SavedConnection, SshAuthMethod, TerminalMode } from "../../types";
 import { DEFAULT_TERMINAL_MODE, normalizeTerminalMode } from "../../utils/terminalModes";
 import type { ProfileSelectionState } from "./connectionDialogTypes";
+import { createProfileCopy } from "./connectionProfileCopy";
 import {
   normalizeEncoding,
   normalizeProfileExternalControlEnabled,
@@ -47,9 +48,8 @@ export const useConnectionProfileSelection = ({
   sshSetters,
   telnetSetters,
 }: UseConnectionProfileSelectionParams) => {
-  const applySshProfile = useCallback(
+  const applySshProfileFields = useCallback(
     (profile: SavedConnection, overridePort?: number | null) => {
-      setSelectedProfileIds((current) => ({ ...current, ssh: profile.id }));
       sshSetters.setProfileName(profile.id);
       sshSetters.setGroup(profile.group ?? "");
       sshSetters.setHost(profile.host ?? "");
@@ -65,12 +65,11 @@ export const useConnectionProfileSelection = ({
         normalizeProfileExternalControlEnabled(profile.external_control_enabled)
       );
     },
-    [setSelectedProfileIds, sshSetters]
+    [sshSetters]
   );
 
-  const applyTelnetProfile = useCallback(
+  const applyTelnetProfileFields = useCallback(
     (profile: SavedConnection, overridePort?: number | null) => {
-      setSelectedProfileIds((current) => ({ ...current, telnet: profile.id }));
       telnetSetters.setProfileName(profile.id);
       telnetSetters.setGroup(profile.group ?? "");
       telnetSetters.setHost(profile.host ?? "");
@@ -82,8 +81,40 @@ export const useConnectionProfileSelection = ({
         normalizeProfileExternalControlEnabled(profile.external_control_enabled)
       );
     },
-    [setSelectedProfileIds, telnetSetters]
+    [telnetSetters]
   );
+
+  const applySshProfile = useCallback(
+    (profile: SavedConnection, overridePort?: number | null) => {
+      setSelectedProfileIds((current) => ({ ...current, ssh: profile.id }));
+      applySshProfileFields(profile, overridePort);
+    },
+    [setSelectedProfileIds, applySshProfileFields]
+  );
+
+  const applyTelnetProfile = useCallback(
+    (profile: SavedConnection, overridePort?: number | null) => {
+      setSelectedProfileIds((current) => ({ ...current, telnet: profile.id }));
+      applyTelnetProfileFields(profile, overridePort);
+    },
+    [setSelectedProfileIds, applyTelnetProfileFields]
+  );
+
+  const copySshProfile = (baseName: string): boolean => {
+    const source = sshProfiles.find((profile) => profile.id === selectedProfileIds.ssh);
+    if (!source) return false;
+    applySshProfileFields(createProfileCopy(source, sshProfiles, baseName));
+    setSelectedProfileIds((current) => ({ ...current, ssh: "" }));
+    return true;
+  };
+
+  const copyTelnetProfile = (baseName: string): boolean => {
+    const source = telnetProfiles.find((profile) => profile.id === selectedProfileIds.telnet);
+    if (!source) return false;
+    applyTelnetProfileFields(createProfileCopy(source, telnetProfiles, baseName));
+    setSelectedProfileIds((current) => ({ ...current, telnet: "" }));
+    return true;
+  };
 
   const resetSshProfileFields = useCallback(() => {
     sshSetters.setProfileName("");
@@ -133,6 +164,8 @@ export const useConnectionProfileSelection = ({
   );
 
   return {
+    copySshProfile,
+    copyTelnetProfile,
     applySshProfile,
     applyTelnetProfile,
     resetSshProfileFields,

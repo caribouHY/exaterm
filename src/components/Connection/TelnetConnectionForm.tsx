@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   TelnetFormActions,
@@ -28,6 +29,7 @@ export function TelnetConnectionForm({
 }: TelnetConnectionFormProps) {
   const { t } = useTranslation();
   const errors = formState.validationErrors;
+  const profileNameRef = useRef<HTMLInputElement>(null);
 
   return (
     <>
@@ -41,8 +43,15 @@ export function TelnetConnectionForm({
         onSelectSource={formActions.onSelectSource}
         onDeleteProfile={formActions.onDeleteProfile}
         onDeleteHistory={formActions.onDeleteHistory}
+        onCopyProfile={() => {
+          if (formActions.onCopyProfile()) profileNameRef.current?.focus();
+        }}
       />
-      <ProfileNameField value={formState.profileName} onChange={formActions.onProfileNameChange} />
+      <ProfileNameField
+        value={formState.profileName}
+        onChange={formActions.onProfileNameChange}
+        inputRef={profileNameRef}
+      />
       <ProfileGroupField
         value={formState.group}
         groupNames={profileOptions.groupNames}

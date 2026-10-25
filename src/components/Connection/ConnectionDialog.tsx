@@ -637,6 +637,20 @@ export default function ConnectionDialog({
     validationErrors: formValidation.ssh.errors,
   };
   const sshFormActions: SshFormActions = {
+    onCopyProfile: () => {
+      if (
+        !profileSelection.copySshProfile(
+          t("connection.profile_copy_name", { name: selectedProfileIds.ssh })
+        )
+      ) {
+        setError(t("connection.profile_copy_unavailable"));
+        return false;
+      }
+      savedProfiles.preserveDraft("ssh");
+      setError("");
+      setSelectedHistoryIds((current) => ({ ...current, ssh: "" }));
+      return true;
+    },
     onSelectSource: handleSelectSshSource,
     onDeleteProfile: () => {
       void handleDeleteProfile("ssh");
@@ -708,6 +722,20 @@ export default function ConnectionDialog({
     validationErrors: formValidation.telnet.errors,
   };
   const telnetFormActions: TelnetFormActions = {
+    onCopyProfile: () => {
+      if (
+        !profileSelection.copyTelnetProfile(
+          t("connection.profile_copy_name", { name: selectedProfileIds.telnet })
+        )
+      ) {
+        setError(t("connection.profile_copy_unavailable"));
+        return false;
+      }
+      savedProfiles.preserveDraft("telnet");
+      setError("");
+      setSelectedHistoryIds((current) => ({ ...current, telnet: "" }));
+      return true;
+    },
     onSelectSource: handleSelectTelnetSource,
     onDeleteProfile: () => {
       void handleDeleteProfile("telnet");

@@ -39,6 +39,7 @@ describe("saved profile group fields", () => {
         onSelectSource: vi.fn(),
         onDeleteProfile: vi.fn(),
         onDeleteHistory: vi.fn(),
+        onCopyProfile: vi.fn(),
       })
     );
     expect(markup).toContain('aria-haspopup="listbox"');
@@ -61,5 +62,38 @@ describe("saved profile group fields", () => {
     expect(markup).toContain('aria-autocomplete="list"');
     expect(markup).toContain('placeholder="connection.profile_ungrouped"');
     expect(markup).not.toContain("required");
+  });
+});
+
+describe("profile duplication controls", () => {
+  function renderSelector(overrides: Partial<Parameters<typeof ProfileSelector>[0]> = {}) {
+    return renderToStaticMarkup(
+      createElement(ProfileSelector, {
+        selectedProfileId: "router",
+        selectedHistoryId: "",
+        profiles: [{ id: "router", connection_type: "ssh" }],
+        historyEntries: [],
+        getDisplayName: (profile) => profile.id,
+        getHistoryDisplayName: (entry) => entry.id,
+        onSelectSource: vi.fn(),
+        onDeleteProfile: vi.fn(),
+        onDeleteHistory: vi.fn(),
+        onCopyProfile: vi.fn(),
+        ...overrides,
+      })
+    );
+  }
+
+  it("offers duplication only for a saved profile, alongside deletion", () => {
+    expect(renderSelector()).toContain("connection.profile_copy");
+    expect(renderSelector()).toContain("connection.profile_delete");
+    expect(renderSelector({ selectedProfileId: "" })).not.toContain("connection.profile_copy");
+    expect(renderSelector({ selectedHistoryId: "recent", selectedProfileId: "" })).not.toContain(
+      "connection.profile_copy"
+    );
+  });
+
+  it("disables duplication when a selected saved profile is unavailable", () => {
+    expect(renderSelector({ profiles: [] })).toContain('disabled=""');
   });
 });

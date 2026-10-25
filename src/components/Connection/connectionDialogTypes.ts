@@ -92,6 +92,7 @@ export interface SshFormState {
 }
 
 export interface SshFormActions {
+  onCopyProfile: () => boolean;
   onSelectSource: (value: string) => void;
   onDeleteProfile: () => void;
   onDeleteHistory: () => void;
@@ -135,6 +136,7 @@ export interface TelnetFormState {
 }
 
 export interface TelnetFormActions {
+  onCopyProfile: () => boolean;
   onSelectSource: (value: string) => void;
   onDeleteProfile: () => void;
   onDeleteHistory: () => void;
