@@ -138,7 +138,9 @@ export function ProfileGroupField({ value, groupNames, onChange }: ProfileGroupF
               onPointerMove={() => {
                 setHighlighted(index);
               }}
-              onClick={() => select(name)}
+              onClick={() => {
+                select(name);
+              }}
             >
               {name || t("connection.profile_ungrouped")}
             </button>
