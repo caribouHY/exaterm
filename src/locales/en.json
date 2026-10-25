@@ -172,6 +172,8 @@
   "connection.history_delete": "Remove from History",
   "connection.history_load_failed": "Failed to load connection history. Manual entry and saved profiles are still available.",
   "connection.history_delete_failed": "Failed to remove the connection history entry.",
+  "connection.profile_group": "Group",
+  "connection.profile_ungrouped": "Ungrouped",
   "connection.profile_name": "Profile Name",
   "connection.profile_name_placeholder": "router-office",
   "connection.profile_save": "Save Profile",

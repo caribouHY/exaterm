@@ -324,6 +324,7 @@ fn partial_nested_config_uses_field_defaults() {
     assert!(serialized["ssh"].get("allow_legacy_algorithms").is_none());
     assert_eq!(serialized["ssh"]["algorithm_mode"], "custom");
     assert_eq!(cfg.saved_connections[0].id, "dev box");
+    assert_eq!(cfg.saved_connections[0].group, None);
     assert_eq!(cfg.saved_connections[0].encoding, None);
     assert_eq!(cfg.saved_connections[0].terminal_mode, None);
     assert_eq!(cfg.saved_connections[0].auth_method, None);
@@ -855,4 +856,63 @@ fn shortcut_config_validates_modifier_and_function_key_rules() {
         shift: false,
     });
     assert!(validate_shortcut_config(&shortcuts).is_err());
+}
+
+#[test]
+fn saved_connection_groups_round_trip_and_normalize_legacy_values() {
+    for (input, expected) in [
+        (serde_json::json!(null), None),
+        (serde_json::json!(" \t "), None),
+        (serde_json::json!(" 拠点 A "), Some("拠点 A")),
+    ] {
+        let mut config: AppConfig = serde_json::from_value(serde_json::json!({
+            "saved_connections": [
+                {"id": "router", "connection_type": "ssh", "group": input,
+                 "jump_profile_id": "bastion", "external_control_enabled": false}
+            ]
+        }))
+        .unwrap();
+        assert_eq!(config.saved_connections[0].group.as_deref(), expected);
+        let file = TestConfigFile::new("profile-groups");
+        config_write_to_path(file.path(), &config).unwrap();
+        let (loaded, _) = config_read_from_path(file.path()).unwrap();
+        assert_eq!(loaded.saved_connections, config.saved_connections);
+
+        let mut edited = config.clone();
+        edited.terminal.font_size += 1;
+        config.saved_connections[0].group = Some("Changed".into());
+        let merged = merge_edited_config(&loaded, &edited, &config).unwrap();
+        assert_eq!(merged.saved_connections, config.saved_connections);
+    }
+}
+
+#[test]
+fn moving_and_clearing_groups_preserves_identity_references_and_other_profiles() {
+    let mut config = AppConfig::default();
+    let mut router = saved_connection("ssh", "router");
+    router.group = Some("Site A".into());
+    router.jump_profile_id = Some("bastion".into());
+    router.external_control_enabled = false;
+    let mut bastion = saved_connection("ssh", "bastion");
+    bastion.group = Some("Site A".into());
+    let mut telnet = saved_connection("telnet", "router");
+    telnet.group = Some("Site A".into());
+    config.saved_connections = vec![router.clone(), bastion.clone(), telnet.clone()];
+
+    for (group, expected) in [(" Site B ", Some("Site B")), ("  ", None)] {
+        router.group = Some(group.into());
+        assert!(upsert_saved_connection(&mut config, Some("router"), router.clone()).unwrap());
+        let updated = &config.saved_connections[0];
+        assert_eq!(updated.group.as_deref(), expected);
+        assert_eq!(updated.id, "router");
+        assert_eq!(updated.jump_profile_id.as_deref(), Some("bastion"));
+        assert!(!updated.external_control_enabled);
+        assert_eq!(config.saved_connections[1], bastion);
+        assert_eq!(config.saved_connections[2], telnet);
+        assert!(!upsert_saved_connection(&mut config, Some("router"), router.clone()).unwrap());
+    }
+
+    let mut duplicate = router;
+    duplicate.group = Some("Different group".into());
+    assert!(upsert_saved_connection(&mut config, None, duplicate).is_err());
 }

@@ -77,6 +77,7 @@ export interface SshFormState {
   selectedProfileId: string;
   selectedHistoryId: string;
   profileName: string;
+  group: string;
   host: string;
   port: string;
   username: string;
@@ -95,6 +96,7 @@ export interface SshFormActions {
   onDeleteProfile: () => void;
   onDeleteHistory: () => void;
   onProfileNameChange: (value: string) => void;
+  onGroupChange: (value: string) => void;
   onHostChange: (value: string) => void;
   onPortChange: (value: string) => void;
   onUsernameChange: (value: string) => void;
@@ -111,6 +113,7 @@ export interface SshFormActions {
 
 export interface SshProfileOptions {
   profiles: SavedConnection[];
+  groupNames: string[];
   historyEntries: ConnectionHistoryEntry[];
   jumpProfiles: SavedConnection[];
   getDisplayName: (profile: SavedConnection) => string;
@@ -121,6 +124,7 @@ export interface TelnetFormState {
   selectedProfileId: string;
   selectedHistoryId: string;
   profileName: string;
+  group: string;
   host: string;
   port: string;
   encoding: Encoding;
@@ -135,6 +139,7 @@ export interface TelnetFormActions {
   onDeleteProfile: () => void;
   onDeleteHistory: () => void;
   onProfileNameChange: (value: string) => void;
+  onGroupChange: (value: string) => void;
   onHostChange: (value: string) => void;
   onPortChange: (value: string) => void;
   onPortEnter: () => void;
@@ -147,6 +152,7 @@ export interface TelnetFormActions {
 
 export interface TelnetProfileOptions {
   profiles: SavedConnection[];
+  groupNames: string[];
   historyEntries: ConnectionHistoryEntry[];
   getDisplayName: (profile: SavedConnection) => string;
   getHistoryDisplayName: (entry: ConnectionHistoryEntry) => string;

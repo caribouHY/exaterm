@@ -15,6 +15,7 @@ interface UseConnectionProfileSelectionParams {
   setSelectedProfileIds: Dispatch<SetStateAction<ProfileSelectionState>>;
   sshSetters: {
     setProfileName: (value: string) => void;
+    setGroup: (value: string) => void;
     setHost: (value: string) => void;
     setPort: (value: string) => void;
     setUsername: (value: string) => void;
@@ -28,6 +29,7 @@ interface UseConnectionProfileSelectionParams {
   };
   telnetSetters: {
     setProfileName: (value: string) => void;
+    setGroup: (value: string) => void;
     setHost: (value: string) => void;
     setPort: (value: string) => void;
     setEncoding: (value: Encoding) => void;
@@ -49,6 +51,7 @@ export const useConnectionProfileSelection = ({
     (profile: SavedConnection, overridePort?: number | null) => {
       setSelectedProfileIds((current) => ({ ...current, ssh: profile.id }));
       sshSetters.setProfileName(profile.id);
+      sshSetters.setGroup(profile.group ?? "");
       sshSetters.setHost(profile.host ?? "");
       sshSetters.setPort(String(overridePort ?? profile.port ?? 22));
       sshSetters.setUsername(profile.username ?? "");
@@ -69,6 +72,7 @@ export const useConnectionProfileSelection = ({
     (profile: SavedConnection, overridePort?: number | null) => {
       setSelectedProfileIds((current) => ({ ...current, telnet: profile.id }));
       telnetSetters.setProfileName(profile.id);
+      telnetSetters.setGroup(profile.group ?? "");
       telnetSetters.setHost(profile.host ?? "");
       telnetSetters.setPort(String(overridePort ?? profile.port ?? 23));
       telnetSetters.setEncoding(normalizeEncoding(profile.encoding));
@@ -83,6 +87,7 @@ export const useConnectionProfileSelection = ({
 
   const resetSshProfileFields = useCallback(() => {
     sshSetters.setProfileName("");
+    sshSetters.setGroup("");
     sshSetters.setAuthMethod("auto");
     sshSetters.setPrivateKeyPath("");
     sshSetters.setJumpProfileId("");
@@ -94,6 +99,7 @@ export const useConnectionProfileSelection = ({
 
   const resetTelnetProfileFields = useCallback(() => {
     telnetSetters.setProfileName("");
+    telnetSetters.setGroup("");
     telnetSetters.setEncoding("utf-8");
     telnetSetters.setTerminalMode(DEFAULT_TERMINAL_MODE);
     telnetSetters.setMemo("");

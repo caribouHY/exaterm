@@ -13,6 +13,7 @@ import {
   EncodingSelect,
   ProfileMetadataFields,
   ProfileNameField,
+  ProfileGroupField,
   ProfileSelector,
   TerminalModeSelect,
 } from "./ConnectionFormFields";
@@ -45,6 +46,11 @@ export function SshConnectionForm({
         onDeleteHistory={formActions.onDeleteHistory}
       />
       <ProfileNameField value={formState.profileName} onChange={formActions.onProfileNameChange} />
+      <ProfileGroupField
+        value={formState.group}
+        groupNames={profileOptions.groupNames}
+        onChange={formActions.onGroupChange}
+      />
       <div className="connection-dialog__row">
         <div>
           <ConnectionFieldLabelHtml htmlFor="connection-ssh-host" required>

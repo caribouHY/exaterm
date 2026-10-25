@@ -55,6 +55,7 @@ describe("SSH authentication methods", () => {
 
     const profile = createSshProfile({
       profileName: "router",
+      group: "",
       host: "router.example",
       port: "22",
       username: "operator",
@@ -74,6 +75,7 @@ describe("SSH authentication methods", () => {
   it("retains an optional private-key path for automatic profiles", () => {
     const profile = createSshProfile({
       profileName: "router",
+      group: "",
       host: "router.example",
       port: "22",
       username: "operator",
