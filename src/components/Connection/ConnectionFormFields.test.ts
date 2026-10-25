@@ -2,11 +2,29 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ProfileGroupField, ProfileSelector } from "./ConnectionFormFields";
+import { ConnectionSearchSelect } from "./ConnectionSearchSelect";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 describe("saved profile group fields", () => {
-  it("renders groups as headings while keeping profile source IDs unchanged", () => {
+  it("does not describe an unavailable profile as a manual or direct connection", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ConnectionSearchSelect, {
+        label: "Jump profile",
+        value: "profile:removed",
+        sections: [
+          {
+            key: "direct",
+            options: [{ value: "", label: "Direct", searchText: "", alwaysVisible: true }],
+          },
+        ],
+        onChange: vi.fn(),
+      })
+    );
+    expect(markup).toContain("connection.profile_unavailable");
+    expect(markup).not.toContain("connection.profile_manual");
+  });
+  it("renders the selected profile independently of the closed search menu", () => {
     const markup = renderToStaticMarkup(
       createElement(ProfileSelector, {
         selectedProfileId: "router",
@@ -23,10 +41,10 @@ describe("saved profile group fields", () => {
         onDeleteHistory: vi.fn(),
       })
     );
-    expect(markup).toContain('label="connection.profile_saved / Site &lt;A&gt;"');
-    expect(markup).toContain('label="connection.profile_saved / connection.profile_ungrouped"');
-    expect(markup).toContain('value="profile:router" selected=""');
-    expect(markup).toContain('value=""');
+    expect(markup).toContain('aria-haspopup="listbox"');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain("router");
+    expect(markup).toContain("connection.profile_delete");
   });
 
   it("offers existing group names and allows a new name or an empty value", () => {

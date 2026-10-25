@@ -4,6 +4,8 @@
 
 ### Added
 
+- Added searchable SSH/Telnet connection and SSH jump-profile selectors, with profile name, host, group, and memo matching while preserving recent connections and manual entry.
+
 - Added optional groups for saved SSH/Telnet profiles, with theme-matched group suggestions and grouped connection selection.
 
 - Added opt-in SSH password reuse until ExaTerm exits across GUI, CLI, MCP, and jump-host connections, with a clear action in SSH settings and no persistent password storage.
