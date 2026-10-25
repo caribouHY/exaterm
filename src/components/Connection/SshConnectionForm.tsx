@@ -1,3 +1,6 @@
+import { ConnectionSearchSelect } from "./ConnectionSearchSelect";
+import { profileSearchSections } from "./connectionSearchModel";
+import { parseConnectionSource } from "./connectionHistoryModel";
 import { FolderOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -168,24 +171,33 @@ export function SshConnectionForm({
           )}
         </div>
       )}
-      <div>
-        <label className="label">{t("connection.jump_profile")}</label>
-        <select
-          className="select"
-          style={{ width: "100%" }}
-          value={formState.jumpProfileId}
-          onChange={(event) => {
-            formActions.onJumpProfileChange(event.target.value);
-          }}
-        >
-          <option value="">{t("connection.jump_profile_none")}</option>
-          {profileOptions.jumpProfiles.map((profile) => (
-            <option key={profile.id} value={profile.id}>
-              {profileOptions.getDisplayName(profile)}
-            </option>
-          ))}
-        </select>
-      </div>
+      <ConnectionSearchSelect
+        label={t("connection.jump_profile")}
+        value={formState.jumpProfileId ? `profile:${formState.jumpProfileId}` : ""}
+        sections={[
+          {
+            key: "direct",
+            options: [
+              {
+                value: "",
+                label: t("connection.jump_profile_none"),
+                searchText: "",
+                alwaysVisible: true,
+              },
+            ],
+          },
+          ...profileSearchSections(
+            profileOptions.jumpProfiles,
+            profileOptions.getDisplayName,
+            t("connection.profile_saved"),
+            t("connection.profile_ungrouped")
+          ),
+        ]}
+        onChange={(value) => {
+          const source = parseConnectionSource(value);
+          formActions.onJumpProfileChange(source.kind === "profile" ? source.id : "");
+        }}
+      />
       <EncodingSelect value={formState.encoding} onChange={formActions.onEncodingChange} />
       <TerminalModeSelect
         value={formState.terminalMode}

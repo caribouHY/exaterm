@@ -2,9 +2,10 @@ import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import type { ConnectionHistoryEntry, Encoding, SavedConnection, TerminalMode } from "../../types";
 import { getTerminalModeOptions, normalizeTerminalMode } from "../../utils/terminalModes";
-import { encodeConnectionSource } from "./connectionHistoryModel";
 import { normalizeEncoding, SSH_ENCODINGS } from "./connectionProfileUtils";
-import { groupSavedProfiles } from "./connectionProfileGroups";
+import { encodeConnectionSource } from "./connectionHistoryModel";
+import { ConnectionSearchSelect } from "./ConnectionSearchSelect";
+import { historySearchSection, profileSearchSections } from "./connectionSearchModel";
 import type { ConnectionValidationError } from "./connectionFormValidation";
 
 interface ConnectionFieldLabelHtmlProps {
@@ -73,38 +74,36 @@ export function ProfileSelector({
 
   return (
     <div className="connection-dialog__profile">
-      <label className="label">{t("connection.source")}</label>
       <div className="connection-dialog__profile-row">
-        <select
-          className="select"
+        <ConnectionSearchSelect
+          label={t("connection.source")}
           value={encodeConnectionSource(selectedProfileId, selectedHistoryId)}
-          onChange={(event) => {
-            onSelectSource(event.target.value);
-          }}
-        >
-          <option value="">{t("connection.profile_manual")}</option>
-          {historyEntries.length > 0 && (
-            <optgroup label={t("connection.history_recent")}>
-              {historyEntries.map((entry) => (
-                <option key={entry.id} value={`history:${entry.id}`}>
-                  {getHistoryDisplayName(entry)}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {groupSavedProfiles(profiles).map(({ name, profiles: entries }) => (
-            <optgroup
-              key={JSON.stringify(name)}
-              label={`${t("connection.profile_saved")} / ${name ?? t("connection.profile_ungrouped")}`}
-            >
-              {entries.map((profile) => (
-                <option key={profile.id} value={`profile:${profile.id}`}>
-                  {getDisplayName(profile)}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+          sections={[
+            {
+              key: "manual",
+              options: [
+                {
+                  value: "",
+                  label: t("connection.profile_manual"),
+                  searchText: "",
+                  alwaysVisible: true,
+                },
+              ],
+            },
+            historySearchSection(
+              historyEntries,
+              getHistoryDisplayName,
+              t("connection.history_recent")
+            ),
+            ...profileSearchSections(
+              profiles,
+              getDisplayName,
+              t("connection.profile_saved"),
+              t("connection.profile_ungrouped")
+            ),
+          ]}
+          onChange={onSelectSource}
+        />
         {selectedHistoryId ? (
           <button className="btn btn-danger btn-sm" onClick={onDeleteHistory}>
             {t("connection.history_delete")}
