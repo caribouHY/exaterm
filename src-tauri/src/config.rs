@@ -498,6 +498,7 @@ fn default_saved_connection_external_control_enabled() -> bool {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SavedConnection {
     pub id: String,
+    pub group: Option<String>,
     pub connection_type: String,
     pub host: Option<String>,
     pub port: Option<u16>,
@@ -514,6 +515,7 @@ pub struct SavedConnection {
 #[derive(Debug, Clone, Default, Deserialize)]
 struct SavedConnectionInput {
     id: Option<String>,
+    group: Option<String>,
     connection_type: Option<String>,
     host: Option<String>,
     port: Option<u16>,
@@ -533,6 +535,7 @@ impl Default for SavedConnection {
     fn default() -> Self {
         Self {
             id: String::new(),
+            group: None,
             connection_type: String::new(),
             host: None,
             port: None,
@@ -556,6 +559,7 @@ impl<'de> Deserialize<'de> for SavedConnection {
         let input = SavedConnectionInput::deserialize(deserializer)?;
         Ok(Self {
             id: input.id.unwrap_or_default(),
+            group: normalize_saved_connection_group(input.group),
             connection_type: input.connection_type.unwrap_or_default(),
             host: input.host,
             port: input.port,
@@ -855,11 +859,18 @@ fn validate_saved_connection_identity(
     Ok(())
 }
 
+fn normalize_saved_connection_group(group: Option<String>) -> Option<String> {
+    group
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 fn upsert_saved_connection(
     config: &mut AppConfig,
     previous_id: Option<&str>,
-    profile: SavedConnection,
+    mut profile: SavedConnection,
 ) -> Result<bool, crate::command_error::BackendCommandError> {
+    profile.group = normalize_saved_connection_group(profile.group);
     if config.saved_connections.iter().any(|entry| {
         entry.connection_type == profile.connection_type
             && entry.id == profile.id

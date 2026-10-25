@@ -64,7 +64,9 @@ export default function ConnectionDialog({
   const [selectedProfileIds, setSelectedProfileIds] = useState({ ssh: "", telnet: "" });
   const [selectedHistoryIds, setSelectedHistoryIds] = useState({ ssh: "", telnet: "" });
   const [sshProfileName, setSshProfileName] = useState("");
+  const [sshGroup, setSshGroup] = useState("");
   const [telnetProfileName, setTelnetProfileName] = useState("");
+  const [telnetGroup, setTelnetGroup] = useState("");
   const [pendingStartupConnect, setPendingStartupConnect] = useState(false);
 
   const [host, setHost] = useState("192.168.1.1");
@@ -172,6 +174,7 @@ export default function ConnectionDialog({
       setSelectedProfileIds((current) => ({ ...current, ssh: "" }));
       setSelectedHistoryIds((current) => ({ ...current, ssh: "" }));
       setSshProfileName("");
+      setSshGroup("");
       setHost(info.host);
       setPort(String(info.port));
       setUsername(info.username);
@@ -192,6 +195,7 @@ export default function ConnectionDialog({
     setSelectedProfileIds((current) => ({ ...current, telnet: "" }));
     setSelectedHistoryIds((current) => ({ ...current, telnet: "" }));
     setTelnetProfileName("");
+    setTelnetGroup("");
     setTelnetHost(info.host);
     setTelnetPort(String(info.port));
     setTelnetEncoding(initialValues.encoding);
@@ -212,6 +216,7 @@ export default function ConnectionDialog({
     setSelectedProfileIds,
     sshSetters: {
       setProfileName: setSshProfileName,
+      setGroup: setSshGroup,
       setHost,
       setPort,
       setUsername,
@@ -225,6 +230,7 @@ export default function ConnectionDialog({
     },
     telnetSetters: {
       setProfileName: setTelnetProfileName,
+      setGroup: setTelnetGroup,
       setHost: setTelnetHost,
       setPort: setTelnetPort,
       setEncoding: setTelnetEncoding,
@@ -245,6 +251,7 @@ export default function ConnectionDialog({
     setSelectedProfileIds((current) => ({ ...current, ssh: "" }));
     setSelectedHistoryIds((current) => ({ ...current, ssh: entry.id }));
     setSshProfileName("");
+    setSshGroup("");
     setHost(info.host);
     setPort(String(info.port));
     setUsername(info.username);
@@ -267,6 +274,7 @@ export default function ConnectionDialog({
     setSelectedProfileIds((current) => ({ ...current, telnet: "" }));
     setSelectedHistoryIds((current) => ({ ...current, telnet: entry.id }));
     setTelnetProfileName("");
+    setTelnetGroup("");
     setTelnetHost(entry.connection_info.host);
     setTelnetPort(String(entry.connection_info.port));
     setTelnetEncoding(entry.encoding);
@@ -316,6 +324,7 @@ export default function ConnectionDialog({
       () =>
         createSshProfile({
           profileName: sshProfileName,
+          group: sshGroup,
           host,
           port,
           username,
@@ -341,6 +350,7 @@ export default function ConnectionDialog({
       () =>
         createTelnetProfile({
           profileName: telnetProfileName,
+          group: telnetGroup,
           host: telnetHost,
           port: telnetPort,
           encoding: telnetEncoding,
@@ -452,6 +462,7 @@ export default function ConnectionDialog({
       setSelectedProfileIds((current) => ({ ...current, ssh: "" }));
       setSelectedHistoryIds((current) => ({ ...current, ssh: "" }));
       setSshProfileName("");
+      setSshGroup("");
       setHost(request.host ?? "");
       setUsername(request.username ?? "");
       setPort(String(request.port ?? 22));
@@ -468,6 +479,7 @@ export default function ConnectionDialog({
     setSelectedProfileIds((current) => ({ ...current, telnet: "" }));
     setSelectedHistoryIds((current) => ({ ...current, telnet: "" }));
     setTelnetProfileName("");
+    setTelnetGroup("");
     setTelnetHost(target);
     setTelnetPort(String(requestPort ?? 23));
     setTelnetEncoding("utf-8");
@@ -611,6 +623,7 @@ export default function ConnectionDialog({
     selectedProfileId: selectedProfileIds.ssh,
     selectedHistoryId: selectedHistoryIds.ssh,
     profileName: sshProfileName,
+    group: sshGroup,
     host,
     port,
     username,
@@ -634,6 +647,10 @@ export default function ConnectionDialog({
     onProfileNameChange: (value) => {
       setError("");
       setSshProfileName(value);
+    },
+    onGroupChange: (value) => {
+      setError("");
+      setSshGroup(value);
     },
     onHostChange: (value) => {
       setError("");
@@ -681,6 +698,7 @@ export default function ConnectionDialog({
     selectedProfileId: selectedProfileIds.telnet,
     selectedHistoryId: selectedHistoryIds.telnet,
     profileName: telnetProfileName,
+    group: telnetGroup,
     host: telnetHost,
     port: telnetPort,
     encoding: telnetEncoding,
@@ -700,6 +718,10 @@ export default function ConnectionDialog({
     onProfileNameChange: (value) => {
       setError("");
       setTelnetProfileName(value);
+    },
+    onGroupChange: (value) => {
+      setError("");
+      setTelnetGroup(value);
     },
     onHostChange: (value) => {
       setError("");

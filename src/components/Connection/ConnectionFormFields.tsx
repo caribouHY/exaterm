@@ -4,6 +4,7 @@ import type { ConnectionHistoryEntry, Encoding, SavedConnection, TerminalMode } 
 import { getTerminalModeOptions, normalizeTerminalMode } from "../../utils/terminalModes";
 import { encodeConnectionSource } from "./connectionHistoryModel";
 import { normalizeEncoding, SSH_ENCODINGS } from "./connectionProfileUtils";
+import { groupSavedProfiles } from "./connectionProfileGroups";
 import type { ConnectionValidationError } from "./connectionFormValidation";
 
 interface ConnectionFieldLabelHtmlProps {
@@ -91,15 +92,18 @@ export function ProfileSelector({
               ))}
             </optgroup>
           )}
-          {profiles.length > 0 && (
-            <optgroup label={t("connection.profile_saved")}>
-              {profiles.map((profile) => (
+          {groupSavedProfiles(profiles).map(({ name, profiles: entries }) => (
+            <optgroup
+              key={JSON.stringify(name)}
+              label={`${t("connection.profile_saved")} / ${name ?? t("connection.profile_ungrouped")}`}
+            >
+              {entries.map((profile) => (
                 <option key={profile.id} value={`profile:${profile.id}`}>
                   {getDisplayName(profile)}
                 </option>
               ))}
             </optgroup>
-          )}
+          ))}
         </select>
         {selectedHistoryId ? (
           <button className="btn btn-danger btn-sm" onClick={onDeleteHistory}>
@@ -119,6 +123,8 @@ interface ProfileNameFieldProps {
   value: string;
   onChange: (value: string) => void;
 }
+
+export { ProfileGroupField } from "./ProfileGroupField";
 
 export function ProfileNameField({ value, onChange }: ProfileNameFieldProps) {
   const { t } = useTranslation();

@@ -172,6 +172,8 @@
   "connection.history_delete": "履歴から削除",
   "connection.history_load_failed": "接続履歴を読み込めませんでした。手動入力と保存済みプロファイルは引き続き利用できます。",
   "connection.history_delete_failed": "接続履歴を削除できませんでした。",
+  "connection.profile_group": "グループ",
+  "connection.profile_ungrouped": "未分類",
   "connection.profile_name": "プロファイル名",
   "connection.profile_name_placeholder": "office-router",
   "connection.profile_save": "プロファイルを保存",
