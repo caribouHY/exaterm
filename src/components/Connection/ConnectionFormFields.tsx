@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import type { ReactNode } from "react";
+import { useId, type ReactNode, type Ref } from "react";
 import type { ConnectionHistoryEntry, Encoding, SavedConnection, TerminalMode } from "../../types";
 import { getTerminalModeOptions, normalizeTerminalMode } from "../../utils/terminalModes";
 import { normalizeEncoding, SSH_ENCODINGS } from "./connectionProfileUtils";
@@ -57,6 +57,7 @@ interface ProfileSelectorProps {
   onSelectSource: (value: string) => void;
   onDeleteProfile: () => void;
   onDeleteHistory: () => void;
+  onCopyProfile: () => void;
 }
 
 export function ProfileSelector({
@@ -69,6 +70,7 @@ export function ProfileSelector({
   onSelectSource,
   onDeleteProfile,
   onDeleteHistory,
+  onCopyProfile,
 }: ProfileSelectorProps) {
   const { t } = useTranslation();
 
@@ -109,9 +111,20 @@ export function ProfileSelector({
             {t("connection.history_delete")}
           </button>
         ) : selectedProfileId ? (
-          <button className="btn btn-danger btn-sm" onClick={onDeleteProfile}>
-            {t("connection.profile_delete")}
-          </button>
+          <div className="connection-dialog__profile-buttons">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onCopyProfile}
+              title={t("connection.profile_copy_hint")}
+              disabled={!profiles.some((profile) => profile.id === selectedProfileId)}
+            >
+              {t("connection.profile_copy")}
+            </button>
+            <button type="button" className="btn btn-danger btn-sm" onClick={onDeleteProfile}>
+              {t("connection.profile_delete")}
+            </button>
+          </div>
         ) : null}
       </div>
     </div>
@@ -121,17 +134,23 @@ export function ProfileSelector({
 interface ProfileNameFieldProps {
   value: string;
   onChange: (value: string) => void;
+  inputRef?: Ref<HTMLInputElement>;
 }
 
 export { ProfileGroupField } from "./ProfileGroupField";
 
-export function ProfileNameField({ value, onChange }: ProfileNameFieldProps) {
+export function ProfileNameField({ value, onChange, inputRef }: ProfileNameFieldProps) {
   const { t } = useTranslation();
+  const id = useId();
 
   return (
     <div>
-      <label className="label">{t("connection.profile_name")}</label>
+      <label className="label" htmlFor={id}>
+        {t("connection.profile_name")}
+      </label>
       <input
+        id={id}
+        ref={inputRef}
         className="input"
         value={value}
         onChange={(event) => {

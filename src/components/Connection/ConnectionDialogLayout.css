@@ -186,6 +186,11 @@
   align-items: end;
 }
 
+.connection-dialog__profile-buttons {
+  display: flex;
+  gap: 6px;
+}
+
 .connection-dialog__search-select {
   min-width: 0;
 }
