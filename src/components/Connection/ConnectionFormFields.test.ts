@@ -40,7 +40,7 @@ describe("saved profile group fields", () => {
     expect(markup).toContain('value="New group"');
     expect(markup).toContain('role="combobox"');
     expect(markup).toContain('aria-expanded="false"');
-    expect(markup).not.toContain("<datalist");
+    expect(markup).toContain('aria-autocomplete="list"');
     expect(markup).toContain('placeholder="connection.profile_ungrouped"');
     expect(markup).not.toContain("required");
   });

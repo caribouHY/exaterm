@@ -19,7 +19,7 @@ export function ProfileGroupField({ value, groupNames, onChange }: ProfileGroupF
 
   useEffect(() => {
     if (open && highlighted >= 0) {
-      listRef.current?.children[highlighted]?.scrollIntoView({ block: "nearest" });
+      listRef.current?.children.item(highlighted)?.scrollIntoView({ block: "nearest" });
     }
   }, [open, highlighted]);
 
@@ -60,7 +60,9 @@ export function ProfileGroupField({ value, groupNames, onChange }: ProfileGroupF
             setOpen(true);
             setHighlighted(-1);
           }}
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            setOpen(true);
+          }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing || event.keyCode === 229) {
               event.stopPropagation();
@@ -87,7 +89,8 @@ export function ProfileGroupField({ value, groupNames, onChange }: ProfileGroupF
               !event.altKey
             ) {
               event.preventDefault();
-              if (highlighted >= 0 && highlighted < options.length) select(options[highlighted]);
+              const option = options.find((_name, index) => index === highlighted);
+              if (option !== undefined) select(option);
               else setOpen(false);
             } else if (event.key === "Tab") {
               setOpen(false);
@@ -100,7 +103,9 @@ export function ProfileGroupField({ value, groupNames, onChange }: ProfileGroupF
           aria-label={t("connection.profile_group")}
           aria-expanded={open}
           aria-controls={open ? `${id}-groups` : undefined}
-          onMouseDown={(event) => event.preventDefault()}
+          onMouseDown={(event) => {
+            event.preventDefault();
+          }}
           onClick={() => {
             inputRef.current?.focus();
             setOpen(!open);
@@ -127,8 +132,12 @@ export function ProfileGroupField({ value, groupNames, onChange }: ProfileGroupF
               role="option"
               aria-selected={name === value.trim()}
               tabIndex={-1}
-              onMouseDown={(event) => event.preventDefault()}
-              onPointerMove={() => setHighlighted(index)}
+              onMouseDown={(event) => {
+                event.preventDefault();
+              }}
+              onPointerMove={() => {
+                setHighlighted(index);
+              }}
               onClick={() => select(name)}
             >
               {name || t("connection.profile_ungrouped")}
