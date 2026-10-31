@@ -105,9 +105,13 @@ export function createConnectionDependencies(
         encoding = ssh.encoding;
         terminalMode = ssh.terminalMode;
       } else if (tab === "telnet") {
+        const profileName = input.telnetProfiles.find(
+          (profile) => profile.id === input.selectedProfileIds.telnet
+        )?.id;
         connect = (requestId) =>
           invoke<string>("telnet_connect", {
             input: {
+              profileName: profileName ?? null,
               host: telnet.host,
               port: Number(telnet.port),
               cols: 120,
@@ -118,9 +122,7 @@ export function createConnectionDependencies(
           });
         info = { kind: "telnet", host: telnet.host, port: Number(telnet.port) };
         target = `${telnet.host}:${telnet.port}`;
-        title =
-          input.telnetProfiles.find((profile) => profile.id === input.selectedProfileIds.telnet)
-            ?.id || target;
+        title = profileName || target;
         encoding = telnet.encoding;
         terminalMode = telnet.terminalMode;
       } else {

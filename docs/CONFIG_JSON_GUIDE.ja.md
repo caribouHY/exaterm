@@ -192,7 +192,7 @@ HTTP MCP transport は削除されました。古い設定ファイルに残っ�
 
 MCP が有効な場合、外部クライアントは次のツールを呼び出せます。
 
-- `list_terminal_sessions`: ユーザーが ExaTerm で開いたターミナルセッションを一覧表示します。
+- `list_terminal_sessions`: ターミナルセッションを一覧表示します。GUI・CLI・MCPから保存済みSSH/Telnetプロファイルで接続した場合、接続開始時のIDを `profile_id` に含みます。直接接続・履歴・Serial接続は `null` です。接続設定の未保存編集や、その後のプロファイル名変更・削除、タブ名変更、ウィンドウ移動、切断でもIDを保持し、実際の接続先は `target` で示します。SSH/Telnet間でIDが重複できるため、`protocol` と併せて判別します。
 - `disconnect_terminal_session`: 実行中ログをflushして停止した後、タブとスクロールバックを残したままセッションを切断します。
 - `focus_terminal_session`: `session_id` を受け取り、既存タブを選択して所有ウィンドウを表示・最小化解除・前面表示します。GUI反映確認後に `session_id`、`window_id`、`tab_id`、`focused: true` を返します。切断済みタブも対象にでき、表示中のダイアログは維持します。GUI応答の期限は別ウィンドウへの移動時の1回の再要求を含めて5秒です。OSの前面表示制約は適用されます。
 - `read_terminal_output`: 必須の `mode` 引数に応じてセッション出力を読み取るか待機します。

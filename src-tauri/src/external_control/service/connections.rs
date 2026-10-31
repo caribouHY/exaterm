@@ -268,6 +268,7 @@ async fn connect_prepared_telnet_profile(
         .io
         .protocol
         .connect_telnet(ExternalControlTelnetConnectRequest {
+            profile_name: prepared.profile_name.clone(),
             host: host.to_string(),
             port,
             cols: prepared.cols,

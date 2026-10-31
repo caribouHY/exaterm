@@ -24,6 +24,7 @@ const TELNET_CONNECT_DUPLICATE: &str =
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TelnetConnectInput {
+    pub profile_name: Option<String>,
     pub host: String,
     pub port: u16,
     pub cols: u32,
@@ -41,6 +42,7 @@ pub(crate) struct TelnetConnectRuntime<'a> {
 }
 
 pub(crate) struct TelnetConnectRequest {
+    pub profile_name: Option<String>,
     pub host: String,
     pub port: u16,
     pub cols: u32,
@@ -76,6 +78,7 @@ pub async fn telnet_connect(
     input: TelnetConnectInput,
 ) -> Result<String, crate::command_error::BackendCommandError> {
     let TelnetConnectInput {
+        profile_name,
         host,
         port,
         cols,
@@ -107,6 +110,7 @@ pub async fn telnet_connect(
             logger: Some(&logger),
         },
         TelnetConnectRequest {
+            profile_name,
             host,
             port,
             cols,
@@ -132,6 +136,7 @@ pub(crate) async fn connect(
         logger: logger_state,
     } = runtime;
     let TelnetConnectRequest {
+        profile_name,
         host,
         port,
         cols,
@@ -150,6 +155,7 @@ pub(crate) async fn connect(
             session_id: session_id.clone(),
         },
         TelnetConnectRequest {
+            profile_name,
             host,
             port,
             cols,

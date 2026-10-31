@@ -278,6 +278,10 @@ describe("production connection services with the real controller", () => {
           options: { profileName: "office-router", host: "target.invalid" },
         });
         h.connection.resolve({ session_id: "session" });
+      } else {
+        expect(commandCalls(h, "telnet_connect")[0][1]).toMatchObject({
+          input: { profileName: "office-router", host: "telnet.invalid" },
+        });
       }
       await pending;
       expect(h.onConnect.mock.calls[0][2]).toBe("office-router");
@@ -294,5 +298,8 @@ describe("production connection services with the real controller", () => {
     data.telnetProfiles = [{ id: "unselected", connection_type: "telnet", host: data.telnet.host }];
     await h.controller.start("telnet", data);
     expect(h.onConnect.mock.calls[0][2]).toBe("telnet.invalid:23");
+    expect(commandCalls(h, "telnet_connect")[0][1]).toMatchObject({
+      input: { profileName: null },
+    });
   });
 });

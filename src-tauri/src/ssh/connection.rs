@@ -482,11 +482,12 @@ async fn register_connected_session(
         .await
         .insert(session_id.to_string(), Arc::new(Mutex::new(session)));
     terminals
-        .register_session_with_encoding(
+        .register_session_with_profile(
             session_id.to_string(),
             TerminalProtocol::Ssh,
             format!("{}:{}", options.host, options.port),
             options.encoding.clone(),
+            options.profile_name.clone(),
         )
         .await;
 }

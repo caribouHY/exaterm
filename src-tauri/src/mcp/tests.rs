@@ -476,6 +476,7 @@ fn all_external_control_results_preserve_the_public_json_contract() {
     assert_response_contract(
         ExternalControlResponse::ListTerminalSessions(ListTerminalSessionsResult {
             sessions: vec![crate::terminal_control::TerminalSessionInfo {
+                profile_id: Some("office-router".into()),
                 session_id: "s1".into(),
                 protocol: TerminalProtocol::Ssh,
                 target: "admin@example.test:22".into(),
@@ -490,7 +491,8 @@ fn all_external_control_results_preserve_the_public_json_contract() {
                 "protocol": "ssh",
                 "target": "admin@example.test:22",
                 "encoding": "utf-8",
-                "status": "connected"
+                "status": "connected",
+                "profile_id": "office-router"
             }]
         }),
     );
@@ -1277,7 +1279,13 @@ async fn control_service_dispatches_to_in_process_backend() {
     let runtime = test_runtime();
     runtime
         .terminals
-        .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+        .register_session_with_profile(
+            "s1".into(),
+            TerminalProtocol::Ssh,
+            "host:22".into(),
+            None,
+            Some("office-router".into()),
+        )
         .await;
     let server = ExaTermMcpServer::with_service(ExternalControlService::new(runtime));
 
@@ -1288,6 +1296,7 @@ async fn control_service_dispatches_to_in_process_backend() {
 
     assert_eq!(result["sessions"][0]["session_id"], "s1");
     assert_eq!(result["sessions"][0]["protocol"], "ssh");
+    assert_eq!(result["sessions"][0]["profile_id"], "office-router");
 }
 
 #[tokio::test]
@@ -3760,6 +3769,52 @@ async fn service_uses_backend_pause_state_when_workspace_metadata_is_stale() {
             .unwrap()
             .1
     );
+}
+
+#[tokio::test]
+async fn telnet_profile_identity_distinguishes_saved_direct_from_direct_connections() {
+    let mut config = AppConfig::default();
+    config.external_control.connect_enabled = true;
+    config.external_control.direct_connect_enabled = true;
+    config.saved_connections = vec![SavedConnection {
+        id: "direct".into(),
+        connection_type: "telnet".into(),
+        host: Some("synthetic.invalid".into()),
+        ..SavedConnection::default()
+    }];
+    let (runtime, _config, protocol, _ui, _logger, _) =
+        test_runtime_parts(config, Vec::new(), None);
+    let service = ExternalControlService::new(runtime);
+    service
+        .connect_saved_profile(ConnectSavedProfileArgs {
+            profile_id: "direct".into(),
+            connection_type: SavedProfileConnectionType::Telnet,
+            cols: None,
+            rows: None,
+        })
+        .await
+        .unwrap();
+    service
+        .connect_telnet(ConnectTelnetArgs {
+            host: "synthetic.invalid".into(),
+            port: None,
+            encoding: None,
+            terminal_mode: None,
+            cols: None,
+            rows: None,
+        })
+        .await
+        .unwrap();
+    let calls = protocol.calls.lock().unwrap();
+    let TestProtocolCall::ConnectTelnet(saved) = &calls[0] else {
+        panic!("expected Telnet request")
+    };
+    let TestProtocolCall::ConnectTelnet(direct) = &calls[1] else {
+        panic!("expected Telnet request")
+    };
+    assert_eq!(saved.profile_name.as_deref(), Some("direct"));
+    assert_eq!(direct.profile_name, None);
+    assert_eq!(saved.host, direct.host);
 }
 
 #[tokio::test]

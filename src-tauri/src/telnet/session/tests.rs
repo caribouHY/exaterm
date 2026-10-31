@@ -51,6 +51,7 @@ impl Fixture {
     }
     fn request(&self) -> TelnetConnectRequest {
         TelnetConnectRequest {
+            profile_name: None,
             host: "synthetic".into(),
             port: 23,
             cols: 80,
@@ -93,6 +94,43 @@ impl Fixture {
                 .filter(|s| *s == "disconnected")
                 .count(),
             1
+        );
+    }
+}
+
+#[tokio::test]
+async fn profile_identity_is_published_with_session_and_retained_after_eof() {
+    for profile_name in [Some("office".to_string()), None] {
+        let fixture = Fixture::new();
+        let (stream, peer) = tokio::io::duplex(4096);
+        let mut request = fixture.request();
+        request.profile_name = profile_name.clone();
+        register(&fixture.state, fixture.owner(), request, stream, None)
+            .await
+            .unwrap();
+        let done = fixture
+            .state
+            .sessions
+            .lock()
+            .await
+            .get("s1")
+            .unwrap()
+            .done
+            .clone();
+        assert_eq!(
+            fixture.terminals.list_sessions().await[0].profile_id,
+            profile_name
+        );
+        drop(peer);
+        fixture.finished(done).await;
+        assert_eq!(
+            fixture
+                .terminals
+                .session_info("s1")
+                .await
+                .unwrap()
+                .profile_id,
+            profile_name
         );
     }
 }

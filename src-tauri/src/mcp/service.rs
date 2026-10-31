@@ -61,7 +61,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "list_terminal_sessions",
-        description = "List ExaTerm terminal sessions that were opened by the user."
+        description = "List ExaTerm terminal sessions, including profile_id captured at connection start (null for direct, history, and serial connections)."
     )]
     async fn list_terminal_sessions(&self) -> Result<CallToolResult, McpError> {
         self.call_tool("list_terminal_sessions", json!({})).await
