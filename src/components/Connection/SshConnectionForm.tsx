@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { ConnectionSearchSelect } from "./ConnectionSearchSelect";
+import { ConnectionSearchSelect, ConnectionSelect } from "./ConnectionSearchSelect";
 import { profileSearchSections } from "./connectionSearchModel";
 import { parseConnectionSource } from "./connectionHistoryModel";
 import { FolderOpen } from "lucide-react";
@@ -121,23 +121,17 @@ export function SshConnectionForm({
         />
         <ConnectionFieldError id="connection-ssh-username-error" error={errors.username} />
       </div>
-      <div>
-        <label className="label">{t("connection.auth_method")}</label>
-        <select
-          className="select"
-          style={{ width: "100%" }}
-          value={formState.authMethod}
-          onChange={(event) => {
-            formActions.onAuthMethodChange(normalizeSshAuthMethod(event.target.value));
-          }}
-        >
-          {SSH_AUTH_METHODS.map((entry) => (
-            <option key={entry.value} value={entry.value}>
-              {t(entry.labelKey)}
-            </option>
-          ))}
-        </select>
-      </div>
+      <ConnectionSelect
+        label={t("connection.auth_method")}
+        value={formState.authMethod}
+        options={SSH_AUTH_METHODS.map((entry) => ({
+          value: entry.value,
+          label: t(entry.labelKey),
+        }))}
+        onChange={(value) => {
+          formActions.onAuthMethodChange(normalizeSshAuthMethod(value));
+        }}
+      />
       {usesPrivateKeyAuthentication(formState.authMethod) && (
         <div>
           <ConnectionFieldLabelHtml

@@ -1,11 +1,20 @@
-import { ChevronDown, X } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { Check, ChevronDown, X } from "lucide-react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import {
   filterConnectionSearchSections,
   moveConnectionSearchSelection,
   resolveConnectionSearchSelection,
+  findConnectionSelectPrefix,
   type ConnectionSearchSection,
 } from "./connectionSearchModel";
 
@@ -14,6 +23,33 @@ interface ConnectionSearchSelectProps {
   value: string;
   sections: ConnectionSearchSection[];
   onChange: (value: string) => void;
+  searchable?: boolean;
+  triggerId?: string;
+  required?: boolean;
+  invalid?: boolean;
+  describedBy?: string;
+}
+
+interface ConnectionSelectProps extends Omit<
+  ConnectionSearchSelectProps,
+  "sections" | "searchable"
+> {
+  options: { value: string; label: string }[];
+}
+
+export function ConnectionSelect({ options, ...props }: ConnectionSelectProps) {
+  return (
+    <ConnectionSearchSelect
+      {...props}
+      searchable={false}
+      sections={[
+        {
+          key: "options",
+          options: options.map((option) => ({ ...option, searchText: option.label })),
+        },
+      ]}
+    />
+  );
 }
 
 const searchOptionId = (id: string, value: string) => `${id}-option-${encodeURIComponent(value)}`;
@@ -23,9 +59,15 @@ export function ConnectionSearchSelect({
   value,
   sections,
   onChange,
+  searchable = true,
+  triggerId,
+  required,
+  invalid,
+  describedBy,
 }: ConnectionSearchSelectProps) {
   const { t } = useTranslation();
   const id = useId();
+  const buttonId = triggerId ?? `${id}-trigger`;
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -34,6 +76,7 @@ export function ConnectionSearchSelect({
   const [query, setQuery] = useState("");
   const [highlighted, setHighlighted] = useState<string | null>(null);
   const [position, setPosition] = useState<CSSProperties | null>(null);
+  const typeaheadRef = useRef({ text: "", time: 0 });
   const positioned = position !== null;
   const allOptions = sections.flatMap((section) => section.options);
   const selected = allOptions.find((option) => option.value === value);
@@ -48,6 +91,7 @@ export function ConnectionSearchSelect({
   };
 
   const show = () => {
+    typeaheadRef.current = { text: "", time: 0 };
     setQuery("");
     setHighlighted(value);
     setPosition(null);
@@ -57,6 +101,53 @@ export function ConnectionSearchSelect({
   const choose = (optionValue: string) => {
     onChange(optionValue);
     close(true);
+  };
+
+  const handleSelectionKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+      event.stopPropagation();
+      return;
+    }
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === "Escape" && open) {
+      event.preventDefault();
+      event.stopPropagation();
+      close(true);
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!open) show();
+      else
+        setHighlighted(
+          moveConnectionSearchSelection(
+            options,
+            activeValue,
+            event.key === "ArrowDown" ? "next" : "previous"
+          )
+        );
+    } else if (open && (event.key === "Home" || event.key === "End")) {
+      event.preventDefault();
+      const option = event.key === "Home" ? options[0] : options[options.length - 1];
+      setHighlighted(options.length === 0 ? null : option.value);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (open && activeValue !== null) choose(activeValue);
+      else {
+        show();
+      }
+    } else if (event.key === "Tab") {
+      close(false);
+    } else if (event.key.length === 1) {
+      event.preventDefault();
+      const time = Date.now();
+      const text =
+        (time - typeaheadRef.current.time < 700 ? typeaheadRef.current.text : "") + event.key;
+      const match = findConnectionSelectPrefix(options, open ? activeValue : value, text);
+      if (!open) show();
+      typeaheadRef.current = { text, time };
+      if (match !== null) setHighlighted(match);
+    }
   };
 
   useLayoutEffect(() => {
@@ -106,28 +197,40 @@ export function ConnectionSearchSelect({
   }, [open]);
 
   useEffect(() => {
-    if (open && positioned) inputRef.current?.focus();
-  }, [open, positioned]);
+    if (open && positioned && searchable) inputRef.current?.focus();
+  }, [open, positioned, searchable]);
 
   useEffect(() => {
     if (open && activeValue !== null)
       document
         .getElementById(searchOptionId(id, activeValue))
         ?.scrollIntoView({ block: "nearest" });
-  }, [open, activeValue, query, id]);
+  }, [open, activeValue, query, id, positioned]);
 
   return (
     <div ref={rootRef} className="connection-dialog__search-select">
-      <label className="label" id={`${id}-label`} htmlFor={`${id}-trigger`}>
+      <label className="label" id={`${id}-label`} htmlFor={buttonId}>
         {label}
+        {required && (
+          <span className="connection-dialog__required-mark" aria-hidden="true">
+            *
+          </span>
+        )}
       </label>
       <button
         ref={triggerRef}
-        id={`${id}-trigger`}
+        id={buttonId}
         type="button"
         className="select connection-dialog__search-trigger"
         aria-labelledby={`${id}-label ${id}-value`}
         aria-haspopup="listbox"
+        role={searchable ? undefined : "combobox"}
+        aria-required={required || undefined}
+        aria-invalid={invalid}
+        aria-describedby={describedBy}
+        aria-activedescendant={
+          !searchable && open && activeValue !== null ? searchOptionId(id, activeValue) : undefined
+        }
         aria-expanded={open}
         aria-controls={open ? `${id}-list` : undefined}
         onClick={() => {
@@ -135,6 +238,10 @@ export function ConnectionSearchSelect({
           else show();
         }}
         onKeyDown={(event) => {
+          if (!searchable) {
+            handleSelectionKeyDown(event);
+            return;
+          }
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
             show();
@@ -143,7 +250,9 @@ export function ConnectionSearchSelect({
       >
         <span id={`${id}-value`} className="connection-dialog__search-label">
           {selected?.label ??
-            t(value ? "connection.profile_unavailable" : "connection.profile_manual")}
+            (searchable
+              ? t(value ? "connection.profile_unavailable" : "connection.profile_manual")
+              : "")}
         </span>
         <ChevronDown size={14} aria-hidden="true" />
       </button>
@@ -151,7 +260,7 @@ export function ConnectionSearchSelect({
         createPortal(
           <div
             ref={menuRef}
-            className="connection-dialog__search-menu"
+            className={`connection-dialog__search-menu ${!searchable ? "connection-dialog__search-menu--select-only" : ""}`}
             style={position ?? { visibility: "hidden" }}
             onKeyDown={(event) => {
               if (event.key === "Tab") {
@@ -160,69 +269,71 @@ export function ConnectionSearchSelect({
               }
             }}
           >
-            <div className="connection-dialog__search-input-row">
-              <input
-                ref={inputRef}
-                className="input connection-dialog__search-input"
-                role="combobox"
-                value={query}
-                autoComplete="off"
-                aria-label={t("connection.profile_search")}
-                placeholder={t("connection.profile_search_placeholder")}
-                aria-autocomplete="list"
-                aria-expanded="true"
-                aria-controls={`${id}-list`}
-                aria-activedescendant={
-                  activeValue !== null ? searchOptionId(id, activeValue) : undefined
-                }
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  setHighlighted(null);
-                }}
-                onKeyDown={(event) => {
-                  if (event.nativeEvent.isComposing || event.keyCode === 229) {
-                    event.stopPropagation();
-                    return;
+            {searchable && (
+              <div className="connection-dialog__search-input-row">
+                <input
+                  ref={inputRef}
+                  className="input connection-dialog__search-input"
+                  role="combobox"
+                  value={query}
+                  autoComplete="off"
+                  aria-label={t("connection.profile_search")}
+                  placeholder={t("connection.profile_search_placeholder")}
+                  aria-autocomplete="list"
+                  aria-expanded="true"
+                  aria-controls={`${id}-list`}
+                  aria-activedescendant={
+                    activeValue !== null ? searchOptionId(id, activeValue) : undefined
                   }
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    close(true);
-                  } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                    event.preventDefault();
-                    setHighlighted(
-                      moveConnectionSearchSelection(
-                        options,
-                        activeValue,
-                        event.key === "ArrowDown" ? "next" : "previous"
-                      )
-                    );
-                  } else if (
-                    event.key === "Enter" &&
-                    !event.ctrlKey &&
-                    !event.metaKey &&
-                    !event.altKey
-                  ) {
-                    event.preventDefault();
-                    if (activeValue !== null) choose(activeValue);
-                  }
-                }}
-              />
-              {query && (
-                <button
-                  type="button"
-                  className="btn-icon connection-dialog__search-clear"
-                  aria-label={t("connection.profile_search_clear")}
-                  onClick={() => {
-                    setQuery("");
-                    setHighlighted(value);
-                    inputRef.current?.focus();
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setHighlighted(null);
                   }}
-                >
-                  <X size={14} aria-hidden="true" />
-                </button>
-              )}
-            </div>
+                  onKeyDown={(event) => {
+                    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                      event.stopPropagation();
+                      return;
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      close(true);
+                    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                      event.preventDefault();
+                      setHighlighted(
+                        moveConnectionSearchSelection(
+                          options,
+                          activeValue,
+                          event.key === "ArrowDown" ? "next" : "previous"
+                        )
+                      );
+                    } else if (
+                      event.key === "Enter" &&
+                      !event.ctrlKey &&
+                      !event.metaKey &&
+                      !event.altKey
+                    ) {
+                      event.preventDefault();
+                      if (activeValue !== null) choose(activeValue);
+                    }
+                  }}
+                />
+                {query && (
+                  <button
+                    type="button"
+                    className="btn-icon connection-dialog__search-clear"
+                    aria-label={t("connection.profile_search_clear")}
+                    onClick={() => {
+                      setQuery("");
+                      setHighlighted(value);
+                      inputRef.current?.focus();
+                    }}
+                  >
+                    <X size={14} aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            )}
             <div
               id={`${id}-list`}
               className="connection-dialog__search-list"
@@ -264,16 +375,21 @@ export function ConnectionSearchSelect({
                         choose(option.value);
                       }}
                     >
-                      <span className="connection-dialog__search-label">{option.label}</span>
-                      {option.detail && (
-                        <span className="connection-dialog__search-detail">{option.detail}</span>
-                      )}
+                      <span className="connection-dialog__option-check" aria-hidden="true">
+                        {option.value === value && <Check size={14} />}
+                      </span>
+                      <span className="connection-dialog__search-option-content">
+                        <span className="connection-dialog__search-label">{option.label}</span>
+                        {option.detail && (
+                          <span className="connection-dialog__search-detail">{option.detail}</span>
+                        )}
+                      </span>
                     </button>
                   ))}
                 </div>
               ))}
             </div>
-            {!hasMatches && (
+            {searchable && !hasMatches && (
               <div className="connection-dialog__search-empty" role="status">
                 {t("connection.profile_search_empty")}
               </div>

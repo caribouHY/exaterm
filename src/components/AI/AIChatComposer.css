@@ -132,8 +132,10 @@
   overflow-y: auto;
 }
 
+.ai-panel__provider select:focus,
 .ai-panel__input:focus {
-  border-color: var(--color-border-focus);
+  outline: var(--focus-outline);
+  outline-offset: -1px;
 }
 
 .ai-panel__send {

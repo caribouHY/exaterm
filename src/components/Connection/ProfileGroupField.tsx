@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -142,7 +142,12 @@ export function ProfileGroupField({ value, groupNames, onChange }: ProfileGroupF
                 select(name);
               }}
             >
-              {name || t("connection.profile_ungrouped")}
+              <span className="connection-dialog__option-check" aria-hidden="true">
+                {name === value.trim() && <Check size={14} />}
+              </span>
+              <span className="connection-dialog__group-option-label">
+                {name || t("connection.profile_ungrouped")}
+              </span>
             </button>
           ))}
         </div>

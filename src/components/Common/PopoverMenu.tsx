@@ -1,3 +1,4 @@
+import { Check } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 export type PopoverMenuItem =
@@ -110,7 +111,8 @@ export function PopoverMenu({
             className={`ui-popover-menu__item ${
               item.active ? "ui-popover-menu__item--active" : ""
             }`}
-            role="menuitem"
+            role={item.active === undefined ? "menuitem" : "menuitemcheckbox"}
+            aria-checked={item.active}
             tabIndex={autoFocus ? -1 : undefined}
             disabled={item.disabled}
             onClick={() => {
@@ -118,6 +120,9 @@ export function PopoverMenu({
               onAction(item.action);
             }}
           >
+            <span className="ui-popover-menu__check" aria-hidden="true">
+              {item.active && <Check size={14} />}
+            </span>
             <span className="ui-popover-menu__item-label">{item.label}</span>
             {item.shortcut && <span className="ui-popover-menu__shortcut">{item.shortcut}</span>}
           </button>

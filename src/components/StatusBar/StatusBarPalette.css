@@ -31,7 +31,7 @@
 }
 
 .statusbar-palette__input:focus {
-  border-color: var(--color-border-focus);
+  border-color: var(--color-menu-text-secondary);
   outline: var(--focus-outline);
   outline-offset: -1px;
 }
@@ -51,14 +51,14 @@
   display: grid;
   width: 100%;
   height: 32px;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--spacing-sm);
   padding: 0 9px;
   border: none;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--color-menu-text);
   cursor: pointer;
   font-family: var(--font-family-interface);
   font-size: 12px;
@@ -70,9 +70,14 @@
 }
 
 .statusbar-palette__item:hover,
-.statusbar-palette__item--highlighted {
-  background: var(--color-interactive-hover);
-  color: var(--color-text-primary);
+.statusbar-palette__item--highlighted,
+.statusbar-palette__item:focus-visible {
+  background: var(--color-menu-highlight);
+  color: var(--color-menu-text-highlight);
+}
+
+.statusbar-palette__item:focus-visible {
+  outline: none;
 }
 
 .statusbar-palette__item:disabled {
@@ -82,7 +87,13 @@
 
 .statusbar-palette__item:disabled:hover {
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--color-menu-text);
+}
+
+.statusbar-palette__check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .statusbar-palette__item-label {
@@ -94,17 +105,33 @@
 
 .statusbar-palette__match {
   background: transparent;
-  color: var(--color-accent-primary);
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .statusbar-palette__search-label {
-  color: var(--color-text-muted);
+  color: var(--color-menu-text-secondary);
 }
 
 .statusbar-palette__shortcut {
-  color: var(--color-text-shortcut);
+  color: var(--color-menu-text-secondary);
   font-size: 11px;
   white-space: nowrap;
+}
+
+.statusbar-palette__item:hover .statusbar-palette__search-label,
+.statusbar-palette__item:hover .statusbar-palette__shortcut,
+.statusbar-palette__item--highlighted .statusbar-palette__search-label,
+.statusbar-palette__item--highlighted .statusbar-palette__shortcut,
+.statusbar-palette__item:focus-visible .statusbar-palette__search-label,
+.statusbar-palette__item:focus-visible .statusbar-palette__shortcut {
+  color: var(--color-menu-text-highlight);
+}
+
+.statusbar-palette__item:disabled:hover .statusbar-palette__search-label,
+.statusbar-palette__item:disabled:hover .statusbar-palette__shortcut {
+  color: var(--color-menu-text-secondary);
 }
 
 .statusbar-palette__empty {

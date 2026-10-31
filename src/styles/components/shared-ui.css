@@ -156,14 +156,14 @@
   display: grid;
   width: 100%;
   height: 32px;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--spacing-lg);
+  gap: var(--spacing-sm);
   padding: 0 9px;
   border: none;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--color-menu-text);
   cursor: pointer;
   font-family: var(--font-family-interface);
   font-size: 12px;
@@ -174,9 +174,18 @@
 }
 
 .ui-popover-menu__item:hover,
-.ui-popover-menu__item--active {
-  background: var(--color-interactive-hover);
-  color: var(--color-text-primary);
+.ui-popover-menu__item:focus-visible {
+  background: var(--color-menu-highlight);
+  color: var(--color-menu-text-highlight);
+}
+
+.ui-popover-menu__item:focus-visible {
+  outline: none;
+}
+
+.ui-popover-menu__item:hover .ui-popover-menu__shortcut,
+.ui-popover-menu__item:focus-visible .ui-popover-menu__shortcut {
+  color: var(--color-menu-text-highlight);
 }
 
 .ui-popover-menu__item:disabled {
@@ -186,7 +195,17 @@
 
 .ui-popover-menu__item:disabled:hover {
   background: transparent;
-  color: var(--color-text-secondary);
+  color: var(--color-menu-text);
+}
+
+.ui-popover-menu__item:disabled:hover .ui-popover-menu__shortcut {
+  color: var(--color-menu-text-secondary);
+}
+
+.ui-popover-menu__check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .ui-popover-menu__item-label {
@@ -197,7 +216,7 @@
 }
 
 .ui-popover-menu__shortcut {
-  color: var(--color-text-muted);
+  color: var(--color-menu-text-secondary);
   font-size: 11px;
   white-space: nowrap;
 }
