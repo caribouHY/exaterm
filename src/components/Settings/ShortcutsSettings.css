@@ -60,12 +60,15 @@
 }
 
 .settings-shortcuts__recorder:hover {
-  border-color: var(--color-border-focus);
+  background: var(--color-interactive-hover);
 }
 
-.settings-shortcuts__recorder:focus-visible,
 .settings-shortcuts__recorder--active {
-  border-color: var(--color-border-focus);
+  border-color: var(--color-accent-primary);
+  background: var(--color-accent-primary-muted);
+}
+
+.settings-shortcuts__recorder:focus-visible {
   outline: var(--focus-outline);
   outline-offset: 1px;
 }

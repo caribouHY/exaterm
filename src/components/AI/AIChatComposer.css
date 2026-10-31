@@ -134,7 +134,7 @@
 
 .ai-panel__provider select:focus,
 .ai-panel__input:focus {
-  outline: var(--neutral-focus-outline);
+  outline: var(--focus-outline);
   outline-offset: -1px;
 }
 

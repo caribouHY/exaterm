@@ -2,6 +2,11 @@
    Button Styles
    ============================================ */
 
+:where(button:not([role="option"]), input[type="checkbox"]):focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: -1px;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -119,7 +124,7 @@
 
 .input:focus,
 .select:focus {
-  outline: var(--neutral-focus-outline);
+  outline: var(--focus-outline);
   outline-offset: -1px;
 }
 

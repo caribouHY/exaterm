@@ -32,7 +32,7 @@
 
 .statusbar-palette__input:focus {
   border-color: var(--color-menu-text-secondary);
-  outline: var(--neutral-focus-outline);
+  outline: var(--focus-outline);
   outline-offset: -1px;
 }
 
