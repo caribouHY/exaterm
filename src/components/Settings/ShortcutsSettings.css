@@ -59,13 +59,12 @@
   text-align: left;
 }
 
-.settings-shortcuts__recorder:hover {
+.settings-shortcuts__recorder:where(:hover) {
   background: var(--color-interactive-hover);
 }
 
 .settings-shortcuts__recorder--active {
-  border-color: var(--color-accent-primary);
-  background: var(--color-accent-primary-muted);
+  background: var(--color-interactive-active);
 }
 
 .settings-shortcuts__recorder:focus-visible {
