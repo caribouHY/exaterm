@@ -94,8 +94,7 @@
 }
 
 .connection-dialog :is(.input, .select)[aria-invalid="true"]:focus {
-  border-color: var(--color-status-error);
-  outline: var(--focus-outline);
+  outline-offset: 1px;
 }
 
 .connection-dialog__profile {
@@ -139,15 +138,7 @@
 }
 
 .connection-dialog__group-toggle:focus-visible {
-  outline: var(--menu-focus-outline);
-  outline-offset: -1px;
-}
-
-.connection-dialog__group-input:focus,
-.connection-dialog__search-trigger:focus,
-.connection-dialog__search-input:focus {
-  border-color: var(--color-menu-text-secondary);
-  outline: var(--menu-focus-outline);
+  outline: var(--neutral-focus-outline);
   outline-offset: -1px;
 }
 

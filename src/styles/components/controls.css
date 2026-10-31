@@ -101,10 +101,6 @@
   width: 100%;
 }
 
-.input:focus {
-  border-color: var(--color-border-focus);
-}
-
 .input::placeholder {
   color: var(--color-text-muted);
 }
@@ -121,8 +117,10 @@
   cursor: pointer;
 }
 
+.input:focus,
 .select:focus {
-  border-color: var(--color-border-focus);
+  outline: var(--neutral-focus-outline);
+  outline-offset: -1px;
 }
 
 /* ============================================

@@ -95,7 +95,7 @@
 
 .titlebar__menu-trigger:focus-visible {
   z-index: var(--stack-focus);
-  outline: var(--menu-focus-outline);
+  outline: var(--neutral-focus-outline);
   outline-offset: -1px;
 }
 

@@ -14,6 +14,7 @@
 
 ### Fixed
 
+- Unified focus indicators for connection, settings, and AI chat form fields with a light gray outline while keeping invalid connection fields visibly marked.
 - Improved menu and connection-candidate visibility with neutral gray highlights and current-selection checkmarks, using background highlights for keyboard navigation without outlines around menu items.
 - Unified connection-dialog dropdowns for authentication, encoding, terminal mode, and Serial settings with the same compact checkmarked menus as connection candidates.
 
