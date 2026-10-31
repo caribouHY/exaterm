@@ -29,7 +29,7 @@ describe("consistent connection dropdowns", () => {
     expect(markup).toContain('aria-haspopup="listbox"');
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).toContain("Automatic");
-    expect(markup).not.toContain("<select");
+    expect(markup).not.toMatch(/<select(?:\s|>)/);
     expect(markup).not.toContain('aria-autocomplete="list"');
   });
 
@@ -41,7 +41,7 @@ describe("consistent connection dropdowns", () => {
       ),
     ]) {
       expect(markup).toContain('role="combobox"');
-      expect(markup).not.toContain("<select");
+      expect(markup).not.toMatch(/<select(?:\s|>)/);
     }
   });
 
@@ -68,7 +68,7 @@ describe("consistent connection dropdowns", () => {
         },
       })
     );
-    expect(markup).not.toContain("<select");
+    expect(markup).not.toMatch(/<select(?:\s|>)/);
     expect(markup.match(/role="combobox"/g)).toHaveLength(6);
     expect(markup).toContain('id="connection-serial-port"');
     expect(markup).toContain('aria-required="true"');

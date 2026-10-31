@@ -128,7 +128,9 @@ export function SshConnectionForm({
           value: entry.value,
           label: t(entry.labelKey),
         }))}
-        onChange={(value) => formActions.onAuthMethodChange(normalizeSshAuthMethod(value))}
+        onChange={(value) => {
+          formActions.onAuthMethodChange(normalizeSshAuthMethod(value));
+        }}
       />
       {usesPrivateKeyAuthentication(formState.authMethod) && (
         <div>

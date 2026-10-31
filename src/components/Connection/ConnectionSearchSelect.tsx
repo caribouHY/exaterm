@@ -127,9 +127,8 @@ export function ConnectionSearchSelect({
         );
     } else if (open && (event.key === "Home" || event.key === "End")) {
       event.preventDefault();
-      setHighlighted(
-        (event.key === "Home" ? options[0] : options[options.length - 1])?.value ?? null
-      );
+      const option = event.key === "Home" ? options[0] : options[options.length - 1];
+      setHighlighted(options.length === 0 ? null : option.value);
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       event.stopPropagation();

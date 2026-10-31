@@ -175,7 +175,9 @@ export function EncodingSelect({ value, onChange }: EncodingSelectProps) {
       label={t("connection.encoding")}
       value={value}
       options={SSH_ENCODINGS}
-      onChange={(nextValue) => onChange(normalizeEncoding(nextValue))}
+      onChange={(nextValue) => {
+        onChange(normalizeEncoding(nextValue));
+      }}
     />
   );
 }
@@ -194,7 +196,9 @@ export function TerminalModeSelect({ value, onChange }: TerminalModeSelectProps)
       label={t("connection.terminal_mode")}
       value={value}
       options={terminalModeOptions}
-      onChange={(nextValue) => onChange(normalizeTerminalMode(nextValue))}
+      onChange={(nextValue) => {
+        onChange(normalizeTerminalMode(nextValue));
+      }}
     />
   );
 }
