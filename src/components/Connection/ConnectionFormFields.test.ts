@@ -1,10 +1,83 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { ProfileGroupField, ProfileSelector } from "./ConnectionFormFields";
-import { ConnectionSearchSelect } from "./ConnectionSearchSelect";
+import {
+  EncodingSelect,
+  ProfileGroupField,
+  ProfileSelector,
+  TerminalModeSelect,
+} from "./ConnectionFormFields";
+import { ConnectionSearchSelect, ConnectionSelect } from "./ConnectionSearchSelect";
+import { SerialConnectionForm } from "./SerialConnectionForm";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+
+describe("consistent connection dropdowns", () => {
+  it("uses labeled select-only comboboxes for fixed choices", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ConnectionSelect, {
+        label: "Authentication",
+        value: "auto",
+        options: [
+          { value: "auto", label: "Automatic" },
+          { value: "password", label: "Password" },
+        ],
+        onChange: vi.fn(),
+      })
+    );
+    expect(markup).toContain('role="combobox"');
+    expect(markup).toContain('aria-haspopup="listbox"');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain("Automatic");
+    expect(markup).not.toContain("<select");
+    expect(markup).not.toContain('aria-autocomplete="list"');
+  });
+
+  it("uses the same picker for encoding and terminal mode", () => {
+    for (const markup of [
+      renderToStaticMarkup(createElement(EncodingSelect, { value: "utf-8", onChange: vi.fn() })),
+      renderToStaticMarkup(
+        createElement(TerminalModeSelect, { value: "general", onChange: vi.fn() })
+      ),
+    ]) {
+      expect(markup).toContain('role="combobox"');
+      expect(markup).not.toContain("<select");
+    }
+  });
+
+  it("preserves Serial port validation and no-port feedback with custom pickers", () => {
+    const markup = renderToStaticMarkup(
+      createElement(SerialConnectionForm, {
+        formState: {
+          ports: [],
+          selectedPort: "",
+          baudRate: "9600",
+          dataBits: "8",
+          parity: "none",
+          stopBits: "1",
+          terminalMode: "general",
+          validationErrors: { selectedPort: "serial_port_required" },
+        },
+        formActions: {
+          onSelectedPortChange: vi.fn(),
+          onBaudRateChange: vi.fn(),
+          onDataBitsChange: vi.fn(),
+          onParityChange: vi.fn(),
+          onStopBitsChange: vi.fn(),
+          onTerminalModeChange: vi.fn(),
+        },
+      })
+    );
+    expect(markup).not.toContain("<select");
+    expect(markup.match(/role="combobox"/g)).toHaveLength(6);
+    expect(markup).toContain('id="connection-serial-port"');
+    expect(markup).toContain('aria-required="true"');
+    expect(markup).toContain('aria-invalid="true"');
+    expect(markup).toContain('aria-describedby="connection-serial-port-error"');
+    expect(markup).toContain("connection.no_ports");
+    expect(markup).toContain("connection.validation_serial_port_required");
+  });
+});
 
 describe("saved profile group fields", () => {
   it("does not describe an unavailable profile as a manual or direct connection", () => {

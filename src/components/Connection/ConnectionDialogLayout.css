@@ -139,7 +139,15 @@
 }
 
 .connection-dialog__group-toggle:focus-visible {
-  outline: var(--focus-outline);
+  outline: var(--menu-focus-outline);
+  outline-offset: -1px;
+}
+
+.connection-dialog__group-input:focus,
+.connection-dialog__search-trigger:focus,
+.connection-dialog__search-input:focus {
+  border-color: var(--color-menu-text-secondary);
+  outline: var(--menu-focus-outline);
   outline-offset: -1px;
 }
 
@@ -159,14 +167,19 @@
 }
 
 .connection-dialog__group-option {
-  display: block;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--spacing-sm);
   width: 100%;
   padding: 6px 9px;
+  min-height: 30px;
   overflow: hidden;
   border: none;
+  outline: none;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-text-primary);
+  color: var(--color-menu-text);
   font-family: var(--font-family-interface);
   font-size: 12px;
   text-align: left;
@@ -176,7 +189,20 @@
 }
 
 .connection-dialog__group-option--highlighted {
-  background: var(--color-interactive-hover);
+  background: var(--color-menu-highlight);
+  color: var(--color-menu-text-highlight);
+}
+
+.connection-dialog__group-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connection-dialog__option-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .connection-dialog__profile-row {
@@ -250,6 +276,10 @@
   padding-top: var(--spacing-xs);
 }
 
+.connection-dialog__search-menu--select-only .connection-dialog__search-list {
+  padding-top: 0;
+}
+
 .connection-dialog__search-section + .connection-dialog__search-section {
   margin-top: 8px;
   padding-top: 4px;
@@ -278,16 +308,19 @@
 }
 
 .connection-dialog__search-option {
-  display: flex;
+  display: grid;
   width: 100%;
-  flex-direction: column;
-  gap: 2px;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--spacing-sm);
   padding: 6px 9px;
+  min-height: 30px;
   scroll-margin-top: 36px;
   border: none;
+  outline: none;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-text-primary);
+  color: var(--color-menu-text);
   font-family: var(--font-family-interface);
   font-size: 12px;
   text-align: left;
@@ -295,13 +328,37 @@
 }
 
 .connection-dialog__search-option--highlighted {
-  background: var(--color-interactive-hover);
+  background: var(--color-menu-highlight);
+  color: var(--color-menu-text-highlight);
+}
+
+.connection-dialog__search-option--highlighted .connection-dialog__search-detail {
+  color: var(--color-menu-text-highlight);
+}
+
+.connection-dialog__search-option .connection-dialog__option-check {
+  padding-top: 2px;
+}
+
+.connection-dialog__search-menu--select-only .connection-dialog__search-option {
+  align-items: center;
+}
+
+.connection-dialog__search-menu--select-only .connection-dialog__option-check {
+  padding-top: 0;
+}
+
+.connection-dialog__search-option-content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .connection-dialog__search-detail {
   max-width: 100%;
   overflow: hidden;
-  color: var(--color-text-secondary);
+  color: var(--color-menu-text-secondary);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;

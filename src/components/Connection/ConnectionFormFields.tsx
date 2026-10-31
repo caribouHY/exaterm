@@ -4,7 +4,7 @@ import type { ConnectionHistoryEntry, Encoding, SavedConnection, TerminalMode } 
 import { getTerminalModeOptions, normalizeTerminalMode } from "../../utils/terminalModes";
 import { normalizeEncoding, SSH_ENCODINGS } from "./connectionProfileUtils";
 import { encodeConnectionSource } from "./connectionHistoryModel";
-import { ConnectionSearchSelect } from "./ConnectionSearchSelect";
+import { ConnectionSearchSelect, ConnectionSelect } from "./ConnectionSearchSelect";
 import { historySearchSection, profileSearchSections } from "./connectionSearchModel";
 import type { ConnectionValidationError } from "./connectionFormValidation";
 
@@ -171,23 +171,12 @@ export function EncodingSelect({ value, onChange }: EncodingSelectProps) {
   const { t } = useTranslation();
 
   return (
-    <div>
-      <label className="label">{t("connection.encoding")}</label>
-      <select
-        className="select"
-        style={{ width: "100%" }}
-        value={value}
-        onChange={(event) => {
-          onChange(normalizeEncoding(event.target.value));
-        }}
-      >
-        {SSH_ENCODINGS.map((entry) => (
-          <option key={entry.value} value={entry.value}>
-            {entry.label}
-          </option>
-        ))}
-      </select>
-    </div>
+    <ConnectionSelect
+      label={t("connection.encoding")}
+      value={value}
+      options={SSH_ENCODINGS}
+      onChange={(nextValue) => onChange(normalizeEncoding(nextValue))}
+    />
   );
 }
 
@@ -201,23 +190,12 @@ export function TerminalModeSelect({ value, onChange }: TerminalModeSelectProps)
   const terminalModeOptions = getTerminalModeOptions(t);
 
   return (
-    <div>
-      <label className="label">{t("connection.terminal_mode")}</label>
-      <select
-        className="select"
-        style={{ width: "100%" }}
-        value={value}
-        onChange={(event) => {
-          onChange(normalizeTerminalMode(event.target.value));
-        }}
-      >
-        {terminalModeOptions.map((entry) => (
-          <option key={entry.value} value={entry.value}>
-            {entry.label}
-          </option>
-        ))}
-      </select>
-    </div>
+    <ConnectionSelect
+      label={t("connection.terminal_mode")}
+      value={value}
+      options={terminalModeOptions}
+      onChange={(nextValue) => onChange(normalizeTerminalMode(nextValue))}
+    />
   );
 }
 

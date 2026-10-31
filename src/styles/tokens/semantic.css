@@ -9,6 +9,11 @@
   --color-surface-highlight: var(--primitive-color-white-a04);
   --color-overlay: var(--primitive-color-black-a55);
   --color-menu-background: var(--primitive-color-neutral-900);
+  --color-menu-highlight: var(--primitive-color-neutral-550);
+  --color-menu-text: var(--primitive-color-neutral-200);
+  --color-menu-text-secondary: var(--primitive-color-neutral-300);
+  --color-menu-text-highlight: var(--primitive-color-white);
+  --menu-focus-outline: 1px solid var(--primitive-color-neutral-200);
   --color-code-background: var(--primitive-color-neutral-925);
   --color-code-inline-background: var(--primitive-color-black-a20);
   --color-scrollbar-thumb: var(--primitive-color-white-a12);

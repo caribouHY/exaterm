@@ -14,6 +14,9 @@
 
 ### Fixed
 
+- Improved menu and connection-candidate visibility with neutral gray highlights and current-selection checkmarks, using background highlights for keyboard navigation without outlines around menu items.
+- Unified connection-dialog dropdowns for authentication, encoding, terminal mode, and Serial settings with the same compact checkmarked menus as connection candidates.
+
 - Preserved edits made while settings or API keys are saving, tracked partial saves independently for safe retries, and refreshed AI availability after key-only saves and deletions.
 
 - Kept Gemini API keys out of request URLs and prevented AI transport and response errors from exposing credentials in displayed errors or AI debug logs, and limited AI redirects to the same origin.

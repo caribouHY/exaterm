@@ -85,18 +85,18 @@
 
 .titlebar__menu-trigger:hover,
 .titlebar__menu-trigger--open {
-  background: var(--color-interactive-hover);
-  color: var(--color-text-primary);
+  background: var(--color-menu-highlight);
+  color: var(--color-menu-text-highlight);
 }
 
 .titlebar__menu-trigger--open::after {
-  background: var(--color-accent-primary);
+  background: var(--color-menu-text-highlight);
 }
 
 .titlebar__menu-trigger:focus-visible {
   z-index: var(--stack-focus);
-  outline: 1px solid var(--color-accent-primary);
-  outline-offset: -2px;
+  outline: var(--menu-focus-outline);
+  outline-offset: -1px;
 }
 
 .titlebar__menu-popover {

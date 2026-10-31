@@ -2,12 +2,43 @@ import { describe, expect, it } from "vitest";
 import type { ConnectionHistoryEntry, SavedConnection } from "../../types";
 import {
   filterConnectionSearchSections,
+  findConnectionSelectPrefix,
   historySearchSection,
   moveConnectionSearchSelection,
   profileSearchSections,
   resolveConnectionSearchSelection,
   type ConnectionSearchSection,
 } from "./connectionSearchModel";
+
+describe("select-only connection fields", () => {
+  const options = [
+    { value: "auto", label: "Automatic", searchText: "" },
+    { value: "password", label: "Password", searchText: "" },
+    { value: "keyboard", label: "Keyboard interactive", searchText: "" },
+    { value: "public_key", label: "Public key", searchText: "" },
+  ];
+
+  it("supports case-insensitive prefixes and repeated-key cycling without changing the choices", () => {
+    expect(findConnectionSelectPrefix(options, "auto", "P")).toBe("password");
+    expect(findConnectionSelectPrefix(options, "password", "pp")).toBe("public_key");
+    expect(findConnectionSelectPrefix(options, "public_key", "ppp")).toBe("password");
+    expect(findConnectionSelectPrefix(options, "password", "Pu")).toBe("public_key");
+    expect(findConnectionSelectPrefix(options, "password", "pas")).toBe("password");
+    expect(options.map((option) => option.value)).toEqual([
+      "auto",
+      "password",
+      "keyboard",
+      "public_key",
+    ]);
+  });
+
+  it("handles no matching options, missing values, and empty lists", () => {
+    expect(findConnectionSelectPrefix(options, "missing", "p")).toBe("password");
+    expect(findConnectionSelectPrefix(options, "auto", "z")).toBeNull();
+    expect(findConnectionSelectPrefix(options, "auto", "")).toBeNull();
+    expect(findConnectionSelectPrefix([], null, "p")).toBeNull();
+  });
+});
 
 const profiles: SavedConnection[] = [
   {

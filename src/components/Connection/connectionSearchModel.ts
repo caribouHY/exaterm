@@ -15,6 +15,24 @@ export interface ConnectionSearchSection {
   options: ConnectionSearchOption[];
 }
 
+export function findConnectionSelectPrefix(
+  options: ConnectionSearchOption[],
+  currentValue: string | null,
+  text: string
+): string | null {
+  const normalized = text.toLocaleLowerCase();
+  const repeated = [...normalized].every((character) => character === normalized[0]);
+  const prefix = repeated ? normalized[0] : normalized;
+  if (!prefix) return null;
+  const currentIndex = options.findIndex((option) => option.value === currentValue);
+  const start = currentIndex < 0 ? 0 : currentIndex + (prefix.length === 1 ? 1 : 0);
+  for (let offset = 0; offset < options.length; offset++) {
+    const option = options[(start + offset) % options.length];
+    if (option.label.toLocaleLowerCase().startsWith(prefix)) return option.value;
+  }
+  return null;
+}
+
 export function profileSearchSections(
   profiles: SavedConnection[],
   getDisplayName: (profile: SavedConnection) => string,
