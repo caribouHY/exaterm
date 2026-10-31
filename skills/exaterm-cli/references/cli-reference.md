@@ -180,6 +180,17 @@ remediation automatically when it changes configuration or restarts the GUI.
 `sessions list` returns JSON containing a `sessions` array. Use a returned `session_id` for
 terminal operations.
 
+Each session contains `session_id`, `protocol`, `target`, `encoding`, `status`, and
+`profile_id`. For saved SSH/Telnet connections opened through GUI, CLI, or MCP,
+`profile_id` captures the selected saved profile ID (also its current name) at connection
+start, including connections with unsaved GUI edits. Direct, history, and Serial connections
+return `null`. Pair `profile_id` with `protocol` because SSH and Telnet profiles can share
+an ID. Multiple sessions can use the same profile; always select an exact `session_id`.
+The captured ID survives profile renaming/deletion, tab renaming, window moves, and
+disconnection while the session remains listed. It is provenance, not proof that the saved
+profile still exists or matches `target`; do not infer a profile from matching endpoints.
+MCP `list_terminal_sessions` returns the same metadata.
+
 `profiles list` returns a `profiles` array containing approved SSH and Telnet profiles.
 Secrets and private-key paths are not returned. SSH and Telnet profiles may share an ID, so
 always retain both the returned profile ID and connection type. `--type` accepts only `ssh`

@@ -55,11 +55,12 @@ where
     }
     owner
         .terminals
-        .register_session_with_encoding(
+        .register_session_with_profile(
             owner.session_id.clone(),
             crate::terminal_control::TerminalProtocol::Telnet,
             format!("{}:{}", request.host, request.port),
             request.encoding,
+            request.profile_name,
         )
         .await;
     let (writer, write_rx) = mpsc::channel(64);

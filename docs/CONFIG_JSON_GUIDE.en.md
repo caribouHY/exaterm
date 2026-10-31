@@ -192,7 +192,7 @@ The HTTP MCP transport has been removed. Existing HTTP-only `mcp.host` and `mcp.
 
 When MCP is enabled, external clients can call these tools:
 
-- `list_terminal_sessions`: lists ExaTerm terminal sessions opened by the user.
+- `list_terminal_sessions`: lists ExaTerm terminal sessions, including `profile_id` captured at connection start for saved SSH/Telnet profiles opened through GUI, CLI, or MCP. Direct, history, and Serial connections return `null`. The ID remains unchanged after unsaved connection edits, later profile renaming/deletion, tab renaming, window moves, or disconnection; `target` identifies the actual endpoint. Use `protocol` with `profile_id` because SSH/Telnet profiles may share an ID.
 - `disconnect_terminal_session`: flushes and stops an active log, then disconnects the session while preserving its tab and scrollback.
 - `focus_terminal_session`: accepts `session_id`, selects its existing tab, and shows, restores, and focuses its owning window. It returns `session_id`, `window_id`, `tab_id`, and `focused: true` after GUI acknowledgement. Disconnected tabs are supported; open dialogs remain active. The GUI acknowledgement deadline is five seconds, including one retry after a tab moves to another window. OS foreground restrictions still apply.
 - `read_terminal_output`: reads or waits for session output using the required `mode` argument:

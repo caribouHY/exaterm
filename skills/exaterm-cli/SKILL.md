@@ -30,7 +30,9 @@ Read only the relevant sections:
    software unless requested. Use `doctor` for readiness or control-plane problems, not
    before every healthy operation. It may start the visible GUI and wait up to 30 seconds.
 2. Run `sessions list`, check the native exit code, then parse successful stdout as JSON.
-   Select an exact returned session ID using its metadata. Ask which session to use if
+   Use `profile_id` with `protocol` to identify the saved source profile, then select an exact
+   returned session ID; the captured profile ID may outlive profile edits or deletion and
+   multiple sessions can share it. Ask which session to use if
    multiple sessions plausibly match. Never guess IDs.
 3. If a connection is needed, select an exact approved ID and type from `profiles list`,
    or an exact port from `serial ports`. For direct SSH/Telnet, use only a user-supplied

@@ -4,6 +4,8 @@
 
 ### Added
 
+- Added `profile_id` to CLI/MCP session lists for saved SSH/Telnet connections opened through the GUI, CLI, or MCP, preserving the selected profile at connection start.
+
 - Added saved SSH/Telnet profile duplication into an editable new-profile draft, retaining groups and connection settings without modifying the original profile.
 
 - Added searchable SSH/Telnet connection and SSH jump-profile selectors, with profile name, host, group, and memo matching while preserving recent connections and manual entry.

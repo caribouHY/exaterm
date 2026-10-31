@@ -53,6 +53,7 @@ pub(crate) struct ExternalControlSshConnectRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExternalControlTelnetConnectRequest {
+    pub(crate) profile_name: Option<String>,
     pub(crate) host: String,
     pub(crate) port: u16,
     pub(crate) cols: u32,
@@ -169,6 +170,7 @@ impl ExternalControlProtocolIo for TauriExternalControlProtocolIo {
                 logger: self.logger.as_ref(),
             },
             telnet::TelnetConnectRequest {
+                profile_name: request.profile_name,
                 host: request.host,
                 port: request.port,
                 cols: request.cols,

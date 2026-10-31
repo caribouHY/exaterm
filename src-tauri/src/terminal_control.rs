@@ -29,6 +29,8 @@ pub enum TerminalStatus {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct TerminalSessionInfo {
     pub session_id: String,
+    #[serde(default)]
+    pub profile_id: Option<String>,
     pub protocol: TerminalProtocol,
     pub target: String,
     pub encoding: String,
@@ -122,9 +124,22 @@ impl TerminalControlState {
         target: String,
         encoding: Option<String>,
     ) {
+        self.register_session_with_profile(session_id, protocol, target, encoding, None)
+            .await;
+    }
+
+    pub async fn register_session_with_profile(
+        &self,
+        session_id: String,
+        protocol: TerminalProtocol,
+        target: String,
+        encoding: Option<String>,
+        profile_id: Option<String>,
+    ) {
         let (encoding_impl, encoding) = terminal_encoding(encoding.as_deref());
         let info = TerminalSessionInfo {
             session_id: session_id.clone(),
+            profile_id,
             protocol,
             target,
             encoding: encoding.to_string(),
@@ -425,6 +440,54 @@ pub async fn terminal_output_delta_get(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_info_without_profile_id_remains_readable() {
+        let info: TerminalSessionInfo = serde_json::from_value(serde_json::json!({
+            "session_id": "s1", "protocol": "ssh", "target": "synthetic:22",
+            "encoding": "utf-8", "status": "connected"
+        }))
+        .unwrap();
+        assert_eq!(info.profile_id, None);
+        assert_eq!(
+            serde_json::to_value(info).unwrap()["profile_id"],
+            serde_json::Value::Null
+        );
+    }
+
+    #[tokio::test]
+    async fn profile_identity_distinguishes_shared_endpoints_and_survives_disconnect() {
+        let state = TerminalControlState::new();
+        for (session_id, profile_id) in [("s1", "office"), ("s2", "lab")] {
+            state
+                .register_session_with_profile(
+                    session_id.into(),
+                    TerminalProtocol::Ssh,
+                    "synthetic:22".into(),
+                    None,
+                    Some(profile_id.into()),
+                )
+                .await;
+        }
+        state.append_output("s1", b"synthetic output").await;
+        state.set_encoding("s1", "shift-jis").await.unwrap();
+        state.mark_disconnected("s1").await;
+        let sessions = state.list_sessions().await;
+        assert_eq!(sessions[0].profile_id.as_deref(), Some("office"));
+        assert_eq!(sessions[1].profile_id.as_deref(), Some("lab"));
+        assert_eq!(sessions[0].target, sessions[1].target);
+        assert_eq!(sessions[0].status, TerminalStatus::Disconnected);
+        for protocol in [
+            TerminalProtocol::Ssh,
+            TerminalProtocol::Telnet,
+            TerminalProtocol::Serial,
+        ] {
+            state
+                .register_session("direct".into(), protocol, "synthetic".into())
+                .await;
+            assert_eq!(state.session_info("direct").await.unwrap().profile_id, None);
+        }
+    }
 
     fn encode_shift_jis(input: &str) -> Vec<u8> {
         SHIFT_JIS.encode(input).0.into_owned()

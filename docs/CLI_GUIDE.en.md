@@ -88,6 +88,20 @@ If the GUI is not running, `doctor` starts it and waits up to 30 seconds for the
 plane. Independent checks continue after a configuration error. The exit code is `0` only
 when all checks pass and `1` when any check fails or is skipped.
 
+### Session List
+
+`sessions list` returns a `sessions` array with `session_id`, `protocol`, `target`, `encoding`,
+`status`, and `profile_id`. For saved SSH/Telnet connections opened through the GUI, CLI, or
+MCP, `profile_id` is the saved profile ID (currently also its name) selected at connection
+start. It remains the selected source ID even if GUI connection settings are edited without
+saving. Direct, history, and Serial connections return `null`; endpoints are never matched
+back to saved profiles. Use `protocol` together with `profile_id` to distinguish SSH/Telnet
+profiles sharing an ID, and `session_id` to select a particular session.
+
+The captured ID survives profile renaming/deletion, tab renaming, window moves, and
+disconnection while the session remains listed. It does not guarantee that the profile still
+exists or matches `target`. MCP `list_terminal_sessions` returns the same fields.
+
 ### Saved Profiles
 
 SSH and Telnet profiles may have the same ID. Always specify the connection type:
