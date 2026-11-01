@@ -1,6 +1,6 @@
 # ExaTerm config.json パラメータ説明
 
-この資料は、ExaTerm のユーザー設定ファイル `config.json` を手動で確認・編集するための説明です。
+この資料は、ExaTerm のユーザー設定ファイル `config.json` と接続先プロファイルファイル `connection_profiles.json` を手動で確認・編集するための説明です。
 
 ## 起動中のSSHパスワード記憶
 
@@ -24,9 +24,23 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 `config.json` が存在しない場合、ExaTerm の起動時または設定読み込み時に既定値で自動作成されます。
 
+保存済み SSH/Telnet プロファイルは、同じディレクトリの `%AppData%\ExaTerm\connection_profiles.json` に保存されます。新規作成時の内容は次のとおりです。
+
+```json
+{
+  "saved_connections": []
+}
+```
+
+旧 `config.json` の `saved_connections` は、GUI の設定読み込み・保存時に自動移行されます。プロファイルファイルの保存が成功してから旧設定の項目を除去します。CLI/MCP などの読み取り専用処理では、ファイルを書き換えずに旧形式も読み込めます。
+
+両方にプロファイルがある場合は `connection_profiles.json` を優先し、統合しません。空配列も有効で、旧設定のプロファイルは復活しません。プロファイルファイルが破損している、または読み取れない場合はエラーになり、旧設定への切り替えや空一覧での上書きは行いません。
+
+接続先だけを配布・移行する場合は、ExaTerm を終了してから `connection_profiles.json` 全体を差し替え、再起動してください。配布した一覧にはユーザー名・秘密鍵パス・外部制御の許可値も含まれるため、配布前に内容を確認してください。`config.json` の個人設定は維持されます。旧版の ExaTerm は分割後のプロファイルを読み込めないため、ダウングレードする場合は移行前のバックアップを使用してください。
+
 ## 編集前の注意
 
-- 編集前に `config.json` のバックアップを作成してください。
+- 編集前に `config.json` と `connection_profiles.json` のバックアップを作成してください。
 - ExaTerm を終了してから編集することを推奨します。起動中に設定画面で保存すると、手動編集した内容が上書きされる場合があります。
 - JSON 形式のため、末尾の余分なカンマや引用符の不足があると読み込みに失敗します。
 - API キーは `config.json` ではなく、OS の資格情報ストアに保存されます。
@@ -35,7 +49,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 ```json
 {
-  "config_version": 7,
+  "config_version": 8,
   "language": "system",
   "updates": {
     "check_on_startup": true
@@ -96,8 +110,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
       "mac": [],
       "compression": []
     }
-  },
-  "saved_connections": []
+  }
 }
 ```
 
@@ -105,7 +118,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 | パラメータ           | 型     | 既定値     | 説明                                                                                                                                            |
 | -------------------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`     | number | `7`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
+| `config_version`     | number | `8`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
 | `language`           | string | `"system"` | 画面表示言語です。`"system"` は OS の言語設定に従います。`"en"` は英語、`"ja"` は日本語です。未対応のシステム言語は英語にフォールバックします。 |
 | `updates`            | object | 下記参照   | 公開済みのExaTerm正式版を自動確認する動作を設定します。                                                                                         |
 | `connection_history` | object | 下記参照   | ローカルのSSH/Telnet接続履歴を設定します。                                                                                                      |
@@ -114,7 +127,6 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | `shortcuts`          | object | 下記参照   | アプリケーションのキーボードショートカット設定です。                                                                                            |
 | `terminal`           | object | 下記参照   | ターミナル表示とログ関連の設定です。                                                                                                            |
 | `ssh`                | object | 下記参照   | SSH 接続の互換性設定です。                                                                                                                      |
-| `saved_connections`  | array  | `[]`       | 保存済み SSH/Telnet 接続プロファイルです。プロファイルは接続ダイアログから作成、選択、削除できます。                                            |
 
 ## updates
 
@@ -153,7 +165,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 ### AI API キーについて
 
-OpenAI、Azure OpenAI、Anthropic、Google Gemini、OpenRouter の API キーは `config.json` には保存されません。設定画面で登録したキーは、OS の資格情報ストアに保存されます。
+OpenAI、Azure OpenAI、Anthropic、Google Gemini、OpenRouter の API キーは `config.json` と `connection_profiles.json` には保存されません。設定画面で登録したキーは、OS の資格情報ストアに保存されます。
 
 Azure OpenAI の chat completions URL 全体とモデルデプロイ名を設定してください。ExaTerm は Endpoint URL を入力どおりに使用し、パスや `api-version` は自動付与しません。
 
@@ -329,11 +341,11 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 
 未知の名前、重複、空の分類は拒否されます。Strict key exchange や extension info などの SSH 内部拡張マーカーは自動管理されるため、設定には追加しないでください。
 
-## saved_connections
+## connection_profiles.json の saved_connections
 
-`saved_connections` は保存済み SSH/Telnet 接続プロファイルを表す配列です。プロファイルは接続ダイアログから管理できます。シリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズ、その他の認証情報はこのセクションには保存されません。プロファイルのメモは平文で保存され、外部プロファイル接続が有効な場合は `list_connection_profiles` で返る可能性があるため、秘密情報は入力しないでください。既存プロファイルで `external_control_enabled` が未設定の場合は `true` として扱われます。
+`connection_profiles.json` の `saved_connections` は保存済み SSH/Telnet 接続プロファイルを表す配列です。プロファイルは接続ダイアログから管理できます。シリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズ、その他の認証情報はこのセクションには保存されません。プロファイルのメモは平文で保存され、外部プロファイル接続が有効な場合は `list_connection_profiles` で返る可能性があるため、秘密情報は入力しないでください。既存プロファイルで `external_control_enabled` が未設定の場合は `true` として扱われます。
 
-接続ダイアログでグループ名を入力するか既存の候補を選び、プロファイルを保存・更新します。グループ欄を空にすると「未分類」へ移動します。グループ名は `config.json` に平文で保存されます。グループ変更でプロファイル ID、踏み台参照、既存セッションは変わりません。保存済みプロファイルの選択欄はグループ別に表示され、空のグループは保持しません。
+接続ダイアログでグループ名を入力するか既存の候補を選び、プロファイルを保存・更新します。グループ欄を空にすると「未分類」へ移動します。グループ名は `connection_profiles.json` に平文で保存されます。グループ変更でプロファイル ID、踏み台参照、既存セッションは変わりません。保存済みプロファイルの選択欄はグループ別に表示され、空のグループは保持しません。
 
 接続設定と SSH の踏み台選択は、選択欄を開いて名前・ホスト名/IP・グループ名・メモで検索できます。検索は現在の接続種別内で英字の大小文字を区別せず部分一致し、最近の接続は表示名と接続先でも絞り込めます。手動入力（踏み台では直接接続）は常に選択できます。上下キーで候補を移動し、Enter で選択、Escape で一覧を閉じます。候補の選択だけでは接続しません。検索や検索のクリアで選択済みプロファイルとフォームの入力値は変わりません。
 
@@ -373,7 +385,7 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 }
 ```
 
-`jump_profile_id` を設定すると、ExaTerm は参照先の SSH プロファイルへ先に接続し、その踏み台経由で接続先への SSH 接続を開きます。踏み台プロファイルからさらに別の踏み台を参照することはできず、自分自身を踏み台に指定することもできません。踏み台と接続先の SSH パスワードや暗号化鍵パスフレーズは ExaTerm UI で入力し、`config.json` には保存されません。
+`jump_profile_id` を設定すると、ExaTerm は参照先の SSH プロファイルへ先に接続し、その踏み台経由で接続先への SSH 接続を開きます。踏み台プロファイルからさらに別の踏み台を参照することはできず、自分自身を踏み台に指定することもできません。踏み台と接続先の SSH パスワードや暗号化鍵パスフレーズは ExaTerm UI で入力し、`config.json` と `connection_profiles.json` には保存されません。
 
 `auto` は OpenSSH の既定優先順のうち ExaTerm が対応する公開鍵、keyboard-interactive、パスワードの順に認証を試します。プロファイルの秘密鍵を `ssh.default_private_key_path` より優先し、どちらも未設定の場合は公開鍵認証を行いません。自動認証で鍵に問題がある場合は接続診断へ表示し、サーバーが対応する次の方式を試します。明示的な `public_key` 認証では、従来どおりプロファイルまたは接続画面で秘密鍵を指定する必要があります。
 

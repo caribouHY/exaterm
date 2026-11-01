@@ -163,6 +163,7 @@ See [ADR 0001](decisions/0001-local-external-control-and-mcp-stdio.md) for the d
 Windows user data is stored under the ExaTerm application-data directory:
 
 - `%AppData%/ExaTerm/config.json`: user settings.
+- `%AppData%/ExaTerm/connection_profiles.json`: saved SSH/Telnet profiles, stored separately from user settings.
 - `%AppData%/ExaTerm/connection_history.json`: recent successful GUI SSH and Telnet settings without passwords or passphrases.
 - `%AppData%/ExaTerm/logs/`: optional plaintext terminal logs.
 - `%AppData%/ExaTerm/logs/index.json`: log-session index.
@@ -170,7 +171,9 @@ Windows user data is stored under the ExaTerm application-data directory:
 - Operating-system credential store: cloud AI API keys.
 - Rust SSH state: opt-in password-authentication cache shared by all GUI windows and GUI/CLI/MCP connections, scoped to host, port, username, and verified host key. It is never persisted. Only accepted password authentication can populate it; keyboard-interactive and key passphrases are excluded. Clear advances a generation to reject writes from older attempts, while per-key revisions prevent stale failures or successes from replacing newer entries. Cancelled attempts cannot populate it. SSH settings can clear the cache without affecting sessions.
 
-Do not move cloud API keys into `config.json`, logs, terminal buffers, or external-control responses.
+Configuration reads combine user settings and saved profiles into the existing `AppConfig` payload used by the GUI, CLI, and MCP. A separate profile file takes priority over legacy embedded profiles, including when its list is empty. GUI configuration loads and saves migrate legacy profiles by saving the separate file before removing the embedded field; internal read-only configuration access does not write files. Normal settings saves preserve the profile file, and normal profile saves preserve the settings file. Writes use a temporary file in the destination directory followed by replacement. Profile read errors propagate without falling back to embedded profiles. Exit ExaTerm before externally replacing either file; filesystem watching and merging distributed definitions are not supported.
+
+Do not move cloud API keys into `config.json`, `connection_profiles.json`, logs, terminal buffers, or external-control responses.
 
 ## Documentation and Agent Workflows
 
