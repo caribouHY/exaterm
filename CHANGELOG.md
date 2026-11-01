@@ -4,6 +4,8 @@
 
 ### Added
 
+- Separated saved SSH/Telnet profiles into `connection_profiles.json` for independent backup and distribution, automatically migrating legacy profiles from `config.json` while preserving GUI, CLI, and MCP behavior.
+
 - Added session ID copying from terminal tab context menus for use with CLI commands and agent instructions.
 
 - Added `profile_id` to CLI/MCP session lists for saved SSH/Telnet connections opened through the GUI, CLI, or MCP, preserving the selected profile at connection start.

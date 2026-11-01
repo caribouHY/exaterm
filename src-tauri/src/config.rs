@@ -1,6 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashSet;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, Emitter};
@@ -8,7 +9,7 @@ use tauri::{AppHandle, Emitter};
 use crate::ai::{DEFAULT_AI_MODEL, DEFAULT_AI_PROVIDER};
 use crate::terminal_control::TerminalControlState;
 
-const CURRENT_CONFIG_VERSION: u32 = 7;
+const CURRENT_CONFIG_VERSION: u32 = 8;
 static CONFIG_FILE_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -742,17 +743,71 @@ pub(crate) fn config_read() -> Result<AppConfig, String> {
 }
 
 fn config_read_from_path(path: &Path) -> Result<(AppConfig, bool), String> {
-    if path.exists() {
-        let data = fs::read_to_string(path).map_err(|e| e.to_string())?;
-        let stored: serde_json::Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
-        let cfg: AppConfig = serde_json::from_value(stored.clone()).map_err(|e| e.to_string())?;
-        let cfg = cfg.migrate();
-        crate::ssh::validate_algorithm_config(&cfg.ssh)?;
-        validate_shortcut_config(&cfg.shortcuts)?;
-        let normalized = serde_json::to_value(&cfg).map_err(|e| e.to_string())?;
-        Ok((cfg, stored != normalized))
+    let profiles = read_connection_profiles(&connection_profiles_path(path))?;
+    let stored = match fs::read_to_string(path) {
+        Ok(data) => {
+            Some(serde_json::from_str::<serde_json::Value>(&data).map_err(|e| e.to_string())?)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut input = stored.clone().unwrap_or_else(|| serde_json::json!({}));
+    if profiles.is_some() {
+        if let Some(object) = input.as_object_mut() {
+            object.remove("saved_connections");
+        }
+    }
+    let mut config = serde_json::from_value::<AppConfig>(input)
+        .map_err(|e| e.to_string())?
+        .migrate();
+    let profiles_missing = profiles.is_none();
+    if let Some(profiles) = profiles {
+        config.saved_connections = profiles.saved_connections;
+    }
+    crate::ssh::validate_algorithm_config(&config.ssh)?;
+    validate_shortcut_config(&config.shortcuts)?;
+    let normalized = settings_value(&config)?;
+    Ok((
+        config,
+        profiles_missing || stored.as_ref() != Some(&normalized),
+    ))
+}
+
+#[derive(Serialize, Deserialize)]
+struct ConnectionProfiles {
+    saved_connections: Vec<SavedConnection>,
+}
+
+fn connection_profiles_path(config_path: &Path) -> PathBuf {
+    config_path.with_file_name("connection_profiles.json")
+}
+
+fn read_connection_profiles(path: &Path) -> Result<Option<ConnectionProfiles>, String> {
+    match fs::read_to_string(path) {
+        Ok(data) => serde_json::from_str(&data)
+            .map(Some)
+            .map_err(|error| format!("Failed to read connection profiles: {error}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("Failed to read connection profiles: {error}")),
+    }
+}
+
+fn settings_value(config: &AppConfig) -> Result<serde_json::Value, String> {
+    let mut value = serde_json::to_value(config).map_err(|error| error.to_string())?;
+    value.as_object_mut().unwrap().remove("saved_connections");
+    Ok(value)
+}
+
+fn save_connection_profiles(
+    path: &Path,
+    config: &AppConfig,
+    settings_need_write: bool,
+) -> Result<(), String> {
+    write_connection_profiles(path, &config.saved_connections)?;
+    if settings_need_write {
+        write_json_atomically(path, &settings_value(config)?)
     } else {
-        Ok((AppConfig::default(), true))
+        Ok(())
     }
 }
 
@@ -810,7 +865,7 @@ pub fn config_saved_connection_upsert(
         let changed = should_write || changed;
         if changed {
             validate_config(&config)?;
-            config_write_to_path(&config_path(), &config)
+            save_connection_profiles(&config_path(), &config, should_write)
                 .map_err(crate::command_error::BackendCommandError::from)?;
         }
         (config, changed)
@@ -832,10 +887,10 @@ pub fn config_saved_connection_delete(
 
     let config = {
         let _guard = lock_config_file().map_err(crate::command_error::BackendCommandError::from)?;
-        let (mut config, _) = config_read_from_path(&config_path())
+        let (mut config, should_write) = config_read_from_path(&config_path())
             .map_err(crate::command_error::BackendCommandError::from)?;
         delete_saved_connection(&mut config, &connection_type, &id)?;
-        config_write_to_path(&config_path(), &config)
+        save_connection_profiles(&config_path(), &config, should_write)
             .map_err(crate::command_error::BackendCommandError::from)?;
         config
     };
@@ -955,11 +1010,43 @@ fn validate_config(config: &AppConfig) -> Result<(), crate::command_error::Backe
 }
 
 fn config_write_to_path(path: &Path, config: &AppConfig) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
+    // Persist the separate copy before removing legacy profiles, so migration can be retried.
+    if read_connection_profiles(&connection_profiles_path(path))?.is_none() {
+        write_connection_profiles(path, &config.saved_connections)?;
     }
-    let data = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    fs::write(path, data).map_err(|e| e.to_string())
+    write_json_atomically(path, &settings_value(config)?)
+}
+
+fn write_connection_profiles(path: &Path, profiles: &[SavedConnection]) -> Result<(), String> {
+    write_json_atomically(
+        &connection_profiles_path(path),
+        &serde_json::json!({ "saved_connections": profiles }),
+    )
+}
+
+fn write_json_atomically(path: &Path, value: &serde_json::Value) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    let temporary = parent.join(format!(".{}.tmp", uuid::Uuid::new_v4()));
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|error| error.to_string())?;
+        let data = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
+        file.write_all(&data).map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+        drop(file);
+        fs::rename(&temporary, path).map_err(|error| error.to_string())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
 
 #[cfg(test)]

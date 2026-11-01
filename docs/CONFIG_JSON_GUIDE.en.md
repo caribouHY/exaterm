@@ -1,6 +1,6 @@
 # ExaTerm config.json Parameter Guide
 
-This guide explains how to inspect and manually edit ExaTerm's user settings file, `config.json`.
+This guide explains how to inspect and manually edit ExaTerm's user settings file, `config.json`, and connection profile file, `connection_profiles.json`.
 
 ## Remembering SSH passwords during this run
 
@@ -24,9 +24,23 @@ C:\Users\<user name>\AppData\Roaming\ExaTerm\config.json
 
 If `config.json` does not exist, ExaTerm creates it with default values when the app starts or when settings are loaded.
 
+Saved SSH/Telnet profiles are stored in `%AppData%\ExaTerm\connection_profiles.json`, in the same directory. A newly created profile file contains:
+
+```json
+{
+  "saved_connections": []
+}
+```
+
+Legacy `saved_connections` entries in `config.json` migrate automatically when the GUI loads or saves settings. ExaTerm saves the profile file before removing the legacy field. Read-only operations, including CLI/MCP configuration reads, can read legacy profiles without changing either file.
+
+When both files contain profiles, `connection_profiles.json` takes priority; the lists are not merged. An empty array is valid and does not restore legacy profiles. A malformed or unreadable profile file causes an error instead of falling back to legacy profiles or overwriting the file with an empty list.
+
+To distribute or move only connection profiles, exit ExaTerm, replace the entire `connection_profiles.json` file, and restart. Review usernames, private key paths, and external-control permissions before distributing profiles. Personal settings in `config.json` remain unchanged. Older ExaTerm versions cannot read the separated profiles; restore a pre-migration backup when downgrading.
+
 ## Before Editing
 
-- Back up `config.json` before editing it manually.
+- Back up `config.json` and `connection_profiles.json` before editing them manually.
 - It is recommended to close ExaTerm before editing the file. If you save settings from the app while it is running, your manual edits may be overwritten.
 - This is a JSON file. Extra trailing commas, missing quotation marks, or missing braces can make the file fail to load.
 - API keys are not stored in `config.json`. They are stored in the operating system credential store.
@@ -35,7 +49,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 ```json
 {
-  "config_version": 7,
+  "config_version": 8,
   "language": "system",
   "updates": {
     "check_on_startup": true
@@ -96,8 +110,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
       "mac": [],
       "compression": []
     }
-  },
-  "saved_connections": []
+  }
 }
 ```
 
@@ -105,7 +118,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 | Parameter            | Type   | Default    | Description                                                                                                                                                |
 | -------------------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`     | number | `7`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
+| `config_version`     | number | `8`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
 | `language`           | string | `"system"` | Display language. Use `"system"` to follow the OS language, `"en"` for English, or `"ja"` for Japanese. Unsupported system languages fall back to English. |
 | `updates`            | object | See below  | Controls automatic checks for published stable ExaTerm updates.                                                                                            |
 | `connection_history` | object | See below  | Controls local SSH and Telnet connection history.                                                                                                          |
@@ -114,7 +127,6 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | `shortcuts`          | object | See below  | Customizable application keyboard shortcuts.                                                                                                               |
 | `terminal`           | object | See below  | Terminal display and logging settings.                                                                                                                     |
 | `ssh`                | object | See below  | SSH connection compatibility settings.                                                                                                                     |
-| `saved_connections`  | array  | `[]`       | Saved SSH and Telnet connection profiles. Profiles can be created, selected, and deleted from the connection dialog.                                       |
 
 ## updates
 
@@ -329,11 +341,11 @@ The Settings screen shows the catalog supported by the bundled SSH library. In c
 
 Unknown names, duplicate names, and empty custom categories are rejected. Internal SSH extension markers, such as strict key exchange and extension info markers, are managed automatically and must not be added to the configuration.
 
-## saved_connections
+## saved_connections in connection_profiles.json
 
-`saved_connections` is an array of saved SSH and Telnet connection profiles. Profiles can be managed from the connection dialog. Serial profiles are not currently supported. Passwords, private key contents, key passphrases, and other credentials are not stored in this section. Profile memos are stored as plaintext and may be returned by `list_connection_profiles` when external profile connections are enabled, so do not put secrets in them. Existing profiles treat a missing `external_control_enabled` value as `true`.
+`saved_connections` in `connection_profiles.json` is an array of saved SSH and Telnet connection profiles. Profiles can be managed from the connection dialog. Serial profiles are not currently supported. Passwords, private key contents, key passphrases, and other credentials are not stored in this section. Profile memos are stored as plaintext and may be returned by `list_connection_profiles` when external profile connections are enabled, so do not put secrets in them. Existing profiles treat a missing `external_control_enabled` value as `true`.
 
-In the connection dialog, enter a group or choose an existing group suggestion, then save or update the profile. Clear the group to move the profile to Ungrouped. Group names are stored as plaintext in `config.json`. Changing a group preserves the profile ID, jump-host references, and existing sessions. Groups appear in the saved-profile selector; empty groups are not retained.
+In the connection dialog, enter a group or choose an existing group suggestion, then save or update the profile. Clear the group to move the profile to Ungrouped. Group names are stored as plaintext in `connection_profiles.json`. Changing a group preserves the profile ID, jump-host references, and existing sessions. Groups appear in the saved-profile selector; empty groups are not retained.
 
 Open the connection source or SSH jump-profile selector to search by name, hostname/IP, group, or memo. Search uses case-insensitive partial matching within the current connection type; recent connections can also be filtered by their display labels and endpoints. Manual entry (direct connection for jump hosts) remains available. Use the arrow keys to navigate, Enter to select, and Escape to close the list. Selection does not initiate a connection. Searching or clearing the query preserves the selected profile and connection form values.
 
@@ -373,7 +385,7 @@ Example:
 }
 ```
 
-When `jump_profile_id` is set, ExaTerm first connects to the referenced SSH profile and then opens the target connection through that jump host. The jump host profile cannot reference another jump host, and a profile cannot reference itself. SSH passwords and encrypted key passphrases for both the jump host and the target are requested in the ExaTerm UI and are not saved in `config.json`. Password authentication can opt in to process-memory reuse as described above.
+When `jump_profile_id` is set, ExaTerm first connects to the referenced SSH profile and then opens the target connection through that jump host. The jump host profile cannot reference another jump host, and a profile cannot reference itself. SSH passwords and encrypted key passphrases for both the jump host and the target are requested in the ExaTerm UI and are not saved in either `config.json` or `connection_profiles.json`. Password authentication can opt in to process-memory reuse as described above.
 
 `auto` follows the supported portion of OpenSSH's default preference order: public key, keyboard-interactive, then password. The profile key takes priority over `ssh.default_private_key_path`; when neither is configured, public-key authentication is skipped. A key error in Automatic mode is reported in the connection diagnostics and the next server-supported method is tried. Explicit `public_key` authentication still requires the profile or connection to specify its own key.
 
