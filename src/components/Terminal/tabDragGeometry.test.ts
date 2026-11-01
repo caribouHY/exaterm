@@ -273,7 +273,7 @@ describe("viewport and overlay geometry", () => {
     });
     expect(clampContextMenuPosition({ x: 790, y: 590 }, { width: 800, height: 600 })).toEqual({
       x: 572,
-      y: 464,
+      y: 432,
     });
     expect(clampContextMenuPosition({ x: -20, y: -10 }, { width: 800, height: 600 })).toEqual({
       x: 8,

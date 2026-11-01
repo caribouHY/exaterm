@@ -4,7 +4,7 @@ export const DRAG_START_DISTANCE = 4;
 export const DROP_SLOT_HYSTERESIS_PX = 14;
 
 const CONTEXT_MENU_WIDTH = 220;
-const CONTEXT_MENU_MAX_HEIGHT = 128;
+const CONTEXT_MENU_MAX_HEIGHT = 160;
 const CONTEXT_MENU_VIEWPORT_MARGIN = 8;
 
 export interface Point {

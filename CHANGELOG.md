@@ -4,6 +4,8 @@
 
 ### Added
 
+- Added session ID copying from terminal tab context menus for use with CLI commands and agent instructions.
+
 - Added `profile_id` to CLI/MCP session lists for saved SSH/Telnet connections opened through the GUI, CLI, or MCP, preserving the selected profile at connection start.
 
 - Added saved SSH/Telnet profile duplication into an editable new-profile draft, retaining groups and connection settings without modifying the original profile.

@@ -89,6 +89,9 @@ GUI が停止中の場合、`doctor` はGUIを起動し、制御プレーンを�
 
 ### セッション一覧
 
+ターミナルタブを右クリックして「セッションIDをコピー」を選ぶと、そのタブの `session_id` のみをコピーできます。
+コピーした値はCLIの `--session-id` や、エージェントへの指示に使用できます。
+
 `sessions list` は `sessions` 配列を返し、各項目に `session_id`、`protocol`、`target`、
 `encoding`、`status`、`profile_id` を含みます。GUI・CLI・MCPから保存済みSSH/Telnet
 プロファイルで接続した場合、`profile_id` は接続開始時に選択したプロファイルID
