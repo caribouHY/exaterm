@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.10.0
+
 ### Added
 
 - Separated saved SSH/Telnet profiles into `connection_profiles.json` for independent backup and distribution, automatically migrating legacy profiles from `config.json` while preserving GUI, CLI, and MCP behavior.
