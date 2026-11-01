@@ -30,7 +30,9 @@ Read only the relevant sections:
    software unless requested. Use `doctor` for readiness or control-plane problems, not
    before every healthy operation. It may start the visible GUI and wait up to 30 seconds.
 2. Run `sessions list`, check the native exit code, then parse successful stdout as JSON.
-   Select an exact returned session ID using its metadata. Ask which session to use if
+   Use `profile_id` with `protocol` to identify the saved source profile, then select an exact
+   returned session ID; the captured profile ID may outlive profile edits or deletion and
+   multiple sessions can share it. Ask which session to use if
    multiple sessions plausibly match. Never guess IDs.
 3. If a connection is needed, select an exact approved ID and type from `profiles list`,
    or an exact port from `serial ports`. For direct SSH/Telnet, use only a user-supplied
@@ -89,3 +91,11 @@ Read only the relevant sections:
 Report verified results, the relevant selected session or profile, and any timeout, missing
 completion evidence, truncation, or gap. Distinguish input sent, output observed, completion
 confirmed, and command success; a prompt alone does not prove the command succeeded.
+
+## Remembered SSH Passwords
+
+Password authentication may reuse a password explicitly remembered in the GUI for this
+ExaTerm process. Do not assume that every connection requires a new prompt or that the
+password can be retrieved through the CLI. `auto` only benefits when it reaches password
+authentication; keyboard-interactive, OTPs and key passphrases remain interactive. The user
+can clear all remembered passwords in SSH settings without disconnecting sessions.

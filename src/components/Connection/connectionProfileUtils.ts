@@ -4,6 +4,8 @@ import {
   type BackendErrorTranslator,
 } from "../../features/backend-errors/backendCommandError";
 
+import { normalizeProfileGroup } from "./connectionProfileGroups";
+
 export const SSH_ENCODINGS: { label: string; value: Encoding }[] = [
   { label: "UTF-8", value: "utf-8" },
   { label: "Shift-JIS", value: "shift-jis" },
@@ -60,6 +62,7 @@ export const normalizeProfileExternalControlEnabled = (
 
 export interface SshProfileDraft {
   profileName: string;
+  group: string;
   host: string;
   port: string;
   username: string;
@@ -74,6 +77,7 @@ export interface SshProfileDraft {
 
 export interface TelnetProfileDraft {
   profileName: string;
+  group: string;
   host: string;
   port: string;
   encoding: Encoding;
@@ -84,6 +88,7 @@ export interface TelnetProfileDraft {
 
 export const createSshProfile = (draft: SshProfileDraft): SavedConnection => ({
   id: draft.profileName.trim(),
+  group: normalizeProfileGroup(draft.group),
   connection_type: "ssh",
   host: draft.host.trim(),
   port: Number.parseInt(draft.port, 10),
@@ -101,6 +106,7 @@ export const createSshProfile = (draft: SshProfileDraft): SavedConnection => ({
 
 export const createTelnetProfile = (draft: TelnetProfileDraft): SavedConnection => ({
   id: draft.profileName.trim(),
+  group: normalizeProfileGroup(draft.group),
   connection_type: "telnet",
   host: draft.host.trim(),
   port: Number.parseInt(draft.port, 10),

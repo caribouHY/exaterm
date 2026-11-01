@@ -2,6 +2,11 @@
    Button Styles
    ============================================ */
 
+:where(button:not([role="option"]), input[type="checkbox"]):focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: -1px;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -101,10 +106,6 @@
   width: 100%;
 }
 
-.input:focus {
-  border-color: var(--color-border-focus);
-}
-
 .input::placeholder {
   color: var(--color-text-muted);
 }
@@ -121,8 +122,10 @@
   cursor: pointer;
 }
 
+.input:focus,
 .select:focus {
-  border-color: var(--color-border-focus);
+  outline: var(--focus-outline);
+  outline-offset: -1px;
 }
 
 /* ============================================

@@ -53,6 +53,7 @@ pub(crate) struct ExternalControlSshConnectRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ExternalControlTelnetConnectRequest {
+    pub(crate) profile_name: Option<String>,
     pub(crate) host: String,
     pub(crate) port: u16,
     pub(crate) cols: u32,
@@ -169,6 +170,7 @@ impl ExternalControlProtocolIo for TauriExternalControlProtocolIo {
                 logger: self.logger.as_ref(),
             },
             telnet::TelnetConnectRequest {
+                profile_name: request.profile_name,
                 host: request.host,
                 port: request.port,
                 cols: request.cols,
@@ -370,6 +372,7 @@ impl ExternalControlUiIo for TauriExternalControlUiIo {
 pub(crate) trait ExternalControlLogIo: Send + Sync {
     fn is_available(&self) -> bool;
     async fn active_log_session(&self, session_id: &str) -> Option<logger::LogSession>;
+    async fn active_log_state(&self, session_id: &str) -> Option<(logger::LogSession, bool)>;
     async fn start_auto_log(
         &self,
         session_id: String,
@@ -398,6 +401,11 @@ impl ExternalControlLogIo for LoggerExternalControlIo {
     async fn active_log_session(&self, session_id: &str) -> Option<logger::LogSession> {
         let state = self.state.as_ref()?;
         logger::active_log_session(state, session_id).await
+    }
+
+    async fn active_log_state(&self, session_id: &str) -> Option<(logger::LogSession, bool)> {
+        let state = self.state.as_ref()?;
+        logger::active_log_state(state, session_id).await
     }
 
     async fn start_auto_log(

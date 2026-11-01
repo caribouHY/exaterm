@@ -329,8 +329,23 @@ pub struct ExternalControlLogControlState {
 }
 
 type PendingLogControlResult = Result<ExternalControlLogControlAck, String>;
-type PendingLogControlRequests =
-    Arc<Mutex<HashMap<String, oneshot::Sender<PendingLogControlResult>>>>;
+type PendingLogControlRequests = Arc<std::sync::Mutex<HashMap<String, PendingLogControlRequest>>>;
+
+struct PendingLogControlRequest {
+    window_id: String,
+    sender: oneshot::Sender<PendingLogControlResult>,
+}
+
+struct PendingLogControlGuard {
+    state: ExternalControlLogControlState,
+    request_id: String,
+}
+
+impl Drop for PendingLogControlGuard {
+    fn drop(&mut self) {
+        self.state.pending.lock().unwrap().remove(&self.request_id);
+    }
+}
 
 impl ExternalControlLogControlState {
     pub fn new() -> Self {
@@ -345,6 +360,7 @@ impl ExternalControlLogControlState {
         payload: ExternalControlLogControlRequestPayload,
     ) -> Result<ExternalControlLogControlAck, String> {
         self.request_with_sender(
+            window_id,
             payload,
             Duration::from_millis(LOG_CONTROL_REQUEST_TIMEOUT_MS),
             |payload| {
@@ -358,6 +374,7 @@ impl ExternalControlLogControlState {
 
     pub(crate) async fn request_with_sender<F>(
         &self,
+        window_id: &str,
         payload: ExternalControlLogControlRequestPayload,
         timeout: Duration,
         send: F,
@@ -367,35 +384,55 @@ impl ExternalControlLogControlState {
     {
         let request_id = payload.request_id.clone();
         let (sender, receiver) = oneshot::channel();
-        self.pending.lock().await.insert(request_id.clone(), sender);
-
-        if let Err(error) = send(&payload) {
-            self.pending.lock().await.remove(&request_id);
-            return Err(error);
+        {
+            let mut pending = self.pending.lock().unwrap();
+            if pending.contains_key(&request_id) {
+                return Err("The external control log control request is already pending".into());
+            }
+            pending.insert(
+                request_id.clone(),
+                PendingLogControlRequest {
+                    window_id: window_id.to_string(),
+                    sender,
+                },
+            );
         }
+        let _guard = PendingLogControlGuard {
+            state: self.clone(),
+            request_id,
+        };
+        send(&payload)?;
 
         match time::timeout(timeout, receiver).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err("The external control log control request did not complete".into()),
-            Err(_) => {
-                self.pending.lock().await.remove(&request_id);
-                Err("The external control log control request timed out".into())
-            }
+            Err(_) => Err("The external control log control request timed out".into()),
         }
     }
 
     pub(crate) async fn submit(
         &self,
+        window_id: &str,
         request_id: String,
         file_path: Option<String>,
         error: Option<String>,
     ) -> Result<(), String> {
-        let sender = self
-            .pending
-            .lock()
-            .await
-            .remove(&request_id)
-            .ok_or_else(|| "The external control log control request was not found".to_string())?;
+        let sender = {
+            let mut pending = self.pending.lock().unwrap();
+            let request = pending
+                .get(&request_id)
+                .ok_or("The external control log control request was not found")?;
+            if request.window_id != window_id {
+                return Err(
+                    "The external control log control response does not match the request window"
+                        .into(),
+                );
+            }
+            pending
+                .remove(&request_id)
+                .expect("request checked under the same lock")
+                .sender
+        };
         let result = match error {
             Some(error) => Err(error),
             None => Ok(ExternalControlLogControlAck { file_path }),
@@ -408,12 +445,15 @@ impl ExternalControlLogControlState {
 
 #[tauri::command]
 pub async fn external_control_log_control_submit(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, ExternalControlLogControlState>,
     request_id: String,
     file_path: Option<String>,
     error: Option<String>,
 ) -> Result<(), String> {
-    state.submit(request_id, file_path, error).await
+    state
+        .submit(window.label(), request_id, file_path, error)
+        .await
 }
 
 #[cfg(test)]
@@ -436,17 +476,27 @@ mod log_control_tests {
         let state = ExternalControlLogControlState::new();
         let submit_state = state.clone();
         let ack = state
-            .request_with_sender(payload("success"), Duration::from_secs(1), move |sent| {
-                assert_eq!(sent.request_id, "success");
-                assert_eq!(sent.session_id, "s1");
-                tokio::spawn(async move {
-                    submit_state
-                        .submit("success".into(), Some("C:\\logs\\s1.log".into()), None)
-                        .await
-                        .unwrap();
-                });
-                Ok(())
-            })
+            .request_with_sender(
+                "main",
+                payload("success"),
+                Duration::from_secs(1),
+                move |sent| {
+                    assert_eq!(sent.request_id, "success");
+                    assert_eq!(sent.session_id, "s1");
+                    tokio::spawn(async move {
+                        submit_state
+                            .submit(
+                                "main",
+                                "success".into(),
+                                Some("C:\\logs\\s1.log".into()),
+                                None,
+                            )
+                            .await
+                            .unwrap();
+                    });
+                    Ok(())
+                },
+            )
             .await
             .unwrap();
 
@@ -458,15 +508,25 @@ mod log_control_tests {
         let state = ExternalControlLogControlState::new();
         let submit_state = state.clone();
         let error = state
-            .request_with_sender(payload("negative"), Duration::from_secs(1), move |_| {
-                tokio::spawn(async move {
-                    submit_state
-                        .submit("negative".into(), None, Some("GUI rejected request".into()))
-                        .await
-                        .unwrap();
-                });
-                Ok(())
-            })
+            .request_with_sender(
+                "main",
+                payload("negative"),
+                Duration::from_secs(1),
+                move |_| {
+                    tokio::spawn(async move {
+                        submit_state
+                            .submit(
+                                "main",
+                                "negative".into(),
+                                None,
+                                Some("GUI rejected request".into()),
+                            )
+                            .await
+                            .unwrap();
+                    });
+                    Ok(())
+                },
+            )
             .await
             .unwrap_err();
 
@@ -477,15 +537,18 @@ mod log_control_tests {
     async fn coordinator_cleans_up_after_send_failure() {
         let state = ExternalControlLogControlState::new();
         let error = state
-            .request_with_sender(payload("send-failed"), Duration::from_secs(1), |_| {
-                Err("send failed".into())
-            })
+            .request_with_sender(
+                "main",
+                payload("send-failed"),
+                Duration::from_secs(1),
+                |_| Err("send failed".into()),
+            )
             .await
             .unwrap_err();
 
         assert_eq!(error, "send failed");
         let late = state
-            .submit("send-failed".into(), None, None)
+            .submit("main", "send-failed".into(), None, None)
             .await
             .unwrap_err();
         assert!(late.contains("was not found"));
@@ -497,19 +560,166 @@ mod log_control_tests {
         let submit_state = state.clone();
         let (late_sender, late_receiver) = oneshot::channel();
         let error = state
-            .request_with_sender(payload("timeout"), Duration::from_millis(1), move |_| {
-                tokio::spawn(async move {
-                    time::sleep(Duration::from_millis(20)).await;
-                    let result = submit_state.submit("timeout".into(), None, None).await;
-                    let _ = late_sender.send(result);
-                });
-                Ok(())
-            })
+            .request_with_sender(
+                "main",
+                payload("timeout"),
+                Duration::from_millis(1),
+                move |_| {
+                    tokio::spawn(async move {
+                        time::sleep(Duration::from_millis(20)).await;
+                        let result = submit_state
+                            .submit("main", "timeout".into(), None, None)
+                            .await;
+                        let _ = late_sender.send(result);
+                    });
+                    Ok(())
+                },
+            )
             .await
             .unwrap_err();
 
         assert_eq!(error, "The external control log control request timed out");
         let late_error = late_receiver.await.unwrap().unwrap_err();
         assert!(late_error.contains("was not found"));
+    }
+
+    #[tokio::test]
+    async fn coordinator_rejects_foreign_error_before_accepting_owner_success() {
+        let state = ExternalControlLogControlState::new();
+        let responses = state.clone();
+        let ack = state
+            .request_with_sender(
+                "terminal-window",
+                payload("scoped"),
+                Duration::from_secs(1),
+                move |_| {
+                    tokio::spawn(async move {
+                        assert!(responses
+                            .submit(
+                                "main",
+                                "scoped".into(),
+                                None,
+                                Some("Session not found".into())
+                            )
+                            .await
+                            .unwrap_err()
+                            .contains("does not match"));
+                        assert_eq!(responses.pending.lock().unwrap().len(), 1);
+                        responses
+                            .submit(
+                                "terminal-window",
+                                "scoped".into(),
+                                Some("synthetic.log".into()),
+                                None,
+                            )
+                            .await
+                            .unwrap();
+                    });
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(ack.file_path.as_deref(), Some("synthetic.log"));
+        assert!(state.pending.lock().unwrap().is_empty());
+        assert!(state
+            .submit("terminal-window", "scoped".into(), None, None)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn coordinator_keeps_delivery_window_fixed_when_ownership_changes() {
+        let state = ExternalControlLogControlState::new();
+        let responses = state.clone();
+        let error = state
+            .request_with_sender(
+                "original-owner",
+                payload("moved"),
+                Duration::from_secs(1),
+                move |_| {
+                    tokio::spawn(async move {
+                        assert!(responses
+                            .submit("new-owner", "moved".into(), None, None)
+                            .await
+                            .is_err());
+                        responses
+                            .submit(
+                                "original-owner",
+                                "moved".into(),
+                                None,
+                                Some("Session moved before log control completed".into()),
+                            )
+                            .await
+                            .unwrap();
+                    });
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error, "Session moved before log control completed");
+        assert!(state.pending.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn dropping_log_control_request_releases_pending_entry() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+        let state = ExternalControlLogControlState::new();
+        let mut request = Box::pin(state.request_with_sender(
+            "main",
+            payload("cancelled"),
+            Duration::from_secs(60),
+            |_| Ok(()),
+        ));
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(matches!(request.as_mut().poll(&mut context), Poll::Pending));
+        assert_eq!(state.pending.lock().unwrap().len(), 1);
+        drop(request);
+        assert!(state.pending.lock().unwrap().is_empty());
+        assert!(state
+            .submit("main", "cancelled".into(), None, None)
+            .await
+            .unwrap_err()
+            .contains("was not found"));
+    }
+
+    #[tokio::test]
+    async fn duplicate_request_ids_do_not_replace_a_pending_owner() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+        let state = ExternalControlLogControlState::new();
+        let mut first = Box::pin(state.request_with_sender(
+            "original",
+            payload("same-id"),
+            Duration::from_secs(60),
+            |_| Ok(()),
+        ));
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(matches!(first.as_mut().poll(&mut context), Poll::Pending));
+        assert!(state
+            .request_with_sender(
+                "other",
+                payload("same-id"),
+                Duration::from_secs(1),
+                |_| panic!("duplicate must not be delivered")
+            )
+            .await
+            .is_err());
+        state
+            .submit(
+                "original",
+                "same-id".into(),
+                Some("original.log".into()),
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            first.await.unwrap().file_path.as_deref(),
+            Some("original.log")
+        );
+        assert!(state.pending.lock().unwrap().is_empty());
     }
 }

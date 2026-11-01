@@ -8,6 +8,7 @@ import {
 
 export type ConnectionInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 export interface SshAttemptInput {
+  profileName?: string;
   host: string;
   port: string;
   username: string;
@@ -39,7 +40,8 @@ export async function prepareSshConnection(
     port: number,
     username: string,
     authMethod: SshAuthMethod,
-    privateKeyPath: string
+    privateKeyPath: string,
+    profileName?: string
   ) => {
     if (!usesPrivateKeyAuthentication(authMethod) || (authMethod === "auto" && !privateKeyPath))
       return "";
@@ -54,7 +56,7 @@ export async function prepareSshConnection(
     }
     context.assertActive();
     return requiresPassphrase
-      ? context.credential({ phase, host, port, username, authMethod, privateKeyPath })
+      ? context.credential({ phase, host, port, username, authMethod, privateKeyPath, profileName })
       : "";
   };
   try {
@@ -87,7 +89,8 @@ export async function prepareSshConnection(
         jump.port ?? 22,
         jump.username,
         authMethod,
-        auth.privateKeyPath
+        auth.privateKeyPath,
+        jump.id
       );
       context.assertActive();
     }
@@ -97,7 +100,8 @@ export async function prepareSshConnection(
       Number(ssh.port),
       ssh.username,
       ssh.authMethod,
-      target.privateKeyPath
+      target.privateKeyPath,
+      ssh.profileName
     );
     context.assertActive();
   } catch (error) {
@@ -116,6 +120,7 @@ export async function prepareSshConnection(
       try {
         const pending = invoke<{ session_id: string }>("ssh_connect", {
           options: {
+            profileName: ssh.profileName ?? null,
             host: ssh.host,
             port: Number(ssh.port),
             username: ssh.username,

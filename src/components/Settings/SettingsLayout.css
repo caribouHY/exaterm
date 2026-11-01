@@ -69,12 +69,6 @@
   width: 100%;
 }
 
-.settings-panel .input:focus-visible,
-.settings-panel .select:focus-visible {
-  outline: var(--focus-outline);
-  outline-offset: 1px;
-}
-
 .settings-help {
   margin: 6px 0;
   color: var(--color-text-secondary);

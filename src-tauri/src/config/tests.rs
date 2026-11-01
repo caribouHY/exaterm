@@ -165,8 +165,9 @@ fn saved_connection_update_rejects_duplicates_and_missing_targets() {
 fn canonical_config_load_does_not_rewrite_the_file() {
     let config_file = TestConfigFile::new("canonical");
     let path = config_file.path();
-    let compact = serde_json::to_string(&AppConfig::default()).unwrap();
+    let compact = serde_json::to_string(&settings_value(&AppConfig::default()).unwrap()).unwrap();
     fs::write(&path, &compact).unwrap();
+    write_connection_profiles(&path, &[]).unwrap();
 
     let loaded = config_load_from_path(&path).unwrap();
 
@@ -184,7 +185,13 @@ fn missing_config_is_created_with_current_defaults() {
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
 
     assert_eq!(loaded.config_version, CURRENT_CONFIG_VERSION);
-    assert_eq!(stored, serde_json::to_value(&loaded).unwrap());
+    assert_eq!(stored, settings_value(&loaded).unwrap());
+    assert!(stored.get("saved_connections").is_none());
+    assert!(read_connection_profiles(&connection_profiles_path(&path))
+        .unwrap()
+        .unwrap()
+        .saved_connections
+        .is_empty());
 }
 
 #[test]
@@ -200,6 +207,285 @@ fn legacy_or_partial_config_is_rewritten_once() {
     assert_eq!(loaded.language, "ja");
     assert_ne!(rewritten, r#"{"config_version":1,"language":"ja"}"#);
     assert!(!config_read_from_path(&path).unwrap().1);
+}
+
+#[test]
+fn legacy_profiles_migrate_without_changing_payload_or_references() {
+    let file = TestConfigFile::new("legacy-profiles");
+    let mut config = AppConfig::default();
+    let mut target = saved_connection("ssh", "target");
+    target.group = Some("Lab".into());
+    target.host = Some("target.example".into());
+    target.username = Some("test-user".into());
+    target.jump_profile_id = Some("bastion".into());
+    target.private_key_path = Some("test-key".into());
+    target.memo = Some("Synthetic profile".into());
+    target.external_control_enabled = false;
+    config.saved_connections = vec![target, saved_connection("ssh", "bastion")];
+    let mut legacy = serde_json::to_value(&config).unwrap();
+    legacy["config_version"] = serde_json::json!(7);
+    fs::write(file.path(), serde_json::to_vec(&legacy).unwrap()).unwrap();
+
+    let (read_only, should_write) = config_read_from_path(file.path()).unwrap();
+    assert_eq!(read_only, config);
+    assert!(should_write);
+    assert!(!connection_profiles_path(file.path()).exists());
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&fs::read(file.path()).unwrap()).unwrap(),
+        legacy
+    );
+
+    let migrated = config_load_from_path(file.path()).unwrap();
+    assert_eq!(migrated, config);
+    assert_eq!(config_load_from_path(file.path()).unwrap(), config);
+    assert!(!config_read_from_path(file.path()).unwrap().1);
+    let stored: serde_json::Value =
+        serde_json::from_slice(&fs::read(file.path()).unwrap()).unwrap();
+    assert!(stored.get("saved_connections").is_none());
+    let profiles = read_connection_profiles(&connection_profiles_path(file.path()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(profiles.saved_connections, config.saved_connections);
+    assert_eq!(
+        serde_json::to_value(&migrated).unwrap()["saved_connections"],
+        legacy["saved_connections"]
+    );
+}
+
+#[test]
+fn separate_profiles_take_precedence_including_empty_lists() {
+    for profiles in [vec![], vec![saved_connection("telnet", "distributed")]] {
+        let file = TestConfigFile::new("precedence");
+        fs::write(
+            file.path(),
+            r#"{"saved_connections":"obsolete-invalid-value"}"#,
+        )
+        .unwrap();
+        write_connection_profiles(file.path(), &profiles).unwrap();
+        let before = fs::read(connection_profiles_path(file.path())).unwrap();
+
+        let loaded = config_load_from_path(file.path()).unwrap();
+
+        assert_eq!(loaded.saved_connections, profiles);
+        assert_eq!(
+            fs::read(connection_profiles_path(file.path())).unwrap(),
+            before
+        );
+        assert!(!config_read_from_path(file.path()).unwrap().1);
+    }
+}
+
+#[test]
+fn separate_profiles_load_without_a_settings_file() {
+    let file = TestConfigFile::new("profiles-only");
+    let profiles = vec![saved_connection("ssh", "distributed")];
+    write_connection_profiles(file.path(), &profiles).unwrap();
+
+    let (read_only, _) = config_read_from_path(file.path()).unwrap();
+    assert!(!file.path().exists());
+    assert_eq!(read_only.saved_connections, profiles);
+    let loaded = config_load_from_path(file.path()).unwrap();
+    assert_eq!(loaded, read_only);
+    assert_eq!(loaded.terminal, TerminalConfig::default());
+}
+
+#[test]
+fn invalid_or_unreadable_profiles_do_not_fall_back_or_overwrite_files() {
+    for invalid in [
+        "{",
+        "{}",
+        r#"{"saved_connections":null}"#,
+        r#"{"saved_connections":{}}"#,
+    ] {
+        let file = TestConfigFile::new("invalid-profiles");
+        let legacy = r#"{"saved_connections":[{"id":"legacy","connection_type":"ssh"}]}"#;
+        fs::write(file.path(), legacy).unwrap();
+        let profiles_path = connection_profiles_path(file.path());
+        fs::write(&profiles_path, invalid).unwrap();
+
+        assert!(config_read_from_path(file.path()).is_err());
+        assert!(config_load_from_path(file.path()).is_err());
+        assert!(config_write_to_path(file.path(), &AppConfig::default()).is_err());
+        assert_eq!(fs::read_to_string(file.path()).unwrap(), legacy);
+        assert_eq!(fs::read_to_string(profiles_path).unwrap(), invalid);
+    }
+
+    let file = TestConfigFile::new("unreadable-profiles");
+    fs::write(file.path(), "{}").unwrap();
+    fs::create_dir(connection_profiles_path(file.path())).unwrap();
+    assert!(config_load_from_path(file.path()).is_err());
+    assert_eq!(fs::read_to_string(file.path()).unwrap(), "{}");
+}
+
+#[test]
+fn invalid_settings_do_not_change_separate_profiles() {
+    let file = TestConfigFile::new("invalid-settings");
+    write_connection_profiles(file.path(), &[saved_connection("ssh", "target")]).unwrap();
+    let before = fs::read(connection_profiles_path(file.path())).unwrap();
+    fs::write(file.path(), "{").unwrap();
+
+    assert!(config_load_from_path(file.path()).is_err());
+    assert_eq!(fs::read_to_string(file.path()).unwrap(), "{");
+    assert_eq!(
+        fs::read(connection_profiles_path(file.path())).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn settings_save_preserves_distributed_profile_file_verbatim() {
+    let file = TestConfigFile::new("settings-save");
+    let base = config_load_from_path(file.path()).unwrap();
+    let distributed = r#"{"saved_connections":[{"id":"distributed","connection_type":"ssh","external_control_enabled":false}]}"#;
+    fs::write(connection_profiles_path(file.path()), distributed).unwrap();
+    #[cfg(windows)]
+    let _guard = {
+        use std::os::windows::fs::OpenOptionsExt;
+        fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(connection_profiles_path(file.path()))
+            .unwrap()
+    };
+    let latest = config_read_from_path(file.path()).unwrap().0;
+    let mut edited = base.clone();
+    edited.language = "ja".into();
+    let merged = merge_edited_config(&base, &edited, &latest).unwrap();
+
+    config_write_to_path(file.path(), &merged).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(connection_profiles_path(file.path())).unwrap(),
+        distributed
+    );
+    let loaded = config_load_from_path(file.path()).unwrap();
+    assert_eq!(loaded.language, "ja");
+    assert_eq!(loaded.saved_connections, latest.saved_connections);
+}
+
+#[test]
+fn profile_mutations_preserve_settings_file_verbatim() {
+    let file = TestConfigFile::new("profile-mutations");
+    config_load_from_path(file.path()).unwrap();
+    let settings = fs::read(file.path()).unwrap();
+    #[cfg(windows)]
+    let _guard = {
+        use std::os::windows::fs::OpenOptionsExt;
+        fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(file.path())
+            .unwrap()
+    };
+    let (mut config, should_write) = config_read_from_path(file.path()).unwrap();
+    assert!(!should_write);
+    let mut profile = saved_connection("ssh", "target");
+    profile.jump_profile_id = Some("bastion".into());
+    upsert_saved_connection(&mut config, None, saved_connection("ssh", "bastion")).unwrap();
+    upsert_saved_connection(&mut config, None, profile.clone()).unwrap();
+    save_connection_profiles(file.path(), &config, should_write).unwrap();
+    assert_eq!(config_read_from_path(file.path()).unwrap().0, config);
+
+    profile.group = Some("Lab".into());
+    profile.external_control_enabled = false;
+    upsert_saved_connection(&mut config, Some("target"), profile).unwrap();
+    save_connection_profiles(file.path(), &config, false).unwrap();
+    assert_eq!(config_read_from_path(file.path()).unwrap().0, config);
+
+    delete_saved_connection(&mut config, "ssh", "target").unwrap();
+    save_connection_profiles(file.path(), &config, false).unwrap();
+    assert_eq!(config_read_from_path(file.path()).unwrap().0, config);
+    assert_eq!(fs::read(file.path()).unwrap(), settings);
+}
+
+#[test]
+fn profile_mutation_can_finish_legacy_migration() {
+    for delete in [false, true] {
+        let file = TestConfigFile::new("mutate-legacy");
+        fs::write(
+            file.path(),
+            r#"{"saved_connections":[{"id":"legacy","connection_type":"ssh"}]}"#,
+        )
+        .unwrap();
+        let (mut config, should_write) = config_read_from_path(file.path()).unwrap();
+        if delete {
+            delete_saved_connection(&mut config, "ssh", "legacy").unwrap();
+        } else {
+            upsert_saved_connection(&mut config, None, saved_connection("telnet", "new")).unwrap();
+        }
+        save_connection_profiles(file.path(), &config, should_write).unwrap();
+        assert_eq!(config_load_from_path(file.path()).unwrap(), config);
+        assert!(!config_read_from_path(file.path()).unwrap().1);
+    }
+}
+
+#[test]
+fn failed_atomic_replacement_cleans_temporary_file() {
+    let file = TestConfigFile::new("blocked-destination");
+    fs::create_dir(file.path()).unwrap();
+    fs::write(file.path().join("preserved"), "original").unwrap();
+
+    assert!(write_json_atomically(file.path(), &serde_json::json!({})).is_err());
+
+    assert_eq!(
+        fs::read_to_string(file.path().join("preserved")).unwrap(),
+        "original"
+    );
+    assert_eq!(fs::read_dir(&file.directory).unwrap().count(), 1);
+}
+
+#[cfg(windows)]
+#[test]
+fn interrupted_migration_retains_both_copies_and_retries_safely() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let file = TestConfigFile::new("interrupted-migration");
+    let legacy = r#"{"saved_connections":[{"id":"legacy","connection_type":"ssh"}]}"#;
+    fs::write(file.path(), legacy).unwrap();
+    let guard = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .open(file.path())
+        .unwrap();
+
+    assert!(config_load_from_path(file.path()).is_err());
+    assert_eq!(fs::read_to_string(file.path()).unwrap(), legacy);
+    let profiles_path = connection_profiles_path(file.path());
+    let profiles = fs::read(&profiles_path).unwrap();
+    drop(guard);
+
+    let loaded = config_load_from_path(file.path()).unwrap();
+    assert_eq!(
+        loaded.saved_connections,
+        vec![saved_connection("ssh", "legacy")]
+    );
+    assert_eq!(fs::read(profiles_path).unwrap(), profiles);
+    assert!(!config_read_from_path(file.path()).unwrap().1);
+}
+
+#[cfg(windows)]
+#[test]
+fn failed_profile_write_preserves_legacy_settings_and_profiles() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let file = TestConfigFile::new("failed-profile-save");
+    let legacy = r#"{"saved_connections":[{"id":"legacy","connection_type":"ssh"}]}"#;
+    fs::write(file.path(), legacy).unwrap();
+    write_connection_profiles(file.path(), &[saved_connection("ssh", "original")]).unwrap();
+    let profiles_path = connection_profiles_path(file.path());
+    let before = fs::read(&profiles_path).unwrap();
+    let _guard = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .open(&profiles_path)
+        .unwrap();
+    let (mut config, should_write) = config_read_from_path(file.path()).unwrap();
+    config.saved_connections.clear();
+
+    assert!(save_connection_profiles(file.path(), &config, should_write).is_err());
+    assert_eq!(fs::read_to_string(file.path()).unwrap(), legacy);
+    assert_eq!(fs::read(profiles_path).unwrap(), before);
+    assert_eq!(fs::read_dir(&file.directory).unwrap().count(), 2);
 }
 
 #[test]
@@ -324,6 +610,7 @@ fn partial_nested_config_uses_field_defaults() {
     assert!(serialized["ssh"].get("allow_legacy_algorithms").is_none());
     assert_eq!(serialized["ssh"]["algorithm_mode"], "custom");
     assert_eq!(cfg.saved_connections[0].id, "dev box");
+    assert_eq!(cfg.saved_connections[0].group, None);
     assert_eq!(cfg.saved_connections[0].encoding, None);
     assert_eq!(cfg.saved_connections[0].terminal_mode, None);
     assert_eq!(cfg.saved_connections[0].auth_method, None);
@@ -855,4 +1142,63 @@ fn shortcut_config_validates_modifier_and_function_key_rules() {
         shift: false,
     });
     assert!(validate_shortcut_config(&shortcuts).is_err());
+}
+
+#[test]
+fn saved_connection_groups_round_trip_and_normalize_legacy_values() {
+    for (input, expected) in [
+        (serde_json::json!(null), None),
+        (serde_json::json!(" \t "), None),
+        (serde_json::json!(" 拠点 A "), Some("拠点 A")),
+    ] {
+        let mut config: AppConfig = serde_json::from_value(serde_json::json!({
+            "saved_connections": [
+                {"id": "router", "connection_type": "ssh", "group": input,
+                 "jump_profile_id": "bastion", "external_control_enabled": false}
+            ]
+        }))
+        .unwrap();
+        assert_eq!(config.saved_connections[0].group.as_deref(), expected);
+        let file = TestConfigFile::new("profile-groups");
+        config_write_to_path(file.path(), &config).unwrap();
+        let (loaded, _) = config_read_from_path(file.path()).unwrap();
+        assert_eq!(loaded.saved_connections, config.saved_connections);
+
+        let mut edited = config.clone();
+        edited.terminal.font_size += 1;
+        config.saved_connections[0].group = Some("Changed".into());
+        let merged = merge_edited_config(&loaded, &edited, &config).unwrap();
+        assert_eq!(merged.saved_connections, config.saved_connections);
+    }
+}
+
+#[test]
+fn moving_and_clearing_groups_preserves_identity_references_and_other_profiles() {
+    let mut config = AppConfig::default();
+    let mut router = saved_connection("ssh", "router");
+    router.group = Some("Site A".into());
+    router.jump_profile_id = Some("bastion".into());
+    router.external_control_enabled = false;
+    let mut bastion = saved_connection("ssh", "bastion");
+    bastion.group = Some("Site A".into());
+    let mut telnet = saved_connection("telnet", "router");
+    telnet.group = Some("Site A".into());
+    config.saved_connections = vec![router.clone(), bastion.clone(), telnet.clone()];
+
+    for (group, expected) in [(" Site B ", Some("Site B")), ("  ", None)] {
+        router.group = Some(group.into());
+        assert!(upsert_saved_connection(&mut config, Some("router"), router.clone()).unwrap());
+        let updated = &config.saved_connections[0];
+        assert_eq!(updated.group.as_deref(), expected);
+        assert_eq!(updated.id, "router");
+        assert_eq!(updated.jump_profile_id.as_deref(), Some("bastion"));
+        assert!(!updated.external_control_enabled);
+        assert_eq!(config.saved_connections[1], bastion);
+        assert_eq!(config.saved_connections[2], telnet);
+        assert!(!upsert_saved_connection(&mut config, Some("router"), router.clone()).unwrap());
+    }
+
+    let mut duplicate = router;
+    duplicate.group = Some("Different group".into());
+    assert!(upsert_saved_connection(&mut config, None, duplicate).is_err());
 }

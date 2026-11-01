@@ -194,6 +194,7 @@ export type TerminalMode = CatalogTerminalMode;
 
 export interface SavedConnection {
   id: string;
+  group?: string | null;
   connection_type: "ssh" | "telnet" | (string & {});
   host?: string | null;
   port?: number | null;

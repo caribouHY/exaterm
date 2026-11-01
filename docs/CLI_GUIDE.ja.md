@@ -6,6 +6,12 @@
 
 この CLI は ExaTerm v0.7.0 以降で利用できます。
 
+## 起動中のSSHパスワード記憶
+
+SSHのpassword認証画面で「ExaTerm終了までパスワードを記憶する」を選ぶと、認証に成功したパスワードをGUIプロセスのメモリ内だけに保持します。初期状態はオフです。同じホスト・ポート・ユーザー名・検証済みホスト鍵へのGUI、CLI、MCP接続で再利用し、踏み台の認証にも個別に指定できます。`auto`でpassword認証を使う場合も対象ですが、keyboard-interactive、OTP、秘密鍵のパスフレーズは記憶しません。記憶した値が拒否された場合は破棄し、接続が維持されていてpassword認証を続けられる場合に手入力を1回受け付けます。切断された場合は次回接続で入力します。
+
+記憶したパスワードはファイルやOS資格情報ストアには保存せず、ExaTerm終了時に失われます。ウィンドウを閉じてもGUIプロセスが残る場合は保持されます。SSH設定の「記憶したパスワードを消去」で全件を即時消去でき、接続中のセッションには影響しません。消去前から進行中の処理は再記憶できませんが、すでに送信した認証要求は取り消せません。ホスト鍵の確認・検証と外部制御の許可は引き続き必要です。
+
 ## インストールと設定
 
 Windows インストーラーは `exaterm-cli.exe` を ExaTerm 本体と同じ場所へ配置します。
@@ -81,6 +87,22 @@ GUI が停止中の場合、`doctor` はGUIを起動し、制御プレーンを�
 失敗しても、独立したチェックは続行します。全チェック成功時だけ終了コードは `0` となり、
 失敗またはスキップが1つでもあれば `1` となります。
 
+### セッション一覧
+
+ターミナルタブを右クリックして「セッションIDをコピー」を選ぶと、そのタブの `session_id` のみをコピーできます。
+コピーした値はCLIの `--session-id` や、エージェントへの指示に使用できます。
+
+`sessions list` は `sessions` 配列を返し、各項目に `session_id`、`protocol`、`target`、
+`encoding`、`status`、`profile_id` を含みます。GUI・CLI・MCPから保存済みSSH/Telnet
+プロファイルで接続した場合、`profile_id` は接続開始時に選択したプロファイルID
+（現在はプロファイル名と同じ）です。GUIで接続設定を未保存のまま編集した場合も選択元のIDを保持します。
+直接接続・履歴からの接続・Serial接続は `null` です。接続先からプロファイルを推測しません。
+同じIDを持つSSH/Telnetプロファイルは `protocol` と併せて判別し、個々のセッションは `session_id` で選択します。
+
+このIDはプロファイルの名前変更・削除、タブ名変更、ウィンドウ間移動、切断によって変わらず、
+セッションが一覧に残る間は保持されます。現在のプロファイルの存在や `target` との一致を保証するものではありません。
+MCPの `list_terminal_sessions` も同じ項目を返します。
+
 ### 保存済みプロファイル
 
 SSH と Telnet では同じ ID を使用できます。接続種別を必ず指定してください。
@@ -91,6 +113,8 @@ exaterm-cli profiles list --type telnet
 exaterm-cli profiles connect --type ssh --profile-id router
 exaterm-cli profiles connect --type telnet --profile-id router
 ```
+
+保存済みプロファイル接続では、タブタイトルと結果の `title` にプロファイル名を使用し、`target` は実際の接続先を保持します。SSH認証画面には名前と実際の接続先を併記し、踏み台の認証には踏み台の名前を表示します。MCP の `connect_saved_profile` も同様です。
 
 `profiles list` で `--type` を省略すると、SSH と Telnet の両方を返します。
 ID と種別の両方が一致する必要があります。接続には `external_control.connect_enabled=true` と、

@@ -288,8 +288,9 @@ pub async fn workspace_tab_register(
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
     input: WorkspaceTabRegisterInput,
+    terminals: tauri::State<'_, crate::terminal_control::TerminalControlState>,
 ) -> Result<WorkspaceSnapshot, String> {
-    let snapshot = state.register_tab(input).await;
+    let snapshot = state.register_session_tab(input, &terminals).await;
     emit_workspace_updated(&app, &snapshot);
     Ok(snapshot)
 }

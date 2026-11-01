@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { ManualLogOperationError, type ManualLogController } from "./manualLogController";
+import {
+  createManualLogController,
+  ManualLogOperationError,
+  type ManualLogController,
+} from "./manualLogController";
+import type { TabInfo } from "../../types";
 import {
   createExternalLogControlHandlers,
   externalLogControlErrorMessage,
@@ -191,7 +196,7 @@ describe("externalLogControl", () => {
       pause: vi.fn(async () => {}),
       resume: vi.fn(async () => {}),
     };
-    const dispose = subscribeExternalLogControl(listen, handlers, vi.fn());
+    const dispose = subscribeExternalLogControl(listen, "main", handlers, vi.fn());
 
     dispose();
     listeners.get("external-control://log-start-request")?.({ payload });
@@ -227,7 +232,7 @@ describe("externalLogControl", () => {
       pause: vi.fn(async () => {}),
       resume: vi.fn(async () => {}),
     };
-    const dispose = subscribeExternalLogControl(listen, handlers, vi.fn());
+    const dispose = subscribeExternalLogControl(listen, "main", handlers, vi.fn());
     await Promise.resolve();
 
     listeners.get("external-control://log-start-request")?.({ payload });
@@ -250,6 +255,7 @@ describe("externalLogControl", () => {
         : Promise.reject(new Error("registration failed"));
     const dispose = subscribeExternalLogControl(
       listen,
+      "main",
       {
         start: vi.fn(async () => {}),
         stop: vi.fn(async () => {}),
@@ -267,3 +273,85 @@ describe("externalLogControl", () => {
     expect(unlisten).toHaveBeenCalledOnce();
   });
 });
+
+it.each(["start", "stop", "pause", "resume"] as const)(
+  "delivers %s only to the owner while the former window remains open",
+  async (action) => {
+    const listeners: Array<{
+      event: string;
+      target: { kind: "WebviewWindow"; label: string };
+      receive: (event: { payload: ExternalLogControlRequestPayload }) => void;
+    }> = [];
+    const listen: Parameters<typeof subscribeExternalLogControl>[0] = async <T>(
+      event: string,
+      receive: (event: { payload: T }) => void,
+      options: { target: { kind: "WebviewWindow"; label: string } }
+    ) => {
+      listeners.push({
+        event,
+        target: options.target,
+        receive: receive as (event: { payload: ExternalLogControlRequestPayload }) => void,
+      });
+      return () => {};
+    };
+    const responses: ExternalLogControlResponse[] = [];
+    const ownerFinished = deferred<undefined>();
+    const startBackend = vi.fn(async () => "synthetic.log");
+    const stopBackend = vi.fn(async () => {});
+    const setBackendPaused = vi.fn(async () => {});
+    const disposers = ["former", "owner"].map((windowId) => {
+      const controller = createManualLogController({
+        getTabBySessionId: () =>
+          windowId === "owner"
+            ? ({
+                id: "tab",
+                sessionId: payload.session_id,
+                isConnected: true,
+                kind: "terminal",
+                title: "Synthetic",
+                connectionType: "ssh",
+                encoding: "utf-8",
+                terminalMode: "general",
+              } as TabInfo)
+            : null,
+        getBackendStatus: async () => ({
+          active: action !== "start",
+          paused: action === "resume",
+          filePath: "synthetic.log",
+        }),
+        startBackend,
+        stopBackend,
+        setBackendPaused,
+      });
+      const handlers = createExternalLogControlHandlers({
+        controller,
+        waitForUiUpdate: async () => {},
+        submit: async (response) => {
+          responses.push(response);
+          if (windowId === "owner") ownerFinished.resolve(undefined);
+        },
+        onSubmitError: vi.fn(),
+      });
+      return subscribeExternalLogControl(listen, windowId, handlers, vi.fn());
+    });
+    for (const registration of listeners) {
+      expect(registration.target.kind).toBe("WebviewWindow");
+      if (
+        registration.event === `external-control://log-${action}-request` &&
+        registration.target.label === "owner"
+      ) {
+        registration.receive({ payload });
+      }
+    }
+    await ownerFinished.promise;
+    expect(responses).toHaveLength(1);
+    expect(responses[0].error).toBeNull();
+    if (action === "start") expect(startBackend).toHaveBeenCalledOnce();
+    if (action === "stop") expect(stopBackend).toHaveBeenCalledOnce();
+    if (action === "pause" || action === "resume")
+      expect(setBackendPaused).toHaveBeenCalledWith(payload.session_id, action === "pause");
+    disposers.forEach((dispose) => {
+      dispose();
+    });
+  }
+);

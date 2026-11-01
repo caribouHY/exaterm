@@ -1,6 +1,12 @@
 # ExaTerm config.json パラメータ説明
 
-この資料は、ExaTerm のユーザー設定ファイル `config.json` を手動で確認・編集するための説明です。
+この資料は、ExaTerm のユーザー設定ファイル `config.json` と接続先プロファイルファイル `connection_profiles.json` を手動で確認・編集するための説明です。
+
+## 起動中のSSHパスワード記憶
+
+SSHのpassword認証画面で「ExaTerm終了までパスワードを記憶する」を選ぶと、認証に成功したパスワードをGUIプロセスのメモリ内だけに保持します。初期状態はオフです。同じホスト・ポート・ユーザー名・検証済みホスト鍵へのGUI、CLI、MCP接続で再利用し、踏み台の認証にも個別に指定できます。`auto`でpassword認証を使う場合も対象ですが、keyboard-interactive、OTP、秘密鍵のパスフレーズは記憶しません。記憶した値が拒否された場合は破棄し、接続が維持されていてpassword認証を続けられる場合に手入力を1回受け付けます。切断された場合は次回接続で入力します。
+
+記憶したパスワードはファイルやOS資格情報ストアには保存せず、ExaTerm終了時に失われます。ウィンドウを閉じてもGUIプロセスが残る場合は保持されます。SSH設定の「記憶したパスワードを消去」で全件を即時消去でき、接続中のセッションには影響しません。消去前から進行中の処理は再記憶できませんが、すでに送信した認証要求は取り消せません。ホスト鍵の確認・検証と外部制御の許可は引き続き必要です。
 
 ## ファイルの場所
 
@@ -18,9 +24,23 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 `config.json` が存在しない場合、ExaTerm の起動時または設定読み込み時に既定値で自動作成されます。
 
+保存済み SSH/Telnet プロファイルは、同じディレクトリの `%AppData%\ExaTerm\connection_profiles.json` に保存されます。新規作成時の内容は次のとおりです。
+
+```json
+{
+  "saved_connections": []
+}
+```
+
+旧 `config.json` の `saved_connections` は、GUI の設定読み込み・保存時に自動移行されます。プロファイルファイルの保存が成功してから旧設定の項目を除去します。CLI/MCP などの読み取り専用処理では、ファイルを書き換えずに旧形式も読み込めます。
+
+両方にプロファイルがある場合は `connection_profiles.json` を優先し、統合しません。空配列も有効で、旧設定のプロファイルは復活しません。プロファイルファイルが破損している、または読み取れない場合はエラーになり、旧設定への切り替えや空一覧での上書きは行いません。
+
+接続先だけを配布・移行する場合は、ExaTerm を終了してから `connection_profiles.json` 全体を差し替え、再起動してください。配布した一覧にはユーザー名・秘密鍵パス・外部制御の許可値も含まれるため、配布前に内容を確認してください。`config.json` の個人設定は維持されます。旧版の ExaTerm は分割後のプロファイルを読み込めないため、ダウングレードする場合は移行前のバックアップを使用してください。
+
 ## 編集前の注意
 
-- 編集前に `config.json` のバックアップを作成してください。
+- 編集前に `config.json` と `connection_profiles.json` のバックアップを作成してください。
 - ExaTerm を終了してから編集することを推奨します。起動中に設定画面で保存すると、手動編集した内容が上書きされる場合があります。
 - JSON 形式のため、末尾の余分なカンマや引用符の不足があると読み込みに失敗します。
 - API キーは `config.json` ではなく、OS の資格情報ストアに保存されます。
@@ -29,7 +49,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 ```json
 {
-  "config_version": 7,
+  "config_version": 8,
   "language": "system",
   "updates": {
     "check_on_startup": true
@@ -90,8 +110,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
       "mac": [],
       "compression": []
     }
-  },
-  "saved_connections": []
+  }
 }
 ```
 
@@ -99,7 +118,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 | パラメータ           | 型     | 既定値     | 説明                                                                                                                                            |
 | -------------------- | ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`     | number | `7`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
+| `config_version`     | number | `8`        | 設定ファイルのバージョンです。通常は変更しません。古い設定を読み込んだ場合、ExaTerm が現在のバージョンへ更新します。                            |
 | `language`           | string | `"system"` | 画面表示言語です。`"system"` は OS の言語設定に従います。`"en"` は英語、`"ja"` は日本語です。未対応のシステム言語は英語にフォールバックします。 |
 | `updates`            | object | 下記参照   | 公開済みのExaTerm正式版を自動確認する動作を設定します。                                                                                         |
 | `connection_history` | object | 下記参照   | ローカルのSSH/Telnet接続履歴を設定します。                                                                                                      |
@@ -108,7 +127,6 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 | `shortcuts`          | object | 下記参照   | アプリケーションのキーボードショートカット設定です。                                                                                            |
 | `terminal`           | object | 下記参照   | ターミナル表示とログ関連の設定です。                                                                                                            |
 | `ssh`                | object | 下記参照   | SSH 接続の互換性設定です。                                                                                                                      |
-| `saved_connections`  | array  | `[]`       | 保存済み SSH/Telnet 接続プロファイルです。プロファイルは接続ダイアログから作成、選択、削除できます。                                            |
 
 ## updates
 
@@ -147,7 +165,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
 
 ### AI API キーについて
 
-OpenAI、Azure OpenAI、Anthropic、Google Gemini、OpenRouter の API キーは `config.json` には保存されません。設定画面で登録したキーは、OS の資格情報ストアに保存されます。
+OpenAI、Azure OpenAI、Anthropic、Google Gemini、OpenRouter の API キーは `config.json` と `connection_profiles.json` には保存されません。設定画面で登録したキーは、OS の資格情報ストアに保存されます。
 
 Azure OpenAI の chat completions URL 全体とモデルデプロイ名を設定してください。ExaTerm は Endpoint URL を入力どおりに使用し、パスや `api-version` は自動付与しません。
 
@@ -170,13 +188,13 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 
 ## external_control
 
-| パラメータ                                | 型      | 既定値  | 説明                                                                                                                                                                                                                        |
-| ----------------------------------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `external_control.enabled`                | boolean | `false` | ローカル外部制御アクセスのマスター許可です。`true` にしても各インターフェースは自動で有効にならないため、`external_control.cli_enabled` または `external_control.mcp_enabled` を別途有効化します。                          |
-| `external_control.connect_enabled`        | boolean | `false` | `true` にすると、信頼済み外部制御クライアントが保存済み SSH/Telnet プロファイルやシリアルコンソールを開けます。SSH 認証情報は ExaTerm UI で入力し、外部クライアントへは公開されず保存もされません。                         |
-| `external_control.direct_connect_enabled` | boolean | `false` | `connect_enabled` とともに `true` にすると、信頼済み外部制御クライアントが明示指定した SSH/Telnet ホストへ直接接続できます。                                                                                                |
-| `external_control.mcp_enabled`            | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、ローカル MCP クライアントから `exaterm-mcp` 互換アダプターを使用できます。                                                                                      |
-| `external_control.cli_enabled`            | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、信頼済みローカルプログラムが `exaterm-cli` から共通のターミナル操作を呼び出し、JSON 結果を取得できます。詳細は[CLI ガイド](CLI_GUIDE.ja.md)を参照してください。 |
+| パラメータ                                | 型      | 既定値  | 説明                                                                                                                                                                                                                                                      |
+| ----------------------------------------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `external_control.enabled`                | boolean | `false` | ローカル外部制御アクセスのマスター許可です。`true` にしても各インターフェースは自動で有効にならないため、`external_control.cli_enabled` または `external_control.mcp_enabled` を別途有効化します。                                                        |
+| `external_control.connect_enabled`        | boolean | `false` | `true` にすると、信頼済み外部制御クライアントが保存済み SSH/Telnet プロファイルやシリアルコンソールを開けます。SSH 認証情報は ExaTerm UI で入力し、外部クライアントへは公開されず永続保存もされません。password認証では上記の起動中の記憶を選択できます。 |
+| `external_control.direct_connect_enabled` | boolean | `false` | `connect_enabled` とともに `true` にすると、信頼済み外部制御クライアントが明示指定した SSH/Telnet ホストへ直接接続できます。                                                                                                                              |
+| `external_control.mcp_enabled`            | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、ローカル MCP クライアントから `exaterm-mcp` 互換アダプターを使用できます。                                                                                                                    |
+| `external_control.cli_enabled`            | boolean | `false` | `external_control.enabled=true` と併用して `true` にすると、信頼済みローカルプログラムが `exaterm-cli` から共通のターミナル操作を呼び出し、JSON 結果を取得できます。詳細は[CLI ガイド](CLI_GUIDE.ja.md)を参照してください。                               |
 
 古い設定ファイルには、従来の `mcp` オブジェクトや `saved_connections[*].mcp_enabled` が残っている場合があります。ExaTerm は読み込み時にそれらを自動移行します。新旧設定が併存する場合は、新しい `external_control` 側を優先し、旧設定は不足値の補完だけに使います。ExaTerm が設定を保存すると、新しい `external_control` と `external_control_enabled` だけが残ります。
 
@@ -186,7 +204,7 @@ HTTP MCP transport は削除されました。古い設定ファイルに残っ�
 
 MCP が有効な場合、外部クライアントは次のツールを呼び出せます。
 
-- `list_terminal_sessions`: ユーザーが ExaTerm で開いたターミナルセッションを一覧表示します。
+- `list_terminal_sessions`: ターミナルセッションを一覧表示します。GUI・CLI・MCPから保存済みSSH/Telnetプロファイルで接続した場合、接続開始時のIDを `profile_id` に含みます。直接接続・履歴・Serial接続は `null` です。接続設定の未保存編集や、その後のプロファイル名変更・削除、タブ名変更、ウィンドウ移動、切断でもIDを保持し、実際の接続先は `target` で示します。SSH/Telnet間でIDが重複できるため、`protocol` と併せて判別します。
 - `disconnect_terminal_session`: 実行中ログをflushして停止した後、タブとスクロールバックを残したままセッションを切断します。
 - `focus_terminal_session`: `session_id` を受け取り、既存タブを選択して所有ウィンドウを表示・最小化解除・前面表示します。GUI反映確認後に `session_id`、`window_id`、`tab_id`、`focused: true` を返します。切断済みタブも対象にでき、表示中のダイアログは維持します。GUI応答の期限は別ウィンドウへの移動時の1回の再要求を含めて5秒です。OSの前面表示制約は適用されます。
 - `read_terminal_output`: 必須の `mode` 引数に応じてセッション出力を読み取るか待機します。
@@ -224,7 +242,7 @@ MCP が有効な場合、外部クライアントは次のツールを呼び出�
 `external_control.connect_enabled` も `true` の場合、外部クライアントは次の追加ツールを呼び出せます。
 
 - `list_connection_profiles`: 個別に外部制御利用を許可した保存済み SSH/Telnet プロファイルを一覧表示します。秘密鍵パスや認証情報は返しません。
-- `connect_saved_profile`: 保存済みプロファイルから新しい SSH/Telnet セッションを開きます。`profile_id` と `connection_type`（`"ssh"` または `"telnet"`）の両方が必須なので、異なる種別で同じ ID を使用できます。SSH 認証情報は ExaTerm UI で入力します。
+- `connect_saved_profile`: 保存済みプロファイルから新しい SSH/Telnet セッションを開きます。`profile_id` と `connection_type`（`"ssh"` または `"telnet"`）の両方が必須なので、異なる種別で同じ ID を使用できます。SSH 認証情報は ExaTerm UI で入力します。タブと結果の `title` はプロファイル名を使用し、`target` は実際の接続先を保持します。認証画面には名前と接続先を併記し、踏み台の認証では踏み台のプロファイル名を表示します。
 - `list_serial_ports`: 現在利用可能なシリアルポートを一覧表示します。
 - `connect_serial_console`: MCP ツール引数で指定したポート名と通信設定から新しいシリアルコンソールセッションを開き、ExaTerm のタブとして表示します。ポート名は利用可能なシリアルポートと完全一致する必要があります。
 
@@ -301,6 +319,8 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 
 `terminal.log_format` が `"display"` の場合、Backspace、カーソル左移動、行末消去などの一般的な行編集を反映してからログへ保存します。`"strip_controls"` の場合は制御シーケンスを除去しますが、編集途中の文字が残る場合があります。
 
+整形方式はログ開始時に選択されます。設定変更は次の記録から適用され、記録中の未完了行はウィンドウ間でタブを移動しても維持されます。
+
 `terminal.include_log_header` が `false` の場合、新しいセッションログは ExaTerm ヘッダを書かず、ターミナル内容から直接始まります。既存のログファイルは変更されません。セッションログ履歴では、ログモードを「自動」または「手動」として確認できます。
 
 ## ssh
@@ -321,13 +341,20 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 
 未知の名前、重複、空の分類は拒否されます。Strict key exchange や extension info などの SSH 内部拡張マーカーは自動管理されるため、設定には追加しないでください。
 
-## saved_connections
+## connection_profiles.json の saved_connections
 
-`saved_connections` は保存済み SSH/Telnet 接続プロファイルを表す配列です。プロファイルは接続ダイアログから管理できます。シリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズ、その他の認証情報はこのセクションには保存されません。プロファイルのメモは平文で保存され、外部プロファイル接続が有効な場合は `list_connection_profiles` で返る可能性があるため、秘密情報は入力しないでください。既存プロファイルで `external_control_enabled` が未設定の場合は `true` として扱われます。
+`connection_profiles.json` の `saved_connections` は保存済み SSH/Telnet 接続プロファイルを表す配列です。プロファイルは接続ダイアログから管理できます。シリアルのプロファイルは現状非対応です。パスワード、秘密鍵本文、鍵パスフレーズ、その他の認証情報はこのセクションには保存されません。プロファイルのメモは平文で保存され、外部プロファイル接続が有効な場合は `list_connection_profiles` で返る可能性があるため、秘密情報は入力しないでください。既存プロファイルで `external_control_enabled` が未設定の場合は `true` として扱われます。
+
+接続ダイアログでグループ名を入力するか既存の候補を選び、プロファイルを保存・更新します。グループ欄を空にすると「未分類」へ移動します。グループ名は `connection_profiles.json` に平文で保存されます。グループ変更でプロファイル ID、踏み台参照、既存セッションは変わりません。保存済みプロファイルの選択欄はグループ別に表示され、空のグループは保持しません。
+
+接続設定と SSH の踏み台選択は、選択欄を開いて名前・ホスト名/IP・グループ名・メモで検索できます。検索は現在の接続種別内で英字の大小文字を区別せず部分一致し、最近の接続は表示名と接続先でも絞り込めます。手動入力（踏み台では直接接続）は常に選択できます。上下キーで候補を移動し、Enter で選択、Escape で一覧を閉じます。候補の選択だけでは接続しません。検索や検索のクリアで選択済みプロファイルとフォームの入力値は変わりません。
+
+保存済みプロファイルを選択して「複製」を押すと、重複しない名前の新規下書きを作成し、名前欄へフォーカスを移します。複製するのは保存済みの内容で、編集中の未保存変更は含みません。グループ、接続先、SSH ユーザー名・認証方式・秘密鍵パス・踏み台参照、文字コード、端末種別、メモ、外部制御許可を引き継ぎます。一時的な認証入力は複製しません。内容を編集して「プロファイルを保存」を押すまで登録されず、元のプロファイルは変更しません。別ウィンドウで同名が保存された場合は重複エラーとなり、上書きしません。
 
 | パラメータ                 | 型                 | 説明                                                                                                                                                                                                                                                                |
 | -------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                       | string             | プロファイル名兼識別子です。                                                                                                                                                                                                                                        |
+| `group`                    | string または null | SSH/Telnet 共通の任意の1階層グループです。未設定・null・空白のみの場合は未分類とし、前後の空白を除去します。                                                                                                                                                        |
 | `connection_type`          | string             | 接続種別です。プロファイルで対応している値は `"ssh"` と `"telnet"` です。                                                                                                                                                                                           |
 | `host`                     | string または null | SSH または Telnet 接続先ホストです。                                                                                                                                                                                                                                |
 | `port`                     | number または null | SSH または Telnet 接続先ポートです。                                                                                                                                                                                                                                |
@@ -358,7 +385,7 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 }
 ```
 
-`jump_profile_id` を設定すると、ExaTerm は参照先の SSH プロファイルへ先に接続し、その踏み台経由で接続先への SSH 接続を開きます。踏み台プロファイルからさらに別の踏み台を参照することはできず、自分自身を踏み台に指定することもできません。踏み台と接続先の SSH パスワードや暗号化鍵パスフレーズは ExaTerm UI で入力し、`config.json` には保存されません。
+`jump_profile_id` を設定すると、ExaTerm は参照先の SSH プロファイルへ先に接続し、その踏み台経由で接続先への SSH 接続を開きます。踏み台プロファイルからさらに別の踏み台を参照することはできず、自分自身を踏み台に指定することもできません。踏み台と接続先の SSH パスワードや暗号化鍵パスフレーズは ExaTerm UI で入力し、`config.json` と `connection_profiles.json` には保存されません。
 
 `auto` は OpenSSH の既定優先順のうち ExaTerm が対応する公開鍵、keyboard-interactive、パスワードの順に認証を試します。プロファイルの秘密鍵を `ssh.default_private_key_path` より優先し、どちらも未設定の場合は公開鍵認証を行いません。自動認証で鍵に問題がある場合は接続診断へ表示し、サーバーが対応する次の方式を試します。明示的な `public_key` 認証では、従来どおりプロファイルまたは接続画面で秘密鍵を指定する必要があります。
 

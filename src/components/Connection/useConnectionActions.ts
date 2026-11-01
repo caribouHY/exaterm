@@ -42,7 +42,7 @@ export const useConnectionActions = (
     snapshot,
     handleConnect: () => {
       if (!params.canConnect) return Promise.resolve();
-      const { tab, selectedProfileIds, sshProfiles, ssh, telnet, serial } = params;
+      const { tab, selectedProfileIds, sshProfiles, telnetProfiles, ssh, telnet, serial } = params;
       const target =
         tab === "ssh"
           ? `${ssh.username}@${ssh.host}:${ssh.port}`
@@ -51,7 +51,7 @@ export const useConnectionActions = (
             : serial.selectedPort;
       return controller.start(
         tab,
-        { tab, selectedProfileIds, sshProfiles, ssh, telnet, serial },
+        { tab, selectedProfileIds, sshProfiles, telnetProfiles, ssh, telnet, serial },
         target
       );
     },

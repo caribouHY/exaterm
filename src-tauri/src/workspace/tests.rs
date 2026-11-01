@@ -17,6 +17,33 @@ fn input(session_id: &str, window_id: Option<&str>) -> WorkspaceTabRegisterInput
     }
 }
 
+#[tokio::test]
+async fn session_tab_registration_preserves_disconnect_in_both_orders() {
+    use crate::terminal_control::TerminalControlState;
+    for disconnect_first in [true, false] {
+        let workspace = WorkspaceState::new();
+        let terminals = TerminalControlState::new();
+        terminals
+            .register_session("s1".into(), TerminalProtocol::Telnet, "synthetic".into())
+            .await;
+        if disconnect_first {
+            terminals.mark_disconnected("s1").await;
+            assert!(workspace.mark_disconnected("s1").await.is_none());
+        }
+        workspace
+            .register_session_tab(input("s1", Some("main")), &terminals)
+            .await;
+        if !disconnect_first {
+            terminals.mark_disconnected("s1").await;
+            workspace.mark_disconnected("s1").await.unwrap();
+        }
+        let tab = workspace.tab_for_session("s1").await.unwrap();
+        assert!(!tab.is_connected);
+        assert_eq!(tab.session_id, "s1");
+        assert_eq!(tab.owner_window_id, "main");
+    }
+}
+
 fn model_with_tab() -> WorkspaceModel {
     let mut model = WorkspaceModel::default();
     ensure_window(&mut model, "main", "main");

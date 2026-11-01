@@ -5,7 +5,7 @@ use super::errors::{
 };
 use super::secrets::load_provider_secret;
 use super::types::{AiModelInfo, AiProvider, ChatMessage};
-use reqwest::RequestBuilder;
+use reqwest::{Method, RequestBuilder};
 use serde_json::Value;
 
 const OPENAI_MODELS_URL: &str = "https://api.openai.com/v1/models";
@@ -102,8 +102,12 @@ pub async fn fetch_provider_models(
         }
         AiProvider::Gemini => {
             let api_key = require_api_key(provider, api_key, language)?;
-            let url = format!("{}?key={}", GEMINI_MODELS_URL, api_key);
-            send_model_list_request(client.get(&url), provider, language).await?
+            send_model_list_request(
+                gemini_request(client, Method::GET, GEMINI_MODELS_URL, api_key),
+                provider,
+                language,
+            )
+            .await?
         }
         AiProvider::OpenRouter => {
             let api_key = require_api_key(provider, api_key, language)?;
@@ -123,9 +127,17 @@ pub async fn fetch_provider_models(
         }
     };
 
-    let models = parse_models(provider, &body);
+    extract_models(&body, provider, language)
+}
+
+fn extract_models(
+    body: &Value,
+    provider: &AiProvider,
+    language: &str,
+) -> Result<Vec<AiModelInfo>, String> {
+    let models = parse_models(provider, body);
     if models.is_empty() {
-        Err(malformed_models_response_message(provider, language, &body))
+        Err(malformed_models_response_message(provider, language))
     } else {
         Ok(models)
     }
@@ -328,6 +340,42 @@ async fn send_anthropic_chat(
     extract_chat_text(&body, &provider, language, ChatResponseFormat::Anthropic)
 }
 
+pub(super) fn ai_http_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder().redirect(reqwest::redirect::Policy::custom(|attempt| {
+        // Custom API-key headers are not stripped by reqwest on cross-origin redirects.
+        let same_origin = attempt.previous().first().is_some_and(|original| {
+            let next = attempt.url();
+            original.scheme() == next.scheme()
+                && original.host_str() == next.host_str()
+                && original.port_or_known_default() == next.port_or_known_default()
+        });
+        if !same_origin {
+            attempt.stop()
+        } else if attempt.previous().len() >= 10 {
+            attempt.error("too many redirects")
+        } else {
+            attempt.follow()
+        }
+    }))
+}
+
+fn gemini_request(
+    client: &reqwest::Client,
+    method: Method,
+    url: &str,
+    api_key: &str,
+) -> RequestBuilder {
+    let value = reqwest::header::HeaderValue::from_str(api_key).map(|mut value| {
+        value.set_sensitive(true);
+        value
+    });
+    let request = client.request(method, url);
+    match value {
+        Ok(value) => request.header("x-goog-api-key", value),
+        Err(_) => request.header("x-goog-api-key", api_key),
+    }
+}
+
 async fn send_gemini_chat(
     client: &reqwest::Client,
     model: &str,
@@ -344,13 +392,9 @@ async fn send_gemini_chat(
         parts.push(serde_json::json!({"text":format!("{}:{}", message.role, message.content)}));
     }
 
-    let url = format!(
-        "{}/{}:generateContent?key={}",
-        GEMINI_GENERATE_BASE_URL, model, api_key
-    );
+    let url = format!("{}/{}:generateContent", GEMINI_GENERATE_BASE_URL, model);
     let body = send_chat_request_json(
-        client
-            .post(&url)
+        gemini_request(client, Method::POST, &url, &api_key)
             .json(&serde_json::json!({"contents":[{"parts":parts}],"generationConfig":{"temperature":0.7,"maxOutputTokens":4096}})),
         &provider,
         language,
@@ -478,7 +522,7 @@ fn extract_chat_text(
     };
 
     text.map(|s| s.to_string())
-        .ok_or_else(|| malformed_chat_response_message(provider, language, body))
+        .ok_or_else(|| malformed_chat_response_message(provider, language))
 }
 
 fn parse_models(provider: &AiProvider, body: &Value) -> Vec<AiModelInfo> {
@@ -855,3 +899,7 @@ mod tests {
         assert_eq!(japanese_response, english);
     }
 }
+
+#[cfg(test)]
+#[path = "request_security_tests.rs"]
+mod request_security_tests;

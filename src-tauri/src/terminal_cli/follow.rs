@@ -482,6 +482,7 @@ mod tests {
         Reply::Result(Ok(ExternalControlResponse::ListTerminalSessions(
             ListTerminalSessionsResult {
                 sessions: vec![TerminalSessionInfo {
+                    profile_id: None,
                     session_id: "s1".into(),
                     protocol: TerminalProtocol::Ssh,
                     target: "host".into(),

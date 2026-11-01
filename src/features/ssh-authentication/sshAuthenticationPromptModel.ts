@@ -4,6 +4,7 @@ export interface SshAuthenticationPromptField {
 }
 
 export interface SshAuthenticationPromptPayload {
+  profileName?: string | null;
   requestId: string;
   phase: "jump" | "target";
   host: string;
@@ -17,6 +18,7 @@ export interface SshAuthenticationPromptPayload {
 
 export interface SshAuthenticationPromptState extends SshAuthenticationPromptPayload {
   responses: string[];
+  rememberPassword: boolean;
   error: string;
   submitting: boolean;
 }
@@ -27,6 +29,7 @@ export function createSshAuthenticationPromptState(
   return {
     ...payload,
     responses: payload.prompts.map(() => ""),
+    rememberPassword: false,
     error: "",
     submitting: false,
   };
@@ -67,4 +70,11 @@ export function updateSshAuthenticationResponse(
       responseIndex === index ? value : response
     ),
   };
+}
+
+export function updateSshPasswordMemory(
+  state: SshAuthenticationPromptState,
+  remember: boolean
+): SshAuthenticationPromptState {
+  return { ...state, rememberPassword: state.method === "password" && remember };
 }

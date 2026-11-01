@@ -18,9 +18,15 @@ use secrets::{
 };
 use std::time::Instant;
 
+fn ai_http_client() -> Result<reqwest::Client, String> {
+    providers::ai_http_client_builder()
+        .build()
+        .map_err(|_| "Could not initialize the AI HTTP client.".to_string())
+}
+
 #[tauri::command]
 pub async fn ai_get_models() -> Result<Vec<AiModelInfo>, String> {
-    let client = reqwest::Client::new();
+    let client = ai_http_client()?;
     let mut models = Vec::new();
 
     for provider in [
@@ -70,7 +76,7 @@ pub async fn ai_get_models() -> Result<Vec<AiModelInfo>, String> {
 pub async fn ai_get_ollama_models(
     base_url: String,
 ) -> Result<Vec<AiModelInfo>, crate::command_error::BackendCommandError> {
-    let client = reqwest::Client::new();
+    let client = ai_http_client().map_err(crate::command_error::BackendCommandError::from)?;
     fetch_provider_models(&client, &AiProvider::Ollama, None, Some(&base_url), "en")
         .await
         .map_err(Into::into)
@@ -174,7 +180,7 @@ pub async fn ai_chat(
     ollama_base_url: Option<String>,
     azure_openai_endpoint: Option<String>,
 ) -> Result<String, crate::command_error::BackendCommandError> {
-    let client = reqwest::Client::new();
+    let client = ai_http_client().map_err(crate::command_error::BackendCommandError::from)?;
     let system_prompt = build_system_prompt(&terminal_context, &language);
     let config = crate::config::config_read()
         .map_err(|e| {
@@ -212,21 +218,24 @@ pub async fn ai_chat(
     )
     .await;
 
-    if debug_log_enabled {
+    {
         let outcome = match &result {
             Ok(response) => ChatDebugLogOutcome::Success { response },
             Err(error) => ChatDebugLogOutcome::Error { error },
         };
-        if let Err(e) = append_chat_debug_log(ChatDebugLogInput {
-            provider: &provider,
-            model: &model,
-            language: &language,
-            terminal_context_included: terminal_context.is_some(),
-            messages: &messages,
-            system_prompt: &system_prompt,
-            duration_ms: started.elapsed().as_millis(),
-            outcome,
-        }) {
+        if let Err(e) = append_chat_debug_log(
+            debug_log_enabled,
+            ChatDebugLogInput {
+                provider: &provider,
+                model: &model,
+                language: &language,
+                terminal_context_included: terminal_context.is_some(),
+                messages: &messages,
+                system_prompt: &system_prompt,
+                duration_ms: started.elapsed().as_millis(),
+                outcome,
+            },
+        ) {
             log::warn!("Failed to write AI debug log: {}", e);
         }
     }

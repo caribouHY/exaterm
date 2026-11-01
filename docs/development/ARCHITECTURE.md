@@ -41,9 +41,9 @@ Windows is the primary beta target. Cross-platform changes must preserve the Win
 Major frontend areas are:
 
 - `src/features/workspace-tabs/`: window-local workspace projection, revision filtering, terminal and utility tab ordering, workspace event subscriptions, tab lifecycle, and cross-window movement requests.
-- `src/components/Terminal/`: xterm.js rendering, terminal input and output, resize handling, encoding support, scrollback restoration, and frontend log-buffer flushing.
+- `src/components/Terminal/`: xterm.js rendering, terminal input and output, resize handling, encoding support, and scrollback restoration.
 - `src/components/Connection/`: SSH, Serial, and Telnet forms, saved profiles, connection history, SSH host-key confirmation, and session creation.
-- `src/components/Settings/`: configuration editing and AI API-key save or clear flows.
+- `src/components/Settings/`: configuration editing and AI API-key save or clear flows. `settingsSaveController` owns the draft, saved baseline, submission snapshots, provider edit generations, resource results, and serialized key mutations. Successful config responses rebase subsequent edits onto the backend three-way merge result; successful key operations clear only their submitted input generation. Secret inputs remain private to the controller and password controls, outside public snapshots and errors. Key-only completion emits the existing configuration-update event so AI availability reloads.
 - `src/components/AI/`: provider and model selection and AI chat presentation.
 - `src/components/Log/`: session-log listing.
 - `src/components/TitleBar/`, `src/components/Terminal/TerminalTabs`, and `src/components/StatusBar/`: application navigation and terminal controls.
@@ -71,6 +71,7 @@ When the dialog is disposed, pending preparation is abandoned and an in-flight c
 Backend state is created in `src-tauri/src/lib.rs` and managed through Tauri `State` values.
 
 - `ssh.rs`, `serial.rs`, and `telnet.rs` own active protocol sessions, writes, resize behavior where supported, and disconnect handling.
+- Telnet's codec bounds decoded subnegotiation payloads to 4 KiB and discards oversized or malformed frames until an unescaped terminator. Its session owner publishes retained-output and protocol registration before starting I/O, serializes resize with negotiation responses, and finalizes reader, writer, and explicit-disconnect completion once. Explicit disconnect also clears logs started late by GUI finalization.
 - `ssh_known_hosts.rs` owns the ExaTerm known-hosts file and fingerprint trust decisions.
 - `terminal_control.rs` retains decoded output and session status for external control and cross-window snapshot recovery.
 - `logger.rs` owns at most one active plaintext log per session and distinguishes automatic and manual logging behavior.
@@ -103,6 +104,8 @@ Settings and Logs are window-local utility views. Rust owns terminal placement; 
 5. User input is sent to the matching backend write command.
 6. Disconnect state is projected through the workspace without discarding the visible terminal buffer.
 
+Workspace tab registration reads retained session status while holding placement ownership. Protocol teardown marks retained status before updating workspace state, so a tab registered after an early EOF remains disconnected.
+
 GUI SSH connections verify and, when necessary, confirm the host key within the active handshake so authentication continues on the same TCP connection. Saved-profile external-control SSH connections require an already trusted key. Direct external-control SSH connections may confirm an unknown key in the preferred GUI window, but reject a mismatch with an existing known-hosts entry.
 
 SSH session setup requests PTY allocation and shell startup sequentially, requiring each server success reply within a 10-second send-and-reply deadline. The setup owner retains the channel outside cancellable futures and registers a session only after both replies and the attempt completion check. Failed or cancelled setup closes the channel and disconnects the target and jump transports within a shared five-second cleanup deadline. Startup output stays queued in the handler until the registered session starts its output processor.
@@ -121,11 +124,14 @@ Logging is opt-in. A terminal session has at most one active log, regardless of 
 
 - Automatic and manually started logs share the same active, paused, and stopped lifecycle.
 - The backend logger is authoritative for whether a log is active; workspace pause metadata never makes an inactive logger appear active.
-- Frontend sanitizer buffers must be flushed before operations that require all rendered output to be persisted.
+- The backend retains each active log's sanitizer, pending writes, recording cursor, and pause state independently of terminal views. Decoded protocol output is captured once at reception; snapshots and deltas used for display never append logs.
+- Start, pause, resume, stop, and final flush serialize with capture. Output received before start or during pause is excluded; moving a tab does not flush or reset an unfinished display-log line. The log format is selected when recording starts.
 - Moving a tab preserves the backend log state and does not stop logging.
 - MCP and the terminal CLI can control an allowed session log but cannot read log files directly.
 
-`src/features/terminal-logging/` owns session-scoped manual-log operation coordination for GUI and external-control entry points. It resolves the current owner tab, serializes start, stop, pause, and resume per session, flushes frontend buffers before pause or stop, invokes the logger backend, and then updates workspace metadata. GUI entry points retain save-dialog and status-message behavior; external-control entry points retain request acknowledgements and wait for changed metadata to reach the UI before replying. External log-control events are delivered only to the session's current owner window.
+`src/features/terminal-logging/` resolves GUI targets and reserves window-local save dialogs. Backend logger operations serialize per session through capture changes and workspace metadata synchronization using the current tab owner. Their responses carry the workspace snapshot so the caller applies the revision before acknowledging an external request, even if event delivery is delayed. Window-local controllers never replay stale metadata after a transfer. GUI entry points retain save-dialog and status-message behavior; external-control entry points retain request acknowledgements and wait for changed metadata to reach the UI before replying. External log-control events are delivered only to the session's current owner window.
+
+External log requests use window-scoped subscriptions, and each pending acknowledgement is bound to the delivery window. The backend validates the invoking webview's window label before consuming a response; a response from another window leaves the request pending. Moving a tab during a request does not redeliver or repeat the operation: the original recipient can finish or reject that request, otherwise its existing deadline expires. Cancellation removes pending acknowledgement state.
 
 Plaintext logs can contain commands, output, prompts, hostnames, usernames, device data, and accidental secrets. Changes to capture, storage, or control behavior must preserve the existing privacy boundary.
 
@@ -157,13 +163,17 @@ See [ADR 0001](decisions/0001-local-external-control-and-mcp-stdio.md) for the d
 Windows user data is stored under the ExaTerm application-data directory:
 
 - `%AppData%/ExaTerm/config.json`: user settings.
+- `%AppData%/ExaTerm/connection_profiles.json`: saved SSH/Telnet profiles, stored separately from user settings.
 - `%AppData%/ExaTerm/connection_history.json`: recent successful GUI SSH and Telnet settings without passwords or passphrases.
 - `%AppData%/ExaTerm/logs/`: optional plaintext terminal logs.
 - `%AppData%/ExaTerm/logs/index.json`: log-session index.
 - `%AppData%/ExaTerm/known_hosts`: SSH trust entries.
 - Operating-system credential store: cloud AI API keys.
+- Rust SSH state: opt-in password-authentication cache shared by all GUI windows and GUI/CLI/MCP connections, scoped to host, port, username, and verified host key. It is never persisted. Only accepted password authentication can populate it; keyboard-interactive and key passphrases are excluded. Clear advances a generation to reject writes from older attempts, while per-key revisions prevent stale failures or successes from replacing newer entries. Cancelled attempts cannot populate it. SSH settings can clear the cache without affecting sessions.
 
-Do not move cloud API keys into `config.json`, logs, terminal buffers, or external-control responses.
+Configuration reads combine user settings and saved profiles into the existing `AppConfig` payload used by the GUI, CLI, and MCP. A separate profile file takes priority over legacy embedded profiles, including when its list is empty. GUI configuration loads and saves migrate legacy profiles by saving the separate file before removing the embedded field; internal read-only configuration access does not write files. Normal settings saves preserve the profile file, and normal profile saves preserve the settings file. Writes use a temporary file in the destination directory followed by replacement. Profile read errors propagate without falling back to embedded profiles. Exit ExaTerm before externally replacing either file; filesystem watching and merging distributed definitions are not supported.
+
+Do not move cloud API keys into `config.json`, `connection_profiles.json`, logs, terminal buffers, or external-control responses.
 
 ## Documentation and Agent Workflows
 

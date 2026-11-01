@@ -1,3 +1,5 @@
+import type { TabInfo } from "../../types";
+
 export interface ConnectionLogState {
   isLogging: boolean;
   filePath: string | null;
@@ -16,4 +18,11 @@ export async function startConnectionLog(
   } catch {
     return { isLogging: false, filePath: null, startFailed: true };
   }
+}
+
+export function connectionLogTarget(tab: Pick<TabInfo, "title" | "connectionInfo">): string {
+  const info = tab.connectionInfo;
+  if (!info) return tab.title;
+  const endpoint = `${info.host}:${info.port}`;
+  return info.kind === "ssh" ? `${info.username}@${endpoint}` : endpoint;
 }

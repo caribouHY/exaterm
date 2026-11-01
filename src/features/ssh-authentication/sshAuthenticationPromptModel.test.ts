@@ -5,6 +5,7 @@ import {
   removeSshAuthenticationPrompt,
   updateSshAuthenticationPrompt,
   updateSshAuthenticationResponse,
+  updateSshPasswordMemory,
   type SshAuthenticationPromptPayload,
 } from "./sshAuthenticationPromptModel";
 
@@ -26,6 +27,26 @@ function prompt(
 }
 
 describe("SSH authentication prompt state", () => {
+  it("requires fresh opt-in for each password prompt and rejects interactive memory", () => {
+    const interactive = createSshAuthenticationPromptState(
+      prompt("interactive", [{ prompt: "Password:", echo: false }])
+    );
+    expect(updateSshPasswordMemory(interactive, true).rememberPassword).toBe(false);
+    const password = createSshAuthenticationPromptState({
+      ...interactive,
+      requestId: "password",
+      method: "password",
+    });
+    expect(password.rememberPassword).toBe(false);
+    expect(updateSshPasswordMemory(password, true).rememberPassword).toBe(true);
+    expect(
+      updateSshPasswordMemory(updateSshPasswordMemory(password, true), false).rememberPassword
+    ).toBe(false);
+    expect(
+      createSshAuthenticationPromptState({ ...password, requestId: "retry" }).rememberPassword
+    ).toBe(false);
+  });
+
   it("creates fields for multiple visible and hidden responses", () => {
     const state = createSshAuthenticationPromptState(
       prompt("request-1", [
@@ -48,14 +69,19 @@ describe("SSH authentication prompt state", () => {
   });
 
   it("queues prompts in FIFO order and removes only the completed request", () => {
-    const first = prompt("first", [{ prompt: "Password:", echo: false }]);
+    const first = {
+      ...prompt("first", [{ prompt: "Password:", echo: false }]),
+      profileName: "target-profile",
+    };
     const second = {
       ...prompt("second", [{ prompt: "OTP:", echo: false }]),
       phase: "jump" as const,
+      profileName: "jump-profile",
     };
 
     const queue = enqueueSshAuthenticationPrompt(enqueueSshAuthenticationPrompt([], first), second);
     expect(queue.map((item) => item.requestId)).toEqual(["first", "second"]);
+    expect(queue.map((item) => item.profileName)).toEqual(["target-profile", "jump-profile"]);
     expect(removeSshAuthenticationPrompt(queue, "first").map((item) => item.requestId)).toEqual([
       "second",
     ]);

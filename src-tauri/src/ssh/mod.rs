@@ -7,6 +7,8 @@ mod host_key;
 mod host_key_prompt;
 mod io;
 mod jump;
+mod password_auth;
+mod password_cache;
 mod profiles;
 mod shell;
 mod types;
@@ -128,13 +130,19 @@ pub async fn ssh_authentication_respond(
     state: SshCommandState<'_>,
     request_id: String,
     responses: Option<Vec<String>>,
+    remember_password: Option<bool>,
 ) -> Result<(), crate::command_error::BackendCommandError> {
     command_result(
         state
             .authentication_prompts
-            .submit(request_id, responses)
+            .submit_with_remember(request_id, responses, remember_password.unwrap_or(false))
             .await,
     )
+}
+
+#[tauri::command]
+pub fn ssh_password_cache_clear(state: SshCommandState<'_>) {
+    state.password_cache.clear();
 }
 
 #[tauri::command]

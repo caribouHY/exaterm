@@ -130,6 +130,12 @@
   gap: 5px;
 }
 
+.ssh-auth-prompt__remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .ssh-host-key-prompt__content {
   display: flex;
   flex-direction: column;

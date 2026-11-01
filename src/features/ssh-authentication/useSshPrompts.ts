@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { translateBackendCommandError } from "../backend-errors/backendCommandError";
 import {
   updateSshAuthenticationResponse,
+  updateSshPasswordMemory,
   type SshAuthenticationPromptPayload,
 } from "./sshAuthenticationPromptModel";
 import {
@@ -78,6 +79,20 @@ export function useSshPrompts() {
     [updateActivePrompt]
   );
 
+  const updateRememberPassword = useCallback(
+    (remember: boolean) => {
+      updateActivePrompt((prompt) =>
+        prompt.kind === "authentication"
+          ? {
+              ...prompt,
+              value: updateSshPasswordMemory(prompt.value, remember),
+            }
+          : prompt
+      );
+    },
+    [updateActivePrompt]
+  );
+
   const resolve = useCallback(
     async (accept: boolean) => {
       if (activePrompt === null || activePrompt.value.submitting) return;
@@ -90,6 +105,10 @@ export function useSshPrompts() {
           await invoke("ssh_authentication_respond", {
             requestId,
             responses: accept ? authenticationResponses : null,
+            rememberPassword:
+              accept &&
+              activePrompt.value.method === "password" &&
+              activePrompt.value.rememberPassword,
           });
         } else {
           await invoke("ssh_host_key_respond", { requestId, accept });
@@ -111,6 +130,7 @@ export function useSshPrompts() {
   return {
     activePrompt,
     updateResponse,
+    updateRememberPassword,
     submit: () => resolve(true),
     cancel: () => resolve(false),
   };

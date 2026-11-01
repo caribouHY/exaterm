@@ -11,6 +11,7 @@ import {
   ModalHeader,
   ModalTitle,
 } from "../Common";
+import { groupSavedProfiles } from "./connectionProfileGroups";
 import { SerialConnectionForm } from "./SerialConnectionForm";
 import { SshConnectionForm } from "./SshConnectionForm";
 import { SshDiagnosticsPanel } from "./SshDiagnosticsPanel";
@@ -95,6 +96,9 @@ export function ConnectionDialogView({
 }: ConnectionDialogViewProps) {
   const { t } = useTranslation();
   const errorRef = useRef<HTMLDivElement>(null);
+  const groupNames = groupSavedProfiles([...sshProfiles, ...telnetProfiles]).flatMap(({ name }) =>
+    name === null ? [] : [name]
+  );
 
   useEffect(() => {
     if (error) errorRef.current?.focus();
@@ -169,6 +173,7 @@ export function ConnectionDialogView({
               formActions={sshFormActions}
               profileOptions={{
                 profiles: sshProfiles,
+                groupNames,
                 historyEntries: sshHistoryEntries,
                 jumpProfiles: jumpProfileOptions,
                 getDisplayName: getProfileDisplayName,
@@ -181,6 +186,7 @@ export function ConnectionDialogView({
               formActions={telnetFormActions}
               profileOptions={{
                 profiles: telnetProfiles,
+                groupNames,
                 historyEntries: telnetHistoryEntries,
                 getDisplayName: getProfileDisplayName,
                 getHistoryDisplayName,

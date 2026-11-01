@@ -24,6 +24,7 @@ export interface ConnectionDialogInitialValues {
 }
 
 export interface ConnectionDialogProps {
+  shortcutsEnabled?: boolean;
   initialValues?: ConnectionDialogInitialValues | null;
   startupRequest?: import("../../types").StartupCliRequest | null;
   onStartupRequestHandled?: () => void;
@@ -40,6 +41,7 @@ export interface ConnectionDialogProps {
 }
 
 export interface SshCredentialPrompt {
+  profileName?: string;
   phase: "jump" | "target";
   host: string;
   port: number;
@@ -75,6 +77,7 @@ export interface SshFormState {
   selectedProfileId: string;
   selectedHistoryId: string;
   profileName: string;
+  group: string;
   host: string;
   port: string;
   username: string;
@@ -89,10 +92,12 @@ export interface SshFormState {
 }
 
 export interface SshFormActions {
+  onCopyProfile: () => boolean;
   onSelectSource: (value: string) => void;
   onDeleteProfile: () => void;
   onDeleteHistory: () => void;
   onProfileNameChange: (value: string) => void;
+  onGroupChange: (value: string) => void;
   onHostChange: (value: string) => void;
   onPortChange: (value: string) => void;
   onUsernameChange: (value: string) => void;
@@ -109,6 +114,7 @@ export interface SshFormActions {
 
 export interface SshProfileOptions {
   profiles: SavedConnection[];
+  groupNames: string[];
   historyEntries: ConnectionHistoryEntry[];
   jumpProfiles: SavedConnection[];
   getDisplayName: (profile: SavedConnection) => string;
@@ -119,6 +125,7 @@ export interface TelnetFormState {
   selectedProfileId: string;
   selectedHistoryId: string;
   profileName: string;
+  group: string;
   host: string;
   port: string;
   encoding: Encoding;
@@ -129,10 +136,12 @@ export interface TelnetFormState {
 }
 
 export interface TelnetFormActions {
+  onCopyProfile: () => boolean;
   onSelectSource: (value: string) => void;
   onDeleteProfile: () => void;
   onDeleteHistory: () => void;
   onProfileNameChange: (value: string) => void;
+  onGroupChange: (value: string) => void;
   onHostChange: (value: string) => void;
   onPortChange: (value: string) => void;
   onPortEnter: () => void;
@@ -145,6 +154,7 @@ export interface TelnetFormActions {
 
 export interface TelnetProfileOptions {
   profiles: SavedConnection[];
+  groupNames: string[];
   historyEntries: ConnectionHistoryEntry[];
   getDisplayName: (profile: SavedConnection) => string;
   getHistoryDisplayName: (entry: ConnectionHistoryEntry) => string;

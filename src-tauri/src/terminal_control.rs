@@ -29,6 +29,8 @@ pub enum TerminalStatus {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct TerminalSessionInfo {
     pub session_id: String,
+    #[serde(default)]
+    pub profile_id: Option<String>,
     pub protocol: TerminalProtocol,
     pub target: String,
     pub encoding: String,
@@ -66,6 +68,7 @@ pub struct TerminalControlState {
     sessions: Arc<Mutex<HashMap<String, TerminalSession>>>,
     output_notify: Arc<Notify>,
     output_limit: Arc<AtomicUsize>,
+    logger: Arc<std::sync::OnceLock<crate::logger::LoggerState>>,
 }
 
 impl TerminalControlState {
@@ -74,6 +77,7 @@ impl TerminalControlState {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             output_notify: Arc::new(Notify::new()),
             output_limit: Arc::new(AtomicUsize::new(DEFAULT_OUTPUT_LIMIT)),
+            logger: Arc::new(std::sync::OnceLock::new()),
         }
     }
 
@@ -83,7 +87,12 @@ impl TerminalControlState {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             output_notify: Arc::new(Notify::new()),
             output_limit: Arc::new(AtomicUsize::new(output_limit)),
+            logger: Arc::new(std::sync::OnceLock::new()),
         }
+    }
+
+    pub fn set_logger(&self, logger: crate::logger::LoggerState) {
+        let _ = self.logger.set(logger);
     }
 
     pub fn set_output_limit_from_scrollback(&self, scrollback: u32) {
@@ -115,9 +124,22 @@ impl TerminalControlState {
         target: String,
         encoding: Option<String>,
     ) {
+        self.register_session_with_profile(session_id, protocol, target, encoding, None)
+            .await;
+    }
+
+    pub async fn register_session_with_profile(
+        &self,
+        session_id: String,
+        protocol: TerminalProtocol,
+        target: String,
+        encoding: Option<String>,
+        profile_id: Option<String>,
+    ) {
         let (encoding_impl, encoding) = terminal_encoding(encoding.as_deref());
         let info = TerminalSessionInfo {
             session_id: session_id.clone(),
+            profile_id,
             protocol,
             target,
             encoding: encoding.to_string(),
@@ -134,6 +156,17 @@ impl TerminalControlState {
         self.sessions.lock().await.insert(session_id, session);
     }
 
+    pub async fn capture_notice(&self, session_id: &str, text: &str) {
+        let sessions = self.sessions.lock().await;
+        if sessions.contains_key(session_id) {
+            if let Some(logger) = self.logger.get() {
+                if logger.capture_notice(session_id, text).await.is_err() {
+                    log::warn!("Failed to capture terminal log notice");
+                }
+            }
+        }
+    }
+
     pub async fn append_output(
         &self,
         session_id: &str,
@@ -148,14 +181,20 @@ impl TerminalControlState {
         session.cursor = cursor;
         session.output.push_str(&text);
         trim_to_recent_chars(session, self.output_limit.load(Ordering::Relaxed));
-        drop(sessions);
-        self.output_notify.notify_waiters();
-        Some(TerminalOutputEvent {
+        let event = TerminalOutputEvent {
             session_id: session_id.to_string(),
             output: text,
             start_cursor,
             cursor,
-        })
+        };
+        if let Some(logger) = self.logger.get() {
+            if logger.capture_output(&event).await.is_err() {
+                log::warn!("Failed to capture terminal log output");
+            }
+        }
+        drop(sessions);
+        self.output_notify.notify_waiters();
+        Some(event)
     }
 
     pub async fn set_encoding(&self, session_id: &str, encoding: &str) -> Result<(), String> {
@@ -401,6 +440,54 @@ pub async fn terminal_output_delta_get(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_info_without_profile_id_remains_readable() {
+        let info: TerminalSessionInfo = serde_json::from_value(serde_json::json!({
+            "session_id": "s1", "protocol": "ssh", "target": "synthetic:22",
+            "encoding": "utf-8", "status": "connected"
+        }))
+        .unwrap();
+        assert_eq!(info.profile_id, None);
+        assert_eq!(
+            serde_json::to_value(info).unwrap()["profile_id"],
+            serde_json::Value::Null
+        );
+    }
+
+    #[tokio::test]
+    async fn profile_identity_distinguishes_shared_endpoints_and_survives_disconnect() {
+        let state = TerminalControlState::new();
+        for (session_id, profile_id) in [("s1", "office"), ("s2", "lab")] {
+            state
+                .register_session_with_profile(
+                    session_id.into(),
+                    TerminalProtocol::Ssh,
+                    "synthetic:22".into(),
+                    None,
+                    Some(profile_id.into()),
+                )
+                .await;
+        }
+        state.append_output("s1", b"synthetic output").await;
+        state.set_encoding("s1", "shift-jis").await.unwrap();
+        state.mark_disconnected("s1").await;
+        let sessions = state.list_sessions().await;
+        assert_eq!(sessions[0].profile_id.as_deref(), Some("office"));
+        assert_eq!(sessions[1].profile_id.as_deref(), Some("lab"));
+        assert_eq!(sessions[0].target, sessions[1].target);
+        assert_eq!(sessions[0].status, TerminalStatus::Disconnected);
+        for protocol in [
+            TerminalProtocol::Ssh,
+            TerminalProtocol::Telnet,
+            TerminalProtocol::Serial,
+        ] {
+            state
+                .register_session("direct".into(), protocol, "synthetic".into())
+                .await;
+            assert_eq!(state.session_info("direct").await.unwrap().profile_id, None);
+        }
+    }
 
     fn encode_shift_jis(input: &str) -> Vec<u8> {
         SHIFT_JIS.encode(input).0.into_owned()

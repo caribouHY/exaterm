@@ -1,3 +1,4 @@
+import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -235,6 +236,9 @@ export default function StatusBarPalette({
                   runItem(item, "action");
                 }}
               >
+                <span className="statusbar-palette__check" aria-hidden="true">
+                  {item.active && <Check size={14} />}
+                </span>
                 <span className="statusbar-palette__item-label">
                   {getStatusBarPaletteLabelSegments(item.label, item.searchLabel ? "" : query).map(
                     (segment, index) =>

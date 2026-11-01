@@ -1,3 +1,7 @@
+import { useRef } from "react";
+import { ConnectionSearchSelect, ConnectionSelect } from "./ConnectionSearchSelect";
+import { profileSearchSections } from "./connectionSearchModel";
+import { parseConnectionSource } from "./connectionHistoryModel";
 import { FolderOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -13,6 +17,7 @@ import {
   EncodingSelect,
   ProfileMetadataFields,
   ProfileNameField,
+  ProfileGroupField,
   ProfileSelector,
   TerminalModeSelect,
 } from "./ConnectionFormFields";
@@ -30,6 +35,7 @@ export function SshConnectionForm({
 }: SshConnectionFormProps) {
   const { t } = useTranslation();
   const errors = formState.validationErrors;
+  const profileNameRef = useRef<HTMLInputElement>(null);
 
   return (
     <>
@@ -43,8 +49,20 @@ export function SshConnectionForm({
         onSelectSource={formActions.onSelectSource}
         onDeleteProfile={formActions.onDeleteProfile}
         onDeleteHistory={formActions.onDeleteHistory}
+        onCopyProfile={() => {
+          if (formActions.onCopyProfile()) profileNameRef.current?.focus();
+        }}
       />
-      <ProfileNameField value={formState.profileName} onChange={formActions.onProfileNameChange} />
+      <ProfileNameField
+        value={formState.profileName}
+        onChange={formActions.onProfileNameChange}
+        inputRef={profileNameRef}
+      />
+      <ProfileGroupField
+        value={formState.group}
+        groupNames={profileOptions.groupNames}
+        onChange={formActions.onGroupChange}
+      />
       <div className="connection-dialog__row">
         <div>
           <ConnectionFieldLabelHtml htmlFor="connection-ssh-host" required>
@@ -103,23 +121,17 @@ export function SshConnectionForm({
         />
         <ConnectionFieldError id="connection-ssh-username-error" error={errors.username} />
       </div>
-      <div>
-        <label className="label">{t("connection.auth_method")}</label>
-        <select
-          className="select"
-          style={{ width: "100%" }}
-          value={formState.authMethod}
-          onChange={(event) => {
-            formActions.onAuthMethodChange(normalizeSshAuthMethod(event.target.value));
-          }}
-        >
-          {SSH_AUTH_METHODS.map((entry) => (
-            <option key={entry.value} value={entry.value}>
-              {t(entry.labelKey)}
-            </option>
-          ))}
-        </select>
-      </div>
+      <ConnectionSelect
+        label={t("connection.auth_method")}
+        value={formState.authMethod}
+        options={SSH_AUTH_METHODS.map((entry) => ({
+          value: entry.value,
+          label: t(entry.labelKey),
+        }))}
+        onChange={(value) => {
+          formActions.onAuthMethodChange(normalizeSshAuthMethod(value));
+        }}
+      />
       {usesPrivateKeyAuthentication(formState.authMethod) && (
         <div>
           <ConnectionFieldLabelHtml
@@ -162,24 +174,33 @@ export function SshConnectionForm({
           )}
         </div>
       )}
-      <div>
-        <label className="label">{t("connection.jump_profile")}</label>
-        <select
-          className="select"
-          style={{ width: "100%" }}
-          value={formState.jumpProfileId}
-          onChange={(event) => {
-            formActions.onJumpProfileChange(event.target.value);
-          }}
-        >
-          <option value="">{t("connection.jump_profile_none")}</option>
-          {profileOptions.jumpProfiles.map((profile) => (
-            <option key={profile.id} value={profile.id}>
-              {profileOptions.getDisplayName(profile)}
-            </option>
-          ))}
-        </select>
-      </div>
+      <ConnectionSearchSelect
+        label={t("connection.jump_profile")}
+        value={formState.jumpProfileId ? `profile:${formState.jumpProfileId}` : ""}
+        sections={[
+          {
+            key: "direct",
+            options: [
+              {
+                value: "",
+                label: t("connection.jump_profile_none"),
+                searchText: "",
+                alwaysVisible: true,
+              },
+            ],
+          },
+          ...profileSearchSections(
+            profileOptions.jumpProfiles,
+            profileOptions.getDisplayName,
+            t("connection.profile_saved"),
+            t("connection.profile_ungrouped")
+          ),
+        ]}
+        onChange={(value) => {
+          const source = parseConnectionSource(value);
+          formActions.onJumpProfileChange(source.kind === "profile" ? source.id : "");
+        }}
+      />
       <EncodingSelect value={formState.encoding} onChange={formActions.onEncodingChange} />
       <TerminalModeSelect
         value={formState.terminalMode}

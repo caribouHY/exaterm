@@ -20,7 +20,10 @@ import type {
   WorkspaceConnectionInfo,
 } from "./types";
 import type { ConnectionDialogInitialValues } from "./components/Connection/connectionDialogTypes";
-import type { ConnectionLogState } from "./features/terminal-logging/connectionLogModel";
+import {
+  connectionLogTarget,
+  type ConnectionLogState,
+} from "./features/terminal-logging/connectionLogModel";
 import { DEFAULT_TERMINAL_MODE } from "./utils/terminalModes";
 import { invoke } from "@tauri-apps/api/core";
 import { translateBackendCommandError } from "./features/backend-errors/backendCommandError";
@@ -68,6 +71,7 @@ import { useSshPrompts } from "./features/ssh-authentication/useSshPrompts";
 import { useAppConfig } from "./features/language/LanguageCoordinator";
 import { startupCliClient } from "./features/startup-cli/startupCliClient";
 import { createStartupCliRequestCoordinator } from "./features/startup-cli/startupCliRequestCoordinator";
+import { createManualLogBackendClient } from "./features/terminal-logging/manualLogBackendClient";
 import "./App.css";
 
 const loadConnectionDialog = () => import("./components/Connection/ConnectionDialog");
@@ -92,6 +96,7 @@ function clampAiPanelWidth(width: number, viewportWidth: number) {
 }
 
 interface McpCredentialRequestPayload {
+  profile_name?: string | null;
   request_id: string;
   profile_id: string;
   host: string;
@@ -179,16 +184,10 @@ export default function App() {
       createManualLogController({
         getTabBySessionId: (sessionId) =>
           getCurrentWindowTabsState().tabs.find((tab) => tab.sessionId === sessionId) ?? null,
-        startBackend: (input) => invoke<string>("logger_start_manual", input),
-        stopBackend: (sessionId) => invoke("logger_stop_manual", { sessionId }),
-        isBackendActive: (sessionId) => invoke<boolean>("logger_is_manual_active", { sessionId }),
-        flush: async (tabId) => {
-          await terminalViewRefs.current.get(tabId)?.flushManualLogBuffer();
-        },
-        updateMetadata: updateWorkspaceTabMetadata,
+        ...createManualLogBackendClient(invoke, windowTabs.applyWorkspaceSnapshot),
         onBusyChange: setManualLogBusySessionIds,
       }),
-    [getCurrentWindowTabsState, updateWorkspaceTabMetadata]
+    [getCurrentWindowTabsState, windowTabs.applyWorkspaceSnapshot]
   );
   const stopManualLogBeforeDisconnect = useCallback(
     async (sessionId: string) => {
@@ -282,10 +281,6 @@ export default function App() {
     [getCurrentWindowTabsState]
   );
 
-  const flushLogBuffersForMove = useCallback(async (tabId: string) => {
-    await terminalViewRefs.current.get(tabId)?.flushLogBuffersForMove();
-  }, []);
-
   const clearActiveTerminalViewport = useCallback(() => {
     if (!activeTabId) return;
     terminalViewRefs.current.get(activeTabId)?.clearViewport();
@@ -331,7 +326,6 @@ export default function App() {
   });
   const workspaceTabMovement = useWorkspaceTabMovement({
     tabs: windowTabs,
-    flushLogBuffersForMove,
   });
 
   const handleConnect = useCallback(
@@ -421,10 +415,10 @@ export default function App() {
       },
     });
 
-    return subscribeExternalLogControl(listen, handlers, (error) => {
+    return subscribeExternalLogControl(listen, windowTabs.windowId, handlers, (error) => {
       console.error("Failed to register an external log control listener:", error);
     });
-  }, [manualLogController]);
+  }, [manualLogController, windowTabs.windowId]);
 
   const handleTerminalData = useCallback(
     (tabId: string, data: string) => {
@@ -524,7 +518,7 @@ export default function App() {
         sessionId: activeTab.sessionId,
         expectedTabId: activeTab.id,
         connectionType: activeTab.connectionType,
-        target: activeTab.title,
+        target: connectionLogTarget(activeTab),
       };
       let operation;
       try {
@@ -968,6 +962,7 @@ export default function App() {
       {showConnection && (
         <Suspense fallback={<div aria-hidden="true" />}>
           <ConnectionDialog
+            shortcutsEnabled={!sshPrompts.activePrompt}
             initialValues={connectionInitialValues}
             startupRequest={startupCliRequest}
             onStartupRequestHandled={() => {
@@ -985,6 +980,7 @@ export default function App() {
         <SshAuthenticationPromptDialog
           prompt={sshPrompts.activePrompt.value}
           onResponseChange={sshPrompts.updateResponse}
+          onRememberPasswordChange={sshPrompts.updateRememberPassword}
           onSubmit={() => {
             void sshPrompts.submit();
           }}
@@ -1028,6 +1024,9 @@ export default function App() {
             </ModalHeader>
             <ModalBody className="app-credential-modal__body">
               <ModalTarget className="app-credential-modal__target">
+                {activeMcpCredentialPrompt.profile_name && (
+                  <div>{activeMcpCredentialPrompt.profile_name}</div>
+                )}
                 {activeMcpCredentialPrompt.target}
               </ModalTarget>
               <ModalDescription

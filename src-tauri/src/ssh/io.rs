@@ -116,8 +116,9 @@ pub(super) fn record_ssh_read_drop(
     }
 }
 
-fn enqueue_ssh_read(
+async fn enqueue_ssh_read(
     app: &AppHandle,
+    terminals: &TerminalControlState,
     session_id: &str,
     read_tx: mpsc::Sender<SshReadRequest>,
     drop_state: Arc<StdMutex<SshReadDropState>>,
@@ -127,6 +128,9 @@ fn enqueue_ssh_read(
         Ok(()) | Err(TrySendError::Closed(_)) => {}
         Err(TrySendError::Full(request)) => {
             if let Some(notice) = record_ssh_read_drop(&drop_state, request.data.len()) {
+                terminals
+                    .capture_notice(session_id, SSH_READ_DROP_STATUS_LINE)
+                    .await;
                 let _ = app.emit(
                     &ssh_read_overflow_event_name(session_id),
                     SshReadOverflowEvent {
@@ -173,6 +177,7 @@ where
 pub struct SshState {
     pub(super) sessions: SshSessions,
     pub(super) connect_attempts: crate::connect_attempt::ConnectAttemptState,
+    pub(super) password_cache: super::password_cache::PasswordCache,
     pub(crate) authentication_prompts: SshAuthenticationPromptState,
     pub(crate) host_key_prompts: SshHostKeyPromptState,
 }
@@ -187,6 +192,7 @@ impl SshState {
                 "The SSH connection attempt was cancelled",
                 "An SSH connection attempt with this request ID already exists",
             ),
+            password_cache: super::password_cache::PasswordCache::default(),
             authentication_prompts: SshAuthenticationPromptState::default(),
             host_key_prompts: SshHostKeyPromptState::default(),
         }
@@ -240,10 +246,12 @@ impl russh::client::Handler for SshClientHandler {
         let session_id = self.session_id.clone();
         let read_tx = self.read_tx.clone();
         let read_drop_state = self.read_drop_state.clone();
+        let terminals = self.terminals.clone();
         let data = data.to_vec();
         async move {
             enqueue_ssh_read(
                 &app,
+                &terminals,
                 &session_id,
                 read_tx,
                 read_drop_state,
@@ -251,7 +259,8 @@ impl russh::client::Handler for SshClientHandler {
                     data,
                     stream_kind: SshReadStreamKind::Data,
                 },
-            );
+            )
+            .await;
             Ok(())
         }
     }
@@ -267,10 +276,12 @@ impl russh::client::Handler for SshClientHandler {
         let session_id = self.session_id.clone();
         let read_tx = self.read_tx.clone();
         let read_drop_state = self.read_drop_state.clone();
+        let terminals = self.terminals.clone();
         let data = data.to_vec();
         async move {
             enqueue_ssh_read(
                 &app,
+                &terminals,
                 &session_id,
                 read_tx,
                 read_drop_state,
@@ -278,7 +289,8 @@ impl russh::client::Handler for SshClientHandler {
                     data,
                     stream_kind: SshReadStreamKind::ExtendedData,
                 },
-            );
+            )
+            .await;
             Ok(())
         }
     }

@@ -16,6 +16,7 @@ import { SshDiagnosticsPanel } from "./SshDiagnosticsPanel";
 import type { SshDiagnosticEntry } from "./connectionDialogTypes";
 
 interface CredentialPromptModalProps {
+  shortcutsEnabled: boolean;
   credentialPrompt: SshCredentialPrompt;
   connecting: boolean;
   diagnostics: {
@@ -30,6 +31,7 @@ interface CredentialPromptModalProps {
 }
 
 export function CredentialPromptModal({
+  shortcutsEnabled,
   credentialPrompt,
   connecting,
   diagnostics,
@@ -44,6 +46,7 @@ export function CredentialPromptModal({
     onSubmit(credential);
   };
   useEffect(() => {
+    if (!shortcutsEnabled) return;
     const keydown = (event: KeyboardEvent) => {
       if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
@@ -93,6 +96,7 @@ export function CredentialPromptModal({
         </ModalHeader>
         <ModalBody className="connection-credential-modal__body">
           <ModalTarget className="connection-credential-modal__target">
+            {credentialPrompt.profileName && <div>{credentialPrompt.profileName}</div>}
             {credentialPrompt.username}@{credentialPrompt.host}:{credentialPrompt.port}
           </ModalTarget>
           <ModalDescription className="connection-credential-modal__description">

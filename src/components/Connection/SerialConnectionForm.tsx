@@ -1,10 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { SerialFormActions, SerialFormState } from "./connectionDialogTypes";
-import {
-  ConnectionFieldError,
-  ConnectionFieldLabelHtml,
-  TerminalModeSelect,
-} from "./ConnectionFormFields";
+import { ConnectionSelect } from "./ConnectionSearchSelect";
+import { ConnectionFieldError, TerminalModeSelect } from "./ConnectionFormFields";
 
 interface SerialConnectionFormProps {
   formState: SerialFormState;
@@ -20,96 +17,55 @@ export function SerialConnectionForm({ formState, formActions }: SerialConnectio
   return (
     <>
       <div>
-        <ConnectionFieldLabelHtml htmlFor="connection-serial-port" required>
-          {t("connection.port")}
-        </ConnectionFieldLabelHtml>
-        <select
-          id="connection-serial-port"
-          className="select"
-          style={{ width: "100%" }}
+        <ConnectionSelect
+          triggerId="connection-serial-port"
+          label={t("connection.port")}
           value={formState.selectedPort}
-          onChange={(event) => {
-            formActions.onSelectedPortChange(event.target.value);
-          }}
+          onChange={formActions.onSelectedPortChange}
+          options={
+            formState.ports.length === 0
+              ? [{ value: "", label: t("connection.no_ports") }]
+              : formState.ports.map((port) => ({
+                  value: port.name,
+                  label: `${port.name} (${port.port_type})`,
+                }))
+          }
           required
-          aria-invalid={Boolean(portError)}
-          aria-describedby={portError ? "connection-serial-port-error" : undefined}
-        >
-          {formState.ports.length === 0 && <option value="">{t("connection.no_ports")}</option>}
-          {formState.ports.map((p) => (
-            <option key={p.name} value={p.name}>
-              {p.name} ({p.port_type})
-            </option>
-          ))}
-        </select>
+          invalid={Boolean(portError)}
+          describedBy={portError ? "connection-serial-port-error" : undefined}
+        />
         <ConnectionFieldError id="connection-serial-port-error" error={portError} />
       </div>
       <div className="connection-dialog__row">
-        <div>
-          <label className="label">{t("connection.baud_rate")}</label>
-          <select
-            className="select"
-            style={{ width: "100%" }}
-            value={formState.baudRate}
-            onChange={(event) => {
-              formActions.onBaudRateChange(event.target.value);
-            }}
-          >
-            {BAUD_RATES.map((rate) => (
-              <option key={rate} value={rate}>
-                {rate}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label">{t("connection.data_bits")}</label>
-          <select
-            className="select"
-            style={{ width: "100%" }}
-            value={formState.dataBits}
-            onChange={(event) => {
-              formActions.onDataBitsChange(event.target.value);
-            }}
-          >
-            {["5", "6", "7", "8"].map((dataBits) => (
-              <option key={dataBits} value={dataBits}>
-                {dataBits}
-              </option>
-            ))}
-          </select>
-        </div>
+        <ConnectionSelect
+          label={t("connection.baud_rate")}
+          value={formState.baudRate}
+          options={BAUD_RATES.map((rate) => ({ value: rate, label: rate }))}
+          onChange={formActions.onBaudRateChange}
+        />
+        <ConnectionSelect
+          label={t("connection.data_bits")}
+          value={formState.dataBits}
+          options={["5", "6", "7", "8"].map((bits) => ({ value: bits, label: bits }))}
+          onChange={formActions.onDataBitsChange}
+        />
       </div>
       <div className="connection-dialog__row">
-        <div>
-          <label className="label">{t("connection.parity")}</label>
-          <select
-            className="select"
-            style={{ width: "100%" }}
-            value={formState.parity}
-            onChange={(event) => {
-              formActions.onParityChange(event.target.value);
-            }}
-          >
-            <option value="none">{t("connection.parity_none")}</option>
-            <option value="odd">{t("connection.parity_odd")}</option>
-            <option value="even">{t("connection.parity_even")}</option>
-          </select>
-        </div>
-        <div>
-          <label className="label">{t("connection.stop_bits")}</label>
-          <select
-            className="select"
-            style={{ width: "100%" }}
-            value={formState.stopBits}
-            onChange={(event) => {
-              formActions.onStopBitsChange(event.target.value);
-            }}
-          >
-            <option value="1">1</option>
-            <option value="2">2</option>
-          </select>
-        </div>
+        <ConnectionSelect
+          label={t("connection.parity")}
+          value={formState.parity}
+          options={["none", "odd", "even"].map((parity) => ({
+            value: parity,
+            label: t(`connection.parity_${parity}`),
+          }))}
+          onChange={formActions.onParityChange}
+        />
+        <ConnectionSelect
+          label={t("connection.stop_bits")}
+          value={formState.stopBits}
+          options={["1", "2"].map((bits) => ({ value: bits, label: bits }))}
+          onChange={formActions.onStopBitsChange}
+        />
       </div>
       <TerminalModeSelect
         value={formState.terminalMode}

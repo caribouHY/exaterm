@@ -5,7 +5,13 @@ use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tauri::Manager;
+use tokio::sync::{Mutex, OwnedMutexGuard};
+
+mod operations;
+mod sanitizer;
+use operations::{apply_manual_log_operation, ManualLogOperation};
+use sanitizer::TerminalLogSanitizer;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogSession {
@@ -23,6 +29,8 @@ pub struct LoggerState {
     log_dir: PathBuf,
     index_path: PathBuf,
     sessions: Arc<Mutex<HashMap<String, LogSession>>>,
+    captures: Arc<Mutex<HashMap<String, LogCapture>>>,
+    operations: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
 }
 
 impl LoggerState {
@@ -37,6 +45,8 @@ impl LoggerState {
             log_dir,
             index_path,
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            captures: Arc::new(Mutex::new(HashMap::new())),
+            operations: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -47,7 +57,195 @@ impl LoggerState {
             log_dir,
             index_path,
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            captures: Arc::new(Mutex::new(HashMap::new())),
+            operations: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+}
+
+struct LogCapture {
+    sanitizer: TerminalLogSanitizer,
+    cursor: Option<usize>,
+    paused: bool,
+    pending: String,
+}
+
+impl LogCapture {
+    fn capture_text(&mut self, session: &LogSession, text: &str) -> Result<(), String> {
+        if !self.paused {
+            self.pending.push_str(&self.sanitizer.push(text));
+        }
+        self.write_pending(session)
+    }
+
+    fn write_pending(&mut self, session: &LogSession) -> Result<(), String> {
+        if !self.pending.is_empty() {
+            append_to_log_sessions(std::slice::from_ref(session), &self.pending)?;
+            self.pending.clear();
+        }
+        Ok(())
+    }
+
+    fn flush_to(&mut self, session: &LogSession) -> Result<(), String> {
+        self.pending.push_str(&self.sanitizer.flush());
+        self.write_pending(session)
+    }
+}
+
+impl LoggerState {
+    pub async fn operation_lock(&self, session_id: &str) -> OwnedMutexGuard<()> {
+        let operation = {
+            let mut operations = self.operations.lock().await;
+            operations
+                .entry(session_id.to_owned())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        operation.lock_owned().await
+    }
+
+    pub async fn capture_notice(&self, session_id: &str, text: &str) -> Result<(), String> {
+        let sessions = self.sessions.lock().await;
+        let Some(session) = sessions.get(session_id) else {
+            return Ok(());
+        };
+        let mut captures = self.captures.lock().await;
+        let Some(capture) = captures.get_mut(session_id) else {
+            return Ok(());
+        };
+        capture.capture_text(session, text)
+    }
+
+    pub async fn capture_output(
+        &self,
+        event: &crate::terminal_control::TerminalOutputEvent,
+    ) -> Result<(), String> {
+        let sessions = self.sessions.lock().await;
+        let Some(session) = sessions.get(&event.session_id) else {
+            return Ok(());
+        };
+        let mut captures = self.captures.lock().await;
+        let Some(capture) = captures.get_mut(&event.session_id) else {
+            return Ok(());
+        };
+        let cursor = capture.cursor.unwrap_or(event.start_cursor);
+        if event.cursor <= cursor {
+            return Ok(());
+        }
+        if event.start_cursor > cursor {
+            return Err("Log output cursor gap".into());
+        }
+        let data: String = event
+            .output
+            .chars()
+            .skip(cursor - event.start_cursor)
+            .collect();
+        capture.cursor = Some(event.cursor);
+        capture.capture_text(session, &data)
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualLogStatus {
+    pub active: bool,
+    pub paused: bool,
+    pub file_path: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualLogOperationResult {
+    pub status: ManualLogStatus,
+    pub snapshot: Option<crate::workspace::WorkspaceSnapshot>,
+}
+
+pub async fn manual_log_status(state: &LoggerState, session_id: &str) -> ManualLogStatus {
+    let sessions = state.sessions.lock().await;
+    let captures = state.captures.lock().await;
+    ManualLogStatus {
+        active: sessions.contains_key(session_id),
+        paused: captures
+            .get(session_id)
+            .is_some_and(|capture| capture.paused),
+        file_path: sessions
+            .get(session_id)
+            .map(|session| session.file_path.clone()),
+    }
+}
+
+pub async fn flush_manual_log(state: &LoggerState, session_id: &str) -> Result<(), String> {
+    let sessions = state.sessions.lock().await;
+    let mut captures = state.captures.lock().await;
+    if let (Some(session), Some(capture)) = (sessions.get(session_id), captures.get_mut(session_id))
+    {
+        capture.flush_to(session)?;
+    }
+    Ok(())
+}
+
+pub async fn set_manual_log_paused(
+    state: &LoggerState,
+    session_id: &str,
+    paused: bool,
+) -> Result<(), String> {
+    let sessions = state.sessions.lock().await;
+    let mut captures = state.captures.lock().await;
+    let session = sessions
+        .get(session_id)
+        .ok_or("No active log for session")?;
+    let capture = captures
+        .get_mut(session_id)
+        .ok_or("Log capture unavailable")?;
+    if capture.paused != paused {
+        capture.flush_to(session)?;
+        capture.paused = paused;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn logger_get_manual_status(
+    state: tauri::State<'_, LoggerState>,
+    session_id: String,
+) -> Result<ManualLogStatus, String> {
+    Ok(manual_log_status(&state, &session_id).await)
+}
+
+#[tauri::command]
+pub async fn logger_flush_manual(
+    state: tauri::State<'_, LoggerState>,
+    session_id: String,
+) -> Result<(), crate::command_error::BackendCommandError> {
+    command_result(flush_manual_log(&state, &session_id).await)
+}
+
+#[tauri::command]
+pub async fn logger_set_manual_paused(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LoggerState>,
+    session_id: String,
+    paused: bool,
+) -> Result<ManualLogOperationResult, crate::command_error::BackendCommandError> {
+    let (status, snapshot) = command_result(
+        apply_manual_log_operation(
+            &state,
+            &app.state::<crate::workspace::WorkspaceState>(),
+            &session_id,
+            ManualLogOperation::SetPaused(paused),
+        )
+        .await,
+    )?;
+    emit_log_snapshot(&app, snapshot.clone());
+    Ok(ManualLogOperationResult { status, snapshot })
+}
+
+fn emit_log_snapshot(
+    app: &tauri::AppHandle,
+    snapshot: Option<crate::workspace::WorkspaceSnapshot>,
+) {
+    if let Some(snapshot) = snapshot {
+        crate::workspace::emit_workspace_updated(app, &snapshot);
     }
 }
 
@@ -459,24 +657,30 @@ pub async fn logger_start_on_connection(
 
 #[tauri::command]
 pub async fn logger_start_manual(
+    app: tauri::AppHandle,
     state: tauri::State<'_, LoggerState>,
     session_id: String,
     connection_type: String,
     target: String,
     file_path: Option<String>,
     write_mode: Option<String>,
-) -> Result<String, crate::command_error::BackendCommandError> {
-    command_result(
-        start_manual_log(
+) -> Result<ManualLogOperationResult, crate::command_error::BackendCommandError> {
+    let (status, snapshot) = command_result(
+        apply_manual_log_operation(
             &state,
-            session_id,
-            connection_type,
-            target,
-            file_path,
-            write_mode,
+            &app.state::<crate::workspace::WorkspaceState>(),
+            &session_id,
+            ManualLogOperation::Start {
+                connection_type,
+                target,
+                file_path,
+                write_mode,
+            },
         )
         .await,
-    )
+    )?;
+    emit_log_snapshot(&app, snapshot.clone());
+    Ok(ManualLogOperationResult { status, snapshot })
 }
 
 pub async fn start_manual_log(
@@ -511,14 +715,25 @@ async fn start_log(
     let mut sessions = state.sessions.lock().await;
     if reuse_existing {
         if let Some(session) = sessions.get(&options.session_id) {
-            if session.log_mode == "manual" {
-                return Ok(session.file_path.clone());
-            }
+            return Ok(session.file_path.clone());
         }
     }
-    let include_header = crate::config::config_read()
+    let config = crate::config::config_read().ok();
+    let include_header = config
+        .as_ref()
         .map(|cfg| cfg.terminal.include_log_header)
         .unwrap_or(true);
+    let format = config
+        .as_ref()
+        .map(|cfg| cfg.terminal.log_format.as_str())
+        .unwrap_or("display");
+    let mut captures = state.captures.lock().await;
+    if let (Some(session), Some(capture)) = (
+        sessions.get(&options.session_id),
+        captures.get_mut(&options.session_id),
+    ) {
+        capture.flush_to(session)?;
+    }
     let session_id = options.session_id.clone();
     let session = create_log_session(
         &state.log_dir,
@@ -533,25 +748,77 @@ async fn start_log(
         },
     )?;
     upsert_log_session(&state.index_path, session.clone())?;
+    captures.insert(
+        session_id.clone(),
+        LogCapture {
+            sanitizer: TerminalLogSanitizer::new(format),
+            cursor: None,
+            paused: false,
+            pending: String::new(),
+        },
+    );
     sessions.insert(session_id, session.clone());
     Ok(session.file_path)
 }
 
 #[tauri::command]
 pub async fn logger_stop_manual(
+    app: tauri::AppHandle,
     state: tauri::State<'_, LoggerState>,
     session_id: String,
-) -> Result<(), crate::command_error::BackendCommandError> {
-    command_result(stop_manual_log(&state, &session_id).await)
+) -> Result<ManualLogOperationResult, crate::command_error::BackendCommandError> {
+    let (status, snapshot) = command_result(
+        apply_manual_log_operation(
+            &state,
+            &app.state::<crate::workspace::WorkspaceState>(),
+            &session_id,
+            ManualLogOperation::Stop,
+        )
+        .await,
+    )?;
+    emit_log_snapshot(&app, snapshot.clone());
+    Ok(ManualLogOperationResult { status, snapshot })
 }
 
 pub async fn stop_manual_log(state: &LoggerState, session_id: &str) -> Result<(), String> {
-    state.sessions.lock().await.remove(session_id);
+    let mut sessions = state.sessions.lock().await;
+    let mut captures = state.captures.lock().await;
+    if let (Some(session), Some(capture)) = (sessions.get(session_id), captures.get_mut(session_id))
+    {
+        capture.flush_to(session)?;
+    }
+    captures.remove(session_id);
+    sessions.remove(session_id);
+    Ok(())
+}
+
+pub async fn finish_all_logs(state: &LoggerState) -> Result<(), String> {
+    let mut sessions = state.sessions.lock().await;
+    let mut captures = state.captures.lock().await;
+    for (session_id, session) in sessions.iter() {
+        if let Some(capture) = captures.get_mut(session_id) {
+            capture.flush_to(session)?;
+        }
+    }
+    captures.clear();
+    sessions.clear();
     Ok(())
 }
 
 pub async fn clear_session_logs(state: &LoggerState, session_id: &str) {
-    state.sessions.lock().await.remove(session_id);
+    if stop_manual_log(state, session_id).await.is_err() {
+        log::warn!("Failed to flush terminal log during disconnect");
+    }
+}
+
+pub async fn active_log_state(state: &LoggerState, session_id: &str) -> Option<(LogSession, bool)> {
+    let sessions = state.sessions.lock().await;
+    let session = sessions.get(session_id)?.clone();
+    let captures = state.captures.lock().await;
+    let paused = captures
+        .get(session_id)
+        .is_some_and(|capture| capture.paused);
+    Some((session, paused))
 }
 
 pub async fn active_log_session(state: &LoggerState, session_id: &str) -> Option<LogSession> {
@@ -577,14 +844,16 @@ pub async fn logger_append(
     session_id: String,
     data: String,
 ) -> Result<(), crate::command_error::BackendCommandError> {
-    let active_sessions = {
-        let sessions = state.sessions.lock().await;
-        sessions
-            .get(&session_id)
-            .cloned()
-            .into_iter()
-            .collect::<Vec<_>>()
-    };
+    let sessions = state.sessions.lock().await;
+    if state.captures.lock().await.contains_key(&session_id) {
+        // Older renderers may still append restored text; the backend already captured it.
+        return Ok(());
+    }
+    let active_sessions = sessions
+        .get(&session_id)
+        .cloned()
+        .into_iter()
+        .collect::<Vec<_>>();
     command_result(append_to_log_sessions(&active_sessions, &data))
 }
 

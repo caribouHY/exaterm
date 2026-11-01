@@ -1528,7 +1528,7 @@ dependencies = [
 
 [[package]]
 name = "exaterm"
-version = "0.9.3"
+version = "0.10.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1554,10 +1554,12 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "uuid",
  "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]

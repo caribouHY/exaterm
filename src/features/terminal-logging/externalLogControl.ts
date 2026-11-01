@@ -167,10 +167,15 @@ export function createExternalLogControlHandlers(
 
 type Unlisten = () => void;
 type EventListener<T> = (event: { payload: T }) => void;
-type Listen = <T>(event: string, listener: EventListener<T>) => Promise<Unlisten>;
+type Listen = <T>(
+  event: string,
+  listener: EventListener<T>,
+  options: { target: { kind: "WebviewWindow"; label: string } }
+) => Promise<Unlisten>;
 
 export function subscribeExternalLogControl(
   listen: Listen,
+  windowId: string,
   handlers: ExternalLogControlHandlers,
   onRegistrationError: (error: unknown) => void
 ): () => void {
@@ -181,10 +186,14 @@ export function subscribeExternalLogControl(
     event: string,
     handler: (payload: ExternalLogControlRequestPayload) => Promise<void>
   ) => {
-    void listen<ExternalLogControlRequestPayload>(event, (received) => {
-      if (!acceptingEvents) return;
-      void handler(received.payload);
-    })
+    void listen<ExternalLogControlRequestPayload>(
+      event,
+      (received) => {
+        if (!acceptingEvents) return;
+        void handler(received.payload);
+      },
+      { target: { kind: "WebviewWindow", label: windowId } }
+    )
       .then((unlisten) => {
         if (acceptingEvents) {
           unlisteners.push(unlisten);

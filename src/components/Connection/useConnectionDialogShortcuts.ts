@@ -1,39 +1,48 @@
 import { useEffect } from "react";
 import type { SshCredentialPrompt } from "./connectionDialogTypes";
+import type { AttemptStatus } from "./connectionAttemptState";
 
 interface UseConnectionDialogShortcutsParams {
-  connecting: boolean;
+  attemptStatus: AttemptStatus;
+  enabled: boolean;
   canConnect: boolean;
   credentialPrompt: SshCredentialPrompt | null;
   onClose: () => void;
   onCloseCredentialPrompt: () => void;
-
+  onCancelConnection: () => void;
   onConnect: () => void;
 }
 
 export const useConnectionDialogShortcuts = ({
-  connecting,
+  attemptStatus,
+  enabled,
   canConnect,
   credentialPrompt,
   onClose,
   onCloseCredentialPrompt,
-
+  onCancelConnection,
   onConnect,
 }: UseConnectionDialogShortcutsParams) => {
   useEffect(() => {
+    if (!enabled) return;
+
     const handleEscape = (event: KeyboardEvent) => {
       event.preventDefault();
-      if (connecting && !credentialPrompt) return;
+      if (event.repeat) return;
       if (credentialPrompt) {
         onCloseCredentialPrompt();
         return;
       }
-      onClose();
+      if (attemptStatus === "editing") {
+        onClose();
+      } else if (attemptStatus === "preparing" || attemptStatus === "connecting") {
+        onCancelConnection();
+      }
     };
 
     const handleSubmitShortcut = (event: KeyboardEvent) => {
       event.preventDefault();
-      if (connecting && !credentialPrompt) return;
+      if (attemptStatus !== "editing" && !credentialPrompt) return;
       if (credentialPrompt) {
         return;
       }
@@ -42,6 +51,7 @@ export const useConnectionDialogShortcuts = ({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if (event.key === "Escape") {
         handleEscape(event);
         return;
@@ -55,5 +65,14 @@ export const useConnectionDialogShortcuts = ({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [canConnect, connecting, credentialPrompt, onClose, onCloseCredentialPrompt, onConnect]);
+  }, [
+    attemptStatus,
+    enabled,
+    canConnect,
+    credentialPrompt,
+    onClose,
+    onCloseCredentialPrompt,
+    onCancelConnection,
+    onConnect,
+  ]);
 };

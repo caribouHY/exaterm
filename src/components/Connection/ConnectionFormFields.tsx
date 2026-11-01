@@ -1,9 +1,11 @@
 import { useTranslation } from "react-i18next";
-import type { ReactNode } from "react";
+import { useId, type ReactNode, type Ref } from "react";
 import type { ConnectionHistoryEntry, Encoding, SavedConnection, TerminalMode } from "../../types";
 import { getTerminalModeOptions, normalizeTerminalMode } from "../../utils/terminalModes";
-import { encodeConnectionSource } from "./connectionHistoryModel";
 import { normalizeEncoding, SSH_ENCODINGS } from "./connectionProfileUtils";
+import { encodeConnectionSource } from "./connectionHistoryModel";
+import { ConnectionSearchSelect, ConnectionSelect } from "./ConnectionSearchSelect";
+import { historySearchSection, profileSearchSections } from "./connectionSearchModel";
 import type { ConnectionValidationError } from "./connectionFormValidation";
 
 interface ConnectionFieldLabelHtmlProps {
@@ -55,6 +57,7 @@ interface ProfileSelectorProps {
   onSelectSource: (value: string) => void;
   onDeleteProfile: () => void;
   onDeleteHistory: () => void;
+  onCopyProfile: () => void;
 }
 
 export function ProfileSelector({
@@ -67,48 +70,61 @@ export function ProfileSelector({
   onSelectSource,
   onDeleteProfile,
   onDeleteHistory,
+  onCopyProfile,
 }: ProfileSelectorProps) {
   const { t } = useTranslation();
 
   return (
     <div className="connection-dialog__profile">
-      <label className="label">{t("connection.source")}</label>
       <div className="connection-dialog__profile-row">
-        <select
-          className="select"
+        <ConnectionSearchSelect
+          label={t("connection.source")}
           value={encodeConnectionSource(selectedProfileId, selectedHistoryId)}
-          onChange={(event) => {
-            onSelectSource(event.target.value);
-          }}
-        >
-          <option value="">{t("connection.profile_manual")}</option>
-          {historyEntries.length > 0 && (
-            <optgroup label={t("connection.history_recent")}>
-              {historyEntries.map((entry) => (
-                <option key={entry.id} value={`history:${entry.id}`}>
-                  {getHistoryDisplayName(entry)}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {profiles.length > 0 && (
-            <optgroup label={t("connection.profile_saved")}>
-              {profiles.map((profile) => (
-                <option key={profile.id} value={`profile:${profile.id}`}>
-                  {getDisplayName(profile)}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
+          sections={[
+            {
+              key: "manual",
+              options: [
+                {
+                  value: "",
+                  label: t("connection.profile_manual"),
+                  searchText: "",
+                  alwaysVisible: true,
+                },
+              ],
+            },
+            historySearchSection(
+              historyEntries,
+              getHistoryDisplayName,
+              t("connection.history_recent")
+            ),
+            ...profileSearchSections(
+              profiles,
+              getDisplayName,
+              t("connection.profile_saved"),
+              t("connection.profile_ungrouped")
+            ),
+          ]}
+          onChange={onSelectSource}
+        />
         {selectedHistoryId ? (
           <button className="btn btn-danger btn-sm" onClick={onDeleteHistory}>
             {t("connection.history_delete")}
           </button>
         ) : selectedProfileId ? (
-          <button className="btn btn-danger btn-sm" onClick={onDeleteProfile}>
-            {t("connection.profile_delete")}
-          </button>
+          <div className="connection-dialog__profile-buttons">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onCopyProfile}
+              title={t("connection.profile_copy_hint")}
+              disabled={!profiles.some((profile) => profile.id === selectedProfileId)}
+            >
+              {t("connection.profile_copy")}
+            </button>
+            <button type="button" className="btn btn-danger btn-sm" onClick={onDeleteProfile}>
+              {t("connection.profile_delete")}
+            </button>
+          </div>
         ) : null}
       </div>
     </div>
@@ -118,15 +134,23 @@ export function ProfileSelector({
 interface ProfileNameFieldProps {
   value: string;
   onChange: (value: string) => void;
+  inputRef?: Ref<HTMLInputElement>;
 }
 
-export function ProfileNameField({ value, onChange }: ProfileNameFieldProps) {
+export { ProfileGroupField } from "./ProfileGroupField";
+
+export function ProfileNameField({ value, onChange, inputRef }: ProfileNameFieldProps) {
   const { t } = useTranslation();
+  const id = useId();
 
   return (
     <div>
-      <label className="label">{t("connection.profile_name")}</label>
+      <label className="label" htmlFor={id}>
+        {t("connection.profile_name")}
+      </label>
       <input
+        id={id}
+        ref={inputRef}
         className="input"
         value={value}
         onChange={(event) => {
@@ -147,23 +171,14 @@ export function EncodingSelect({ value, onChange }: EncodingSelectProps) {
   const { t } = useTranslation();
 
   return (
-    <div>
-      <label className="label">{t("connection.encoding")}</label>
-      <select
-        className="select"
-        style={{ width: "100%" }}
-        value={value}
-        onChange={(event) => {
-          onChange(normalizeEncoding(event.target.value));
-        }}
-      >
-        {SSH_ENCODINGS.map((entry) => (
-          <option key={entry.value} value={entry.value}>
-            {entry.label}
-          </option>
-        ))}
-      </select>
-    </div>
+    <ConnectionSelect
+      label={t("connection.encoding")}
+      value={value}
+      options={SSH_ENCODINGS}
+      onChange={(nextValue) => {
+        onChange(normalizeEncoding(nextValue));
+      }}
+    />
   );
 }
 
@@ -177,23 +192,14 @@ export function TerminalModeSelect({ value, onChange }: TerminalModeSelectProps)
   const terminalModeOptions = getTerminalModeOptions(t);
 
   return (
-    <div>
-      <label className="label">{t("connection.terminal_mode")}</label>
-      <select
-        className="select"
-        style={{ width: "100%" }}
-        value={value}
-        onChange={(event) => {
-          onChange(normalizeTerminalMode(event.target.value));
-        }}
-      >
-        {terminalModeOptions.map((entry) => (
-          <option key={entry.value} value={entry.value}>
-            {entry.label}
-          </option>
-        ))}
-      </select>
-    </div>
+    <ConnectionSelect
+      label={t("connection.terminal_mode")}
+      value={value}
+      options={terminalModeOptions}
+      onChange={(nextValue) => {
+        onChange(normalizeTerminalMode(nextValue));
+      }}
+    />
   );
 }
 

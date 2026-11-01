@@ -1059,12 +1059,22 @@ fn permission_denied_uses_tool_error_exit_code() {
 #[test]
 fn print_response_serializes_result_value() {
     let response = ExternalControlResponse::ListTerminalSessions(ListTerminalSessionsResult {
-        sessions: Vec::new(),
+        sessions: vec![crate::terminal_control::TerminalSessionInfo {
+            session_id: "s1".into(),
+            profile_id: Some("office".into()),
+            protocol: crate::terminal_control::TerminalProtocol::Ssh,
+            target: "synthetic:22".into(),
+            encoding: "utf-8".into(),
+            status: crate::terminal_control::TerminalStatus::Connected,
+        }],
     });
 
     let serialized = serde_json::to_string(&response.into_value().unwrap()).unwrap();
     assert_eq!(
         serde_json::from_str::<Value>(&serialized).unwrap(),
-        json!({ "sessions": [] })
+        json!({ "sessions": [{
+            "session_id": "s1", "profile_id": "office", "protocol": "ssh",
+            "target": "synthetic:22", "encoding": "utf-8", "status": "connected"
+        }] })
     );
 }

@@ -180,6 +180,17 @@ remediation automatically when it changes configuration or restarts the GUI.
 `sessions list` returns JSON containing a `sessions` array. Use a returned `session_id` for
 terminal operations.
 
+Each session contains `session_id`, `protocol`, `target`, `encoding`, `status`, and
+`profile_id`. For saved SSH/Telnet connections opened through GUI, CLI, or MCP,
+`profile_id` captures the selected saved profile ID (also its current name) at connection
+start, including connections with unsaved GUI edits. Direct, history, and Serial connections
+return `null`. Pair `profile_id` with `protocol` because SSH and Telnet profiles can share
+an ID. Multiple sessions can use the same profile; always select an exact `session_id`.
+The captured ID survives profile renaming/deletion, tab renaming, window moves, and
+disconnection while the session remains listed. It is provenance, not proof that the saved
+profile still exists or matches `target`; do not infer a profile from matching endpoints.
+MCP `list_terminal_sessions` returns the same metadata.
+
 `profiles list` returns a `profiles` array containing approved SSH and Telnet profiles.
 Secrets and private-key paths are not returned. SSH and Telnet profiles may share an ID, so
 always retain both the returned profile ID and connection type. `--type` accepts only `ssh`
@@ -189,8 +200,22 @@ or `telnet`.
 values from 1 through 1000. Profile connections require
 `external_control.connect_enabled=true`.
 
+Saved-profile connections return the profile name in `title` and use it as the tab title.
+`target` remains the actual endpoint; identify sessions by `session_id`, since titles can repeat.
+SSH credential prompts show the profile name and actual endpoint, using the jump profile name
+when authenticating a jump host. MCP `connect_saved_profile` follows the same behavior.
+
 SSH passwords and encrypted private-key passphrases are entered through the visible ExaTerm
 UI and must never be supplied as CLI arguments.
+
+The password prompt offers an unchecked “Remember password until ExaTerm exits” checkbox.
+After successful password authentication, opt-in values are reused across GUI, CLI and MCP
+connections to the same host, port, username and verified host key, including jump hosts.
+`auto` can use this when it reaches password authentication; keyboard-interactive, OTPs
+and key passphrases are excluded. Rejected cached values are discarded, with one manual
+entry requested if password authentication remains possible on the connection. No automatic
+reconnect is performed. SSH settings can clear all remembered passwords without disconnecting
+sessions; process exit also discards them. Nothing is persisted.
 
 ## Focusing a Session
 

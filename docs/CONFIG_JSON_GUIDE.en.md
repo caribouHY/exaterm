@@ -1,6 +1,12 @@
 # ExaTerm config.json Parameter Guide
 
-This guide explains how to inspect and manually edit ExaTerm's user settings file, `config.json`.
+This guide explains how to inspect and manually edit ExaTerm's user settings file, `config.json`, and connection profile file, `connection_profiles.json`.
+
+## Remembering SSH passwords during this run
+
+Select “Remember password until ExaTerm exits” in an SSH password authentication prompt to retain the accepted password only in the GUI process memory. The checkbox starts unchecked. GUI, CLI, and MCP connections reuse it for the same host, port, username, and verified host key; jump-host authentication has its own opt-in. This also applies when `auto` reaches password authentication. Keyboard-interactive responses, OTPs, and private-key passphrases are never remembered. A rejected cached password is discarded, and one manual entry is requested if the connection still allows password authentication. If the server disconnects, enter the password on the next connection attempt.
+
+Remembered passwords are never persisted to files or the OS credential store and are lost when ExaTerm exits. Closing a window retains them if the GUI process keeps running. “Clear remembered passwords” in SSH settings immediately clears all entries without disconnecting sessions. Operations already in progress cannot repopulate the cache after clearing it; authentication requests already sent cannot be recalled. Host-key verification and external-control permissions still apply.
 
 ## File Location
 
@@ -18,9 +24,23 @@ C:\Users\<user name>\AppData\Roaming\ExaTerm\config.json
 
 If `config.json` does not exist, ExaTerm creates it with default values when the app starts or when settings are loaded.
 
+Saved SSH/Telnet profiles are stored in `%AppData%\ExaTerm\connection_profiles.json`, in the same directory. A newly created profile file contains:
+
+```json
+{
+  "saved_connections": []
+}
+```
+
+Legacy `saved_connections` entries in `config.json` migrate automatically when the GUI loads or saves settings. ExaTerm saves the profile file before removing the legacy field. Read-only operations, including CLI/MCP configuration reads, can read legacy profiles without changing either file.
+
+When both files contain profiles, `connection_profiles.json` takes priority; the lists are not merged. An empty array is valid and does not restore legacy profiles. A malformed or unreadable profile file causes an error instead of falling back to legacy profiles or overwriting the file with an empty list.
+
+To distribute or move only connection profiles, exit ExaTerm, replace the entire `connection_profiles.json` file, and restart. Review usernames, private key paths, and external-control permissions before distributing profiles. Personal settings in `config.json` remain unchanged. Older ExaTerm versions cannot read the separated profiles; restore a pre-migration backup when downgrading.
+
 ## Before Editing
 
-- Back up `config.json` before editing it manually.
+- Back up `config.json` and `connection_profiles.json` before editing them manually.
 - It is recommended to close ExaTerm before editing the file. If you save settings from the app while it is running, your manual edits may be overwritten.
 - This is a JSON file. Extra trailing commas, missing quotation marks, or missing braces can make the file fail to load.
 - API keys are not stored in `config.json`. They are stored in the operating system credential store.
@@ -29,7 +49,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 ```json
 {
-  "config_version": 7,
+  "config_version": 8,
   "language": "system",
   "updates": {
     "check_on_startup": true
@@ -90,8 +110,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
       "mac": [],
       "compression": []
     }
-  },
-  "saved_connections": []
+  }
 }
 ```
 
@@ -99,7 +118,7 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 
 | Parameter            | Type   | Default    | Description                                                                                                                                                |
 | -------------------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `config_version`     | number | `7`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
+| `config_version`     | number | `8`        | The settings file version. Usually, you should not change this. When an older config is loaded, ExaTerm updates it to the current version.                 |
 | `language`           | string | `"system"` | Display language. Use `"system"` to follow the OS language, `"en"` for English, or `"ja"` for Japanese. Unsupported system languages fall back to English. |
 | `updates`            | object | See below  | Controls automatic checks for published stable ExaTerm updates.                                                                                            |
 | `connection_history` | object | See below  | Controls local SSH and Telnet connection history.                                                                                                          |
@@ -108,7 +127,6 @@ If `config.json` does not exist, ExaTerm creates it with default values when the
 | `shortcuts`          | object | See below  | Customizable application keyboard shortcuts.                                                                                                               |
 | `terminal`           | object | See below  | Terminal display and logging settings.                                                                                                                     |
 | `ssh`                | object | See below  | SSH connection compatibility settings.                                                                                                                     |
-| `saved_connections`  | array  | `[]`       | Saved SSH and Telnet connection profiles. Profiles can be created, selected, and deleted from the connection dialog.                                       |
 
 ## updates
 
@@ -170,13 +188,13 @@ Set `ai.debug_log_enabled` to `true` only when you need to troubleshoot AI chat 
 
 ## external_control
 
-| Parameter                                 | Type    | Default | Description                                                                                                                                                                                                                                                  |
-| ----------------------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `external_control.enabled`                | boolean | `false` | Master permission for local external-control access. Setting it to `true` does not enable an interface by itself; enable `external_control.cli_enabled` or `external_control.mcp_enabled` separately.                                                        |
-| `external_control.connect_enabled`        | boolean | `false` | When set to `true`, trusted external-control clients can list saved SSH/Telnet profiles, open new ExaTerm tabs from those profiles, list Serial ports, and open Serial consoles. SSH credentials are entered in the ExaTerm UI and are not exposed or saved. |
-| `external_control.direct_connect_enabled` | boolean | `false` | When set to `true` together with `connect_enabled`, trusted external-control clients can connect directly to an explicitly specified SSH or Telnet host.                                                                                                     |
-| `external_control.mcp_enabled`            | boolean | `false` | When set to `true` with `external_control.enabled=true`, local MCP clients can use the `exaterm-mcp` compatibility adapter.                                                                                                                                  |
-| `external_control.cli_enabled`            | boolean | `false` | When set to `true` with `external_control.enabled=true`, trusted local programs can use `exaterm-cli` to call the shared terminal-control operations and receive JSON results. See the [CLI guide](CLI_GUIDE.en.md).                                         |
+| Parameter                                 | Type    | Default | Description                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `external_control.enabled`                | boolean | `false` | Master permission for local external-control access. Setting it to `true` does not enable an interface by itself; enable `external_control.cli_enabled` or `external_control.mcp_enabled` separately.                                                                                                                                                                    |
+| `external_control.connect_enabled`        | boolean | `false` | When set to `true`, trusted external-control clients can list saved SSH/Telnet profiles, open new ExaTerm tabs from those profiles, list Serial ports, and open Serial consoles. SSH credentials are entered in the ExaTerm UI and are not exposed through external control or persisted. Password authentication can opt in to process-memory reuse as described above. |
+| `external_control.direct_connect_enabled` | boolean | `false` | When set to `true` together with `connect_enabled`, trusted external-control clients can connect directly to an explicitly specified SSH or Telnet host.                                                                                                                                                                                                                 |
+| `external_control.mcp_enabled`            | boolean | `false` | When set to `true` with `external_control.enabled=true`, local MCP clients can use the `exaterm-mcp` compatibility adapter.                                                                                                                                                                                                                                              |
+| `external_control.cli_enabled`            | boolean | `false` | When set to `true` with `external_control.enabled=true`, trusted local programs can use `exaterm-cli` to call the shared terminal-control operations and receive JSON results. See the [CLI guide](CLI_GUIDE.en.md).                                                                                                                                                     |
 
 Older config files may still contain the legacy `mcp` object and `saved_connections[*].mcp_enabled`. ExaTerm migrates those fields automatically when loading the config. If both legacy and new settings are present, the new `external_control` fields take priority and the legacy values are used only to fill missing values. After ExaTerm saves the config, only the new `external_control` and `external_control_enabled` fields remain.
 
@@ -186,7 +204,7 @@ The HTTP MCP transport has been removed. Existing HTTP-only `mcp.host` and `mcp.
 
 When MCP is enabled, external clients can call these tools:
 
-- `list_terminal_sessions`: lists ExaTerm terminal sessions opened by the user.
+- `list_terminal_sessions`: lists ExaTerm terminal sessions, including `profile_id` captured at connection start for saved SSH/Telnet profiles opened through GUI, CLI, or MCP. Direct, history, and Serial connections return `null`. The ID remains unchanged after unsaved connection edits, later profile renaming/deletion, tab renaming, window moves, or disconnection; `target` identifies the actual endpoint. Use `protocol` with `profile_id` because SSH/Telnet profiles may share an ID.
 - `disconnect_terminal_session`: flushes and stops an active log, then disconnects the session while preserving its tab and scrollback.
 - `focus_terminal_session`: accepts `session_id`, selects its existing tab, and shows, restores, and focuses its owning window. It returns `session_id`, `window_id`, `tab_id`, and `focused: true` after GUI acknowledgement. Disconnected tabs are supported; open dialogs remain active. The GUI acknowledgement deadline is five seconds, including one retry after a tab moves to another window. OS foreground restrictions still apply.
 - `read_terminal_output`: reads or waits for session output using the required `mode` argument:
@@ -224,7 +242,7 @@ Example output reads:
 When `external_control.connect_enabled` is also `true`, external clients can call these additional tools:
 
 - `list_connection_profiles`: lists saved SSH/Telnet profiles that individually allow external control access. Private key paths and credentials are not returned.
-- `connect_saved_profile`: opens a new SSH/Telnet session from a saved profile and shows it as a tab in ExaTerm. It requires both `profile_id` and `connection_type` (`"ssh"` or `"telnet"`), so profiles of different types may share an ID. SSH credentials are requested in the ExaTerm UI.
+- `connect_saved_profile`: opens a new SSH/Telnet session from a saved profile and shows it as a tab in ExaTerm. It requires both `profile_id` and `connection_type` (`"ssh"` or `"telnet"`), so profiles of different types may share an ID. SSH credentials are requested in the ExaTerm UI. The tab and result `title` use the profile name, while `target` retains the actual endpoint. Authentication prompts show both the profile name and endpoint, including the jump profile for jump-host authentication. The tab and result `title` use the profile name, while `target` retains the actual endpoint. Authentication prompts show both the profile name and endpoint, including the jump profile for jump-host authentication.
 - `list_serial_ports`: lists currently available Serial ports.
 - `connect_serial_console`: opens a new Serial console session from explicit port and line settings and shows it as a tab in ExaTerm. The port name must match an available Serial port exactly.
 
@@ -301,6 +319,8 @@ In sensitive environments, enable session logging only when necessary.
 
 When `terminal.log_format` is `"display"`, common line edits such as Backspace, cursor-left, and erase-to-end-of-line are applied before text is saved. When it is `"strip_controls"`, control sequences are removed, but partially edited text may remain.
 
+The format is selected when a log starts. Changes apply to the next recording; an active recording keeps its unfinished line state when tabs move between windows.
+
 When `terminal.include_log_header` is `false`, new session logs start directly with terminal content instead of the ExaTerm header. Existing log files are not changed. The session log history shows `Auto` or `Manual` as the log mode.
 
 ## ssh
@@ -321,13 +341,20 @@ The Settings screen shows the catalog supported by the bundled SSH library. In c
 
 Unknown names, duplicate names, and empty custom categories are rejected. Internal SSH extension markers, such as strict key exchange and extension info markers, are managed automatically and must not be added to the configuration.
 
-## saved_connections
+## saved_connections in connection_profiles.json
 
-`saved_connections` is an array of saved SSH and Telnet connection profiles. Profiles can be managed from the connection dialog. Serial profiles are not currently supported. Passwords, private key contents, key passphrases, and other credentials are not stored in this section. Profile memos are stored as plaintext and may be returned by `list_connection_profiles` when external profile connections are enabled, so do not put secrets in them. Existing profiles treat a missing `external_control_enabled` value as `true`.
+`saved_connections` in `connection_profiles.json` is an array of saved SSH and Telnet connection profiles. Profiles can be managed from the connection dialog. Serial profiles are not currently supported. Passwords, private key contents, key passphrases, and other credentials are not stored in this section. Profile memos are stored as plaintext and may be returned by `list_connection_profiles` when external profile connections are enabled, so do not put secrets in them. Existing profiles treat a missing `external_control_enabled` value as `true`.
+
+In the connection dialog, enter a group or choose an existing group suggestion, then save or update the profile. Clear the group to move the profile to Ungrouped. Group names are stored as plaintext in `connection_profiles.json`. Changing a group preserves the profile ID, jump-host references, and existing sessions. Groups appear in the saved-profile selector; empty groups are not retained.
+
+Open the connection source or SSH jump-profile selector to search by name, hostname/IP, group, or memo. Search uses case-insensitive partial matching within the current connection type; recent connections can also be filtered by their display labels and endpoints. Manual entry (direct connection for jump hosts) remains available. Use the arrow keys to navigate, Enter to select, and Escape to close the list. Selection does not initiate a connection. Searching or clearing the query preserves the selected profile and connection form values.
+
+Select a saved profile and choose Duplicate to create a new draft with an unused name and focus the name field. Duplication uses the saved settings, excluding unsaved form edits. It retains the group, endpoint, SSH username/authentication method/private-key path/jump reference, encoding, terminal mode, memo, and external-control permission. Temporary credential inputs are not copied. Edit the draft and choose Save Profile to register it; the original is unchanged. If another window saves the same name first, saving reports a duplicate-name error instead of overwriting it.
 
 | Parameter                  | Type           | Description                                                                                                                                                                                                                                        |
 | -------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`                       | string         | Profile name and identifier.                                                                                                                                                                                                                       |
+| `group`                    | string or null | Optional single-level group shared by SSH/Telnet profiles. Missing, null, or blank values mean ungrouped; surrounding whitespace is removed.                                                                                                       |
 | `connection_type`          | string         | Connection type. Supported profile values are `"ssh"` and `"telnet"`.                                                                                                                                                                              |
 | `host`                     | string or null | SSH or Telnet target host.                                                                                                                                                                                                                         |
 | `port`                     | number or null | SSH or Telnet target port.                                                                                                                                                                                                                         |
@@ -358,7 +385,7 @@ Example:
 }
 ```
 
-When `jump_profile_id` is set, ExaTerm first connects to the referenced SSH profile and then opens the target connection through that jump host. The jump host profile cannot reference another jump host, and a profile cannot reference itself. SSH passwords and encrypted key passphrases for both the jump host and the target are requested in the ExaTerm UI and are not saved in `config.json`.
+When `jump_profile_id` is set, ExaTerm first connects to the referenced SSH profile and then opens the target connection through that jump host. The jump host profile cannot reference another jump host, and a profile cannot reference itself. SSH passwords and encrypted key passphrases for both the jump host and the target are requested in the ExaTerm UI and are not saved in either `config.json` or `connection_profiles.json`. Password authentication can opt in to process-memory reuse as described above.
 
 `auto` follows the supported portion of OpenSSH's default preference order: public key, keyboard-interactive, then password. The profile key takes priority over `ssh.default_private_key_path`; when neither is configured, public-key authentication is skipped. A key error in Automatic mode is reported in the connection diagnostics and the next server-supported method is tried. Explicit `public_key` authentication still requires the profile or connection to specify its own key.
 

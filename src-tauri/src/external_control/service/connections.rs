@@ -230,6 +230,7 @@ async fn connect_prepared_ssh_profile(
         ProfileCredentialRequest {
             payload: ExternalControlCredentialRequestPayload {
                 request_id: String::new(),
+                profile_name: prepared.profile_name.clone(),
                 profile_id: prepared.profile_id.clone(),
                 host: parts.host.to_string(),
                 port: parts.port,
@@ -267,6 +268,7 @@ async fn connect_prepared_telnet_profile(
         .io
         .protocol
         .connect_telnet(ExternalControlTelnetConnectRequest {
+            profile_name: prepared.profile_name.clone(),
             host: host.to_string(),
             port,
             cols: prepared.cols,
@@ -289,6 +291,7 @@ async fn request_jump_credential(
         ProfileCredentialRequest {
             payload: ExternalControlCredentialRequestPayload {
                 request_id: String::new(),
+                profile_name: Some(jump_profile.id.clone()),
                 profile_id: jump_profile.id.clone(),
                 host: jump_profile.host.clone(),
                 port: jump_profile.port,
@@ -323,6 +326,7 @@ fn build_ssh_connect_options(
     };
 
     ssh::SshConnectOptions {
+        profile_name: prepared.profile_name.clone(),
         host: parts.host.to_string(),
         port: parts.port,
         username: parts.username.to_string(),
@@ -434,18 +438,21 @@ async fn finish_created_session(
 
     let workspace_snapshot = runtime
         .workspace
-        .register_tab(WorkspaceTabRegisterInput {
-            window_id: None,
-            tab_id: None,
-            session_id,
-            connection_type: protocol,
-            title,
-            encoding,
-            terminal_mode,
-            connection_info,
-            is_manual_logging: auto_logging,
-            manual_log_file_path: auto_log_file_path,
-        })
+        .register_session_tab(
+            WorkspaceTabRegisterInput {
+                window_id: None,
+                tab_id: None,
+                session_id,
+                connection_type: protocol,
+                title,
+                encoding,
+                terminal_mode,
+                connection_info,
+                is_manual_logging: auto_logging,
+                manual_log_file_path: auto_log_file_path,
+            },
+            &runtime.terminals,
+        )
         .await;
     runtime.io.ui.emit_workspace_updated(&workspace_snapshot);
 

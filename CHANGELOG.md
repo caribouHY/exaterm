@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+## v0.10.0
+
+### Added
+
+- Separated saved SSH/Telnet profiles into `connection_profiles.json` for independent backup and distribution, automatically migrating legacy profiles from `config.json` while preserving GUI, CLI, and MCP behavior.
+
+- Added session ID copying from terminal tab context menus for use with CLI commands and agent instructions.
+
+- Added `profile_id` to CLI/MCP session lists for saved SSH/Telnet connections opened through the GUI, CLI, or MCP, preserving the selected profile at connection start.
+
+- Added saved SSH/Telnet profile duplication into an editable new-profile draft, retaining groups and connection settings without modifying the original profile.
+
+- Added searchable SSH/Telnet connection and SSH jump-profile selectors, with profile name, host, group, and memo matching while preserving recent connections and manual entry.
+
+- Added optional groups for saved SSH/Telnet profiles, with theme-matched group suggestions and grouped connection selection.
+
+- Added opt-in SSH password reuse until ExaTerm exits across GUI, CLI, MCP, and jump-host connections, with a clear action in SSH settings and no persistent password storage.
+
+### Fixed
+
+- Unified keyboard focus outlines across buttons, tabs, toggles, and navigation. Shortcut recording uses a gray background distinct from the focus outline.
+- Unified focus indicators for connection, settings, and AI chat form fields with a light gray outline while keeping invalid connection fields visibly marked.
+- Improved menu and connection-candidate visibility with neutral gray highlights and current-selection checkmarks, using background highlights for keyboard navigation without outlines around menu items.
+- Unified connection-dialog dropdowns for authentication, encoding, terminal mode, and Serial settings with the same compact checkmarked menus as connection candidates.
+
+- Preserved edits made while settings or API keys are saving, tracked partial saves independently for safe retries, and refreshed AI availability after key-only saves and deletions.
+
+- Kept Gemini API keys out of request URLs and prevented AI transport and response errors from exposing credentials in displayed errors or AI debug logs, and limited AI redirects to the same origin.
+
+- Bounded incomplete Telnet subnegotiations and discarded oversized or malformed frames through their terminator, preventing unbounded memory growth.
+- Registered Telnet sessions before starting I/O, preserving immediate banners and negotiation replies and consistently finalizing early EOF, I/O failures, and concurrent disconnects.
+- Preserved disconnected status when terminal tabs are registered after an early connection close, and used current Telnet dimensions for subsequent NAWS negotiation.
+
+- Displayed saved SSH/Telnet profile names in terminal tabs and SSH authentication prompts across GUI, startup arguments, CLI, and MCP connections while retaining actual connection targets.
+
+- Scoped external log-control requests and acknowledgements to their intended window, preventing false "Session not found" errors after moving terminal tabs.
+- Recorded session logs independently of terminal views, preventing replayed history and paused output from being logged again after tab moves while preserving output received during moves.
+- Corrected display-log overwriting after carriage returns and cursor movement, and preserved insertion, deletion, and unfinished-line state across window transfers.
+- Enabled Escape to cancel pending connection attempts while preserving connection form values and prioritizing foreground SSH prompts.
+- Synchronized SSH PTY and Telnet NAWS dimensions after terminal font changes, including settings updates from another window and returning to a hidden tab.
+- Escaped Telnet NAWS size bytes containing IAC so initial negotiation and resize notifications remain valid at dimensions such as 255 and 511.
+- Preserved whitespace in private-key passphrases for SSH public-key and automatic authentication, including jump hosts.
+- Distinguished log history and folder loading failures from empty history, added retry controls, and preserved previously loaded entries when refreshing fails.
+
 ## v0.9.3
 
 ### Added

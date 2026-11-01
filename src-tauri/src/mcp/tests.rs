@@ -264,8 +264,9 @@ impl ExternalControlUiIo for TestUiIo {
         })?;
         let state = self.log_control.clone();
         let event = event.to_string();
+        let response_window_id = window_id.to_owned();
         self.log_control
-            .request_with_sender(payload, Duration::from_secs(1), move |payload| {
+            .request_with_sender(window_id, payload, Duration::from_secs(1), move |payload| {
                 let payload = payload.clone();
                 tokio::spawn(async move {
                     let result = match event.as_str() {
@@ -284,13 +285,23 @@ impl ExternalControlUiIo for TestUiIo {
                                 .await
                                 .map(|_| None)
                         }
+                        "external-control://log-pause-request"
+                        | "external-control://log-resume-request" => logger::set_manual_log_paused(
+                            &logger,
+                            &payload.session_id,
+                            event == "external-control://log-pause-request",
+                        )
+                        .await
+                        .map(|_| None),
                         _ => Ok(None),
                     };
                     let (file_path, error) = match result {
                         Ok(file_path) => (file_path, None),
                         Err(error) => (None, Some(error)),
                     };
-                    let _ = state.submit(payload.request_id, file_path, error).await;
+                    let _ = state
+                        .submit(&response_window_id, payload.request_id, file_path, error)
+                        .await;
                 });
                 Ok(())
             })
@@ -321,6 +332,11 @@ impl ExternalControlLogIo for TestLogIo {
     async fn active_log_session(&self, session_id: &str) -> Option<logger::LogSession> {
         let state = self.state.as_ref()?;
         logger::active_log_session(state, session_id).await
+    }
+
+    async fn active_log_state(&self, session_id: &str) -> Option<(logger::LogSession, bool)> {
+        let state = self.state.as_ref()?;
+        logger::active_log_state(state, session_id).await
     }
 
     async fn start_auto_log(
@@ -376,6 +392,9 @@ fn test_runtime_parts(
         terminals: TerminalControlState::new(),
         workspace: WorkspaceState::new(),
     };
+    if let Some(logger) = log_io.state.as_ref() {
+        runtime.terminals.set_logger(logger.clone());
+    }
     (runtime, config_io, protocol_io, ui_io, log_io, trace)
 }
 
@@ -457,6 +476,7 @@ fn all_external_control_results_preserve_the_public_json_contract() {
     assert_response_contract(
         ExternalControlResponse::ListTerminalSessions(ListTerminalSessionsResult {
             sessions: vec![crate::terminal_control::TerminalSessionInfo {
+                profile_id: Some("office-router".into()),
                 session_id: "s1".into(),
                 protocol: TerminalProtocol::Ssh,
                 target: "admin@example.test:22".into(),
@@ -471,7 +491,8 @@ fn all_external_control_results_preserve_the_public_json_contract() {
                 "protocol": "ssh",
                 "target": "admin@example.test:22",
                 "encoding": "utf-8",
-                "status": "connected"
+                "status": "connected",
+                "profile_id": "office-router"
             }]
         }),
     );
@@ -1258,7 +1279,13 @@ async fn control_service_dispatches_to_in_process_backend() {
     let runtime = test_runtime();
     runtime
         .terminals
-        .register_session("s1".into(), TerminalProtocol::Ssh, "host:22".into())
+        .register_session_with_profile(
+            "s1".into(),
+            TerminalProtocol::Ssh,
+            "host:22".into(),
+            None,
+            Some("office-router".into()),
+        )
         .await;
     let server = ExaTermMcpServer::with_service(ExternalControlService::new(runtime));
 
@@ -1269,6 +1296,7 @@ async fn control_service_dispatches_to_in_process_backend() {
 
     assert_eq!(result["sessions"][0]["session_id"], "s1");
     assert_eq!(result["sessions"][0]["protocol"], "ssh");
+    assert_eq!(result["sessions"][0]["profile_id"], "office-router");
 }
 
 #[tokio::test]
@@ -1929,7 +1957,8 @@ fn prepare_saved_profile_builds_connection_metadata() {
     assert_eq!(prepared.connection_type, "ssh");
     assert_eq!(prepared.profile_id, "dev");
     assert_eq!(prepared.target, "admin@192.0.2.10:2222");
-    assert_eq!(prepared.title, "admin@192.0.2.10");
+    assert_eq!(prepared.title, "dev");
+    assert_eq!(prepared.profile_name.as_deref(), Some("dev"));
     assert_eq!(prepared.encoding, "shift-jis");
     assert_eq!(prepared.terminal_mode, "arista_eos");
     assert_eq!(prepared.cols, 80);
@@ -2072,7 +2101,7 @@ async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
     let session_id = result.session_id.as_str();
     assert_eq!(result.connection_type, "ssh");
     assert_eq!(result.target, "admin@192.0.2.10:2200");
-    assert_eq!(result.title, "admin@192.0.2.10");
+    assert_eq!(result.title, "inside");
     assert_eq!(result.encoding, "shift-jis");
     assert_eq!(result.terminal_mode, "cisco_ios");
     assert!(result.auto_logging);
@@ -2080,7 +2109,7 @@ async fn service_connects_saved_ssh_profile_and_registers_workspace_metadata() {
     let snapshot = runtime.workspace.snapshot_for_window("main".into()).await;
     assert_eq!(snapshot.tabs.len(), 1);
     assert_eq!(snapshot.tabs[0].session_id, session_id);
-    assert_eq!(snapshot.tabs[0].title, "admin@192.0.2.10");
+    assert_eq!(snapshot.tabs[0].title, "inside");
     assert_eq!(snapshot.tabs[0].encoding, "shift-jis");
     assert_eq!(snapshot.tabs[0].terminal_mode, "cisco_ios");
     assert!(snapshot.tabs[0].is_manual_logging);
@@ -2163,7 +2192,7 @@ async fn service_connects_saved_telnet_profile_with_default_port() {
 
     assert_eq!(result.connection_type, "telnet");
     assert_eq!(result.target, "192.0.2.20:23");
-    assert_eq!(result.title, "192.0.2.20:23");
+    assert_eq!(result.title, "legacy");
     assert_eq!(result.encoding, "euc-jp");
     assert_eq!(result.terminal_mode, "general");
     let snapshot = runtime.workspace.snapshot_for_window("main".into()).await;
@@ -3339,21 +3368,7 @@ async fn service_reports_inactive_active_paused_and_auto_log_status() {
     assert_eq!(active.file_path.as_deref(), Some(auto_path.as_str()));
     assert_eq!(active.log_mode.as_deref(), Some("auto"));
 
-    let tab = runtime.workspace.tab_for_session("s1").await.unwrap();
-    runtime
-        .workspace
-        .update_tab_metadata(
-            tab.tab_id,
-            WorkspaceTabMetadataPatch {
-                title: None,
-                encoding: None,
-                terminal_mode: None,
-                is_connected: None,
-                is_manual_logging: Some(true),
-                is_manual_logging_paused: Some(true),
-                manual_log_file_path: Some(auto_path.clone()),
-            },
-        )
+    logger::set_manual_log_paused(logger.state.as_ref().unwrap(), "s1", true)
         .await
         .unwrap();
     let paused = service
@@ -3434,23 +3449,6 @@ async fn service_pause_and_resume_are_idempotent_and_owner_window_scoped() {
                 && payload.session_id == "s1"
     )));
 
-    let tab = runtime.workspace.tab_for_session("s1").await.unwrap();
-    runtime
-        .workspace
-        .update_tab_metadata(
-            tab.tab_id,
-            WorkspaceTabMetadataPatch {
-                title: None,
-                encoding: None,
-                terminal_mode: None,
-                is_connected: None,
-                is_manual_logging: Some(true),
-                is_manual_logging_paused: Some(true),
-                manual_log_file_path: paused.file_path.clone(),
-            },
-        )
-        .await
-        .unwrap();
     let pause_again = service
         .set_terminal_log_paused(
             TerminalLogSessionArgs {
@@ -3673,4 +3671,251 @@ async fn service_rejects_empty_run_terminal_command() {
 
     assert!(matches!(&error, ExternalControlError::InvalidArguments(_)));
     assert!(error.message().contains("must not be empty"));
+}
+
+#[tokio::test]
+async fn service_uses_backend_pause_state_when_workspace_metadata_is_stale() {
+    let (runtime, _config, _protocol, _ui, logger, _trace) =
+        test_runtime_parts(AppConfig::default(), Vec::new(), Some(test_logger()));
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Ssh, "synthetic").await;
+    logger
+        .start_auto_log("s1".into(), "ssh".into(), "synthetic".into())
+        .await
+        .unwrap();
+    let tab = runtime.workspace.tab_for_session("s1").await.unwrap();
+    runtime
+        .workspace
+        .update_tab_metadata(
+            tab.tab_id,
+            WorkspaceTabMetadataPatch {
+                title: None,
+                encoding: None,
+                terminal_mode: None,
+                is_connected: None,
+                is_manual_logging: Some(true),
+                is_manual_logging_paused: Some(true),
+                manual_log_file_path: None,
+            },
+        )
+        .await
+        .unwrap();
+    let service = ExternalControlService::new(runtime.clone());
+    assert_eq!(
+        service
+            .get_terminal_log_status(TerminalLogSessionArgs {
+                session_id: "s1".into()
+            })
+            .await
+            .unwrap()
+            .state,
+        TerminalLogState::Active
+    );
+    let paused = service
+        .set_terminal_log_paused(
+            TerminalLogSessionArgs {
+                session_id: "s1".into(),
+            },
+            true,
+        )
+        .await
+        .unwrap();
+    assert!(paused.changed);
+    assert!(
+        logger::active_log_state(logger.state.as_ref().unwrap(), "s1")
+            .await
+            .unwrap()
+            .1
+    );
+    let tab = runtime.workspace.tab_for_session("s1").await.unwrap();
+    runtime
+        .workspace
+        .update_tab_metadata(
+            tab.tab_id,
+            WorkspaceTabMetadataPatch {
+                title: None,
+                encoding: None,
+                terminal_mode: None,
+                is_connected: None,
+                is_manual_logging: Some(true),
+                is_manual_logging_paused: Some(false),
+                manual_log_file_path: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        service
+            .get_terminal_log_status(TerminalLogSessionArgs {
+                session_id: "s1".into()
+            })
+            .await
+            .unwrap()
+            .state,
+        TerminalLogState::Paused
+    );
+    let resumed = service
+        .set_terminal_log_paused(
+            TerminalLogSessionArgs {
+                session_id: "s1".into(),
+            },
+            false,
+        )
+        .await
+        .unwrap();
+    assert!(resumed.changed);
+    assert!(
+        !logger::active_log_state(logger.state.as_ref().unwrap(), "s1")
+            .await
+            .unwrap()
+            .1
+    );
+}
+
+#[tokio::test]
+async fn telnet_profile_identity_distinguishes_saved_direct_from_direct_connections() {
+    let mut config = AppConfig::default();
+    config.external_control.connect_enabled = true;
+    config.external_control.direct_connect_enabled = true;
+    config.saved_connections = vec![SavedConnection {
+        id: "direct".into(),
+        connection_type: "telnet".into(),
+        host: Some("synthetic.invalid".into()),
+        ..SavedConnection::default()
+    }];
+    let (runtime, _config, protocol, _ui, _logger, _) =
+        test_runtime_parts(config, Vec::new(), None);
+    let service = ExternalControlService::new(runtime);
+    service
+        .connect_saved_profile(ConnectSavedProfileArgs {
+            profile_id: "direct".into(),
+            connection_type: SavedProfileConnectionType::Telnet,
+            cols: None,
+            rows: None,
+        })
+        .await
+        .unwrap();
+    service
+        .connect_telnet(ConnectTelnetArgs {
+            host: "synthetic.invalid".into(),
+            port: None,
+            encoding: None,
+            terminal_mode: None,
+            cols: None,
+            rows: None,
+        })
+        .await
+        .unwrap();
+    let calls = protocol.calls.lock().unwrap();
+    let TestProtocolCall::ConnectTelnet(saved) = &calls[0] else {
+        panic!("expected Telnet request")
+    };
+    let TestProtocolCall::ConnectTelnet(direct) = &calls[1] else {
+        panic!("expected Telnet request")
+    };
+    assert_eq!(saved.profile_name.as_deref(), Some("direct"));
+    assert_eq!(direct.profile_name, None);
+    assert_eq!(saved.host, direct.host);
+}
+
+#[tokio::test]
+async fn profile_display_names_distinguish_saved_direct_from_direct_connections() {
+    let mut config = AppConfig::default();
+    config.external_control.connect_enabled = true;
+    config.external_control.direct_connect_enabled = true;
+    config.saved_connections = vec![
+        SavedConnection {
+            id: "direct".into(),
+            connection_type: "ssh".into(),
+            host: Some("target.example.test".into()),
+            username: Some("admin".into()),
+            auth_method: Some("public_key".into()),
+            private_key_path: Some("fixture-key".into()),
+            jump_profile_id: Some("bastion".into()),
+            ..SavedConnection::default()
+        },
+        SavedConnection {
+            id: "bastion".into(),
+            connection_type: "ssh".into(),
+            host: Some("jump.example.test".into()),
+            username: Some("jump-user".into()),
+            auth_method: Some("public_key".into()),
+            private_key_path: Some("fixture-key".into()),
+            ..SavedConnection::default()
+        },
+    ];
+    let (runtime, _config, protocol, ui, _logger, _trace) =
+        test_runtime_parts(config, Vec::new(), Some(test_logger()));
+    *ui.credential_result.lock().unwrap() = Ok(Some("credential".into()));
+    *ui.private_key_requires_passphrase.lock().unwrap() = Ok(true);
+    let service = ExternalControlService::new(runtime);
+    let result = service
+        .connect_saved_profile(ConnectSavedProfileArgs {
+            profile_id: "direct".into(),
+            connection_type: SavedProfileConnectionType::Ssh,
+            cols: None,
+            rows: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(result.title, "direct");
+    assert_eq!(result.target, "admin@target.example.test:22");
+    let names = ui
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|call| match call {
+            TestUiCall::Credential(payload) => {
+                Some((payload.profile_name.clone(), payload.target.clone()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec![
+            (
+                Some("bastion".into()),
+                "jump-user@jump.example.test:22".into()
+            ),
+            (Some("direct".into()), "admin@target.example.test:22".into()),
+        ]
+    );
+    match &protocol.calls.lock().unwrap()[0] {
+        TestProtocolCall::ConnectSsh(request) => {
+            assert_eq!(request.options.profile_name.as_deref(), Some("direct"))
+        }
+        other => panic!("expected SSH request, got {other:?}"),
+    }
+    ui.calls.lock().unwrap().clear();
+    protocol.calls.lock().unwrap().clear();
+    let result = service
+        .connect_ssh(ConnectSshArgs {
+            host: "direct.example.test".into(),
+            username: "admin".into(),
+            port: None,
+            auth_method: Some(ExternalControlSshAuthMethod::PublicKey),
+            private_key_path: Some("fixture-key".into()),
+            jump_profile_id: None,
+            encoding: None,
+            terminal_mode: None,
+            cols: None,
+            rows: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(result.title, "admin@direct.example.test");
+    match &protocol.calls.lock().unwrap()[0] {
+        TestProtocolCall::ConnectSsh(request) => assert_eq!(request.options.profile_name, None),
+        other => panic!("expected SSH request, got {other:?}"),
+    }
+    for call in ui.calls.lock().unwrap().iter() {
+        if let TestUiCall::Credential(payload) = call {
+            assert_eq!(payload.profile_name, None);
+            assert!(serde_json::to_value(payload)
+                .unwrap()
+                .get("profile_name")
+                .is_none());
+        }
+    }
 }

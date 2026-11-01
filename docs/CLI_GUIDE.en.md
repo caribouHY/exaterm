@@ -6,6 +6,12 @@ validation, JSON results, and credential prompts as the MCP integration.
 
 This CLI is available in ExaTerm v0.7.0 and later.
 
+## Remembering SSH passwords during this run
+
+Select “Remember password until ExaTerm exits” in an SSH password authentication prompt to retain the accepted password only in the GUI process memory. The checkbox starts unchecked. GUI, CLI, and MCP connections reuse it for the same host, port, username, and verified host key; jump-host authentication has its own opt-in. This also applies when `auto` reaches password authentication. Keyboard-interactive responses, OTPs, and private-key passphrases are never remembered. A rejected cached password is discarded, and one manual entry is requested if the connection still allows password authentication. If the server disconnects, enter the password on the next connection attempt.
+
+Remembered passwords are never persisted to files or the OS credential store and are lost when ExaTerm exits. Closing a window retains them if the GUI process keeps running. “Clear remembered passwords” in SSH settings immediately clears all entries without disconnecting sessions. Operations already in progress cannot repopulate the cache after clearing it; authentication requests already sent cannot be recalled. Host-key verification and external-control permissions still apply.
+
 ## Installation and Setup
 
 The Windows installer places `exaterm-cli.exe` beside the main ExaTerm executable. Run it
@@ -82,6 +88,23 @@ If the GUI is not running, `doctor` starts it and waits up to 30 seconds for the
 plane. Independent checks continue after a configuration error. The exit code is `0` only
 when all checks pass and `1` when any check fails or is skipped.
 
+### Session List
+
+Right-click a terminal tab and choose **Copy Session ID** to copy only that tab's `session_id`.
+Use the copied value with CLI `--session-id` options or in instructions for agents.
+
+`sessions list` returns a `sessions` array with `session_id`, `protocol`, `target`, `encoding`,
+`status`, and `profile_id`. For saved SSH/Telnet connections opened through the GUI, CLI, or
+MCP, `profile_id` is the saved profile ID (currently also its name) selected at connection
+start. It remains the selected source ID even if GUI connection settings are edited without
+saving. Direct, history, and Serial connections return `null`; endpoints are never matched
+back to saved profiles. Use `protocol` together with `profile_id` to distinguish SSH/Telnet
+profiles sharing an ID, and `session_id` to select a particular session.
+
+The captured ID survives profile renaming/deletion, tab renaming, window moves, and
+disconnection while the session remains listed. It does not guarantee that the profile still
+exists or matches `target`. MCP `list_terminal_sessions` returns the same fields.
+
 ### Saved Profiles
 
 SSH and Telnet profiles may have the same ID. Always specify the connection type:
@@ -92,6 +115,8 @@ exaterm-cli profiles list --type telnet
 exaterm-cli profiles connect --type ssh --profile-id router
 exaterm-cli profiles connect --type telnet --profile-id router
 ```
+
+Saved-profile connections use the profile name as the tab title and result `title`; `target` remains the actual connection endpoint. SSH authentication prompts show the profile name alongside the actual endpoint, including the jump profile during jump-host authentication. This also applies to MCP `connect_saved_profile`.
 
 Omit `--type` from `profiles list` to return both SSH and Telnet profiles.
 The ID and type must match one profile. Profile connections require

@@ -327,7 +327,8 @@ impl ExternalControlService {
     }
 
     async fn log_status(&self, session_id: String) -> TerminalLogStatusResult {
-        let Some(active) = self.runtime.io.logger.active_log_session(&session_id).await else {
+        let Some((active, paused)) = self.runtime.io.logger.active_log_state(&session_id).await
+        else {
             return TerminalLogStatusResult {
                 session_id,
                 state: TerminalLogState::Inactive,
@@ -335,12 +336,6 @@ impl ExternalControlService {
                 log_mode: None,
             };
         };
-        let paused = self
-            .runtime
-            .workspace
-            .tab_for_session(&session_id)
-            .await
-            .is_some_and(|tab| tab.is_manual_logging_paused);
         TerminalLogStatusResult {
             session_id,
             state: if paused {

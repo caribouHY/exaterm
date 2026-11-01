@@ -103,6 +103,7 @@ pub(crate) async fn connect(
         runtime.state.authentication_prompts.clone(),
         prompt_window_id.clone(),
         options.request_id.clone(),
+        runtime.state.password_cache.clone(),
     );
     let host_key_prompter = (host_key_handling != HostKeyHandling::RequireTrusted).then(|| {
         SshHostKeyPrompter::new(
@@ -157,6 +158,8 @@ pub(crate) async fn connect(
             &options,
             &diagnostic,
             &authentication_prompter,
+            &host_verifier,
+            attempt.as_ref(),
         )),
     )
     .await;
@@ -242,8 +245,18 @@ async fn authenticate_target_session(
     options: &SshConnectOptions,
     diagnostic: &SshDiagnostic,
     prompter: &SshAuthenticationPrompter,
+    verifier: &HostKeyVerifier,
+    attempt: Option<&ConnectAttempt>,
 ) -> Result<(), String> {
-    let auth_context = prompter.context("target", &options.host, options.port, &options.username);
+    let auth_context = prompter
+        .context(
+            "target",
+            &options.host,
+            options.port,
+            &options.username,
+            options.profile_name.as_deref(),
+        )
+        .with_verified_host(verifier, attempt);
     authenticate_target(handle, &options.username, auth, diagnostic, &auth_context).await?;
     Ok(())
 }
@@ -469,11 +482,12 @@ async fn register_connected_session(
         .await
         .insert(session_id.to_string(), Arc::new(Mutex::new(session)));
     terminals
-        .register_session_with_encoding(
+        .register_session_with_profile(
             session_id.to_string(),
             TerminalProtocol::Ssh,
             format!("{}:{}", options.host, options.port),
             options.encoding.clone(),
+            options.profile_name.clone(),
         )
         .await;
 }

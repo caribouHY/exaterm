@@ -104,6 +104,7 @@ pub fn run() {
     let terminal_control_state = TerminalControlState::new();
     let workspace_state = WorkspaceState::new();
     let logger_state = LoggerState::new();
+    terminal_control_state.set_logger(logger_state.clone());
     let connection_history_state = ConnectionHistoryState::new();
     let external_control_credential_state = ExternalControlCredentialState::new();
     let external_control_log_control_state = ExternalControlLogControlState::new();
@@ -236,6 +237,7 @@ pub fn run() {
             ssh::ssh_connect_cancel,
             ssh::ssh_host_key_respond,
             ssh::ssh_authentication_respond,
+            ssh::ssh_password_cache_clear,
             ssh::ssh_write,
             ssh::ssh_resize,
             ssh::ssh_disconnect,
@@ -264,6 +266,9 @@ pub fn run() {
             logger::logger_stop_manual,
             logger::logger_is_manual_active,
             logger::logger_append,
+            logger::logger_flush_manual,
+            logger::logger_set_manual_paused,
+            logger::logger_get_manual_status,
             logger::logger_get_sessions,
             logger::logger_bulk_delete_sessions,
             logger::logger_get_log_dir,
