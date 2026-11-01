@@ -1,6 +1,8 @@
 import { FileText, Monitor, Network, Settings, Usb, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { message } from "@tauri-apps/plugin-dialog";
 import type {
   AppTabInfo,
   ConnectionType,
@@ -178,6 +180,18 @@ export default function TerminalTabs({
   const contextMenuTab = contextMenu
     ? tabs.find((tab) => tab.id === contextMenu.tabId) || null
     : null;
+  const copySessionId = async (sessionId: string) => {
+    try {
+      await writeText(sessionId);
+    } catch {
+      await message(t("terminal.tab_menu.copy_session_id_failed"), {
+        title: t("terminal.tab_menu.copy_session_id"),
+        kind: "error",
+      }).catch(() => {
+        console.error("Failed to display session ID copy error dialog.");
+      });
+    }
+  };
   const contextMenuItems: PopoverMenuItem[] = contextMenuTab
     ? [
         ...(contextMenuTab.kind === "terminal"
@@ -193,6 +207,14 @@ export default function TerminalTabs({
                     },
                   ]
                 : []),
+              {
+                key: "copy_session_id",
+                label: t("terminal.tab_menu.copy_session_id"),
+                disabled: closingTabIds.includes(contextMenuTab.id) || !contextMenuTab.sessionId,
+                action: () => {
+                  void copySessionId(contextMenuTab.sessionId);
+                },
+              },
               {
                 key: "move_to_new_window",
                 label: t("terminal.tab_menu.move_to_new_window"),

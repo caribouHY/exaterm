@@ -90,6 +90,9 @@ when all checks pass and `1` when any check fails or is skipped.
 
 ### Session List
 
+Right-click a terminal tab and choose **Copy Session ID** to copy only that tab's `session_id`.
+Use the copied value with CLI `--session-id` options or in instructions for agents.
+
 `sessions list` returns a `sessions` array with `session_id`, `protocol`, `target`, `encoding`,
 `status`, and `profile_id`. For saved SSH/Telnet connections opened through the GUI, CLI, or
 MCP, `profile_id` is the saved profile ID (currently also its name) selected at connection
