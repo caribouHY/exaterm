@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Prevented SSH authentication and host-key dialogs from appearing in multiple windows and remaining open after a response, and allowed stale dialogs to close on cancellation.
+
 ## v0.10.0
 
 ### Added

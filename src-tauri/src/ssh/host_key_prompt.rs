@@ -10,6 +10,8 @@ use tokio::sync::{oneshot, Mutex};
 use tokio::time;
 use uuid::Uuid;
 
+use super::prompt_cleanup::PromptCleanup;
+
 use crate::ssh_known_hosts::{
     write_trusted_host_with_path, HostKeyCheckResult, HostKeyCheckStatus,
 };
@@ -100,11 +102,24 @@ impl SshHostKeyPrompter {
             phase: phase.to_string(),
             result: result.clone(),
         };
+        let app = self.app.clone();
+        let window_id = self.window_id.clone();
+        let mut cleanup = PromptCleanup::new(
+            self.state.pending.clone(),
+            request_id.clone(),
+            move |request_id| {
+                let _ = app.emit_to(
+                    &window_id,
+                    HOST_KEY_PROMPT_DISMISSED_EVENT,
+                    SshHostKeyPromptDismissedPayload { request_id },
+                );
+            },
+        );
         if let Err(error) = self
             .app
             .emit_to(&self.window_id, HOST_KEY_PROMPT_EVENT, &payload)
         {
-            self.state.pending.lock().await.remove(&request_id);
+            cleanup.finish().await;
             return Err(format!("Failed to show the SSH host key prompt: {error}"));
         }
 
@@ -112,16 +127,7 @@ impl SshHostKeyPrompter {
             .state
             .wait_for_response(&request_id, receiver, HOST_KEY_PROMPT_TIMEOUT)
             .await;
-        if matches!(&accepted, Err(error) if error == HOST_KEY_PROMPT_TIMEOUT_ERROR || error == HOST_KEY_PROMPT_CANCELLED)
-        {
-            let _ = self.app.emit_to(
-                &self.window_id,
-                HOST_KEY_PROMPT_DISMISSED_EVENT,
-                SshHostKeyPromptDismissedPayload {
-                    request_id: request_id.clone(),
-                },
-            );
-        }
+        cleanup.finish().await;
         accepted?;
 
         trust_prompted_host_key(&result, key, known_hosts_path)

@@ -67,6 +67,12 @@ impl BackendCommandError {
             "SSH automatic authentication failed" => "ssh.automatic_authentication_failed",
             "The SSH authentication prompt was cancelled" => "ssh.auth_prompt_cancelled",
             "The SSH authentication prompt timed out" => "ssh.auth_prompt_timed_out",
+            "The SSH authentication prompt request was not found" => {
+                "ssh.auth_prompt_request_not_found"
+            }
+            "The SSH authentication prompt request has already finished" => {
+                "ssh.auth_prompt_already_finished"
+            }
             "The SSH authentication response count does not match the prompt count" => {
                 "ssh.auth_prompt_response_mismatch"
             }
@@ -332,6 +338,18 @@ mod tests {
 
     #[test]
     fn classifies_ssh_authentication_prompt_errors() {
+        for (message, code) in [
+            (
+                "The SSH authentication prompt request was not found",
+                "ssh.auth_prompt_request_not_found",
+            ),
+            (
+                "The SSH authentication prompt request has already finished",
+                "ssh.auth_prompt_already_finished",
+            ),
+        ] {
+            assert_eq!(BackendCommandError::from_message(message).code, code);
+        }
         assert_eq!(
             BackendCommandError::from_message("The SSH authentication prompt was cancelled").code,
             "ssh.auth_prompt_cancelled"

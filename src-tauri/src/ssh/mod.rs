@@ -10,6 +10,7 @@ mod jump;
 mod password_auth;
 mod password_cache;
 mod profiles;
+mod prompt_cleanup;
 mod shell;
 mod types;
 

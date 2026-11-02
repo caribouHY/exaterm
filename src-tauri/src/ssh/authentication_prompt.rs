@@ -5,6 +5,7 @@ use std::time::Duration;
 use super::host_key::HostKeyVerifier;
 use super::password_auth::PasswordAnswer;
 use super::password_cache::{PasswordCache, PasswordCacheKey};
+use super::prompt_cleanup::PromptCleanup;
 use crate::connect_attempt::ConnectAttempt;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -162,12 +163,25 @@ impl SshAuthenticationPrompter {
             },
         );
         payload.request_id = request_id.clone();
+        let app = self.app.clone();
+        let window_id = self.window_id.clone();
+        let mut cleanup = PromptCleanup::new(
+            self.state.pending.clone(),
+            request_id.clone(),
+            move |request_id| {
+                let _ = app.emit_to(
+                    &window_id,
+                    AUTHENTICATION_PROMPT_DISMISSED_EVENT,
+                    SshAuthenticationPromptDismissedPayload { request_id },
+                );
+            },
+        );
 
         if let Err(error) = self
             .app
             .emit_to(&self.window_id, AUTHENTICATION_PROMPT_EVENT, &payload)
         {
-            self.state.pending.lock().await.remove(&request_id);
+            cleanup.finish().await;
             return Err(format!(
                 "Failed to show the SSH authentication prompt: {error}"
             ));
@@ -177,16 +191,7 @@ impl SshAuthenticationPrompter {
             .state
             .wait_for_response(&request_id, receiver, AUTHENTICATION_PROMPT_TIMEOUT)
             .await;
-        if matches!(&result, Err(error) if error == AUTHENTICATION_PROMPT_TIMEOUT_ERROR || error == AUTHENTICATION_PROMPT_CANCELLED)
-        {
-            let _ = self.app.emit_to(
-                &self.window_id,
-                AUTHENTICATION_PROMPT_DISMISSED_EVENT,
-                SshAuthenticationPromptDismissedPayload {
-                    request_id: request_id.clone(),
-                },
-            );
-        }
+        cleanup.finish().await;
         result
     }
 }
