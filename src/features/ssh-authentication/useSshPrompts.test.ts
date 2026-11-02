@@ -21,9 +21,15 @@ const runtime = vi.hoisted(() => ({
   invoke: vi.fn(),
 }));
 
+function currentWindow(): HookWindow {
+  const window = runtime.current;
+  if (window === null) throw new Error("The SSH prompt hook has no current window");
+  return window;
+}
+
 vi.mock("react", () => ({
   useState: () => {
-    const window = runtime.current!;
+    const window = currentWindow();
     return [
       window.queue,
       (update: SetStateAction<SshPromptState[]>) => {
@@ -31,10 +37,14 @@ vi.mock("react", () => ({
       },
     ];
   },
-  useRef: () => runtime.current!.submissions,
+  useRef: () => currentWindow().submissions,
   useCallback: (callback: unknown) => callback,
   useEffect: (effect: EffectCallback) => {
-    if (!runtime.current!.mounted) runtime.current!.cleanup = effect() || undefined;
+    const window = currentWindow();
+    if (!window.mounted) {
+      const cleanup = effect();
+      if (typeof cleanup === "function") window.cleanup = cleanup;
+    }
   },
 }));
 
@@ -136,7 +146,12 @@ describe.each(["authentication", "host-key"] as const)("%s prompt ownership", (k
       const owner = mount("owner");
       show(kind);
       show(kind, "second");
-      await owner.render()[action]();
+      const prompt = owner.render();
+      if (action === "submit") {
+        await prompt.submit();
+      } else {
+        await prompt.cancel();
+      }
       expect(owner.render().activePrompt?.value.requestId).toBe("second");
       expect(runtime.invoke).toHaveBeenCalledWith(
         kind === "authentication" ? "ssh_authentication_respond" : "ssh_host_key_respond",
@@ -223,7 +238,9 @@ describe.each(["authentication", "host-key"] as const)("%s prompt ownership", (k
 
   it("ignores callbacks after disposal and unregisters asynchronously registered listeners", async () => {
     const owner = mount("owner");
-    owner.window.cleanup!();
+    const cleanup = owner.window.cleanup;
+    if (!cleanup) throw new Error("The SSH prompt hook did not register cleanup");
+    cleanup();
     show(kind);
     await Promise.resolve();
     expect(owner.render().activePrompt).toBeNull();
