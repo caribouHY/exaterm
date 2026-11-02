@@ -117,7 +117,7 @@ export default function App() {
   const { t } = useTranslation();
   const config = useAppConfig();
   const windowTabs = useWindowTabs();
-  const sshPrompts = useSshPrompts();
+  const sshPrompts = useSshPrompts(windowTabs.windowId);
   const {
     tabs,
     utilityTabs,
