@@ -137,3 +137,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.settings-ssh__keepalive {
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-lg);
+}

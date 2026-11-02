@@ -3,7 +3,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use russh::keys::PublicKey;
+use russh::keys::PublicKeyOrCertificate;
 use russh::{ChannelId, Disconnect};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -213,18 +213,48 @@ pub(super) struct SshClientHandler {
     pub(super) read_drop_state: Arc<StdMutex<SshReadDropState>>,
 }
 
+impl Drop for SshClientHandler {
+    fn drop(&mut self) {
+        // russh can skip disconnected() when shutting down a tunnel whose jump transport closed.
+        // Reuse the same idempotent owner so that transport exit still finalizes the session.
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let app = self.app.clone();
+        let session_id = self.session_id.clone();
+        let sessions = self.sessions.clone();
+        let terminals = self.terminals.clone();
+        let workspace = self.workspace.clone();
+        let logger = self.logger.clone();
+        runtime.spawn(async move {
+            mark_disconnected_impl(
+                &app,
+                &session_id,
+                &sessions,
+                &terminals,
+                &workspace,
+                logger.as_ref(),
+            )
+            .await;
+        });
+    }
+}
+
 impl russh::client::Handler for SshClientHandler {
     type Error = russh::Error;
 
     fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
         let verifier = self.host_verifier.clone();
         let prompter = self.host_key_prompter.clone();
         let diagnostic = self.diagnostic.clone();
-        let server_public_key = server_public_key.clone();
+        let server_public_key = super::host_key::raw_host_key(server_public_key);
         async move {
+            let Some(server_public_key) = server_public_key else {
+                return Ok(false);
+            };
             verify_server_key(
                 verifier,
                 prompter,

@@ -325,21 +325,30 @@ When `terminal.include_log_header` is `false`, new session logs start directly w
 
 ## ssh
 
-| Parameter                      | Type   | Default     | Description                                                                                                                                                                     |
-| ------------------------------ | ------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ssh.default_private_key_path` | string | `""`        | Default private key used only by Automatic authentication when a connection does not specify one. The path is stored as plaintext; key contents and passphrases are not stored. |
-| `ssh.algorithm_mode`           | string | `"default"` | Uses `"default"` for the recommended defaults or `"custom"` for the configured allowlists.                                                                                      |
-| `ssh.algorithms.kex`           | array  | `[]`        | Allowed key exchange algorithms in custom mode.                                                                                                                                 |
-| `ssh.algorithms.host_key`      | array  | `[]`        | Allowed server host-key algorithms in custom mode.                                                                                                                              |
-| `ssh.algorithms.cipher`        | array  | `[]`        | Allowed symmetric ciphers in custom mode.                                                                                                                                       |
-| `ssh.algorithms.mac`           | array  | `[]`        | Allowed message authentication algorithms in custom mode.                                                                                                                       |
-| `ssh.algorithms.compression`   | array  | `[]`        | Allowed compression algorithms in custom mode.                                                                                                                                  |
+| Parameter                      | Type    | Default     | Description                                                                                                                                                                     |
+| ------------------------------ | ------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ssh.default_private_key_path` | string  | `""`        | Default private key used only by Automatic authentication when a connection does not specify one. The path is stored as plaintext; key contents and passphrases are not stored. |
+| `ssh.keepalive_enabled`        | boolean | `false`     | Enable SSH protocol keepalive for new connections.                                                                                                                              |
+| `ssh.keepalive_interval_secs`  | integer | `30`        | No-receive interval before a probe, from 1 to 3600 seconds.                                                                                                                     |
+| `ssh.keepalive_max`            | integer | `3`         | Unanswered probe limit, from 1 to 100.                                                                                                                                          |
+| `ssh.algorithm_mode`           | string  | `"default"` | Uses `"default"` for the recommended defaults or `"custom"` for the configured allowlists.                                                                                      |
+| `ssh.algorithms.kex`           | array   | `[]`        | Allowed key exchange algorithms in custom mode.                                                                                                                                 |
+| `ssh.algorithms.host_key`      | array   | `[]`        | Allowed server host-key algorithms in custom mode.                                                                                                                              |
+| `ssh.algorithms.cipher`        | array   | `[]`        | Allowed symmetric ciphers in custom mode.                                                                                                                                       |
+| `ssh.algorithms.mac`           | array   | `[]`        | Allowed message authentication algorithms in custom mode.                                                                                                                       |
+| `ssh.algorithms.compression`   | array   | `[]`        | Allowed compression algorithms in custom mode.                                                                                                                                  |
 
 ### Available SSH Algorithms
 
 The Settings screen shows the catalog supported by the bundled SSH library. In custom mode, select at least one algorithm in every category. ExaTerm applies its built-in priority order rather than the order of the JSON arrays. Compatibility algorithms such as SHA-1 key exchange, CBC/3DES ciphers, and `ssh-rsa` are identified in the UI.
 
 Unknown names, duplicate names, and empty custom categories are rejected. Internal SSH extension markers, such as strict key exchange and extension info markers, are managed automatically and must not be added to the configuration.
+
+### SSH keepalive
+
+Keepalive is disabled by default. Configure it in Settings under SSH; changes apply only to new connections through the GUI, CLI, or MCP, including both jump-host and target SSH transports. Existing sessions retain their settings. Probes are SSH protocol messages and do not enter the terminal or session log. They can help preserve NAT/firewall mappings, but do not prevent shell inactivity logout or automatically reconnect a disconnected session.
+
+With the bundled russh version, 30 seconds and a limit of 3 close a continuously silent connection on the fourth interval (about 120 seconds), not after exactly 90 seconds. Any received SSH traffic resets the unanswered count. Interval and limit bounds also apply while keepalive is disabled.
 
 ## saved_connections in connection_profiles.json
 

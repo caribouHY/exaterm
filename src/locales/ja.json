@@ -466,5 +466,11 @@
   "settings.ssh_password_cache_clear": "記憶したパスワードを消去",
   "settings.ssh_password_cache_help": "起動中だけ記憶したSSHパスワードをすべて消去します。接続中のセッションは維持されます。",
   "settings.ssh_password_cache_cleared": "記憶したSSHパスワードを消去しました。",
-  "settings.ssh_password_cache_clear_failed": "記憶したSSHパスワードの消去に失敗しました。"
+  "settings.ssh_password_cache_clear_failed": "記憶したSSHパスワードの消去に失敗しました。",
+  "settings.ssh_keepalive": "SSH keepalive",
+  "settings.ssh_keepalive_desc": "アイドル中のSSH通信を維持します。踏み台を含む新規接続から適用し、接続中のセッションは変更しません。",
+  "settings.ssh_keepalive_interval": "送信間隔（秒、1～3600）",
+  "settings.ssh_keepalive_max": "連続無応答上限（1～100回）",
+  "backend_errors.ssh_keepalive_interval_invalid": "SSH keepaliveの送信間隔は1～3600秒の整数で指定してください。",
+  "backend_errors.ssh_keepalive_max_invalid": "SSH keepaliveの連続無応答上限は1～100回の整数で指定してください。"
 }

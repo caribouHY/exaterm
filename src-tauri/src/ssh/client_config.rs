@@ -298,7 +298,14 @@ fn selected_in_catalog<T: Clone + AsRef<str>>(
 
 pub(super) fn build_client_config(ssh_config: &SshConfig) -> Result<russh::client::Config, String> {
     validate_algorithm_config(ssh_config)?;
+    ssh_config.validate_keepalive()?;
     let mut config = russh::client::Config::default();
+    if ssh_config.keepalive_enabled {
+        config.keepalive_interval = Some(std::time::Duration::from_secs(
+            ssh_config.keepalive_interval_secs,
+        ));
+        config.keepalive_max = ssh_config.keepalive_max;
+    }
     if ssh_config.algorithm_mode == "default" {
         return Ok(config);
     }
@@ -318,6 +325,7 @@ pub(super) fn build_client_config(ssh_config: &SshConfig) -> Result<russh::clien
     );
 
     config.preferred = russh::Preferred {
+        host_key_certificates: Cow::Borrowed(&[]),
         kex: Cow::Owned(kex),
         key: Cow::Owned(selected_in_catalog(
             host_key_catalog(),

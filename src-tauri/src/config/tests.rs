@@ -1,6 +1,87 @@
 use super::*;
 use uuid::Uuid;
 
+#[test]
+fn ssh_keepalive_defaults_and_migrations_preserve_settings() {
+    for legacy in [
+        serde_json::json!({}),
+        serde_json::json!({"algorithm_mode": "default"}),
+        serde_json::json!({"allow_legacy_algorithms": true}),
+    ] {
+        let ssh: SshConfig = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(!ssh.keepalive_enabled);
+        assert_eq!(ssh.keepalive_interval_secs, 30);
+        assert_eq!(ssh.keepalive_max, 3);
+        let mut configured = legacy;
+        configured["keepalive_enabled"] = true.into();
+        configured["keepalive_interval_secs"] = 15.into();
+        configured["keepalive_max"] = 5.into();
+        let mut app: AppConfig =
+            serde_json::from_value(serde_json::json!({"ssh": configured})).unwrap();
+        app = app.migrate();
+        assert!(app.ssh.keepalive_enabled);
+        assert_eq!(app.ssh.keepalive_interval_secs, 15);
+        assert_eq!(app.ssh.keepalive_max, 5);
+        let roundtrip: AppConfig =
+            serde_json::from_str(&serde_json::to_string(&app).unwrap()).unwrap();
+        assert_eq!(roundtrip.ssh, app.ssh);
+    }
+}
+
+#[test]
+fn ssh_keepalive_validates_load_and_save_even_when_disabled() {
+    let file = TestConfigFile::new("keepalive");
+    for enabled in [false, true] {
+        for (interval, max, valid) in [
+            (1, 1, true),
+            (3600, 100, true),
+            (0, 3, false),
+            (3601, 3, false),
+            (30, 0, false),
+            (30, 101, false),
+        ] {
+            let mut config = AppConfig::default();
+            config.ssh.keepalive_enabled = enabled;
+            config.ssh.keepalive_interval_secs = interval;
+            config.ssh.keepalive_max = max;
+            assert_eq!(validate_config(&config).is_ok(), valid);
+            config_write_to_path(file.path(), &config).unwrap();
+            assert_eq!(config_read_from_path(file.path()).is_ok(), valid);
+        }
+    }
+    for value in [
+        serde_json::json!(-1),
+        serde_json::json!(1.5),
+        serde_json::json!("30"),
+    ] {
+        assert!(serde_json::from_value::<SshConfig>(
+            serde_json::json!({"keepalive_interval_secs":value})
+        )
+        .is_err());
+        assert!(
+            serde_json::from_value::<SshConfig>(serde_json::json!({"keepalive_max":value}))
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn ssh_keepalive_save_preserves_unrelated_concurrent_changes() {
+    let file = TestConfigFile::new("keepalive-save");
+    let base = AppConfig::default();
+    let mut edited = base.clone();
+    edited.ssh.keepalive_enabled = true;
+    edited.ssh.keepalive_interval_secs = 60;
+    let mut latest = base.clone();
+    latest.ssh.default_private_key_path = "fixture-key".into();
+    let merged = merge_edited_config(&base, &edited, &latest).unwrap();
+    config_write_to_path(file.path(), &merged).unwrap();
+    let loaded = config_load_from_path(file.path()).unwrap();
+    assert!(loaded.ssh.keepalive_enabled);
+    assert_eq!(loaded.ssh.keepalive_interval_secs, 60);
+    assert_eq!(loaded.ssh.default_private_key_path, "fixture-key");
+}
+
 struct TestConfigFile {
     directory: PathBuf,
     path: PathBuf,

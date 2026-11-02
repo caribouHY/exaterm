@@ -11,6 +11,8 @@ export interface BackendCommandError {
 }
 
 const errorKeys: Record<string, string> = {
+  "config.ssh_keepalive_interval_invalid": "backend_errors.ssh_keepalive_interval_invalid",
+  "config.ssh_keepalive_max_invalid": "backend_errors.ssh_keepalive_max_invalid",
   "terminal.session_not_found": "backend_errors.terminal_session_not_found",
   "terminal.cursor_out_of_range": "backend_errors.terminal_cursor_out_of_range",
   "workspace.window_not_found": "backend_errors.workspace_window_not_found",
