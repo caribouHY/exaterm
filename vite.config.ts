@@ -8,12 +8,12 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react()],
   build: {
-    rollupOptions: {
+    // Preserve the Vite 7 browser baseline for existing WebView installations.
+    target: ["chrome107", "edge107", "firefox104", "safari16"],
+    rolldownOptions: {
       output: {
-        manualChunks(id: string) {
-          if (id.includes("@xterm/")) {
-            return "xterm";
-          }
+        codeSplitting: {
+          groups: [{ name: "xterm", test: /[\\/]@xterm[\\/]/ }],
         },
       },
     },
