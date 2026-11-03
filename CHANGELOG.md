@@ -8,6 +8,8 @@
 
 ### Changed
 
+- Windows serial sessions use overlapped reads and writes to avoid input delays caused by synchronous receive polling, and skip redundant timeout updates.
+
 - Updated Vite to 8 and its React plugin to 6, migrating terminal chunk splitting to Rolldown while preserving the existing browser targets.
 - Updated React, translation, and icon libraries, and migrated frontend type checking to TypeScript 7.
 - Updated Tauri to 2.12.5 and its plugins, JavaScript API, and CLI, including IPC, updater signature-verification, and Windows installer fixes. Cargo binary targets are built and bundled directly, removing the separate sidecar preparation script and avoiding duplicate MCP executables in Windows installers. Builds now require Rust 1.90 or newer, and upstream Windows 7 support has ended.

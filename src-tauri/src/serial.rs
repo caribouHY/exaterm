@@ -22,7 +22,9 @@ use lifecycle::{
     enqueue_data, request_shutdown, spawn_shutdown_coordinator, RegistrationGuard, SerialSession,
     SerialSessions, SerialShutdown,
 };
-use writer::{cancel_synchronous_write, finish_serial_workers, spawn_serial_writer};
+#[cfg(not(windows))]
+use writer::cancel_synchronous_write;
+use writer::{finish_serial_workers, spawn_serial_writer};
 
 pub fn list_ports() -> Result<Vec<PortInfo>, String> {
     let ports =
@@ -250,6 +252,8 @@ pub(crate) async fn connect(
     }
     let shutdown = SerialShutdown::new();
     let running = shutdown.running.clone();
+    #[cfg(windows)]
+    let write_cancellation = writer_port.cancellation_flag();
     let (writer, write_rx) = mpsc::channel::<Vec<u8>>();
     let write_sid = session_id.clone();
     let write_sessions = state.sessions.clone();
@@ -325,7 +329,16 @@ pub(crate) async fn connect(
 
     let cleanup = finish_serial_workers(
         writer_thread,
-        cancel_synchronous_write,
+        move |writer| {
+            #[cfg(windows)]
+            {
+                let _ = writer;
+                write_cancellation.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+            #[cfg(not(windows))]
+            cancel_synchronous_write(writer)
+        },
         move || {
             let result = control_port
                 .clear(serialport::ClearBuffer::Output)
@@ -413,34 +426,37 @@ type SerialWriterPort = windows_io::WindowsWriterPort;
 #[cfg(not(windows))]
 type SerialWriterPort = Box<dyn serialport::SerialPort>;
 
-type SerialPortPair = (Box<dyn serialport::SerialPort>, SerialWriterPort);
+#[cfg(windows)]
+type SerialReaderPort = windows_io::OverlappedPort;
+#[cfg(not(windows))]
+type SerialReaderPort = Box<dyn serialport::SerialPort>;
+
+type SerialPortPair = (SerialReaderPort, SerialWriterPort);
 
 fn open_serial_port_pair(port: String, config: SerialConfig) -> Result<SerialPortPair, String> {
     #[cfg(windows)]
     if config.baud_rate == 0 {
         return Err("Serial baud rate must be greater than zero".into());
     }
-    let builder = serialport::new(&port, config.baud_rate)
-        .data_bits(to_data_bits(config.data_bits))
-        .parity(to_parity(&config.parity))
-        .stop_bits(to_stop_bits(config.stop_bits))
-        .flow_control(to_flow_control(&config.flow_control))
-        .timeout(SERIAL_READ_TIMEOUT);
     #[cfg(windows)]
     {
-        let serial_port = builder
-            .open_native()
+        let serial_port = windows_io::OverlappedPort::open(&port, &config)
             .map_err(|error| format!("Failed to open the serial port: {error}"))?;
         let writer_port = serial_port
-            .try_clone_native()
+            .clone_port()
             .map_err(|error| format!("Failed to clone the serial port handle: {error}"))?;
         let writer_port = windows_io::WindowsWriterPort::new(writer_port)
             .map_err(|error| format!("Failed to configure Serial transmission: {error}"))?;
-        Ok((Box::new(serial_port), writer_port))
+        Ok((serial_port, writer_port))
     }
     #[cfg(not(windows))]
     {
-        let serial_port = builder
+        let serial_port = serialport::new(&port, config.baud_rate)
+            .data_bits(to_data_bits(config.data_bits))
+            .parity(to_parity(&config.parity))
+            .stop_bits(to_stop_bits(config.stop_bits))
+            .flow_control(to_flow_control(&config.flow_control))
+            .timeout(SERIAL_READ_TIMEOUT)
             .open()
             .map_err(|error| format!("Failed to open the serial port: {}", error))?;
         let writer_port = serial_port
