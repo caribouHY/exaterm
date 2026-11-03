@@ -4,6 +4,7 @@ version = "0.10.0"
 description = "ExaTerm - AI-native network terminal"
 authors = ["caribouHY"]
 edition = "2021"
+rust-version = "1.90"
 default-run = "exaterm"
 
 [lib]
@@ -11,14 +12,14 @@ name = "exaterm_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
-tauri-plugin-opener = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-updater = "2.10.1"
-tauri-plugin-single-instance = "2"
+tauri = { version = "2.12.5", features = ["tray-icon"] }
+tauri-plugin-opener = "2.7.2"
+tauri-plugin-dialog = "2.8.4"
+tauri-plugin-updater = "2.14.1"
+tauri-plugin-single-instance = "2.5.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
@@ -41,7 +42,7 @@ windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Syste
 zeroize = "1"
 same-file = "1.0.6"
 clap = { version = "4", features = ["derive"] }
-tauri-plugin-clipboard-manager = "2"
+tauri-plugin-clipboard-manager = "2.5.0"
 
 [dev-dependencies]
 tempfile = "3"
