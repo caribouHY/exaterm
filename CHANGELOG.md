@@ -8,6 +8,7 @@
 
 ### Changed
 
+- Updated Vite to 8 and its React plugin to 6, migrating terminal chunk splitting to Rolldown while preserving the existing browser targets.
 - Updated React, translation, and icon libraries, and migrated frontend type checking to TypeScript 7.
 - Updated Tauri to 2.12.5 and its plugins, JavaScript API, and CLI, including IPC, updater signature-verification, and Windows installer fixes. Cargo binary targets are built and bundled directly, removing the separate sidecar preparation script and avoiding duplicate MCP executables in Windows installers. Builds now require Rust 1.90 or newer, and upstream Windows 7 support has ended.
 - Updated rustls to 0.23.46, rustls-webpki to 0.103.16, webpki-root-certs to 1.0.11, and h2 to 0.4.20 to include TLS, certificate-verification, and HTTP/2 security fixes.
