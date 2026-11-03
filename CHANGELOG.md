@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.10.1
+
 ### Added
 
 - Added optional SSH keepalive settings for new direct and jump-host connections, with configurable intervals and unanswered-probe limits.
