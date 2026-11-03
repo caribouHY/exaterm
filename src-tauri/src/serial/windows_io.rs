@@ -1,13 +1,17 @@
 use std::io::{self, Write};
 use std::os::windows::io::AsRawHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serialport::SerialPort;
 use windows_sys::Win32::Devices::Communication::{GetCommTimeouts, SetCommTimeouts, COMMTIMEOUTS};
 
+mod overlapped;
+pub(super) use overlapped::OverlappedPort;
+
 use super::writer::{SerialWritePort, WritePolicy};
 
 pub(super) trait SerialTimeoutPort: Write {
+    fn set_deadline(&mut self, _deadline: Instant) {}
     fn get_timeouts(&self) -> io::Result<COMMTIMEOUTS>;
     fn set_timeouts(&mut self, timeouts: &COMMTIMEOUTS) -> io::Result<()>;
 }
@@ -33,20 +37,28 @@ impl SerialTimeoutPort for serialport::COMPort {
     }
 }
 
-pub(super) struct WindowsWriterPort<P = serialport::COMPort> {
+pub(super) struct WindowsWriterPort<P = OverlappedPort> {
     port: P,
     policy: WritePolicy,
+    applied_timeout_ms: Option<u32>,
 }
 
 impl WindowsWriterPort {
-    pub(super) fn new(port: serialport::COMPort) -> serialport::Result<Self> {
+    pub(super) fn cancellation_flag(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+        self.port.cancel.clone()
+    }
+    pub(super) fn new(port: OverlappedPort) -> serialport::Result<Self> {
         let policy = WritePolicy::new(
-            port.baud_rate()?,
-            port.data_bits()?,
-            port.parity()?,
-            port.stop_bits()?,
+            port.control.baud_rate()?,
+            port.control.data_bits()?,
+            port.control.parity()?,
+            port.control.stop_bits()?,
         )?;
-        Ok(Self { port, policy })
+        Ok(Self {
+            port,
+            policy,
+            applied_timeout_ms: None,
+        })
     }
 }
 
@@ -61,19 +73,30 @@ impl<P: Write> Write for WindowsWriterPort<P> {
 }
 
 impl<P: SerialTimeoutPort> SerialWritePort for WindowsWriterPort<P> {
+    fn set_write_deadline(&mut self, deadline: Instant) {
+        self.port.set_deadline(deadline);
+    }
+
     fn policy(&self) -> Option<WritePolicy> {
         Some(self.policy)
     }
 
     fn set_write_timeout(&mut self, remaining: Duration) -> io::Result<()> {
-        let mut timeouts = self.port.get_timeouts()?;
-        // Cloned handles share COMMTIMEOUTS, so preserve the reader's polling settings.
-        timeouts.WriteTotalTimeoutMultiplier = 0;
-        timeouts.WriteTotalTimeoutConstant = remaining
+        let timeout_ms = remaining
             .as_nanos()
             .div_ceil(1_000_000)
             .clamp(1, u128::from(u32::MAX - 1)) as u32;
-        self.port.set_timeouts(&timeouts)
+        if self.applied_timeout_ms == Some(timeout_ms) {
+            return Ok(());
+        }
+        let mut timeouts = self.port.get_timeouts()?;
+        // Cloned handles share COMMTIMEOUTS, so preserve the reader's polling settings.
+        timeouts.WriteTotalTimeoutMultiplier = 0;
+        timeouts.WriteTotalTimeoutConstant = timeout_ms;
+        let result = self.port.set_timeouts(&timeouts);
+        self.applied_timeout_ms = result.is_ok().then_some(timeout_ms);
+
+        result
     }
 }
 
