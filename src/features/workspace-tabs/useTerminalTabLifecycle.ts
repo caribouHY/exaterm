@@ -1,5 +1,4 @@
 import { useCallback, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type {
   ConnectionType,
   Encoding,
@@ -24,19 +23,11 @@ interface ConnectedTerminalInput {
 interface UseTerminalTabLifecycleOptions {
   tabs: WindowTabsController;
   onTerminalRemoved: (tabId: string) => void;
-  stopManualLog: (sessionId: string) => Promise<void>;
 }
-
-const disconnectCommands: Record<ConnectionType, string> = {
-  ssh: "ssh_disconnect",
-  serial: "serial_disconnect",
-  telnet: "telnet_disconnect",
-};
 
 export function useTerminalTabLifecycle({
   tabs,
   onTerminalRemoved,
-  stopManualLog,
 }: UseTerminalTabLifecycleOptions) {
   const closeOperationsRef = useRef(new Map<string, Promise<boolean>>());
 
@@ -74,9 +65,7 @@ export function useTerminalTabLifecycle({
         }
 
         try {
-          await stopManualLog(tab.sessionId);
-          await invoke(disconnectCommands[tab.connectionType], { sessionId: tab.sessionId });
-          const snapshot = await workspaceClient.removeTab(tabs.windowId, tabId);
+          const snapshot = await workspaceClient.closeTab(tabId);
           onTerminalRemoved(tabId);
           tabs.applyWorkspaceSnapshot(snapshot);
           return true;
@@ -95,7 +84,7 @@ export function useTerminalTabLifecycle({
       closeOperationsRef.current.set(tabId, operation);
       return operation;
     },
-    [onTerminalRemoved, stopManualLog, tabs]
+    [onTerminalRemoved, tabs]
   );
 
   const closeTab = useCallback(

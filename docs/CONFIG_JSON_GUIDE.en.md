@@ -200,6 +200,17 @@ Older config files may still contain the legacy `mcp` object and `saved_connecti
 
 The HTTP MCP transport has been removed. Existing HTTP-only `mcp.host` and `mcp.port` values in older config files are ignored and will be omitted the next time ExaTerm saves the settings. Users who previously used HTTP MCP must manually enable `external_control.enabled=true` and `external_control.mcp_enabled=true`, then configure their MCP client to launch `exaterm-mcp`.
 
+CLI and MCP use the same OS-user boundary: Windows named pipes verify peer process user
+SIDs on both sides. The handshake nonce only binds requests to that connection; it is not
+user authentication. Keep GUI, CLI, and MCP binaries updated together.
+
+Local JSON-line frames allow 4 KiB for handshakes and 16 MiB for requests/responses, excluding
+the newline and including JSON escaping. The full 20,000-character terminal input/output
+limit fits; very large profile/session lists or other payloads exceeding 16 MiB fail without
+truncation. Setup phases are limited to two seconds, with eight pending server setup slots;
+GUI credential waits and operation responses retain their existing deadlines. Discovery
+probes cannot extend the two-second initial or 30-second post-launch discovery budget.
+
 ### MCP Tools
 
 When MCP is enabled, external clients can call these tools:
