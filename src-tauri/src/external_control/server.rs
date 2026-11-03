@@ -1,5 +1,5 @@
 use crate::external_control::{
-    protocol::handle_control_connection,
+    protocol::handle_control_connection_with_permit,
     service::{ExternalControlRuntime, ExternalControlService},
 };
 
@@ -22,6 +22,7 @@ async fn run_gui_control_plane(runtime: ExternalControlRuntime) -> Result<(), St
 async fn run_local_control_server(service: ExternalControlService) -> Result<(), String> {
     use tokio::net::windows::named_pipe::{PipeMode, ServerOptions};
 
+    let pending = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
     let pipe_name = crate::external_control::client::control_pipe_name();
     loop {
         let mut options = ServerOptions::new();
@@ -38,30 +39,41 @@ async fn run_local_control_server(service: ExternalControlService) -> Result<(),
             log::warn!("External control pipe connect error: {error}");
             continue;
         }
+        if super::transport::windows::verify_peer(&server, true).is_err() {
+            continue;
+        }
+        let Ok(permit) = pending.clone().try_acquire_owned() else {
+            continue;
+        };
         let service = service.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(error) = handle_control_connection(service, server).await {
+            if let Err(error) =
+                handle_control_connection_with_permit(service, server, Some(permit)).await
+            {
                 log::warn!("External control connection closed with error: {error}");
             }
         });
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(unix)]
 async fn run_local_control_server(service: ExternalControlService) -> Result<(), String> {
-    use tokio::net::TcpListener;
-
-    let listener = TcpListener::bind(crate::external_control::client::control_tcp_address())
-        .await
-        .map_err(|error| format!("External control TCP bind error: {error}"))?;
+    let (listener, _listener_lock) =
+        super::transport::unix::bind_at(&super::transport::unix::control_directory()).await?;
+    let pending = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
     loop {
-        let (stream, _) = listener
-            .accept()
-            .await
-            .map_err(|error| format!("External control TCP accept error: {error}"))?;
+        let (stream, _) = listener.accept().await.map_err(|e| e.to_string())?;
+        if super::transport::unix::verify_peer(&stream).is_err() {
+            continue;
+        }
+        let Ok(permit) = pending.clone().try_acquire_owned() else {
+            continue;
+        };
         let service = service.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(error) = handle_control_connection(service, stream).await {
+            if let Err(error) =
+                handle_control_connection_with_permit(service, stream, Some(permit)).await
+            {
                 log::warn!("External control connection closed with error: {error}");
             }
         });

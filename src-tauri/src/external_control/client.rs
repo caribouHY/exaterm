@@ -110,33 +110,41 @@ impl ExternalControlClient {
     }
 
     async fn wait_for_control_plane(&self, timeout: Duration) -> Result<(), String> {
-        let deadline = time::Instant::now() + timeout;
-        loop {
-            if probe_local_control_plane().await.is_ok() {
-                return Ok(());
-            }
-            if time::Instant::now() >= deadline {
-                return Err(CONTROL_UNAVAILABLE_MESSAGE.into());
-            }
-            time::sleep(RETRY_INTERVAL).await;
-        }
+        wait_for_probe(timeout, true, probe_control_plane_state)
+            .await
+            .map(|_| ())
+            .ok_or_else(|| CONTROL_UNAVAILABLE_MESSAGE.to_string())
     }
 
     async fn wait_for_reachable_control_plane(
         &self,
         timeout: Duration,
     ) -> Option<ControlPlaneProbeState> {
-        let deadline = time::Instant::now() + timeout;
-        loop {
-            let state = probe_control_plane_state().await;
-            if state != ControlPlaneProbeState::Unavailable {
-                return Some(state);
-            }
-            if time::Instant::now() >= deadline {
-                return None;
-            }
-            time::sleep(RETRY_INTERVAL).await;
+        wait_for_probe(timeout, false, probe_control_plane_state).await
+    }
+}
+
+async fn wait_for_probe<Probe, ProbeFuture>(
+    timeout: Duration,
+    compatible_only: bool,
+    mut probe: Probe,
+) -> Option<ControlPlaneProbeState>
+where
+    Probe: FnMut() -> ProbeFuture,
+    ProbeFuture: Future<Output = ControlPlaneProbeState>,
+{
+    let deadline = time::Instant::now() + timeout;
+    loop {
+        let state = time::timeout_at(deadline, probe()).await.ok()?;
+        if state == ControlPlaneProbeState::Compatible
+            || (!compatible_only && state == ControlPlaneProbeState::Incompatible)
+        {
+            return Some(state);
         }
+        if time::Instant::now() >= deadline {
+            return None;
+        }
+        time::sleep_until((time::Instant::now() + RETRY_INTERVAL).min(deadline)).await;
     }
 }
 
@@ -341,9 +349,13 @@ async fn call_local_control(
 async fn call_local_control(
     request: ExternalControlRequest,
 ) -> Result<ExternalControlResponse, ExternalControlError> {
-    let stream = tokio::net::TcpStream::connect(control_tcp_address())
-        .await
-        .map_err(|_| ExternalControlError::Unavailable(CONTROL_UNAVAILABLE_MESSAGE.into()))?;
+    let stream = time::timeout(
+        super::protocol::CONTROL_SETUP_TIMEOUT,
+        super::transport::unix::connect_at(&super::transport::unix::control_directory()),
+    )
+    .await
+    .map_err(|_| super::transport::unavailable())?
+    .map_err(|_| super::transport::unavailable())?;
     external_control_call_over_stream(stream, request).await
 }
 
@@ -367,8 +379,17 @@ async fn probe_local_control_plane() -> Result<(), String> {
     }
 }
 
-#[cfg(windows)]
 async fn probe_control_plane_state() -> ControlPlaneProbeState {
+    time::timeout(
+        super::protocol::CONTROL_SETUP_TIMEOUT,
+        probe_control_plane_state_inner(),
+    )
+    .await
+    .unwrap_or(ControlPlaneProbeState::Unavailable)
+}
+
+#[cfg(windows)]
+async fn probe_control_plane_state_inner() -> ControlPlaneProbeState {
     let Ok(stream) = connect_named_pipe().await else {
         return ControlPlaneProbeState::Unavailable;
     };
@@ -380,8 +401,10 @@ async fn probe_control_plane_state() -> ControlPlaneProbeState {
 }
 
 #[cfg(not(windows))]
-async fn probe_control_plane_state() -> ControlPlaneProbeState {
-    let Ok(stream) = tokio::net::TcpStream::connect(control_tcp_address()).await else {
+async fn probe_control_plane_state_inner() -> ControlPlaneProbeState {
+    let Ok(stream) =
+        super::transport::unix::connect_at(&super::transport::unix::control_directory()).await
+    else {
         return ControlPlaneProbeState::Unavailable;
     };
     if control_probe_over_stream(stream).await.is_ok() {
@@ -396,9 +419,12 @@ async fn connect_named_pipe(
 ) -> Result<tokio::net::windows::named_pipe::NamedPipeClient, ExternalControlError> {
     use tokio::net::windows::named_pipe::ClientOptions;
 
-    ClientOptions::new()
+    let stream = ClientOptions::new()
         .open(control_pipe_name())
-        .map_err(|_| ExternalControlError::Unavailable(CONTROL_UNAVAILABLE_MESSAGE.into()))
+        .map_err(|_| super::transport::unavailable())?;
+    super::transport::windows::verify_peer(&stream, false)
+        .map_err(|_| super::transport::unavailable())?;
+    Ok(stream)
 }
 
 #[cfg(windows)]
@@ -409,16 +435,12 @@ pub(super) fn control_pipe_name() -> String {
     )
 }
 
-#[cfg(not(windows))]
-pub(super) fn control_tcp_address() -> String {
-    let port = 39_500 + (current_user_scope_hash_value() % 1_000) as u16;
-    format!("127.0.0.1:{port}")
-}
-
+#[cfg(windows)]
 fn current_user_scope_hash() -> String {
     format!("{:016x}", current_user_scope_hash_value())
 }
 
+#[cfg(windows)]
 fn current_user_scope_hash_value() -> u64 {
     let user = std::env::var("USERDOMAIN")
         .ok()
@@ -430,6 +452,7 @@ fn current_user_scope_hash_value() -> u64 {
     fnv1a_64(user.as_bytes())
 }
 
+#[cfg(windows)]
 fn fnv1a_64(bytes: &[u8]) -> u64 {
     let mut hash = 0xcbf29ce484222325u64;
     for byte in bytes {
@@ -533,5 +556,21 @@ mod tests {
 
         assert_eq!(probes.load(Ordering::SeqCst), 0);
         assert_eq!(launches.load(Ordering::SeqCst), 0);
+    }
+    #[tokio::test(start_paused = true)]
+    async fn discovery_deadline_bounds_a_silent_probe_and_retry_backoff() {
+        for silent in [true, false] {
+            let start = time::Instant::now();
+            let timeout = Duration::from_millis(370);
+            let result = wait_for_probe(timeout, false, || async {
+                if silent {
+                    std::future::pending::<()>().await;
+                }
+                ControlPlaneProbeState::Unavailable
+            })
+            .await;
+            assert_eq!(result, None);
+            assert_eq!(time::Instant::now() - start, timeout);
+        }
     }
 }

@@ -294,6 +294,7 @@ pub fn run() {
             workspace::commands::workspace_tab_move,
             workspace::commands::workspace_tab_register,
             workspace::commands::workspace_tab_remove,
+            workspace::commands::workspace_tab_close,
             workspace::commands::workspace_tab_reorder,
             workspace::commands::workspace_tab_update_metadata,
             workspace::commands::workspace_window_create,

@@ -61,6 +61,10 @@ export const workspaceClient = {
     return invoke<WorkspaceSnapshot>("workspace_tab_activate", { windowId, tabId });
   },
 
+  closeTab(tabId: string) {
+    return invoke<WorkspaceSnapshot>("workspace_tab_close", { tabId });
+  },
+
   removeTab(windowId: string, tabId: string) {
     return invoke<WorkspaceSnapshot>("workspace_tab_remove", { windowId, tabId });
   },

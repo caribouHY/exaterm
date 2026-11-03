@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Changed
+
+- Local control handshakes are limited to 4 KiB and request/response frames to 16 MiB, including JSON escaping.
+
+### Fixed
+
+- Verify external-control peer OS users on both sides, bound connection setup and discovery probes, and release stalled setup slots without shortening GUI credential or operation waits.
+- Reject stale-window tab removal before stopping sessions or logs, keep close ownership until teardown completes, and make detach creation and transfer atomic with workspace ownership. Clear stale drag state on tab movement, removal, and window rehoming.
+
 ## v0.10.1
 
 ### Added

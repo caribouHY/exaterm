@@ -896,3 +896,15 @@ pub fn logger_get_log_dir(state: tauri::State<'_, LoggerState>) -> String {
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) async fn stop_for_tab_close(
+    app: &tauri::AppHandle,
+    logger: &LoggerState,
+    workspace: &crate::workspace::WorkspaceState,
+    session_id: &str,
+) -> Result<(), String> {
+    let (_, snapshot) =
+        apply_manual_log_operation(logger, workspace, session_id, ManualLogOperation::Stop).await?;
+    emit_log_snapshot(app, snapshot);
+    Ok(())
+}

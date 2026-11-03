@@ -67,6 +67,11 @@ Read only the relevant sections:
 
 ## Operating Rules
 
+- Run the CLI as the GUI's OS user and keep GUI/CLI/MCP binaries updated together.
+  Windows named pipes verify peer process user SIDs on both sides. The nonce correlates
+  requests with a connection; it does not authenticate the OS user. See the reference for
+  frame limits and setup deadlines.
+
 - Preserve existing sessions, tabs, scrollback, and logs. Never clear, recreate, replace,
   or disconnect a session as routine recovery.
 - Follow the host agent's normal authorization policy for material changes. `doctor`

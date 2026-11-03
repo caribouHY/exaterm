@@ -29,6 +29,9 @@ pub(super) async fn apply_manual_log_operation(
             file_path,
             write_mode,
         } => {
+            if workspace.session_is_closing(session_id).await {
+                return Err("Session is being closed.".into());
+            }
             let tab = workspace
                 .tab_for_session(session_id)
                 .await
@@ -225,6 +228,115 @@ mod tests {
         assert!(!snapshot.tabs[0].is_manual_logging_paused);
         assert!(snapshot.tabs[0].manual_log_file_path.is_none());
         assert!(fs::read_to_string(path).unwrap().ends_with("tail"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[tokio::test]
+    async fn owned_close_serializes_log_stop_and_rejects_late_start_after_caller_disposal() {
+        let (logger, workspace, terminals, dir) = fixture().await;
+        let path = start(&logger, &workspace).await;
+        terminals.append_output("s1", b"retained tail").await;
+        let (stopped, stopped_receiver) = tokio::sync::oneshot::channel();
+        let (finish, finished) = tokio::sync::oneshot::channel();
+        let (published, publication) = tokio::sync::oneshot::channel();
+        let closing_workspace = workspace.clone();
+        let operation_workspace = workspace.clone();
+        let operation_logger = logger.clone();
+        let caller = tokio::spawn(async move {
+            closing_workspace
+                .close_tab_owned(
+                    "main".into(),
+                    "tab-1".into(),
+                    move |_| async move {
+                        apply_manual_log_operation(
+                            &operation_logger,
+                            &operation_workspace,
+                            "s1",
+                            ManualLogOperation::Stop,
+                        )
+                        .await?;
+                        stopped.send(()).unwrap();
+                        finished.await.unwrap();
+                        Ok(())
+                    },
+                    move |_| {
+                        published.send(()).unwrap();
+                    },
+                )
+                .await
+        });
+        stopped_receiver.await.unwrap();
+        caller.abort();
+        assert!(caller.await.unwrap_err().is_cancelled());
+        assert!(!manual_log_status(&logger, "s1").await.active);
+        assert!(
+            !workspace
+                .tab_for_session("s1")
+                .await
+                .unwrap()
+                .is_manual_logging
+        );
+        assert!(apply_manual_log_operation(
+            &logger,
+            &workspace,
+            "s1",
+            ManualLogOperation::Start {
+                connection_type: "ssh".into(),
+                target: "synthetic".into(),
+                file_path: None,
+                write_mode: None
+            }
+        )
+        .await
+        .unwrap_err()
+        .contains("being closed"));
+        assert!(workspace
+            .move_tab("tab-1".into(), "main".into(), "other".into(), 0)
+            .await
+            .is_err());
+        assert!(fs::read_to_string(path).unwrap().ends_with("retained tail"));
+        assert!(terminals.read_output("s1", 1000).await.is_ok());
+        finish.send(()).unwrap();
+        publication.await.unwrap();
+        assert!(workspace.tab_for_session("s1").await.is_none());
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[tokio::test]
+    async fn stale_close_after_transfer_preserves_active_log_and_retained_output() {
+        let (logger, workspace, terminals, dir) = fixture().await;
+        let path = start(&logger, &workspace).await;
+        terminals
+            .append_output("s1", b"synthetic scrollback\n")
+            .await;
+        let before = terminals.read_output("s1", 1000).await.unwrap();
+        workspace
+            .move_tab("tab-1".into(), "main".into(), "other".into(), 0)
+            .await
+            .unwrap();
+        assert!(workspace
+            .close_tab_owned(
+                "main".into(),
+                "tab-1".into(),
+                |_| async { panic!("former owner must not stop logging or disconnect") },
+                |_| panic!("failed close must not publish removal")
+            )
+            .await
+            .is_err());
+        assert_eq!(terminals.read_output("s1", 1000).await.unwrap(), before);
+        assert!(manual_log_status(&logger, "s1").await.active);
+        assert_eq!(
+            workspace
+                .tab_for_session("s1")
+                .await
+                .unwrap()
+                .owner_window_id,
+            "other"
+        );
+        apply_manual_log_operation(&logger, &workspace, "s1", ManualLogOperation::Stop)
+            .await
+            .unwrap();
+        assert!(fs::read_to_string(path)
+            .unwrap()
+            .ends_with("synthetic scrollback\n"));
         fs::remove_dir_all(dir).unwrap();
     }
 }
