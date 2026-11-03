@@ -307,7 +307,8 @@ mod tests {
                 let error = unsafe { GetLastError() };
                 assert_eq!(started, 0);
                 assert_eq!(error, ERROR_IO_PENDING);
-                ready.send(()).unwrap();
+                // A timed-out receiver must not unwind while native I/O still borrows the buffer.
+                let _ = ready.send(());
                 unsafe {
                     SetLastError(error);
                 }
@@ -385,7 +386,9 @@ mod tests {
                         let error = unsafe { GetLastError() };
                         if started == 0 {
                             assert_eq!(error, ERROR_IO_PENDING);
-                            entered.take().unwrap().send(()).unwrap();
+                            if let Some(entered) = entered.take() {
+                                let _ = entered.send(());
+                            }
                         }
                         unsafe {
                             SetLastError(error);
