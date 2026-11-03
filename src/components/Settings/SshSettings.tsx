@@ -11,6 +11,7 @@ import type {
   SshConfig,
 } from "../../types";
 import { SettingsError } from "./SettingsFooter";
+import { SshKeepaliveSettings } from "./SshKeepaliveSettings";
 
 interface SshSettingsProps {
   config: SshConfig;
@@ -235,6 +236,9 @@ export function SshSettings({
           })}
         </div>
       )}
+      <section className="settings-ssh__keepalive" aria-label={t("settings.ssh_keepalive")}>
+        <SshKeepaliveSettings config={config} onChange={onChange} />
+      </section>
     </div>
   );
 }

@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## v0.10.1
+
+### Added
+
+- Added optional SSH keepalive settings for new direct and jump-host connections, with configurable intervals and unanswered-probe limits.
+
+### Changed
+
+- Windows serial sessions use overlapped reads and writes to avoid input delays caused by synchronous receive polling, and skip redundant timeout updates.
+
+- Updated Vite to 8 and its React plugin to 6, migrating terminal chunk splitting to Rolldown while preserving the existing browser targets.
+- Updated React, translation, and icon libraries, and migrated frontend type checking to TypeScript 7.
+- Updated Tauri to 2.12.5 and its plugins, JavaScript API, and CLI, including IPC, updater signature-verification, and Windows installer fixes. Cargo binary targets are built and bundled directly, removing the separate sidecar preparation script and avoiding duplicate MCP executables in Windows installers. Builds now require Rust 1.90 or newer, and upstream Windows 7 support has ended.
+- Updated rustls to 0.23.46, rustls-webpki to 0.103.16, webpki-root-certs to 1.0.11, and h2 to 0.4.20 to include TLS, certificate-verification, and HTTP/2 security fixes.
+
+- Updated russh to 0.65.0, including the pre-authentication keepalive timer fix and upstream SSH security fixes, while retaining raw host-key verification.
+
+### Fixed
+
+- Separated SSH keepalive settings from the remembered-password clearing action to make their purposes clear.
+
+- Finalized SSH session state and logs when a failed jump transport prevents the target disconnect callback from running, preserving terminal tabs and retained output.
+
+- Prevented SSH authentication and host-key dialogs from appearing in multiple windows and remaining open after a response, and allowed stale dialogs to close on cancellation.
+
 ## v0.10.0
 
 ### Added

@@ -466,5 +466,11 @@
   "settings.ssh_password_cache_clear": "Clear remembered passwords",
   "settings.ssh_password_cache_help": "Clear all SSH passwords remembered during this run. Connected sessions stay connected.",
   "settings.ssh_password_cache_cleared": "Remembered SSH passwords cleared.",
-  "settings.ssh_password_cache_clear_failed": "Failed to clear remembered SSH passwords."
+  "settings.ssh_password_cache_clear_failed": "Failed to clear remembered SSH passwords.",
+  "settings.ssh_keepalive": "SSH keepalive",
+  "settings.ssh_keepalive_desc": "Keep idle SSH connections active. Applies to new connections, including jump hosts; existing sessions are unchanged.",
+  "settings.ssh_keepalive_interval": "Keepalive interval (seconds, 1–3600)",
+  "settings.ssh_keepalive_max": "Unanswered probe limit (1–100)",
+  "backend_errors.ssh_keepalive_interval_invalid": "Enter an SSH keepalive interval from 1 to 3600 seconds.",
+  "backend_errors.ssh_keepalive_max_invalid": "Enter an SSH keepalive unanswered probe limit from 1 to 100."
 }

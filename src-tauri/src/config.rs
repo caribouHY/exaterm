@@ -387,6 +387,9 @@ struct SshConfigInput {
     algorithms: Option<SshAlgorithmSelection>,
     allow_legacy_algorithms: Option<bool>,
     default_private_key_path: Option<String>,
+    keepalive_enabled: Option<bool>,
+    keepalive_interval_secs: Option<u64>,
+    keepalive_max: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -394,6 +397,9 @@ pub struct SshConfig {
     pub algorithm_mode: String,
     pub algorithms: SshAlgorithmSelection,
     pub default_private_key_path: String,
+    pub keepalive_enabled: bool,
+    pub keepalive_interval_secs: u64,
+    pub keepalive_max: usize,
 }
 
 impl Default for SshConfig {
@@ -402,7 +408,24 @@ impl Default for SshConfig {
             algorithm_mode: default_ssh_algorithm_mode(),
             algorithms: SshAlgorithmSelection::default(),
             default_private_key_path: String::new(),
+            keepalive_enabled: false,
+            keepalive_interval_secs: 30,
+            keepalive_max: 3,
         }
+    }
+}
+
+impl SshConfig {
+    pub(crate) fn validate_keepalive(&self) -> Result<(), String> {
+        if !(1..=3600).contains(&self.keepalive_interval_secs) {
+            return Err(
+                "SSH keepalive interval must be an integer between 1 and 3600 seconds".into(),
+            );
+        }
+        if !(1..=100).contains(&self.keepalive_max) {
+            return Err("SSH keepalive maximum must be an integer between 1 and 100".into());
+        }
+        Ok(())
     }
 }
 
@@ -413,11 +436,18 @@ impl<'de> Deserialize<'de> for SshConfig {
     {
         let input = SshConfigInput::deserialize(deserializer)?;
         let default_private_key_path = input.default_private_key_path.unwrap_or_default();
+        let defaults = Self {
+            default_private_key_path,
+            keepalive_enabled: input.keepalive_enabled.unwrap_or(false),
+            keepalive_interval_secs: input.keepalive_interval_secs.unwrap_or(30),
+            keepalive_max: input.keepalive_max.unwrap_or(3),
+            ..Self::default()
+        };
         if let Some(algorithm_mode) = input.algorithm_mode {
             return Ok(Self {
                 algorithm_mode,
                 algorithms: input.algorithms.unwrap_or_default(),
-                default_private_key_path,
+                ..defaults
             });
         }
 
@@ -425,14 +455,11 @@ impl<'de> Deserialize<'de> for SshConfig {
             return Ok(Self {
                 algorithm_mode: "custom".into(),
                 algorithms: crate::ssh::legacy_algorithm_selection(),
-                default_private_key_path,
+                ..defaults
             });
         }
 
-        Ok(Self {
-            default_private_key_path,
-            ..Self::default()
-        })
+        Ok(defaults)
     }
 }
 
@@ -765,6 +792,7 @@ fn config_read_from_path(path: &Path) -> Result<(AppConfig, bool), String> {
         config.saved_connections = profiles.saved_connections;
     }
     crate::ssh::validate_algorithm_config(&config.ssh)?;
+    config.ssh.validate_keepalive()?;
     validate_shortcut_config(&config.shortcuts)?;
     let normalized = settings_value(&config)?;
     Ok((
@@ -1002,6 +1030,10 @@ fn emit_config_updated(app: &AppHandle) {
 }
 
 fn validate_config(config: &AppConfig) -> Result<(), crate::command_error::BackendCommandError> {
+    config
+        .ssh
+        .validate_keepalive()
+        .map_err(crate::command_error::BackendCommandError::from)?;
     crate::ssh::validate_algorithm_config(&config.ssh)
         .map_err(crate::command_error::BackendCommandError::from)?;
     validate_shortcut_config(&config.shortcuts)

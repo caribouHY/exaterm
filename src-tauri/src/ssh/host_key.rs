@@ -2,7 +2,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 
-use russh::keys::PublicKey;
+use russh::keys::{PublicKey, PublicKeyOrCertificate};
 
 use crate::ssh::diagnostics::{emit_host_key_diagnostic_for_role, SshDiagnostic};
 use crate::ssh::host_key_prompt::{
@@ -36,19 +36,32 @@ pub(super) struct SshHostKeyHandler {
     pub(super) diagnostic: Option<SshDiagnostic>,
 }
 
+pub(super) fn raw_host_key(identity: &PublicKeyOrCertificate) -> Option<PublicKey> {
+    // A trusted raw key does not establish a certificate authority or its allowed principals.
+    match identity {
+        PublicKeyOrCertificate::PublicKey { key, .. } => Some(key.clone()),
+        PublicKeyOrCertificate::Certificate(_) => None,
+    }
+}
+
 impl russh::client::Handler for SshHostKeyHandler {
     type Error = russh::Error;
 
     fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
         let verifier = self.verifier.clone();
         let prompter = self.prompter.clone();
         let phase = self.phase;
         let diagnostic = self.diagnostic.clone();
-        let server_public_key = server_public_key.clone();
-        async move { verify_server_key(verifier, prompter, phase, diagnostic, server_public_key).await }
+        let server_public_key = raw_host_key(server_public_key);
+        async move {
+            let Some(server_public_key) = server_public_key else {
+                return Ok(false);
+            };
+            verify_server_key(verifier, prompter, phase, diagnostic, server_public_key).await
+        }
     }
 }
 

@@ -1,9 +1,10 @@
 [package]
 name = "exaterm"
-version = "0.10.0"
+version = "0.10.1"
 description = "ExaTerm - AI-native network terminal"
 authors = ["caribouHY"]
 edition = "2021"
+rust-version = "1.90"
 default-run = "exaterm"
 
 [lib]
@@ -11,18 +12,18 @@ name = "exaterm_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
-tauri-plugin-opener = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-updater = "2.10.1"
-tauri-plugin-single-instance = "2"
+tauri = { version = "2.12.5", features = ["tray-icon"] }
+tauri-plugin-opener = "2.7.2"
+tauri-plugin-dialog = "2.8.4"
+tauri-plugin-updater = "2.14.1"
+tauri-plugin-single-instance = "2.5.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-russh = { version = "=0.61.2", default-features = false, features = ["ring", "rsa", "des", "flate2"] }
+russh = { version = "=0.65.0", default-features = false, features = ["ring", "rsa", "des", "flate2"] }
 async-trait = "0.1.92"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 rmcp = { version = "1.6.0", default-features = false, features = ["server", "macros", "schemars", "transport-io"] }
@@ -37,11 +38,11 @@ serialport = "4"
 thiserror = "2"
 keyring = { version = "3", features = ["windows-native"] }
 encoding_rs = "0.8"
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_IO", "Win32_System_Threading", "Win32_Devices_Communication"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_IO", "Win32_System_Threading", "Win32_Devices_Communication", "Win32_Storage_FileSystem", "Win32_Security"] }
 zeroize = "1"
 same-file = "1.0.6"
 clap = { version = "4", features = ["derive"] }
-tauri-plugin-clipboard-manager = "2"
+tauri-plugin-clipboard-manager = "2.5.0"
 
 [dev-dependencies]
 tempfile = "3"

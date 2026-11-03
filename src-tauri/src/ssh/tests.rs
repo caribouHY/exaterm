@@ -301,6 +301,8 @@ fn verifier_accepts_trusted_key_without_prompt() {
 fn default_client_config_keeps_russh_defaults() {
     let config = build_client_config(&SshConfig::default()).unwrap();
     let default = russh::client::Config::default();
+    assert_eq!(config.keepalive_interval, None);
+    assert_eq!(config.keepalive_max, default.keepalive_max);
 
     assert_eq!(
         preferred_names(config.preferred.kex.as_ref()),
@@ -321,11 +323,68 @@ fn default_client_config_keeps_russh_defaults() {
 }
 
 #[test]
+fn keepalive_is_applied_before_algorithm_selection_and_only_to_new_configs() {
+    for mut ssh in [SshConfig::default(), minimal_custom_config()] {
+        let existing = build_client_config(&ssh).unwrap();
+        ssh.keepalive_enabled = true;
+        ssh.keepalive_interval_secs = 12;
+        ssh.keepalive_max = 7;
+        let new = build_client_config(&ssh).unwrap();
+        assert!(new.preferred.host_key_certificates.is_empty());
+        assert_eq!(existing.keepalive_interval, None);
+        assert_eq!(new.keepalive_interval, Some(Duration::from_secs(12)));
+        assert_eq!(new.keepalive_max, 7);
+        assert_eq!(new.inactivity_timeout, existing.inactivity_timeout);
+        ssh.keepalive_interval_secs = 0;
+        assert!(build_client_config(&ssh).is_err());
+        ssh.keepalive_interval_secs = 12;
+        ssh.keepalive_max = 0;
+        assert!(build_client_config(&ssh).is_err());
+    }
+}
+
+#[test]
+fn host_key_identity_preserves_raw_key_trust_and_rejects_certificates() {
+    use russh::keys::{PublicKeyBase64, PublicKeyOrCertificate};
+
+    let key_path = generate_temp_private_key("");
+    let key = russh::keys::load_secret_key(&key_path, None).unwrap();
+    let public_key =
+        russh::keys::parse_public_key_base64(&key.public_key().public_key_base64()).unwrap();
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target/test-known-hosts")
+        .join(Uuid::new_v4().to_string());
+    crate::ssh_known_hosts::write_trusted_host_with_path("fixture", 22, &public_key, false, &path)
+        .unwrap();
+    let verifier = HostKeyVerifier::with_path("fixture".into(), 22, path.clone());
+    let raw = PublicKeyOrCertificate::from(public_key);
+    assert!(verifier
+        .check_key(&super::host_key::raw_host_key(&raw).unwrap())
+        .unwrap());
+    let status = Command::new("ssh-keygen")
+        .arg("-s")
+        .arg(&key_path)
+        .args(["-h", "-I", "fixture", "-n", "fixture", "-q"])
+        .arg(key_path.with_extension("pub"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let encoded = fs::read_to_string(key_path.with_file_name("id_ed25519-cert.pub")).unwrap();
+    let certificate = PublicKeyOrCertificate::Certificate(
+        russh::keys::Certificate::from_openssh(&encoded).unwrap(),
+    );
+    assert!(super::host_key::raw_host_key(&certificate).is_none());
+    fs::remove_file(path).unwrap();
+    fs::remove_dir_all(key_path.parent().unwrap()).unwrap();
+}
+
+#[test]
 fn legacy_client_config_appends_legacy_algorithms() {
     let config = build_client_config(&SshConfig {
         algorithm_mode: "custom".into(),
         algorithms: crate::ssh::legacy_algorithm_selection(),
         default_private_key_path: String::new(),
+        ..SshConfig::default()
     })
     .unwrap();
 
@@ -374,6 +433,7 @@ fn minimal_custom_config() -> SshConfig {
             compression: vec!["none".into()],
         },
         default_private_key_path: String::new(),
+        ..SshConfig::default()
     }
 }
 

@@ -46,6 +46,7 @@ impl Drop for FakePort {
 
 fn fixture(failure: Option<bool>) -> WindowsWriterPort<FakePort> {
     WindowsWriterPort {
+        applied_timeout_ms: None,
         port: FakePort {
             timeouts: Arc::new(Mutex::new(COMMTIMEOUTS {
                 ReadIntervalTimeout: u32::MAX,
@@ -87,6 +88,24 @@ fn production_writer_updates_transmission_without_changing_shared_receive_timeou
     assert_eq!(timeouts.ReadTotalTimeoutConstant, 5);
     assert_eq!(timeouts.WriteTotalTimeoutMultiplier, 0);
     assert!((1..=5000).contains(&timeouts.WriteTotalTimeoutConstant));
+}
+
+#[test]
+fn only_reuses_a_successfully_applied_matching_timeout() {
+    let mut port = fixture(None);
+    port.set_write_timeout(Duration::from_micros(4999)).unwrap();
+    for failure in [false, true] {
+        port.port.failure = Some(failure);
+        port.set_write_timeout(Duration::from_millis(5)).unwrap();
+    }
+    assert!(port.set_write_timeout(Duration::from_millis(4)).is_err());
+    assert!(port.set_write_timeout(Duration::from_millis(4)).is_err());
+    port.port.failure = None;
+    port.set_write_timeout(Duration::from_millis(4)).unwrap();
+    assert_eq!(
+        port.port.timeouts.lock().unwrap().WriteTotalTimeoutConstant,
+        4
+    );
 }
 
 #[test]
@@ -196,6 +215,7 @@ async fn deadline_enabled_adapter_preserves_native_writer_cancellation() {
     let cancelled = Arc::new(AtomicBool::new(false));
     let released = Arc::new(AtomicBool::new(false));
     let port = WindowsWriterPort {
+        applied_timeout_ms: None,
         port: PendingPort {
             file,
             entered: Some(entered),

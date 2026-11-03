@@ -11,6 +11,7 @@ const WRITE_CHUNK_SIZE: usize = 4096;
 const SERIAL_CANCEL_RETRY_INTERVAL: Duration = Duration::from_millis(5);
 
 pub(super) trait SerialWritePort: Write {
+    fn set_write_deadline(&mut self, _deadline: Instant) {}
     fn policy(&self) -> Option<WritePolicy> {
         None
     }
@@ -74,6 +75,7 @@ fn process_serial_writes_with_clock<W: SerialWritePort>(
                     if remaining.is_zero() {
                         return deadline_result(running, submitted);
                     }
+                    port.set_write_deadline(deadline);
                     match port.set_write_timeout(remaining) {
                         Ok(()) => {
                             if !running.load(Ordering::SeqCst) {
@@ -306,7 +308,7 @@ where
         .and(output_result)
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 pub(super) fn cancel_synchronous_write(writer: &JoinHandle<io::Result<usize>>) -> io::Result<()> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Foundation::ERROR_NOT_FOUND;
