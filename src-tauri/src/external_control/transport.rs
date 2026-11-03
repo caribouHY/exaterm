@@ -14,7 +14,6 @@ pub(in crate::external_control) fn require_same_user(
 
 #[cfg(unix)]
 pub(crate) mod unix {
-    use std::os::fd::AsRawFd;
     use std::{
         fs,
         os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt},
@@ -23,6 +22,8 @@ pub(crate) mod unix {
     use tokio::net::{UnixListener, UnixStream};
 
     pub(in crate::external_control) fn uid() -> u32 {
+        // SAFETY: This call takes no pointers and only reads the effective UID.
+        // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
         unsafe { libc::geteuid() }
     }
 
@@ -83,9 +84,8 @@ pub(crate) mod unix {
         if !meta.is_file() || meta.mode() & 0o777 != 0o600 {
             return Err("Invalid external control listener lock".into());
         }
-        if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-            return Err("External control endpoint is already running".into());
-        }
+        lock.try_lock()
+            .map_err(|_| "External control endpoint is already running".to_string())?;
         let path = directory.join("control.sock");
         if let Ok(meta) = fs::symlink_metadata(&path) {
             super::require_same_user(uid(), meta.uid())?;
@@ -123,24 +123,38 @@ pub(crate) mod windows {
     struct Handle(HANDLE);
     impl Drop for Handle {
         fn drop(&mut self) {
-            unsafe {
-                CloseHandle(self.0);
+            if !self.0.is_null() {
+                // SAFETY: This owner wraps only handles returned by OpenProcess/OpenProcessToken,
+                // never borrowed pipe handles or the current-process pseudo-handle.
+                // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
+                unsafe {
+                    CloseHandle(self.0);
+                }
             }
         }
     }
 
     fn token_user(process: HANDLE) -> Result<Vec<usize>, String> {
         let mut token = std::ptr::null_mut();
+        // SAFETY: The process handle is live for this call; token is writable output and a
+        // successful handle transfers to Handle.
+        // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
         if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
             return Err("Cannot inspect external control peer token".into());
         }
         let token = Handle(token);
         let mut length = 0;
+        // SAFETY: The token is owned and live; a null buffer with zero length queries only the
+        // required size into length.
+        // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
         unsafe {
             GetTokenInformation(token.0, TokenUser, std::ptr::null_mut(), 0, &mut length);
         }
         let mut data = vec![0usize; (length as usize).div_ceil(std::mem::size_of::<usize>())];
         if length == 0
+            // SAFETY: The usize allocation is aligned for TOKEN_USER and covers length bytes;
+            // Windows writes within that capacity.
+            // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
             || unsafe {
                 GetTokenInformation(
                     token.0,
@@ -158,6 +172,9 @@ pub(crate) mod windows {
 
     pub(crate) fn verify_peer(pipe: &impl AsRawHandle, server_side: bool) -> Result<(), String> {
         verify_peer_with_identity(pipe, server_side, |pid| {
+            // SAFETY: OpenProcess takes scalar inputs; a non-null result is owned by Handle and
+            // null is rejected before token access.
+            // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
             let process = Handle(unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) });
             if process.0.is_null() {
                 return Err("Cannot open external control pipe peer".into());
@@ -166,13 +183,16 @@ pub(crate) mod windows {
         })
     }
 
-    fn verify_peer_with_identity(
-        pipe: &(impl AsRawHandle + ?Sized),
+    fn verify_peer_with_identity<P: AsRawHandle + ?Sized>(
+        pipe: &P,
         server_side: bool,
         peer_identity: impl FnOnce(u32) -> Result<Vec<usize>, String>,
     ) -> Result<(), String> {
         let mut pid = 0;
         let handle = pipe.as_raw_handle();
+        // SAFETY: The borrowed pipe stays open; pid is initialized writable output for either
+        // pipe-process query.
+        // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
         let success = unsafe {
             if server_side {
                 GetNamedPipeClientProcessId(handle, &mut pid)
@@ -183,10 +203,22 @@ pub(crate) mod windows {
         if success == 0 {
             return Err("Cannot identify external control pipe peer".into());
         }
+        // SAFETY: The OS returns a process pseudo-handle valid for this process; token_user borrows
+        // it and never closes it.
+        // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
         let current = token_user(unsafe { GetCurrentProcess() })?;
         let peer = peer_identity(pid)?;
+        // SAFETY: Successful TokenUser retrieval initialized this aligned allocation; its owning
+        // Vec remains live through EqualSid.
+        // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
         let current = unsafe { &*current.as_ptr().cast::<TOKEN_USER>() };
+        // SAFETY: The peer TokenUser allocation is initialized, aligned, and remains owned through
+        // the following SID comparison.
+        // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
         let peer = unsafe { &*peer.as_ptr().cast::<TOKEN_USER>() };
+        // SAFETY: Both SID pointers refer to OS-initialized data inside the still-live TokenUser
+        // allocations.
+        // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
         if unsafe { EqualSid(current.User.Sid, peer.User.Sid) } == 0 {
             return Err("External control peer belongs to another OS user".into());
         }
@@ -210,9 +242,13 @@ pub(crate) mod windows {
                 let foreign = |_pid| {
                     // Replace token lookup only; pipe PID lookup and SID comparison stay real.
                     let mut data = vec![0usize; 32];
-                    let sid = unsafe { data.as_mut_ptr().add(4).cast() };
-                    let mut size = 128;
+                    let storage = &mut data[4..];
+                    let mut size = std::mem::size_of_val(storage) as u32;
+                    let sid = storage.as_mut_ptr().cast();
                     assert_ne!(
+                        // SAFETY: The aligned SID slice remains owned by data; size is its exact
+                        // remaining byte capacity and the domain pointer is unused.
+                        // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
                         unsafe {
                             CreateWellKnownSid(
                                 WinAnonymousSid,
@@ -223,6 +259,9 @@ pub(crate) mod windows {
                         },
                         0
                     );
+                    // SAFETY: The usize buffer is aligned and large enough for TOKEN_USER; the
+                    // following SID region is disjoint and shares its lifetime.
+                    // nosemgrep: rust.lang.security.unsafe-usage.unsafe-usage
                     unsafe {
                         data.as_mut_ptr().cast::<TOKEN_USER>().write(TOKEN_USER {
                             User: SID_AND_ATTRIBUTES {
@@ -354,7 +393,8 @@ mod tests {
                 "{}::foreign_uid_process_helper",
                 module_path!().split_once("::").unwrap().1
             );
-            let mut child = Command::new(std::env::current_exe().unwrap())
+            // Resolve the running executable through the kernel, not a replaceable filesystem path.
+            let mut child = Command::new("/proc/self/exe")
                 .args(["--exact", &helper, "--nocapture"])
                 .env("EXATERM_TEST_SOCKET", &path)
                 .env("EXATERM_TEST_ROLE", role)
