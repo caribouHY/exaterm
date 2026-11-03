@@ -4,7 +4,7 @@ This guide covers the common local development checks for ExaTerm.
 
 ## Setup
 
-Install Rust and Node.js, then install pnpm:
+Install Rust 1.90 or newer and Node.js, then install pnpm:
 
 ```powershell
 npm install -g pnpm@10.33.2
@@ -59,6 +59,8 @@ cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 ```
 
 Run Cargo validation commands from the repository root with an explicit manifest path.
+
+The Tauri CLI builds and bundles `exaterm`, `exaterm-cli`, and `exaterm-mcp` directly from Cargo's binary targets with `pnpm run tauri build`. All three use the selected debug or release profile, without a separate sidecar preparation script.
 
 ### Optimized Tauri Runtime Checks
 

@@ -8,6 +8,9 @@
 
 ### Changed
 
+- Updated Tauri to 2.12.5 and its plugins, JavaScript API, and CLI, including IPC, updater signature-verification, and Windows installer fixes. Cargo binary targets are built and bundled directly, removing the separate sidecar preparation script and avoiding duplicate MCP executables in Windows installers. Builds now require Rust 1.90 or newer, and upstream Windows 7 support has ended.
+- Updated rustls to 0.23.46, rustls-webpki to 0.103.16, webpki-root-certs to 1.0.11, and h2 to 0.4.20 to include TLS, certificate-verification, and HTTP/2 security fixes.
+
 - Updated russh to 0.65.0, including the pre-authentication keepalive timer fix and upstream SSH security fixes, while retaining raw host-key verification.
 
 ### Fixed
