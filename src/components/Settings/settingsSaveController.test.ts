@@ -42,6 +42,9 @@ function fixture() {
     updates: { check_on_startup: true },
     connection_history: { enabled: true },
     ssh: {
+      keepalive_enabled: false,
+      keepalive_interval_secs: 30,
+      keepalive_max: 3,
       algorithm_mode: "default",
       default_private_key_path: "",
       algorithms: { kex: [], host_key: [], cipher: [], mac: [], compression: [] },

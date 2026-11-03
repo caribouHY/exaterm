@@ -1,11 +1,13 @@
 use super::*;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use russh::keys::{PrivateKey, PublicKey};
+use russh::keys::PrivateKey;
 use russh::{server, ChannelId, Pty};
 use tokio::sync::mpsc;
 
 use crate::connect_attempt::ConnectAttemptState;
+
+mod keepalive_tests;
 
 #[derive(Clone, Copy)]
 enum Reply {
@@ -140,9 +142,11 @@ impl server::Handler for TestServer {
     async fn channel_open_session(
         &mut self,
         _channel: Channel<server::Msg>,
+        reply: server::ChannelOpenHandle,
         _session: &mut server::Session,
-    ) -> Result<bool, Self::Error> {
-        Ok(true)
+    ) -> Result<(), Self::Error> {
+        reply.accept().await;
+        Ok(())
     }
 
     async fn pty_request(
@@ -183,8 +187,9 @@ impl server::Handler for TestServer {
         _port: u32,
         _origin: &str,
         _origin_port: u32,
+        reply: server::ChannelOpenHandle,
         _session: &mut server::Session,
-    ) -> Result<bool, Self::Error> {
+    ) -> Result<(), Self::Error> {
         let target = self.target.take().unwrap();
         tokio::spawn(async move {
             server::run_stream(server_config(), channel.into_stream(), *target)
@@ -193,7 +198,8 @@ impl server::Handler for TestServer {
                 .await
                 .ok();
         });
-        Ok(true)
+        reply.accept().await;
+        Ok(())
     }
 }
 
@@ -205,8 +211,12 @@ struct TestClient {
 impl client::Handler for TestClient {
     type Error = russh::Error;
 
-    async fn check_server_key(&mut self, key: &PublicKey) -> Result<bool, Self::Error> {
-        Ok(key.key_data() == host_key().public_key().key_data())
+    async fn check_server_key(
+        &mut self,
+        key: &russh::keys::PublicKeyOrCertificate,
+    ) -> Result<bool, Self::Error> {
+        Ok(key.certificate().is_none()
+            && key.public_key().key_data() == host_key().public_key().key_data())
     }
 
     async fn data(
@@ -380,8 +390,9 @@ async fn optimized_runtime_endpoint() {
             _ = &mut deadline => break,
             accepted = listener.accept() => {
                 let (stream, _) = accepted.unwrap();
-                let server = TestServer { pty: Reply::Success, shell: Reply::Success,
+                let target = TestServer { pty: Reply::Success, shell: Reply::Success,
                     requests: requests.clone(), target: None, runtime: true };
+                let server = TestServer { target: Some(Box::new(target.clone())), ..target };
                 tokio::spawn(async move {
                     if let Ok(session) = server::run_stream(server_config(), stream, server).await {
                         let _ = session.await;

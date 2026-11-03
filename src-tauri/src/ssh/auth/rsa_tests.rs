@@ -8,7 +8,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use russh::keys::key::safe_rng;
-use russh::keys::{Algorithm, EcdsaCurve, PublicKey};
+use russh::keys::{Algorithm, EcdsaCurve};
 use russh::{client, server, Channel};
 use tokio::io::{AsyncRead, AsyncWrite, DuplexStream, ReadBuf};
 
@@ -152,8 +152,12 @@ struct TestClient;
 impl client::Handler for TestClient {
     type Error = russh::Error;
 
-    async fn check_server_key(&mut self, key: &PublicKey) -> Result<bool, Self::Error> {
-        Ok(key.key_data() == host_key().public_key().key_data())
+    async fn check_server_key(
+        &mut self,
+        key: &russh::keys::PublicKeyOrCertificate,
+    ) -> Result<bool, Self::Error> {
+        Ok(key.certificate().is_none()
+            && key.public_key().key_data() == host_key().public_key().key_data())
     }
 }
 
@@ -171,7 +175,7 @@ impl server::Handler for TestServer {
     async fn auth_publickey_offered(
         &mut self,
         _user: &str,
-        _key: &PublicKey,
+        _key: server::PublicKeyOffer<'_>,
     ) -> Result<server::Auth, Self::Error> {
         if self
             .requests
@@ -192,7 +196,7 @@ impl server::Handler for TestServer {
     async fn auth_publickey(
         &mut self,
         _user: &str,
-        _key: &PublicKey,
+        _key: server::VerifiedPublicKey<'_>,
     ) -> Result<server::Auth, Self::Error> {
         Ok(server::Auth::Accept)
     }
@@ -204,10 +208,11 @@ impl server::Handler for TestServer {
         _port: u32,
         _originator: &str,
         _originator_port: u32,
+        reply: server::ChannelOpenHandle,
         _session: &mut server::Session,
-    ) -> Result<bool, Self::Error> {
+    ) -> Result<(), Self::Error> {
         let Some(target) = self.target.take() else {
-            return Ok(false);
+            return Ok(());
         };
         tokio::spawn(async move {
             server::run_stream(
@@ -220,7 +225,8 @@ impl server::Handler for TestServer {
             .await
             .ok();
         });
-        Ok(true)
+        reply.accept().await;
+        Ok(())
     }
 }
 

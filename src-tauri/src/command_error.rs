@@ -64,6 +64,12 @@ impl BackendCommandError {
             "The Telnet connection attempt was cancelled" => "telnet.connect_cancelled",
             "The Serial connection attempt was cancelled" => "serial.connect_cancelled",
             "The SSH authentication method is invalid" => "ssh.invalid_auth_method",
+            "SSH keepalive interval must be an integer between 1 and 3600 seconds" => {
+                "config.ssh_keepalive_interval_invalid"
+            }
+            "SSH keepalive maximum must be an integer between 1 and 100" => {
+                "config.ssh_keepalive_max_invalid"
+            }
             "SSH automatic authentication failed" => "ssh.automatic_authentication_failed",
             "The SSH authentication prompt was cancelled" => "ssh.auth_prompt_cancelled",
             "The SSH authentication prompt timed out" => "ssh.auth_prompt_timed_out",

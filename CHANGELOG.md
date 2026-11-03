@@ -2,7 +2,19 @@
 
 ## Unreleased
 
+### Added
+
+- Added optional SSH keepalive settings for new direct and jump-host connections, with configurable intervals and unanswered-probe limits.
+
+### Changed
+
+- Updated russh to 0.65.0, including the pre-authentication keepalive timer fix and upstream SSH security fixes, while retaining raw host-key verification.
+
 ### Fixed
+
+- Separated SSH keepalive settings from the remembered-password clearing action to make their purposes clear.
+
+- Finalized SSH session state and logs when a failed jump transport prevents the target disconnect callback from running, preserving terminal tabs and retained output.
 
 - Prevented SSH authentication and host-key dialogs from appearing in multiple windows and remaining open after a response, and allowed stale dialogs to close on cancellation.
 

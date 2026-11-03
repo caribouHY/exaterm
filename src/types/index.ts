@@ -166,6 +166,9 @@ export interface TerminalConfig {
 export type LogFormat = "display" | "strip_controls";
 
 export interface SshConfig {
+  keepalive_enabled: boolean;
+  keepalive_interval_secs: number;
+  keepalive_max: number;
   algorithm_mode: SshAlgorithmMode;
   algorithms: SshAlgorithmSelection;
   default_private_key_path: string;
