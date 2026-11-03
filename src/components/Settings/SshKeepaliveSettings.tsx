@@ -44,7 +44,9 @@ function KeepaliveNumber({
         step={1}
         disabled={disabled}
         value={input}
-        onFocus={() => setEditing(true)}
+        onFocus={() => {
+          setEditing(true);
+        }}
         onChange={(event) => {
           setInput(event.target.value);
           const parsed = parseBoundedInteger(event.target.value, 1, max);
@@ -70,7 +72,9 @@ export function SshKeepaliveSettings({ config, onChange }: SshKeepaliveSettingsP
         label={t("settings.ssh_keepalive")}
         description={t("settings.ssh_keepalive_desc")}
         checked={config.keepalive_enabled}
-        onChange={(enabled) => onChange({ keepalive_enabled: enabled })}
+        onChange={(enabled) => {
+          onChange({ keepalive_enabled: enabled });
+        }}
       />
       <div className="settings-row">
         <KeepaliveNumber

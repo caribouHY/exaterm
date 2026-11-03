@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { SshConfig } from "../../types";
@@ -19,12 +20,21 @@ describe("SSH keepalive settings", () => {
         keepalive_max: 3,
       };
       const change = vi.fn();
-      const html = renderToStaticMarkup(<SshKeepaliveSettings config={config} onChange={change} />);
-      expect(html.match(/disabled=""/g)?.length ?? 0).toBe(enabled ? 0 : 2);
-      expect(html).toContain('value="30"');
-      expect(html).toContain('value="3"');
-      expect(html).toContain('max="3600"');
-      expect(html).toContain('max="100"');
+      const controls = Array.from(
+        renderToStaticMarkup(
+          createElement(SshKeepaliveSettings, { config, onChange: change })
+        ).matchAll(/<input\b[^>]*type="number"[^>]*>/g),
+        ([input]) => ({
+          id: input.match(/id="([^"]+)"/)?.[1],
+          value: Number(input.match(/value="([^"]+)"/)?.[1]),
+          max: Number(input.match(/max="([^"]+)"/)?.[1]),
+          disabled: input.includes('disabled=""'),
+        })
+      );
+      expect(controls).toEqual([
+        { id: "settings-ssh-keepalive_interval_secs", value: 30, max: 3600, disabled: !enabled },
+        { id: "settings-ssh-keepalive_max", value: 3, max: 100, disabled: !enabled },
+      ]);
       expect(change).not.toHaveBeenCalled();
     }
   );
