@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SHORTCUT_CONFIG } from "../../features/shortcuts/shortcutModel";
 import type { PopoverMenuItem } from "../Common";
-import { createTitleBarMenus } from "./titleBarMenuModel";
+import { adjacentTitleBarMenu, createTitleBarMenus } from "./titleBarMenuModel";
 
 type ActionMenuItem = Exclude<PopoverMenuItem, { key: string; separator: true }>;
 
@@ -11,6 +11,8 @@ const labels = {
   sessionLogs: "Session Logs",
   settings: "Settings",
   checkUpdates: "Check for Updates",
+  documentation: "Documentation",
+  about: "About ExaTerm",
   exit: "Exit",
   selectAll: "Select All",
   copy: "Copy",
@@ -26,6 +28,8 @@ function createActions() {
     openSessionLogs: vi.fn(),
     openSettings: vi.fn(),
     checkUpdates: vi.fn(),
+    openDocumentation: vi.fn(),
+    openAbout: vi.fn(),
     exit: vi.fn(),
     selectAll: vi.fn(),
     copy: vi.fn(),
@@ -64,7 +68,6 @@ describe("createTitleBarMenus", () => {
       "new_window",
       "session_logs",
       "settings",
-      "check_updates",
       "exit",
     ]);
     expect(actionItems(menus.edit).map((item) => item.key)).toEqual([
@@ -77,6 +80,42 @@ describe("createTitleBarMenus", () => {
     expect(findAction(menus.file, "session_logs").active).toBe(true);
     expect(findAction(menus.file, "settings").active).toBe(false);
     expect(findAction(menus.edit, "terminal_select_all").shortcut).toBe("Ctrl+Shift+A");
+  });
+
+  it("keeps help actions available without an active terminal and preserves their order", () => {
+    const actions = createActions();
+    const menus = createTitleBarMenus({
+      activeView: "settings",
+      shortcuts: DEFAULT_SHORTCUT_CONFIG,
+      canAccessTerminal: false,
+      canCopyTerminal: false,
+      canPasteTerminal: false,
+      labels,
+      actions,
+    });
+    expect(menus.help.map((item) => item.key)).toEqual([
+      "documentation",
+      "check_updates",
+      "separator-about",
+      "about",
+    ]);
+    expect(menus.file.some((item) => item.key === "check_updates")).toBe(false);
+    for (const item of actionItems(menus.help)) {
+      expect(item.disabled).toBeFalsy();
+      item.action();
+    }
+    expect(actions.openDocumentation).toHaveBeenCalledOnce();
+    expect(actions.checkUpdates).toHaveBeenCalledOnce();
+    expect(actions.openAbout).toHaveBeenCalledOnce();
+  });
+
+  it("navigates all three menus in both directions with wrapping", () => {
+    expect(adjacentTitleBarMenu("file", "next")).toBe("edit");
+    expect(adjacentTitleBarMenu("edit", "next")).toBe("help");
+    expect(adjacentTitleBarMenu("help", "next")).toBe("file");
+    expect(adjacentTitleBarMenu("file", "previous")).toBe("help");
+    expect(adjacentTitleBarMenu("help", "previous")).toBe("edit");
+    expect(adjacentTitleBarMenu("edit", "previous")).toBe("file");
   });
 
   it("disables terminal actions when there is no active terminal", () => {

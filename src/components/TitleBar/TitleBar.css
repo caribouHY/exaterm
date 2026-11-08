@@ -100,6 +100,29 @@
   min-width: 250px;
 }
 
+.titlebar__menu-popover--help {
+  min-width: 200px;
+}
+
+.titlebar-help-overlay {
+  z-index: var(--stack-critical-overlay);
+}
+
+.titlebar-help-dialog {
+  width: min(360px, calc(100vw - 32px));
+}
+
+.titlebar-help-dialog__icon {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+.titlebar-help-dialog__about {
+  align-items: center;
+  text-align: center;
+}
+
 .titlebar__menu-popover .ui-popover-menu__item-label {
   overflow: visible;
   text-overflow: clip;

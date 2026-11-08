@@ -2,7 +2,16 @@ import type { ShortcutConfig, ViewMode } from "../../types";
 import { formatShortcut } from "../../features/shortcuts/shortcutModel";
 import type { PopoverMenuItem } from "../Common";
 
-export type TitleBarMenuKey = "file" | "edit";
+export const TITLE_BAR_MENU_KEYS = ["file", "edit", "help"] as const;
+export type TitleBarMenuKey = (typeof TITLE_BAR_MENU_KEYS)[number];
+
+export function adjacentTitleBarMenu(menu: TitleBarMenuKey, direction: "previous" | "next") {
+  const offset = direction === "next" ? 1 : -1;
+  return TITLE_BAR_MENU_KEYS[
+    (TITLE_BAR_MENU_KEYS.indexOf(menu) + offset + TITLE_BAR_MENU_KEYS.length) %
+      TITLE_BAR_MENU_KEYS.length
+  ];
+}
 
 interface TitleBarMenuLabels {
   newConnection: string;
@@ -10,6 +19,8 @@ interface TitleBarMenuLabels {
   sessionLogs: string;
   settings: string;
   checkUpdates: string;
+  documentation: string;
+  about: string;
   exit: string;
   selectAll: string;
   copy: string;
@@ -24,6 +35,8 @@ interface TitleBarMenuActions {
   openSessionLogs: () => void;
   openSettings: () => void;
   checkUpdates: () => void;
+  openDocumentation: () => void;
+  openAbout: () => void;
   exit: () => void;
   selectAll: () => void;
   copy: () => void;
@@ -83,11 +96,6 @@ export function createTitleBarMenus({
         active: activeView === "settings",
         action: actions.openSettings,
       },
-      {
-        key: "check_updates",
-        label: labels.checkUpdates,
-        action: actions.checkUpdates,
-      },
       { key: "separator-exit", separator: true },
       {
         key: "exit",
@@ -95,6 +103,12 @@ export function createTitleBarMenus({
         shortcut: shortcut(shortcuts.exit),
         action: actions.exit,
       },
+    ],
+    help: [
+      { key: "documentation", label: labels.documentation, action: actions.openDocumentation },
+      { key: "check_updates", label: labels.checkUpdates, action: actions.checkUpdates },
+      { key: "separator-about", separator: true },
+      { key: "about", label: labels.about, action: actions.openAbout },
     ],
     edit: [
       {
