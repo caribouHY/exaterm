@@ -102,7 +102,9 @@ Settings and Logs are window-local utility views. Rust owns terminal placement; 
 3. The frontend workspace lifecycle registers the returned session as a terminal tab.
 4. `TerminalView` subscribes to protocol output and writes it to xterm.js.
 5. User input is sent to the matching backend write command.
-6. Disconnect state is projected through the workspace without discarding the visible terminal buffer.
+6. Disconnect state is projected through the workspace. By default the visible terminal buffer remains; enabling `terminal.auto_close_on_disconnect` removes the tab on future disconnections without ending the window. Retained backend output remains available to external control.
+
+Retained terminal state freezes the auto-close policy on the first disconnect. Workspace placement applies removal under its existing lock, defers removal to a reserved explicit close, and suppresses late tab registration for auto-closed sessions. Late registration also finishes logs started during GUI or external-control finalization after protocol cleanup.
 
 Workspace tab registration reads retained session status while holding placement ownership. Protocol teardown marks retained status before updating workspace state, so a tab registered after an early EOF remains disconnected.
 
@@ -110,7 +112,7 @@ GUI SSH connections verify and, when necessary, confirm the host key within the 
 
 SSH session setup requests PTY allocation and shell startup sequentially, requiring each server success reply within a 10-second send-and-reply deadline. The setup owner retains the channel outside cancellable futures and registers a session only after both replies and the attempt completion check. Failed or cancelled setup closes the channel and disconnects the target and jump transports within a shared five-second cleanup deadline. Startup output stays queued in the handler until the registered session starts its output processor.
 
-SSH keepalive settings are captured when a connection starts and applied to both target and jump transports through russh's protocol timer. Settings updates leave existing sessions unchanged. A keepalive timeout uses the existing disconnect owner to update session status and finish logs while preserving terminal tabs and retained output.
+SSH keepalive settings are captured when a connection starts and applied to both target and jump transports through russh's protocol timer. Settings updates leave existing sessions unchanged. A keepalive timeout uses the existing disconnect owner to update session status and finish logs, applying the configured tab-close policy while preserving retained backend output.
 
 The target handler also schedules that same idempotent cleanup when it is dropped, because a failed tunnel shutdown can prevent russh from invoking its disconnect callback after the jump transport has exited.
 

@@ -1283,3 +1283,20 @@ fn moving_and_clearing_groups_preserves_identity_references_and_other_profiles()
     duplicate.group = Some("Different group".into());
     assert!(upsert_saved_connection(&mut config, None, duplicate).is_err());
 }
+
+#[test]
+fn terminal_auto_close_defaults_and_round_trips_with_config_merge() {
+    let old: AppConfig = serde_json::from_str(r#"{"terminal":{"scrollback":1000}}"#).unwrap();
+    assert!(!old.terminal.auto_close_on_disconnect);
+    assert!(!AppConfig::default().terminal.auto_close_on_disconnect);
+    let mut edited = old.clone();
+    edited.terminal.auto_close_on_disconnect = true;
+    let mut latest = old.clone();
+    latest.terminal.font_size = 18;
+    let merged = merge_edited_config(&old, &edited, &latest).unwrap();
+    assert!(merged.terminal.auto_close_on_disconnect);
+    assert_eq!(merged.terminal.font_size, 18);
+    let restored: AppConfig =
+        serde_json::from_str(&serde_json::to_string(&merged).unwrap()).unwrap();
+    assert_eq!(restored, merged);
+}

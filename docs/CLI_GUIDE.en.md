@@ -191,8 +191,11 @@ Disconnect an SSH, Telnet, or Serial session without selecting its connection ty
 exaterm-cli sessions disconnect --session-id $session
 ```
 
-ExaTerm flushes and stops an active log before disconnecting. The tab and scrollback remain
-available in the GUI as a disconnected session. Repeating the command for a known disconnected
+ExaTerm flushes and stops an active log before disconnecting. By default, the tab and scrollback remain
+available in the GUI as a disconnected session. With the terminal setting “Automatically close terminals
+on disconnect” enabled, future disconnections remove the tab, including CLI/MCP disconnects and errors.
+Existing disconnected tabs stay open, and retained output remains readable through the CLI/MCP.
+Repeating the command for a known disconnected
 session succeeds with `already_disconnected: true`. For Serial sessions, a successful disconnect
 means the local COM port has been released. Concurrent disconnect requests also wait for release.
 

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added an optional terminal setting to automatically close SSH, Telnet, and Serial tabs on disconnection, including errors and CLI/MCP disconnects. Disabled by default; already-disconnected tabs remain open.
+
 ### Changed
 
 - Removed the underline from open window menu bar items while preserving selection highlighting and keyboard focus indicators.

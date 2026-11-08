@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppConfig } from "../../types";
+import { SettingsToggle } from "./SettingsToggle";
 import { finalizeBoundedInteger, parseBoundedInteger } from "./terminalSettingsModel";
 
 interface TerminalSettingsProps {
@@ -50,6 +51,15 @@ export function TerminalSettings({ config, onChange }: TerminalSettingsProps) {
   return (
     <>
       <div className="settings-section__title">{t("settings.terminal_settings")}</div>
+      <SettingsToggle
+        id="settings-auto-close-on-disconnect"
+        label={t("settings.auto_close_on_disconnect")}
+        description={t("settings.auto_close_on_disconnect_desc")}
+        checked={config.auto_close_on_disconnect}
+        onChange={(auto_close_on_disconnect) => {
+          onChange({ auto_close_on_disconnect });
+        }}
+      />
       <div className="settings-row">
         <div>
           <label className="label" htmlFor="settings-font-size">

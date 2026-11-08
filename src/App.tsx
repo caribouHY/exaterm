@@ -275,6 +275,17 @@ export default function App() {
     [getCurrentWindowTabsState]
   );
 
+  useEffect(() => {
+    const tabIds = new Set(tabs.map((tab) => tab.id));
+    for (const tabId of terminalBuffers.current.keys()) {
+      if (!tabIds.has(tabId)) terminalBuffers.current.delete(tabId);
+    }
+    setTerminalSelectionByTab((current) => {
+      if ([...current.keys()].every((tabId) => tabIds.has(tabId))) return current;
+      return new Map([...current].filter(([tabId]) => tabIds.has(tabId)));
+    });
+  }, [tabs]);
+
   const clearActiveTerminalViewport = useCallback(() => {
     if (!activeTabId) return;
     terminalViewRefs.current.get(activeTabId)?.clearViewport();

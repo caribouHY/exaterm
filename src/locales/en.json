@@ -110,6 +110,8 @@
   "settings.scrollback": "Scrollback Lines",
   "settings.font_family": "Font Family",
   "settings.log_settings": "Log Settings",
+  "settings.auto_close_on_disconnect": "Automatically close terminals on disconnect",
+  "settings.auto_close_on_disconnect_desc": "Close terminal tabs after any disconnection, including communication errors. Applies to disconnections after saving; tabs already disconnected stay open.",
   "settings.auto_session_log": "Start Log on Connection",
   "settings.auto_session_log_desc": "Automatically starts a plaintext log for each new SSH, Serial, or Telnet connection",
   "settings.log_format": "Log Format",

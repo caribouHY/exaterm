@@ -26,6 +26,7 @@ function fixture() {
       scrollback: 1000,
       cursor_style: "block",
       auto_session_log: false,
+      auto_close_on_disconnect: false,
       log_format: "display",
       include_log_header: false,
     },
