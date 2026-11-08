@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Removed the underline from open window menu bar items while preserving selection highlighting and keyboard focus indicators.
 - Local control handshakes are limited to 4 KiB and request/response frames to 16 MiB, including JSON escaping.
 
 ### Fixed
