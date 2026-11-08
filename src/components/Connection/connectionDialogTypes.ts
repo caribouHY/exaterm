@@ -19,6 +19,7 @@ import type {
 
 export interface ConnectionDialogInitialValues {
   connectionInfo: WorkspaceConnectionInfo;
+  profileId?: string;
   encoding: Encoding;
   terminalMode: TerminalMode;
 }

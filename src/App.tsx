@@ -651,6 +651,7 @@ export default function App() {
       void loadConnectionDialog();
       setConnectionInitialValues({
         connectionInfo: tab.connectionInfo,
+        profileId: tab.profileId,
         encoding: tab.encoding,
         terminalMode: tab.terminalMode,
       });

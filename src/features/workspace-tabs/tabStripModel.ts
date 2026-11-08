@@ -222,6 +222,7 @@ export function workspaceTabToTabInfo(tab: WorkspaceTabInfo): TabInfo {
     title: tab.title,
     connectionType: tab.connection_type,
     sessionId: tab.session_id,
+    profileId: tab.profile_id ?? undefined,
     isConnected: tab.is_connected,
     encoding: tab.encoding,
     terminalMode: tab.terminal_mode,
