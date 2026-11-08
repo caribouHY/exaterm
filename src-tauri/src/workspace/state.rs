@@ -198,7 +198,7 @@ impl WorkspaceState {
     #[cfg(test)]
     pub async fn register_tab(&self, input: WorkspaceTabRegisterInput) -> WorkspaceSnapshot {
         let mut model = self.model.lock().await;
-        register_tab_locked(&mut model, input, true)
+        register_tab_locked(&mut model, input, true, None)
     }
 
     pub async fn register_session_tab(
@@ -222,13 +222,12 @@ impl WorkspaceState {
                 .unwrap_or(input.window_id.as_deref().unwrap_or("main"));
             return snapshot_for_locked(&model, owner);
         }
-        let is_connected = terminals
-            .session_info(&input.session_id)
-            .await
-            .is_none_or(|session| {
-                session.status == crate::terminal_control::TerminalStatus::Connected
-            });
-        register_tab_locked(&mut model, input, is_connected)
+        let session = terminals.session_info(&input.session_id).await;
+        let is_connected = session.as_ref().is_none_or(|session| {
+            session.status == crate::terminal_control::TerminalStatus::Connected
+        });
+        let profile_id = session.and_then(|session| session.profile_id);
+        register_tab_locked(&mut model, input, is_connected, profile_id)
     }
 
     pub async fn activate_tab(
@@ -602,6 +601,7 @@ fn register_tab_locked(
     model: &mut WorkspaceModel,
     input: WorkspaceTabRegisterInput,
     is_connected: bool,
+    profile_id: Option<String>,
 ) -> WorkspaceSnapshot {
     let previous = model.clone();
     let owner_window_id = choose_owner_window(model, input.window_id.as_deref());
@@ -611,6 +611,7 @@ fn register_tab_locked(
     let tab = WorkspaceTab {
         tab_id: tab_id.clone(),
         session_id: input.session_id,
+        profile_id,
         connection_type: input.connection_type,
         title: input.title,
         owner_window_id: owner_window_id.clone(),

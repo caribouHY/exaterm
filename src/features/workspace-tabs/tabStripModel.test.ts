@@ -264,6 +264,7 @@ describe("workspaceTabToTabInfo", () => {
     const source: WorkspaceTabInfo = {
       ...workspaceTab("a"),
       connection_type: "telnet",
+      profile_id: "lab",
       connection_info: { kind: "telnet", host: "example.invalid", port: 23 },
       is_manual_logging: true,
       is_manual_logging_paused: true,
@@ -276,6 +277,7 @@ describe("workspaceTabToTabInfo", () => {
       title: "A",
       connectionType: "telnet",
       sessionId: "session-a",
+      profileId: "lab",
       isConnected: true,
       encoding: "utf-8",
       terminalMode: "general",

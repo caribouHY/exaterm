@@ -52,6 +52,7 @@ fn model_with_tab() -> WorkspaceModel {
         WorkspaceTab {
             tab_id: "s1".into(),
             session_id: "s1".into(),
+            profile_id: None,
             connection_type: TerminalProtocol::Ssh,
             title: "s1-title".into(),
             owner_window_id: "main".into(),
@@ -310,6 +311,54 @@ async fn connection_info_survives_workspace_move() {
             jump_profile_id: Some("bastion".into()),
         })
     );
+}
+
+#[tokio::test]
+async fn session_profile_identity_distinguishes_tabs_and_survives_disconnect_and_move() {
+    use crate::terminal_control::TerminalControlState;
+
+    let workspace = WorkspaceState::new();
+    let terminals = TerminalControlState::new();
+    workspace
+        .register_window("main".into(), "main".into(), true)
+        .await;
+    workspace
+        .register_window("other".into(), "other".into(), false)
+        .await;
+
+    for (session_id, profile_id) in [("s1", Some("office")), ("s2", Some("lab")), ("s3", None)] {
+        terminals
+            .register_session_with_profile(
+                session_id.into(),
+                TerminalProtocol::Ssh,
+                "example.invalid:22".into(),
+                None,
+                profile_id.map(str::to_owned),
+            )
+            .await;
+        let snapshot = workspace
+            .register_session_tab(input(session_id, Some("main")), &terminals)
+            .await;
+        let tab = snapshot
+            .tabs
+            .iter()
+            .find(|tab| tab.session_id == session_id)
+            .unwrap();
+        assert_eq!(tab.profile_id.as_deref(), profile_id);
+    }
+
+    terminals.mark_disconnected("s1").await;
+    workspace.mark_disconnected("s1").await.unwrap();
+    let snapshots = workspace
+        .move_tab("s1".into(), "main".into(), "other".into(), 0)
+        .await
+        .unwrap();
+    let moved = snapshots
+        .iter()
+        .find(|snapshot| snapshot.window_id == "other")
+        .unwrap();
+    assert!(!moved.tabs[0].is_connected);
+    assert_eq!(moved.tabs[0].profile_id.as_deref(), Some("office"));
 }
 
 #[tokio::test]

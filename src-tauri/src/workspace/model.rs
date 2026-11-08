@@ -74,6 +74,7 @@ pub struct WindowWorkspace {
 pub struct WorkspaceTab {
     pub tab_id: String,
     pub session_id: String,
+    pub profile_id: Option<String>,
     pub connection_type: TerminalProtocol,
     pub title: String,
     pub owner_window_id: String,

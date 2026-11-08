@@ -271,6 +271,7 @@ export interface TabInfo {
   title: string;
   connectionType: ConnectionType;
   sessionId: string;
+  profileId?: string;
   isConnected: boolean;
   encoding: Encoding;
   terminalMode: TerminalMode;
@@ -283,6 +284,7 @@ export interface TabInfo {
 export interface WorkspaceTabInfo {
   tab_id: string;
   session_id: string;
+  profile_id?: string | null;
   connection_type: ConnectionType;
   title: string;
   owner_window_id: string;
