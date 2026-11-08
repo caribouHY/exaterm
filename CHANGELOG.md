@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added a Help menu with documentation and application version information, and moved Check for Updates from File to Help.
 - Added an optional terminal setting to automatically close SSH, Telnet, and Serial tabs on disconnection, including errors and CLI/MCP disconnects. Disabled by default; already-disconnected tabs remain open.
 
 ### Changed
