@@ -159,6 +159,7 @@ export interface TerminalConfig {
   cursor_style: string;
   scrollback: number;
   auto_session_log: boolean;
+  auto_close_on_disconnect: boolean;
   log_format: LogFormat;
   include_log_header: boolean;
 }
@@ -271,6 +272,7 @@ export interface TabInfo {
   title: string;
   connectionType: ConnectionType;
   sessionId: string;
+  profileId?: string;
   isConnected: boolean;
   encoding: Encoding;
   terminalMode: TerminalMode;
@@ -283,6 +285,7 @@ export interface TabInfo {
 export interface WorkspaceTabInfo {
   tab_id: string;
   session_id: string;
+  profile_id?: string | null;
   connection_type: ConnectionType;
   title: string;
   owner_window_id: string;

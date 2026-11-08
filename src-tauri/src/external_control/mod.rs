@@ -3,6 +3,7 @@ pub(crate) mod focus;
 pub(crate) mod protocol;
 mod server;
 pub(crate) mod service;
+pub(crate) mod transport;
 
 pub use focus::ExternalControlFocusState;
 pub use protocol::{ExternalControlCredentialState, ExternalControlLogControlState};

@@ -57,7 +57,8 @@ export default function ConnectionDialog({
   const overlayMouseDownStartedRef = useRef(false);
 
   const startupRequestHandledRef = useRef(false);
-  const initialValuesAppliedRef = useRef(false);
+  const [initialValuesApplied, setInitialValuesApplied] = useState(false);
+  const [configLoadFailed, setConfigLoadFailed] = useState(false);
   const [tab, setTab] = useState<ConnectionType>("ssh");
   const [error, setError] = useState("");
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -117,7 +118,9 @@ export default function ConnectionDialog({
   }, []);
 
   useEffect(() => {
-    loadConfig().catch(() => {});
+    loadConfig().catch(() => {
+      setConfigLoadFailed(true);
+    });
   }, [loadConfig]);
 
   useEffect(() => {
@@ -159,49 +162,6 @@ export default function ConnectionDialog({
     }
   }, [jumpProfileId, missingInitialJumpProfileId, selectedProfileIds.ssh, sshProfiles]);
 
-  useEffect(() => {
-    if (!initialValues || initialValuesAppliedRef.current || startupRequest || !config) return;
-    initialValuesAppliedRef.current = true;
-    setError("");
-
-    if (initialValues.connectionInfo.kind === "ssh") {
-      const info = initialValues.connectionInfo;
-      const missingJumpProfileId =
-        info.jump_profile_id && !sshProfiles.some((profile) => profile.id === info.jump_profile_id)
-          ? info.jump_profile_id
-          : "";
-      setTab("ssh");
-      setSelectedProfileIds((current) => ({ ...current, ssh: "" }));
-      setSelectedHistoryIds((current) => ({ ...current, ssh: "" }));
-      setSshProfileName("");
-      setSshGroup("");
-      setHost(info.host);
-      setPort(String(info.port));
-      setUsername(info.username);
-      setAuthMethod(normalizeSshAuthMethod(info.auth_method));
-      setPrivateKeyPath(info.private_key_path ?? "");
-      setJumpProfileId(info.jump_profile_id ?? "");
-      setMissingInitialJumpProfileId(missingJumpProfileId);
-      setEncoding(initialValues.encoding);
-      setSshTerminalMode(initialValues.terminalMode);
-      if (missingJumpProfileId) {
-        setError(t("connection.jump_profile_not_found", { profile: missingJumpProfileId }));
-      }
-      return;
-    }
-
-    const info = initialValues.connectionInfo;
-    setTab("telnet");
-    setSelectedProfileIds((current) => ({ ...current, telnet: "" }));
-    setSelectedHistoryIds((current) => ({ ...current, telnet: "" }));
-    setTelnetProfileName("");
-    setTelnetGroup("");
-    setTelnetHost(info.host);
-    setTelnetPort(String(info.port));
-    setTelnetEncoding(initialValues.encoding);
-    setTelnetTerminalMode(initialValues.terminalMode);
-  }, [config, initialValues, sshProfiles, startupRequest, t]);
-
   const getProfileDisplayName = (profile: SavedConnection) => {
     return profile.id || t("connection.unnamed_profile");
   };
@@ -239,6 +199,71 @@ export default function ConnectionDialog({
       setExternalControlEnabled: setTelnetExternalControlEnabled,
     },
   });
+
+  useEffect(() => {
+    if (!initialValues || initialValuesApplied || startupRequest || !config) return;
+    const { connectionInfo: info, profileId } = initialValues;
+    const profile = config.saved_connections.find(
+      (entry) => entry.connection_type === info.kind && entry.id === profileId
+    );
+
+    setInitialValuesApplied(true);
+    setTab(info.kind);
+    setError("");
+    setSelectedHistoryIds((current) => ({ ...current, [info.kind]: "" }));
+
+    if (info.kind === "ssh") {
+      if (profile) {
+        profileSelection.applySshProfile(profile);
+      } else {
+        setSelectedProfileIds((current) => ({ ...current, ssh: "" }));
+        setSshProfileName("");
+        setSshGroup("");
+      }
+
+      // Keep the source profile selected while restoring this session's unsaved overrides.
+      setHost(info.host);
+      setPort(String(info.port));
+      setUsername(info.username);
+      setAuthMethod(normalizeSshAuthMethod(info.auth_method));
+      setPrivateKeyPath(info.private_key_path ?? "");
+      setJumpProfileId(info.jump_profile_id ?? "");
+      setEncoding(initialValues.encoding);
+      setSshTerminalMode(initialValues.terminalMode);
+
+      const initialJumpProfileId = info.jump_profile_id;
+      const missingJumpProfileId =
+        initialJumpProfileId && !sshProfiles.some((entry) => entry.id === initialJumpProfileId)
+          ? initialJumpProfileId
+          : "";
+      setMissingInitialJumpProfileId(missingJumpProfileId);
+      if (missingJumpProfileId) {
+        setError(t("connection.jump_profile_not_found", { profile: missingJumpProfileId }));
+      }
+      return;
+    }
+
+    if (profile) {
+      profileSelection.applyTelnetProfile(profile);
+    } else {
+      setSelectedProfileIds((current) => ({ ...current, telnet: "" }));
+      setTelnetProfileName("");
+      setTelnetGroup("");
+    }
+
+    setTelnetHost(info.host);
+    setTelnetPort(String(info.port));
+    setTelnetEncoding(initialValues.encoding);
+    setTelnetTerminalMode(initialValues.terminalMode);
+  }, [
+    config,
+    initialValues,
+    initialValuesApplied,
+    profileSelection,
+    sshProfiles,
+    startupRequest,
+    t,
+  ]);
 
   const applySshHistory = (entry: ConnectionHistoryEntry) => {
     if (entry.connection_info.kind !== "ssh") return;
@@ -407,7 +432,8 @@ export default function ConnectionDialog({
     telnet: validateTelnetConnectionForm({ host: telnetHost, port: telnetPort }),
     serial: validateSerialConnectionForm({ selectedPort }),
   };
-  const canConnect = isActiveConnectionFormValid(tab, formValidation);
+  const initializingFromTab = Boolean(initialValues && !initialValuesApplied);
+  const canConnect = !initializingFromTab && isActiveConnectionFormValid(tab, formValidation);
 
   const connectionController = useConnectionActions({
     tab,
@@ -791,7 +817,11 @@ export default function ConnectionDialog({
       }}
       connecting={connecting}
       canConnect={canConnect}
-      error={error || attempt.error}
+      error={
+        initializingFromTab && configLoadFailed && !config
+          ? t("settings.load_failed")
+          : error || attempt.error
+      }
       historyError={
         connectionHistory.error
           ? t(

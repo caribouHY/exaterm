@@ -394,8 +394,8 @@ async fn mark_disconnected_impl(
                 .disconnect(Disconnect::ByApplication, "Target disconnected", "en")
                 .await;
         }
-        terminals.mark_disconnected(session_id).await;
-        if let Some(snapshot) = workspace.mark_disconnected(session_id).await {
+        let auto_close = terminals.mark_disconnected(session_id).await;
+        if let Some(snapshot) = workspace.mark_disconnected(session_id, auto_close).await {
             emit_workspace_updated(app, &snapshot);
         }
         let _ = app.emit("ssh://disconnected", session_id);
@@ -552,8 +552,8 @@ pub(crate) async fn disconnect(
                 .await;
         }
     }
-    terminals.mark_disconnected(session_id).await;
-    if let Some(snapshot) = workspace.mark_disconnected(session_id).await {
+    let auto_close = terminals.mark_disconnected(session_id).await;
+    if let Some(snapshot) = workspace.mark_disconnected(session_id, auto_close).await {
         emit_workspace_updated(app, &snapshot);
     }
     if let Some(logger) = logger {

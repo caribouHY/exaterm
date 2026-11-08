@@ -5,6 +5,8 @@ use tokio::sync::Mutex;
 #[derive(Clone, Default)]
 pub struct WorkspaceState {
     model: Arc<Mutex<WorkspaceModel>>,
+    closing: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    pending_auto_close: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
 }
 
 impl WorkspaceState {
@@ -120,6 +122,12 @@ impl WorkspaceState {
     pub async fn unregister_window(&self, window_id: String) -> WorkspaceWindowCloseResult {
         let mut model = self.model.lock().await;
         let previous = model.clone();
+        if model.drag.as_ref().is_some_and(|drag| {
+            drag.source_window_id == window_id
+                || drag.target_window_id.as_deref() == Some(window_id.as_str())
+        }) {
+            model.drag = None;
+        }
         let removed_window = model.windows.remove(&window_id);
         remove_focused_window(&mut model, &window_id);
 
@@ -191,7 +199,7 @@ impl WorkspaceState {
     #[cfg(test)]
     pub async fn register_tab(&self, input: WorkspaceTabRegisterInput) -> WorkspaceSnapshot {
         let mut model = self.model.lock().await;
-        register_tab_locked(&mut model, input, true)
+        register_tab_locked(&mut model, input, true, None)
     }
 
     pub async fn register_session_tab(
@@ -202,13 +210,33 @@ impl WorkspaceState {
         // Hold placement through the status read. Disconnect marks terminal
         // state before taking this lock, so neither ordering can revive a tab.
         let mut model = self.model.lock().await;
-        let is_connected = terminals
-            .session_info(&input.session_id)
-            .await
-            .is_none_or(|session| {
-                session.status == crate::terminal_control::TerminalStatus::Connected
-            });
-        register_tab_locked(&mut model, input, is_connected)
+        if self
+            .closing
+            .lock()
+            .unwrap()
+            .contains(input.tab_id.as_deref().unwrap_or(&input.session_id))
+        {
+            let owner = model
+                .tabs
+                .get(input.tab_id.as_deref().unwrap_or(&input.session_id))
+                .map(|tab| tab.owner_window_id.as_str())
+                .unwrap_or(input.window_id.as_deref().unwrap_or("main"));
+            return snapshot_for_locked(&model, owner);
+        }
+        let session = terminals.workspace_session_state(&input.session_id).await;
+        if session.as_ref().is_some_and(|(_, auto_close)| *auto_close) {
+            // GUI finalization starts logging before registration and can arrive after EOF cleanup.
+            terminals
+                .finish_auto_closed_session_logs(&input.session_id)
+                .await;
+            return snapshot_for_locked(&model, input.window_id.as_deref().unwrap_or("main"));
+        }
+        let session = session.map(|(info, _)| info);
+        let is_connected = session.as_ref().is_none_or(|session| {
+            session.status == crate::terminal_control::TerminalStatus::Connected
+        });
+        let profile_id = session.and_then(|session| session.profile_id);
+        register_tab_locked(&mut model, input, is_connected, profile_id)
     }
 
     pub async fn activate_tab(
@@ -282,99 +310,14 @@ impl WorkspaceState {
         target_index: usize,
     ) -> Result<Vec<WorkspaceSnapshot>, String> {
         let mut model = self.model.lock().await;
-        if !model.windows.contains_key(&to_window_id) {
-            return Err("Destination window not found".to_string());
-        }
-
-        let source_window = model
-            .windows
-            .get(&from_window_id)
-            .ok_or_else(|| "Source window not found".to_string())?;
-        if !source_window.tab_order.contains(&tab_id) {
-            return Err("Source tab not found".to_string());
-        }
-
-        let previous = model.clone();
-
-        let tab = model
-            .tabs
-            .get_mut(&tab_id)
-            .ok_or_else(|| "Tab not found".to_string())?;
-        if tab.owner_window_id != from_window_id {
-            return Err("The tab owner window does not match".to_string());
-        }
-        tab.owner_window_id = to_window_id.clone();
-
-        if from_window_id == to_window_id {
-            let window = model
-                .windows
-                .get_mut(&from_window_id)
-                .ok_or_else(|| "Window not found".to_string())?;
-            window.tab_order.retain(|id| id != &tab_id);
-            let insert_index = target_index.min(window.tab_order.len());
-            window.tab_order.insert(insert_index, tab_id.clone());
-            advance_revision_if_changed(&mut model, &previous);
-            let mut snapshot = snapshot_for_locked(&model, &from_window_id);
-            snapshot.tab_update = Some(WorkspaceTabUpdate::Moved {
-                tab_id,
-                target_index: insert_index,
-            });
-            return Ok(vec![snapshot]);
-        }
-
-        {
-            let source = model
-                .windows
-                .get_mut(&from_window_id)
-                .ok_or_else(|| "Source window not found".to_string())?;
-            remove_tab_from_window(source, &tab_id);
-        }
-
-        let destination_target_index;
-        {
-            let destination = model
-                .windows
-                .get_mut(&to_window_id)
-                .ok_or_else(|| "Destination window not found".to_string())?;
-            destination.tab_order.retain(|id| id != &tab_id);
-            let insert_index = target_index.min(destination.tab_order.len());
-            destination_target_index = insert_index;
-            destination.tab_order.insert(insert_index, tab_id.clone());
-            destination.active_tab_id = Some(tab_id.clone());
-        }
-
-        advance_revision_if_changed(&mut model, &previous);
-        let source_snapshot = snapshot_for_locked(&model, &from_window_id);
-        let mut destination_snapshot = snapshot_for_locked(&model, &to_window_id);
-        destination_snapshot.tab_update = Some(WorkspaceTabUpdate::Moved {
+        self.ensure_not_closing(&tab_id)?;
+        move_tab_locked(
+            &mut model,
             tab_id,
-            target_index: destination_target_index,
-        });
-
-        Ok(vec![source_snapshot, destination_snapshot])
-    }
-
-    pub async fn validate_tab_move_source(
-        &self,
-        tab_id: &str,
-        from_window_id: &str,
-    ) -> Result<(), String> {
-        let model = self.model.lock().await;
-        let source_window = model
-            .windows
-            .get(from_window_id)
-            .ok_or_else(|| "Source window not found".to_string())?;
-        if !source_window.tab_order.iter().any(|id| id == tab_id) {
-            return Err("Source tab not found".to_string());
-        }
-        let tab = model
-            .tabs
-            .get(tab_id)
-            .ok_or_else(|| "Tab not found".to_string())?;
-        if tab.owner_window_id != from_window_id {
-            return Err("The tab owner window does not match".to_string());
-        }
-        Ok(())
+            from_window_id,
+            to_window_id,
+            target_index,
+        )
     }
 
     pub async fn remove_tab(
@@ -383,18 +326,120 @@ impl WorkspaceState {
         tab_id: String,
     ) -> Result<WorkspaceSnapshot, String> {
         let mut model = self.model.lock().await;
-        if !model.windows.contains_key(&window_id) {
-            return Err("Window not found".to_string());
+        self.ensure_not_closing(&tab_id)?;
+        remove_tab_locked(&mut model, &window_id, &tab_id)
+    }
+
+    fn ensure_not_closing(&self, tab_id: &str) -> Result<(), String> {
+        if self.closing.lock().unwrap().contains(tab_id) {
+            Err("The tab is being closed".into())
+        } else {
+            Ok(())
         }
-        let previous = model.clone();
-        model.tabs.remove(&tab_id);
-        let window = model
-            .windows
-            .get_mut(&window_id)
-            .ok_or_else(|| "Window not found".to_string())?;
-        remove_tab_from_window(window, &tab_id);
-        advance_revision_if_changed(&mut model, &previous);
-        Ok(snapshot_for_locked(&model, &window_id))
+    }
+
+    pub(crate) async fn session_is_closing(&self, session_id: &str) -> bool {
+        let model = self.model.lock().await;
+        let closing = self.closing.lock().unwrap();
+        model
+            .tabs
+            .values()
+            .any(|tab| tab.session_id == session_id && closing.contains(&tab.tab_id))
+    }
+
+    pub(crate) async fn close_tab_owned<F, Fut, P>(
+        &self,
+        window_id: String,
+        tab_id: String,
+        close: F,
+        publish: P,
+    ) -> Result<WorkspaceSnapshot, String>
+    where
+        F: FnOnce(WorkspaceTab) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<(), String>> + Send + 'static,
+        P: FnOnce(&WorkspaceSnapshot) + Send + 'static,
+    {
+        let state = self.clone();
+        // Disconnect coordinators can outlive IPC cancellation. Keep the reservation and
+        // snapshot publication with an owned task until teardown has actually completed.
+        tokio::spawn(async move {
+            let snapshot = state.close_tab_with(&window_id, &tab_id, close).await?;
+            publish(&snapshot);
+            Ok(snapshot)
+        })
+        .await
+        .map_err(|_| "Tab close task did not complete".to_string())?
+    }
+
+    pub(crate) async fn close_tab_with<F, Fut>(
+        &self,
+        window_id: &str,
+        tab_id: &str,
+        close: F,
+    ) -> Result<WorkspaceSnapshot, String>
+    where
+        F: FnOnce(WorkspaceTab) -> Fut,
+        Fut: std::future::Future<Output = Result<(), String>>,
+    {
+        let (tab, reservation) = {
+            let model = self.model.lock().await;
+            validate_tab_owner(&model, window_id, tab_id)?;
+            self.ensure_not_closing(tab_id)?;
+            self.closing.lock().unwrap().insert(tab_id.to_string());
+            (
+                model.tabs[tab_id].clone(),
+                ClosingTabGuard {
+                    closing: self.closing.clone(),
+                    pending_auto_close: self.pending_auto_close.clone(),
+                    tab_id: tab_id.to_string(),
+                },
+            )
+        };
+        let close_result = close(tab).await;
+        let mut model = self.model.lock().await;
+        if let Err(error) = close_result {
+            if !self.pending_auto_close.lock().unwrap().contains(tab_id) {
+                return Err(error);
+            }
+            // A confirmed disconnect still requires removal if the overlapping GUI close failed.
+            log::warn!("Explicit tab cleanup failed after an automatic disconnect close");
+        }
+        // Window shutdown can rehome an accepted close; the reservation follows the tab.
+        let owner = model
+            .tabs
+            .get(tab_id)
+            .ok_or("Tab not found")?
+            .owner_window_id
+            .clone();
+        let result = remove_tab_locked(&mut model, &owner, tab_id);
+        // Release the reservation before unlocking placement, so a registration cannot
+        // observe a closing tab whose model entry has already been removed.
+        drop(reservation);
+        result
+    }
+
+    pub(super) async fn detach_tab_with<F>(
+        &self,
+        tab_id: String,
+        from_window_id: String,
+        window_id: String,
+        create: F,
+    ) -> Result<Vec<WorkspaceSnapshot>, String>
+    where
+        F: FnOnce() -> Result<(), String>,
+    {
+        let mut model = self.model.lock().await;
+        validate_tab_owner(&model, &from_window_id, &tab_id)?;
+        self.ensure_not_closing(&tab_id)?;
+        if model.windows.contains_key(&window_id) {
+            return Err("Destination window already exists".into());
+        }
+        // Native creation is synchronous. Keeping placement locked removes the fallible move gap
+        // without rolling back a window that another operation may already have populated.
+        create()?;
+        ensure_window(&mut model, &window_id, &window_id);
+        set_focused_window(&mut model, &window_id);
+        move_tab_locked(&mut model, tab_id, from_window_id, window_id, 0)
     }
 
     pub async fn update_tab_metadata(
@@ -439,9 +484,29 @@ impl WorkspaceState {
         Some(snapshot_for_locked(&model, &owner))
     }
 
-    pub async fn mark_disconnected(&self, session_id: &str) -> Option<WorkspaceSnapshot> {
+    pub async fn mark_disconnected(
+        &self,
+        session_id: &str,
+        auto_close: bool,
+    ) -> Option<WorkspaceSnapshot> {
         let mut model = self.model.lock().await;
         let previous = model.clone();
+        let tab = model
+            .tabs
+            .values()
+            .find(|tab| tab.session_id == session_id)?;
+        if auto_close {
+            if self.closing.lock().unwrap().contains(&tab.tab_id) {
+                self.pending_auto_close
+                    .lock()
+                    .unwrap()
+                    .insert(tab.tab_id.clone());
+            } else {
+                let owner = tab.owner_window_id.clone();
+                let tab_id = tab.tab_id.clone();
+                return remove_tab_locked(&mut model, &owner, &tab_id).ok();
+            }
+        }
         let owner_window_id = model
             .tabs
             .values_mut()
@@ -454,7 +519,7 @@ impl WorkspaceState {
                 tab.owner_window_id.clone()
             })?;
         advance_revision_if_changed(&mut model, &previous);
-        Some(snapshot_for_locked(&model, &owner_window_id))
+        (*model != previous).then(|| snapshot_for_locked(&model, &owner_window_id))
     }
 
     pub async fn drag_start(
@@ -573,6 +638,7 @@ fn register_tab_locked(
     model: &mut WorkspaceModel,
     input: WorkspaceTabRegisterInput,
     is_connected: bool,
+    profile_id: Option<String>,
 ) -> WorkspaceSnapshot {
     let previous = model.clone();
     let owner_window_id = choose_owner_window(model, input.window_id.as_deref());
@@ -582,6 +648,7 @@ fn register_tab_locked(
     let tab = WorkspaceTab {
         tab_id: tab_id.clone(),
         session_id: input.session_id,
+        profile_id,
         connection_type: input.connection_type,
         title: input.title,
         owner_window_id: owner_window_id.clone(),
@@ -612,4 +679,131 @@ fn register_tab_locked(
     let mut snapshot = snapshot_for_locked(model, &owner_window_id);
     snapshot.tab_update = Some(WorkspaceTabUpdate::Connected { tab_id });
     snapshot
+}
+
+struct ClosingTabGuard {
+    closing: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    pending_auto_close: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    tab_id: String,
+}
+impl Drop for ClosingTabGuard {
+    fn drop(&mut self) {
+        self.closing.lock().unwrap().remove(&self.tab_id);
+        self.pending_auto_close.lock().unwrap().remove(&self.tab_id);
+    }
+}
+
+fn validate_tab_owner(model: &WorkspaceModel, window_id: &str, tab_id: &str) -> Result<(), String> {
+    let window = model.windows.get(window_id).ok_or("Window not found")?;
+    let tab = model.tabs.get(tab_id).ok_or("Tab not found")?;
+    if tab.owner_window_id != window_id || !window.tab_order.iter().any(|id| id == tab_id) {
+        return Err("The tab does not belong to this window".into());
+    }
+    Ok(())
+}
+
+fn remove_tab_locked(
+    model: &mut WorkspaceModel,
+    window_id: &str,
+    tab_id: &str,
+) -> Result<WorkspaceSnapshot, String> {
+    validate_tab_owner(model, window_id, tab_id)?;
+    let previous = model.clone();
+    model.tabs.remove(tab_id);
+    remove_tab_from_window(model.windows.get_mut(window_id).unwrap(), tab_id);
+    if model
+        .drag
+        .as_ref()
+        .is_some_and(|drag| drag.tab_id == tab_id)
+    {
+        model.drag = None;
+    }
+    advance_revision_if_changed(model, &previous);
+    Ok(snapshot_for_locked(model, window_id))
+}
+
+fn move_tab_locked(
+    model: &mut WorkspaceModel,
+    tab_id: String,
+    from_window_id: String,
+    to_window_id: String,
+    target_index: usize,
+) -> Result<Vec<WorkspaceSnapshot>, String> {
+    if !model.windows.contains_key(&to_window_id) {
+        return Err("Destination window not found".to_string());
+    }
+
+    let source_window = model
+        .windows
+        .get(&from_window_id)
+        .ok_or_else(|| "Source window not found".to_string())?;
+    if !source_window.tab_order.contains(&tab_id) {
+        return Err("Source tab not found".to_string());
+    }
+
+    let previous = model.clone();
+
+    let tab = model
+        .tabs
+        .get_mut(&tab_id)
+        .ok_or_else(|| "Tab not found".to_string())?;
+    if tab.owner_window_id != from_window_id {
+        return Err("The tab owner window does not match".to_string());
+    }
+    tab.owner_window_id = to_window_id.clone();
+    if model
+        .drag
+        .as_ref()
+        .is_some_and(|drag| drag.tab_id == tab_id)
+    {
+        model.drag = None;
+    }
+
+    if from_window_id == to_window_id {
+        let window = model
+            .windows
+            .get_mut(&from_window_id)
+            .ok_or_else(|| "Window not found".to_string())?;
+        window.tab_order.retain(|id| id != &tab_id);
+        let insert_index = target_index.min(window.tab_order.len());
+        window.tab_order.insert(insert_index, tab_id.clone());
+        advance_revision_if_changed(model, &previous);
+        let mut snapshot = snapshot_for_locked(model, &from_window_id);
+        snapshot.tab_update = Some(WorkspaceTabUpdate::Moved {
+            tab_id,
+            target_index: insert_index,
+        });
+        return Ok(vec![snapshot]);
+    }
+
+    {
+        let source = model
+            .windows
+            .get_mut(&from_window_id)
+            .ok_or_else(|| "Source window not found".to_string())?;
+        remove_tab_from_window(source, &tab_id);
+    }
+
+    let destination_target_index;
+    {
+        let destination = model
+            .windows
+            .get_mut(&to_window_id)
+            .ok_or_else(|| "Destination window not found".to_string())?;
+        destination.tab_order.retain(|id| id != &tab_id);
+        let insert_index = target_index.min(destination.tab_order.len());
+        destination_target_index = insert_index;
+        destination.tab_order.insert(insert_index, tab_id.clone());
+        destination.active_tab_id = Some(tab_id.clone());
+    }
+
+    advance_revision_if_changed(model, &previous);
+    let source_snapshot = snapshot_for_locked(model, &from_window_id);
+    let mut destination_snapshot = snapshot_for_locked(model, &to_window_id);
+    destination_snapshot.tab_update = Some(WorkspaceTabUpdate::Moved {
+        tab_id,
+        target_index: destination_target_index,
+    });
+
+    Ok(vec![source_snapshot, destination_snapshot])
 }

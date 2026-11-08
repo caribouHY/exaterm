@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## v0.10.2
+
+### Added
+
+- Added a Help menu with documentation and application version information, and moved Check for Updates from File to Help.
+- Added an optional terminal setting to automatically close SSH, Telnet, and Serial tabs on disconnection, including errors and CLI/MCP disconnects. Disabled by default; already-disconnected tabs remain open.
+
+### Changed
+
+- Removed the underline from open window menu bar items while preserving selection highlighting and keyboard focus indicators.
+- Local control handshakes are limited to 4 KiB and request/response frames to 16 MiB, including JSON escaping.
+
+### Fixed
+
+- Keep the source SSH or Telnet profile selected when opening Connect to Same Destination from a terminal tab, while restoring the tab's connection settings, including unsaved changes made before connecting.
+- Verify external-control peer OS users on both sides, bound connection setup and discovery probes, and release stalled setup slots without shortening GUI credential or operation waits.
+- Reject stale-window tab removal before stopping sessions or logs, keep close ownership until teardown completes, and make detach creation and transfer atomic with workspace ownership. Clear stale drag state on tab movement, removal, and window rehoming.
+
 ## v0.10.1
 
 ### Added

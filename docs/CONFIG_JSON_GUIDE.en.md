@@ -97,6 +97,7 @@ To distribute or move only connection profiles, exit ExaTerm, replace the entire
     "cursor_style": "block",
     "scrollback": 10000,
     "auto_session_log": false,
+    "auto_close_on_disconnect": false,
     "log_format": "display",
     "include_log_header": false
   },
@@ -200,12 +201,23 @@ Older config files may still contain the legacy `mcp` object and `saved_connecti
 
 The HTTP MCP transport has been removed. Existing HTTP-only `mcp.host` and `mcp.port` values in older config files are ignored and will be omitted the next time ExaTerm saves the settings. Users who previously used HTTP MCP must manually enable `external_control.enabled=true` and `external_control.mcp_enabled=true`, then configure their MCP client to launch `exaterm-mcp`.
 
+CLI and MCP use the same OS-user boundary: Windows named pipes verify peer process user
+SIDs on both sides. The handshake nonce only binds requests to that connection; it is not
+user authentication. Keep GUI, CLI, and MCP binaries updated together.
+
+Local JSON-line frames allow 4 KiB for handshakes and 16 MiB for requests/responses, excluding
+the newline and including JSON escaping. The full 20,000-character terminal input/output
+limit fits; very large profile/session lists or other payloads exceeding 16 MiB fail without
+truncation. Setup phases are limited to two seconds, with eight pending server setup slots;
+GUI credential waits and operation responses retain their existing deadlines. Discovery
+probes cannot extend the two-second initial or 30-second post-launch discovery budget.
+
 ### MCP Tools
 
 When MCP is enabled, external clients can call these tools:
 
 - `list_terminal_sessions`: lists ExaTerm terminal sessions, including `profile_id` captured at connection start for saved SSH/Telnet profiles opened through GUI, CLI, or MCP. Direct, history, and Serial connections return `null`. The ID remains unchanged after unsaved connection edits, later profile renaming/deletion, tab renaming, window moves, or disconnection; `target` identifies the actual endpoint. Use `protocol` with `profile_id` because SSH/Telnet profiles may share an ID.
-- `disconnect_terminal_session`: flushes and stops an active log, then disconnects the session while preserving its tab and scrollback.
+- `disconnect_terminal_session`: flushes and stops an active log, then disconnects the session. The tab and scrollback remain by default; `terminal.auto_close_on_disconnect` closes the tab on future disconnections when enabled. Retained backend output remains readable.
 - `focus_terminal_session`: accepts `session_id`, selects its existing tab, and shows, restores, and focuses its owning window. It returns `session_id`, `window_id`, `tab_id`, and `focused: true` after GUI acknowledgement. Disconnected tabs are supported; open dialogs remain active. The GUI acknowledgement deadline is five seconds, including one retry after a tab moves to another window. OS foreground restrictions still apply.
 - `read_terminal_output`: reads or waits for session output using the required `mode` argument:
   - `recent`: immediately reads the most recent retained output.
@@ -290,15 +302,16 @@ Clearing the terminal display or buffer affects only the local xterm view. It do
 
 ## terminal
 
-| Parameter                     | Type    | Default                                | Description                                                                                                                                                  |
-| ----------------------------- | ------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `terminal.font_size`          | number  | `14`                                   | Terminal font size. The Settings screen allows values from `8` to `32`.                                                                                      |
-| `terminal.font_family`        | string  | `"Consolas, 'Courier New', monospace"` | Terminal font family. Use the same format as CSS `font-family`.                                                                                              |
-| `terminal.cursor_style`       | string  | `"block"`                              | Terminal cursor shape. The default is a block cursor. When editing manually, use a value accepted by xterm.js, such as `"block"`, `"underline"`, or `"bar"`. |
-| `terminal.scrollback`         | number  | `10000`                                | Number of terminal scrollback lines. Larger values keep more history but may increase memory usage.                                                          |
-| `terminal.auto_session_log`   | boolean | `false`                                | When set to `true`, a plaintext log starts automatically for each new SSH, serial, or Telnet connection.                                                     |
-| `terminal.log_format`         | string  | `"display"`                            | Session log formatting mode. `"display"` saves text closer to the terminal screen; `"strip_controls"` removes control sequences.                             |
-| `terminal.include_log_header` | boolean | `false`                                | When set to `true`, new session log files start with an ExaTerm header containing the connection type, target, log mode, and start time.                     |
+| Parameter                           | Type    | Default                                | Description                                                                                                                                                        |
+| ----------------------------------- | ------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `terminal.font_size`                | number  | `14`                                   | Terminal font size. The Settings screen allows values from `8` to `32`.                                                                                            |
+| `terminal.font_family`              | string  | `"Consolas, 'Courier New', monospace"` | Terminal font family. Use the same format as CSS `font-family`.                                                                                                    |
+| `terminal.cursor_style`             | string  | `"block"`                              | Terminal cursor shape. The default is a block cursor. When editing manually, use a value accepted by xterm.js, such as `"block"`, `"underline"`, or `"bar"`.       |
+| `terminal.scrollback`               | number  | `10000`                                | Number of terminal scrollback lines. Larger values keep more history but may increase memory usage.                                                                |
+| `terminal.auto_close_on_disconnect` | boolean | `false`                                | Close terminal tabs on future SSH, Telnet, or Serial disconnections, including errors and CLI/MCP disconnects. Existing disconnected tabs and windows remain open. |
+| `terminal.auto_session_log`         | boolean | `false`                                | When set to `true`, a plaintext log starts automatically for each new SSH, serial, or Telnet connection.                                                           |
+| `terminal.log_format`               | string  | `"display"`                            | Session log formatting mode. `"display"` saves text closer to the terminal screen; `"strip_controls"` removes control sequences.                                   |
+| `terminal.include_log_header`       | boolean | `false`                                | When set to `true`, new session log files start with an ExaTerm header containing the connection type, target, log mode, and start time.                           |
 
 ### Session Log Notice
 

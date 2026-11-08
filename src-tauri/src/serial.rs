@@ -360,8 +360,11 @@ pub(crate) async fn connect(
         shutdown.clone(),
         cleanup,
         move || async move {
-            finalize_terminals.mark_disconnected(&finalize_sid).await;
-            if let Some(snapshot) = finalize_workspace.mark_disconnected(&finalize_sid).await {
+            let auto_close = finalize_terminals.mark_disconnected(&finalize_sid).await;
+            if let Some(snapshot) = finalize_workspace
+                .mark_disconnected(&finalize_sid, auto_close)
+                .await
+            {
                 emit_workspace_updated(&finalize_app, &snapshot);
             }
             if let Some(logger) = finalize_logger {

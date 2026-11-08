@@ -97,6 +97,7 @@ C:\Users\<ユーザー名>\AppData\Roaming\ExaTerm\config.json
     "cursor_style": "block",
     "scrollback": 10000,
     "auto_session_log": false,
+    "auto_close_on_disconnect": false,
     "log_format": "display",
     "include_log_header": false
   },
@@ -200,12 +201,22 @@ AI チャットの動作を調査する必要がある場合のみ、`ai.debug_l
 
 HTTP MCP transport は削除されました。古い設定ファイルに残っている HTTP 専用の `mcp.host` と `mcp.port` の値は無視され、次に ExaTerm が設定を保存したときに出力されなくなります。以前 HTTP MCP を使用していた場合は、`external_control.enabled=true` と `external_control.mcp_enabled=true` を手動で設定し、MCP クライアント側で `exaterm-mcp` を起動するよう設定してください。
 
+CLI と MCP は同じ OS ユーザー境界を使用します。Windows の名前付きパイプは双方で
+相手プロセスのユーザー SID を検証します。handshake の nonce は接続と要求を対応付ける値であり、
+ユーザー認証情報ではありません。GUI・CLI・MCP の実行ファイルは一緒に更新してください。
+
+ローカル JSON 行の上限は、改行を除き、handshake が4 KiB、要求・応答が16 MiBです。
+JSON エスケープを含む値で、ターミナル入出力の最大20,000文字も収容します。非常に大きい
+プロファイル・セッション一覧などが16 MiBを超える場合は、切り詰めずエラーになります。
+接続確立の各段階は2秒、サーバーの確立待ちは同時8枠に制限されます。GUI の認証入力待ちと
+操作応答には既存の期限を維持します。発見 probe は初回2秒・起動後30秒の発見期限を超えて待ちません。
+
 ### MCP ツール
 
 MCP が有効な場合、外部クライアントは次のツールを呼び出せます。
 
 - `list_terminal_sessions`: ターミナルセッションを一覧表示します。GUI・CLI・MCPから保存済みSSH/Telnetプロファイルで接続した場合、接続開始時のIDを `profile_id` に含みます。直接接続・履歴・Serial接続は `null` です。接続設定の未保存編集や、その後のプロファイル名変更・削除、タブ名変更、ウィンドウ移動、切断でもIDを保持し、実際の接続先は `target` で示します。SSH/Telnet間でIDが重複できるため、`protocol` と併せて判別します。
-- `disconnect_terminal_session`: 実行中ログをflushして停止した後、タブとスクロールバックを残したままセッションを切断します。
+- `disconnect_terminal_session`: 実行中ログをflushして停止した後、セッションを切断します。初期設定ではタブとスクロールバックを残します。`terminal.auto_close_on_disconnect` が有効なら以後の切断でタブを閉じますが、バックエンドの保持出力は取得できます。
 - `focus_terminal_session`: `session_id` を受け取り、既存タブを選択して所有ウィンドウを表示・最小化解除・前面表示します。GUI反映確認後に `session_id`、`window_id`、`tab_id`、`focused: true` を返します。切断済みタブも対象にでき、表示中のダイアログは維持します。GUI応答の期限は別ウィンドウへの移動時の1回の再要求を含めて5秒です。OSの前面表示制約は適用されます。
 - `read_terminal_output`: 必須の `mode` 引数に応じてセッション出力を読み取るか待機します。
   - `recent`: 保持されている直近出力を即時に読み取ります。
@@ -290,15 +301,16 @@ MCP 互換アダプターと CLI は保存済み認証情報の読み取り、AP
 
 ## terminal
 
-| パラメータ                    | 型      | 既定値                                 | 説明                                                                                                                                                            |
-| ----------------------------- | ------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `terminal.font_size`          | number  | `14`                                   | ターミナルのフォントサイズです。設定画面では `8` から `32` の範囲で指定できます。                                                                               |
-| `terminal.font_family`        | string  | `"Consolas, 'Courier New', monospace"` | ターミナルのフォントファミリーです。CSS の `font-family` と同じ形式で指定します。                                                                               |
-| `terminal.cursor_style`       | string  | `"block"`                              | ターミナルのカーソル形状です。現在の既定値はブロックカーソルです。手動編集時は xterm.js が受け付ける値を指定してください。例: `"block"`, `"underline"`, `"bar"` |
-| `terminal.scrollback`         | number  | `10000`                                | ターミナルのスクロールバック行数です。値を大きくすると過去ログを多く保持できますが、メモリ使用量が増える可能性があります。                                      |
-| `terminal.auto_session_log`   | boolean | `false`                                | `true` にすると、新しいSSH/シリアル/Telnet接続ごとに平文ログを自動的に開始します。                                                                              |
-| `terminal.log_format`         | string  | `"display"`                            | セッションログの整形方式です。`"display"` は画面表示に近い内容、`"strip_controls"` は制御文字を除去した内容を保存します。                                       |
-| `terminal.include_log_header` | boolean | `false`                                | `true` にすると、新しいセッションログの先頭に ExaTerm ヘッダとして種別、接続先、ログモード、開始時刻を記録します。                                              |
+| パラメータ                          | 型      | 既定値                                 | 説明                                                                                                                                                            |
+| ----------------------------------- | ------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `terminal.font_size`                | number  | `14`                                   | ターミナルのフォントサイズです。設定画面では `8` から `32` の範囲で指定できます。                                                                               |
+| `terminal.font_family`              | string  | `"Consolas, 'Courier New', monospace"` | ターミナルのフォントファミリーです。CSS の `font-family` と同じ形式で指定します。                                                                               |
+| `terminal.cursor_style`             | string  | `"block"`                              | ターミナルのカーソル形状です。現在の既定値はブロックカーソルです。手動編集時は xterm.js が受け付ける値を指定してください。例: `"block"`, `"underline"`, `"bar"` |
+| `terminal.scrollback`               | number  | `10000`                                | ターミナルのスクロールバック行数です。値を大きくすると過去ログを多く保持できますが、メモリ使用量が増える可能性があります。                                      |
+| `terminal.auto_close_on_disconnect` | boolean | `false`                                | 保存後のSSH・Telnet・Serial切断でタブを閉じます。通信エラーとCLI/MCPからの切断も対象です。既存の切断済みタブとウィンドウは残ります。                            |
+| `terminal.auto_session_log`         | boolean | `false`                                | `true` にすると、新しいSSH/シリアル/Telnet接続ごとに平文ログを自動的に開始します。                                                                              |
+| `terminal.log_format`               | string  | `"display"`                            | セッションログの整形方式です。`"display"` は画面表示に近い内容、`"strip_controls"` は制御文字を除去した内容を保存します。                                       |
+| `terminal.include_log_header`       | boolean | `false`                                | `true` にすると、新しいセッションログの先頭に ExaTerm ヘッダとして種別、接続先、ログモード、開始時刻を記録します。                                              |
 
 ### セッションログの注意
 

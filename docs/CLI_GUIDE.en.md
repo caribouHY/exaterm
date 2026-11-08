@@ -191,8 +191,11 @@ Disconnect an SSH, Telnet, or Serial session without selecting its connection ty
 exaterm-cli sessions disconnect --session-id $session
 ```
 
-ExaTerm flushes and stops an active log before disconnecting. The tab and scrollback remain
-available in the GUI as a disconnected session. Repeating the command for a known disconnected
+ExaTerm flushes and stops an active log before disconnecting. By default, the tab and scrollback remain
+available in the GUI as a disconnected session. With the terminal setting “Automatically close terminals
+on disconnect” enabled, future disconnections remove the tab, including CLI/MCP disconnects and errors.
+Existing disconnected tabs stay open, and retained output remains readable through the CLI/MCP.
+Repeating the command for a known disconnected
 session succeeds with `already_disconnected: true`. For Serial sessions, a successful disconnect
 means the local COM port has been released. Concurrent disconnect requests also wait for release.
 
@@ -324,6 +327,17 @@ ExaTerm keeps one GUI process. Starting `exaterm.exe` again focuses the most rec
 ExaTerm window. An `exaterm.exe ssh ...` or `exaterm.exe telnet ...` invocation forwards its
 connection request to that window. Concurrent startup requests are processed in arrival order
 without replacing an open connection dialog or resetting existing sessions.
+
+CLI and MCP use the same OS-user boundary: Windows named pipes verify peer process user
+SIDs on both sides. The handshake nonce only binds requests to that connection; it is not
+user authentication. Keep GUI, CLI, and MCP binaries updated together.
+
+Local JSON-line frames allow 4 KiB for handshakes and 16 MiB for requests/responses, excluding
+the newline and including JSON escaping. The full 20,000-character terminal input/output
+limit fits; very large profile/session lists or other payloads exceeding 16 MiB fail without
+truncation. Setup phases are limited to two seconds, with eight pending server setup slots;
+GUI credential waits and operation responses retain their existing deadlines. Discovery
+probes cannot extend the two-second initial or 30-second post-launch discovery budget.
 
 ## Security
 

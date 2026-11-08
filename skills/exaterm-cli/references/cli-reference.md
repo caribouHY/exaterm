@@ -239,6 +239,17 @@ A failure can leave the tab
 selected. Native API success does not override operating-system foreground restrictions.
 GUI and sidecars must use matching local control protocol version 6.
 
+CLI and MCP use the same OS-user boundary: Windows named pipes verify peer process user
+SIDs on both sides. The handshake nonce only binds requests to that connection; it is not
+user authentication. Keep GUI, CLI, and MCP binaries updated together.
+
+Local JSON-line frames allow 4 KiB for handshakes and 16 MiB for requests/responses, excluding
+the newline and including JSON escaping. The full 20,000-character terminal input/output
+limit fits; very large profile/session lists or other payloads exceeding 16 MiB fail without
+truncation. Setup phases are limited to two seconds, with eight pending server setup slots;
+GUI credential waits and operation responses retain their existing deadlines. Discovery
+probes cannot extend the two-second initial or 30-second post-launch discovery budget.
+
 ## Disconnecting a Session
 
 Disconnect only an exact `session_id` returned by `sessions list`:
@@ -253,7 +264,10 @@ operation for the same known session is safe and returns `disconnected=false` wi
 `already_disconnected=true`. An unknown session returns a not-found error; re-list sessions
 instead of guessing another ID.
 
-Disconnect preserves the GUI tab and retained scrollback. ExaTerm flushes and stops an active
+Disconnect preserves the GUI tab and scrollback by default. If `terminal.auto_close_on_disconnect`
+is enabled, future disconnections (including CLI/MCP requests and errors) remove the GUI tab.
+Existing disconnected tabs stay open. Retained backend output and disconnect result fields remain
+available; GUI focus requires a tab that still exists. ExaTerm flushes and stops an active
 session log before ending SSH, Telnet, or Serial I/O. For Serial, success means the local port
 has been released, so the same port can be opened again. Concurrent disconnect requests also
 wait for release.

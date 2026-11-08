@@ -189,12 +189,6 @@ export default function App() {
       }),
     [getCurrentWindowTabsState, windowTabs.applyWorkspaceSnapshot]
   );
-  const stopManualLogBeforeDisconnect = useCallback(
-    async (sessionId: string) => {
-      await manualLogController.stop({ sessionId });
-    },
-    [manualLogController]
-  );
   const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
   const shortcuts = config?.shortcuts ?? DEFAULT_SHORTCUT_CONFIG;
   const appUpdate = useAppUpdate({
@@ -281,6 +275,17 @@ export default function App() {
     [getCurrentWindowTabsState]
   );
 
+  useEffect(() => {
+    const tabIds = new Set(tabs.map((tab) => tab.id));
+    for (const tabId of terminalBuffers.current.keys()) {
+      if (!tabIds.has(tabId)) terminalBuffers.current.delete(tabId);
+    }
+    setTerminalSelectionByTab((current) => {
+      if ([...current.keys()].every((tabId) => tabIds.has(tabId))) return current;
+      return new Map([...current].filter(([tabId]) => tabIds.has(tabId)));
+    });
+  }, [tabs]);
+
   const clearActiveTerminalViewport = useCallback(() => {
     if (!activeTabId) return;
     terminalViewRefs.current.get(activeTabId)?.clearViewport();
@@ -322,7 +327,6 @@ export default function App() {
   const terminalTabLifecycle = useTerminalTabLifecycle({
     tabs: windowTabs,
     onTerminalRemoved: removeTerminalFromState,
-    stopManualLog: stopManualLogBeforeDisconnect,
   });
   const workspaceTabMovement = useWorkspaceTabMovement({
     tabs: windowTabs,
@@ -658,6 +662,7 @@ export default function App() {
       void loadConnectionDialog();
       setConnectionInitialValues({
         connectionInfo: tab.connectionInfo,
+        profileId: tab.profileId,
         encoding: tab.encoding,
         terminalMode: tab.terminalMode,
       });

@@ -72,25 +72,10 @@
     color var(--motion-transition-fast);
 }
 
-.titlebar__menu-trigger::after {
-  position: absolute;
-  right: 7px;
-  bottom: 0;
-  left: 7px;
-  height: 2px;
-  background: transparent;
-  content: "";
-  transition: background var(--motion-transition-fast);
-}
-
 .titlebar__menu-trigger:hover,
 .titlebar__menu-trigger--open {
   background: var(--color-menu-highlight);
   color: var(--color-menu-text-highlight);
-}
-
-.titlebar__menu-trigger--open::after {
-  background: var(--color-menu-text-highlight);
 }
 
 .titlebar__menu-trigger:focus-visible {
@@ -113,6 +98,29 @@
 
 .titlebar__menu-popover--edit {
   min-width: 250px;
+}
+
+.titlebar__menu-popover--help {
+  min-width: 200px;
+}
+
+.titlebar-help-overlay {
+  z-index: var(--stack-critical-overlay);
+}
+
+.titlebar-help-dialog {
+  width: min(360px, calc(100vw - 32px));
+}
+
+.titlebar-help-dialog__icon {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+.titlebar-help-dialog__about {
+  align-items: center;
+  text-align: center;
 }
 
 .titlebar__menu-popover .ui-popover-menu__item-label {

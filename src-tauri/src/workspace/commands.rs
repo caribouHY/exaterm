@@ -181,36 +181,33 @@ pub async fn workspace_tab_drag_drop(
         }
     };
 
-    let mut created_window_id = None;
-    let target_window_id = match intent.target_window_id {
-        Some(window_id) => window_id,
+    let (target_window_id, created_window_id, move_result) = match intent.target_window_id {
+        Some(window_id) => {
+            let result = state
+                .move_tab(
+                    intent.tab_id.clone(),
+                    intent.source_window_id.clone(),
+                    window_id.clone(),
+                    intent.target_index,
+                )
+                .await;
+            (window_id, None, result)
+        }
         None => {
             let window_id = format!("workspace-{}", Uuid::new_v4().simple());
-            if let Err(error) = create_workspace_window(&app, &window_id) {
-                let preview = state.drag_cancel().await;
-                emit_workspace_drag_preview(&app, &preview);
-                return Err(error.into());
-            }
-            let snapshot = state
-                .register_window(window_id.clone(), window_id.clone(), true)
+            let result = state
+                .detach_tab_with(
+                    intent.tab_id.clone(),
+                    intent.source_window_id.clone(),
+                    window_id.clone(),
+                    || create_workspace_window(&app, &window_id),
+                )
                 .await;
-            emit_workspace_updated(&app, &snapshot);
-            created_window_id = Some(window_id.clone());
-            window_id
+            (window_id.clone(), Some(window_id), result)
         }
     };
-
-    let move_result = state
-        .move_tab(
-            intent.tab_id.clone(),
-            intent.source_window_id.clone(),
-            target_window_id.clone(),
-            intent.target_index,
-        )
-        .await;
     let preview = state.drag_cancel().await;
     emit_workspace_drag_preview(&app, &preview);
-
     let snapshots = command_result(move_result)?;
     emit_workspace_updates(&app, &snapshots);
 
@@ -235,22 +232,15 @@ pub async fn workspace_tab_detach_to_new_window(
     tab_id: String,
     from_window_id: String,
 ) -> Result<WorkspaceDragDropResult, crate::command_error::BackendCommandError> {
-    command_result(
-        state
-            .validate_tab_move_source(&tab_id, &from_window_id)
-            .await,
-    )?;
-
     let window_id = format!("workspace-{}", Uuid::new_v4().simple());
-    command_result(create_workspace_window(&app, &window_id))?;
-    let snapshot = state
-        .register_window(window_id.clone(), window_id.clone(), true)
-        .await;
-    emit_workspace_updated(&app, &snapshot);
-
     let snapshots = command_result(
         state
-            .move_tab(tab_id.clone(), from_window_id.clone(), window_id.clone(), 0)
+            .detach_tab_with(
+                tab_id.clone(),
+                from_window_id.clone(),
+                window_id.clone(),
+                || create_workspace_window(&app, &window_id),
+            )
             .await,
     )?;
     emit_workspace_updates(&app, &snapshots);
@@ -327,11 +317,15 @@ pub async fn workspace_tab_reorder(
 
 #[tauri::command]
 pub async fn workspace_tab_remove(
+    window: tauri::WebviewWindow,
     app: AppHandle,
     state: tauri::State<'_, WorkspaceState>,
     window_id: String,
     tab_id: String,
 ) -> Result<WorkspaceSnapshot, crate::command_error::BackendCommandError> {
+    if window.label() != window_id {
+        return Err("The tab does not belong to this window".to_string().into());
+    }
     let snapshot = command_result(state.remove_tab(window_id, tab_id).await)?;
     emit_workspace_updated(&app, &snapshot);
     Ok(snapshot)
@@ -347,4 +341,71 @@ pub async fn workspace_tab_update_metadata(
     let snapshot = command_result(state.update_tab_metadata(tab_id, patch).await)?;
     emit_workspace_updated(&app, &snapshot);
     Ok(snapshot)
+}
+
+#[tauri::command]
+pub async fn workspace_tab_close(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, WorkspaceState>,
+    tab_id: String,
+) -> Result<WorkspaceSnapshot, crate::command_error::BackendCommandError> {
+    let close_app = app.clone();
+    command_result(
+        state
+            .close_tab_owned(
+                window.label().to_string(),
+                tab_id,
+                move |tab| async move {
+                    let logger = close_app.state::<crate::logger::LoggerState>();
+                    let workspace = close_app.state::<WorkspaceState>();
+                    crate::logger::stop_for_tab_close(
+                        &close_app,
+                        &logger,
+                        &workspace,
+                        &tab.session_id,
+                    )
+                    .await?;
+                    let terminals =
+                        close_app.state::<crate::terminal_control::TerminalControlState>();
+                    match tab.connection_type {
+                        crate::terminal_control::TerminalProtocol::Ssh => {
+                            crate::ssh::disconnect(
+                                &close_app,
+                                &close_app.state::<crate::ssh::SshState>(),
+                                &terminals,
+                                &workspace,
+                                Some(&logger),
+                                &tab.session_id,
+                            )
+                            .await
+                        }
+                        crate::terminal_control::TerminalProtocol::Serial => {
+                            crate::serial::disconnect(
+                                &close_app,
+                                &close_app.state::<crate::serial::SerialState>(),
+                                &terminals,
+                                &workspace,
+                                Some(&logger),
+                                &tab.session_id,
+                            )
+                            .await
+                        }
+                        crate::terminal_control::TerminalProtocol::Telnet => {
+                            crate::telnet::disconnect(
+                                &close_app,
+                                &close_app.state::<crate::telnet::TelnetState>(),
+                                &terminals,
+                                &workspace,
+                                Some(&logger),
+                                &tab.session_id,
+                            )
+                            .await
+                        }
+                    }
+                },
+                move |snapshot| emit_workspace_updated(&app, snapshot),
+            )
+            .await,
+    )
 }

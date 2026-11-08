@@ -652,3 +652,36 @@ async fn loopback_tcp_exercises_production_connect_owner_and_resize() {
         "Loopback😀"
     );
 }
+
+#[tokio::test]
+async fn immediate_eof_auto_closes_without_resurrecting_late_registration() {
+    let fixture = Fixture::new();
+    fixture.terminals.set_auto_close_on_disconnect(true);
+    let (stream, mut peer) = tokio::io::duplex(4096);
+    peer.write_all("即時😀".as_bytes()).await.unwrap();
+    peer.shutdown().await.unwrap();
+    let done = fixture.start(stream).await;
+    fixture.finished(done).await;
+    let snapshot = fixture
+        .workspace
+        .register_session_tab(
+            crate::workspace::WorkspaceTabRegisterInput {
+                window_id: Some("main".into()),
+                tab_id: None,
+                session_id: "s1".into(),
+                connection_type: crate::terminal_control::TerminalProtocol::Telnet,
+                title: "synthetic".into(),
+                encoding: "utf-8".into(),
+                terminal_mode: "general".into(),
+                connection_info: None,
+                is_manual_logging: false,
+                manual_log_file_path: None,
+            },
+            &fixture.terminals,
+        )
+        .await;
+    assert!(snapshot.tabs.is_empty());
+    let output = fixture.terminals.read_output("s1", 100).await.unwrap();
+    assert_eq!(output.output, "即時😀");
+    assert_eq!(output.cursor, 3);
+}

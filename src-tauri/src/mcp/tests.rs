@@ -3919,3 +3919,165 @@ async fn profile_display_names_distinguish_saved_direct_from_direct_connections(
         }
     }
 }
+
+#[tokio::test(start_paused = true)]
+async fn local_control_setup_timeout_releases_slot_and_next_real_request_succeeds() {
+    use crate::external_control::protocol::{
+        handle_control_connection_with_permit, CONTROL_SETUP_TIMEOUT,
+    };
+    let (runtime, _, _, _, _, _) = test_runtime_parts(AppConfig::default(), Vec::new(), None);
+    let service = ExternalControlService::new(runtime);
+    let slots = std::sync::Arc::new(tokio::sync::Semaphore::new(1));
+    let (server_stream, _silent_client) = tokio::io::duplex(4096);
+    let permit = slots.clone().try_acquire_owned().unwrap();
+    let server = tokio::spawn(handle_control_connection_with_permit(
+        service.clone(),
+        server_stream,
+        Some(permit),
+    ));
+    tokio::task::yield_now().await;
+    assert!(slots.clone().try_acquire_owned().is_err());
+    tokio::time::advance(CONTROL_SETUP_TIMEOUT).await;
+    assert!(server.await.unwrap().unwrap_err().contains("timed out"));
+    let permit = slots.clone().try_acquire_owned().unwrap();
+    let (server_stream, client_stream) = tokio::io::duplex(4096);
+    let server = tokio::spawn(handle_control_connection_with_permit(
+        service,
+        server_stream,
+        Some(permit),
+    ));
+    let result = external_control_call_over_stream(
+        client_stream,
+        ExternalControlRequest::ListTerminalSessions,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.into_value().unwrap(), json!({"sessions": []}));
+    server.await.unwrap().unwrap();
+    assert_eq!(slots.available_permits(), 1);
+}
+
+#[tokio::test]
+async fn control_frames_preserve_maximum_typed_input_and_output_with_json_escaping() {
+    let (runtime, _, _, _, _, _) = test_runtime_parts(AppConfig::default(), Vec::new(), None);
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Ssh, "synthetic").await;
+    let text = "\u{0001}".repeat(20_000);
+    runtime.terminals.append_output("s1", text.as_bytes()).await;
+    let service = ExternalControlService::new(runtime);
+    for request in [
+        ExternalControlRequest::SendTerminalInput(SendTerminalInputArgs {
+            session_id: "s1".into(),
+            data: text.clone(),
+        }),
+        ExternalControlRequest::ReadTerminalOutput(ReadTerminalOutputArgs::Recent {
+            session_id: "s1".into(),
+            max_chars: Some(20_000),
+        }),
+    ] {
+        let (server_stream, client_stream) = tokio::io::duplex(4096);
+        let server = tokio::spawn(handle_control_connection(service.clone(), server_stream));
+        let response = external_control_call_over_stream(client_stream, request.clone())
+            .await
+            .unwrap()
+            .into_value()
+            .unwrap();
+        if matches!(request, ExternalControlRequest::ReadTerminalOutput(_)) {
+            assert_eq!(response["output"], text);
+        } else {
+            assert_eq!(response["sent"], true);
+        }
+        server.await.unwrap().unwrap();
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn control_setup_deadline_does_not_limit_operation_response_wait() {
+    let (runtime, _, _, _, _, _) = test_runtime_parts(AppConfig::default(), Vec::new(), None);
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Ssh, "synthetic").await;
+    let (server_stream, client_stream) = tokio::io::duplex(4096);
+    let server = tokio::spawn(handle_control_connection(
+        ExternalControlService::new(runtime),
+        server_stream,
+    ));
+    let start = tokio::time::Instant::now();
+    let result = external_control_call_over_stream(
+        client_stream,
+        ExternalControlRequest::ReadTerminalOutput(ReadTerminalOutputArgs::Wait {
+            session_id: "s1".into(),
+            cursor: Some(0),
+            contains: Some("never emitted".into()),
+            timeout_ms: Some(5_000),
+            max_chars: None,
+        }),
+    )
+    .await
+    .unwrap()
+    .into_value()
+    .unwrap();
+    assert_eq!(result["timed_out"], true);
+    assert!(tokio::time::Instant::now() - start >= std::time::Duration::from_secs(5));
+    server.await.unwrap().unwrap();
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn real_named_pipe_dispatches_the_shared_cli_mcp_request_after_os_authentication() {
+    use crate::external_control::transport::windows::verify_peer;
+    use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
+    let name = format!(r"\\.\pipe\exaterm-service-test-{}", uuid::Uuid::new_v4());
+    let server = ServerOptions::new().create(&name).unwrap();
+    let client = ClientOptions::new().open(&name).unwrap();
+    server.connect().await.unwrap();
+    verify_peer(&server, true).unwrap();
+    verify_peer(&client, false).unwrap();
+    let (runtime, _, _, _, _, _) = test_runtime_parts(AppConfig::default(), Vec::new(), None);
+    register_test_terminal(&runtime, "s1", TerminalProtocol::Ssh, "synthetic").await;
+    let server = tokio::spawn(handle_control_connection(
+        ExternalControlService::new(runtime),
+        server,
+    ));
+    let response =
+        external_control_call_over_stream(client, ExternalControlRequest::ListTerminalSessions)
+            .await
+            .unwrap()
+            .into_value()
+            .unwrap();
+    assert_eq!(response["sessions"][0]["session_id"], "s1");
+    assert_eq!(response["sessions"][0]["protocol"], "ssh");
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn handshake_frame_boundary_and_silent_first_request_share_one_setup_budget() {
+    use crate::external_control::protocol::{
+        handle_control_connection_with_permit, CONTROL_SETUP_TIMEOUT,
+    };
+    use tokio::io::AsyncWriteExt;
+    let (runtime, _, _, _, _, _) = test_runtime_parts(AppConfig::default(), Vec::new(), None);
+    let service = ExternalControlService::new(runtime);
+    let slots = std::sync::Arc::new(tokio::sync::Semaphore::new(1));
+    let (server_stream, mut client) = tokio::io::duplex(8192);
+    let server = tokio::spawn(handle_control_connection_with_permit(
+        service.clone(),
+        server_stream,
+        Some(slots.clone().try_acquire_owned().unwrap()),
+    ));
+    tokio::task::yield_now().await;
+    tokio::time::advance(CONTROL_SETUP_TIMEOUT / 2).await;
+    let mut frame =
+        serde_json::to_vec(&json!({ "protocol_version": CONTROL_PROTOCOL_VERSION })).unwrap();
+    frame.resize(4096, b' ');
+    frame.push(b'\n');
+    client.write_all(&frame).await.unwrap();
+    let handshake = read_json_line_for_test(&mut BufReader::new(&mut client)).await;
+    assert!(handshake["session_nonce"].is_string());
+    tokio::time::advance(CONTROL_SETUP_TIMEOUT / 2).await;
+    assert!(server.await.unwrap().unwrap_err().contains("timed out"));
+    assert_eq!(slots.available_permits(), 1);
+    let (server_stream, mut client) = tokio::io::duplex(8192);
+    client.write_all(&vec![b' '; 4097]).await.unwrap();
+    assert!(handle_control_connection(service, server_stream)
+        .await
+        .unwrap_err()
+        .contains("byte limit"));
+}

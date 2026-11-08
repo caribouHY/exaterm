@@ -13,7 +13,7 @@ The former HTTP MCP transport required a listener and transport-specific setting
 - Keep the normal ExaTerm GUI process as the single owner of terminal sessions, log state, credentials, and prompts.
 - Expose terminal operations through a transport-neutral service in `src-tauri/src/external_control/`.
 - Provide `exaterm-mcp` as a stdio MCP proxy that discovers or visibly launches the GUI and forwards requests to its current-user local control plane.
-- Use a current-user named pipe with a version and nonce handshake on Windows. Keep non-Windows transport behind the same protocol boundary.
+- Use a current-user named pipe with peer process user-SID verification on Windows, preserving its default ACL, remote-client rejection, and client identification level. Both sides verify OS identity before a version and nonce handshake; the nonce correlates requests and does not authenticate the user. Bound connection setup and frame size without applying short setup deadlines to operations or GUI credential prompts.
 - Keep `exaterm-cli` and `exaterm-mcp` as separate adapters over the same external-control service.
 - Remove HTTP MCP rather than maintaining transport compatibility.
 - Require explicit configuration gates for external control, individual adapters, and new-connection capability.

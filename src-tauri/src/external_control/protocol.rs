@@ -21,6 +21,10 @@ use crate::external_control::service::{
 const CREDENTIAL_REQUEST_TIMEOUT_MS: u64 = 5 * 60 * 1_000;
 const LOG_CONTROL_REQUEST_TIMEOUT_MS: u64 = 30_000;
 
+pub(crate) const CONTROL_SETUP_TIMEOUT: Duration = Duration::from_secs(2);
+pub(super) const MAX_HANDSHAKE_BYTES: usize = 4 * 1024;
+pub(super) const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
+
 pub const CONTROL_PROTOCOL_VERSION: u32 = 6;
 pub const CONTROL_UNAVAILABLE_MESSAGE: &str = "ExaTerm GUI control plane is unavailable";
 
@@ -56,6 +60,7 @@ pub struct ExternalControlResponseEnvelope {
     pub error: Option<ExternalControlError>,
 }
 
+#[cfg(test)]
 pub async fn handle_control_connection<S>(
     service: ExternalControlService,
     stream: S,
@@ -63,43 +68,81 @@ pub async fn handle_control_connection<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    handle_control_connection_with_permit(service, stream, None).await
+}
+
+pub(crate) async fn handle_control_connection_with_permit<S>(
+    service: ExternalControlService,
+    stream: S,
+    mut setup_permit: Option<tokio::sync::OwnedSemaphorePermit>,
+) -> Result<(), String>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let (read_half, mut write_half) = tokio::io::split(stream);
     let mut reader = BufReader::new(read_half);
-    let handshake: ControlHandshakeRequest = read_json_line(&mut reader).await?;
+    let setup_deadline = time::Instant::now() + CONTROL_SETUP_TIMEOUT;
+    let handshake: ControlHandshakeRequest = time::timeout_at(
+        setup_deadline,
+        read_json_frame(&mut reader, MAX_HANDSHAKE_BYTES),
+    )
+    .await
+    .map_err(|_| "External control handshake timed out".to_string())??;
 
     if handshake.protocol_version != CONTROL_PROTOCOL_VERSION {
-        write_json_line(
-            &mut write_half,
-            &ControlHandshakeResponse {
-                protocol_version: CONTROL_PROTOCOL_VERSION,
-                session_nonce: None,
-                error: Some(ExternalControlError::InvalidArguments(
-                    "Unsupported ExaTerm external control protocol version".into(),
-                )),
-            },
+        time::timeout_at(
+            setup_deadline,
+            write_json_line(
+                &mut write_half,
+                &ControlHandshakeResponse {
+                    protocol_version: CONTROL_PROTOCOL_VERSION,
+                    session_nonce: None,
+                    error: Some(ExternalControlError::InvalidArguments(
+                        "Unsupported ExaTerm external control protocol version".into(),
+                    )),
+                },
+            ),
         )
-        .await?;
+        .await
+        .map_err(|_| "External control handshake timed out".to_string())??;
         return Ok(());
     }
 
     let session_nonce = Uuid::new_v4().to_string();
-    write_json_line(
-        &mut write_half,
-        &ControlHandshakeResponse {
-            protocol_version: CONTROL_PROTOCOL_VERSION,
-            session_nonce: Some(session_nonce.clone()),
-            error: None,
-        },
+    time::timeout_at(
+        setup_deadline,
+        write_json_line(
+            &mut write_half,
+            &ControlHandshakeResponse {
+                protocol_version: CONTROL_PROTOCOL_VERSION,
+                session_nonce: Some(session_nonce.clone()),
+                error: None,
+            },
+        ),
     )
-    .await?;
+    .await
+    .map_err(|_| "External control handshake timed out".to_string())??;
 
+    let mut first_request = true;
     loop {
-        let request = match read_json_line::<ExternalControlRequestEnvelope, _>(&mut reader).await {
+        // The initial frame completes setup; established operations and later frames
+        // keep their existing lifetimes, including GUI credential waits.
+        let read = read_json_line::<ExternalControlRequestEnvelope, _>(&mut reader);
+        let result = if first_request {
+            time::timeout_at(setup_deadline, read)
+                .await
+                .map_err(|_| "External control request frame timed out".to_string())?
+        } else {
+            read.await
+        };
+        let request = match result {
             Ok(request) => request,
             Err(error) if error == "control connection closed" => return Ok(()),
             Err(error) => return Err(error),
         };
 
+        first_request = false;
+        drop(setup_permit.take());
         let response = if request.protocol_version != CONTROL_PROTOCOL_VERSION {
             ExternalControlResponseEnvelope {
                 request_id: request.request_id,
@@ -131,7 +174,20 @@ where
             }
         };
 
-        write_json_line(&mut write_half, &response).await?;
+        if let Err(error) = write_json_line(&mut write_half, &response).await {
+            if error != "External control frame exceeds byte limit" {
+                return Err(error);
+            }
+            write_json_line(
+                &mut write_half,
+                &ExternalControlResponseEnvelope {
+                    request_id: response.request_id,
+                    response: None,
+                    error: Some(ExternalControlError::Internal(error)),
+                },
+            )
+            .await?;
+        }
     }
 }
 
@@ -144,15 +200,7 @@ where
 {
     let (read_half, mut write_half) = tokio::io::split(stream);
     let mut reader = BufReader::new(read_half);
-    write_json_line(
-        &mut write_half,
-        &ControlHandshakeRequest {
-            protocol_version: CONTROL_PROTOCOL_VERSION,
-        },
-    )
-    .await
-    .map_err(ExternalControlError::Internal)?;
-    let handshake: ControlHandshakeResponse = read_json_line(&mut reader)
+    let handshake = client_handshake(&mut reader, &mut write_half)
         .await
         .map_err(ExternalControlError::Internal)?;
 
@@ -166,16 +214,20 @@ where
     };
 
     let request_id = Uuid::new_v4().to_string();
-    write_json_line(
-        &mut write_half,
-        &ExternalControlRequestEnvelope {
-            protocol_version: CONTROL_PROTOCOL_VERSION,
-            request_id: request_id.clone(),
-            session_nonce: Some(session_nonce),
-            request,
-        },
+    time::timeout(
+        CONTROL_SETUP_TIMEOUT,
+        write_json_line(
+            &mut write_half,
+            &ExternalControlRequestEnvelope {
+                protocol_version: CONTROL_PROTOCOL_VERSION,
+                request_id: request_id.clone(),
+                session_nonce: Some(session_nonce),
+                request,
+            },
+        ),
     )
     .await
+    .map_err(|_| ExternalControlError::Internal("External control request frame timed out".into()))?
     .map_err(ExternalControlError::Internal)?;
     let response: ExternalControlResponseEnvelope = read_json_line(&mut reader)
         .await
@@ -200,14 +252,8 @@ where
 {
     let (read_half, mut write_half) = tokio::io::split(stream);
     let mut reader = BufReader::new(read_half);
-    write_json_line(
-        &mut write_half,
-        &ControlHandshakeRequest {
-            protocol_version: CONTROL_PROTOCOL_VERSION,
-        },
-    )
-    .await?;
-    let handshake: ControlHandshakeResponse = read_json_line(&mut reader).await?;
+    let handshake = client_handshake(&mut reader, &mut write_half).await?;
+
     if let Some(error) = handshake.error {
         return Err(error.message().into());
     }
@@ -217,21 +263,72 @@ where
     Ok(())
 }
 
+async fn client_handshake<R, W>(
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<ControlHandshakeResponse, String>
+where
+    R: AsyncBufRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    time::timeout(CONTROL_SETUP_TIMEOUT, async {
+        write_json_line(
+            writer,
+            &ControlHandshakeRequest {
+                protocol_version: CONTROL_PROTOCOL_VERSION,
+            },
+        )
+        .await?;
+        let response: ControlHandshakeResponse =
+            read_json_frame(reader, MAX_HANDSHAKE_BYTES).await?;
+        if response.protocol_version != CONTROL_PROTOCOL_VERSION {
+            return Err("Unsupported ExaTerm external control protocol version".into());
+        }
+        Ok(response)
+    })
+    .await
+    .map_err(|_| "External control handshake timed out".to_string())?
+}
+
 async fn read_json_line<T, R>(reader: &mut R) -> Result<T, String>
 where
     T: DeserializeOwned,
     R: AsyncBufRead + Unpin,
 {
-    let mut line = String::new();
-    let bytes = reader
-        .read_line(&mut line)
-        .await
-        .map_err(|error| format!("External control read error: {error}"))?;
-    if bytes == 0 {
-        return Err("control connection closed".into());
+    read_json_frame(reader, MAX_FRAME_BYTES).await
+}
+
+async fn read_json_frame<T, R>(reader: &mut R, limit: usize) -> Result<T, String>
+where
+    T: DeserializeOwned,
+    R: AsyncBufRead + Unpin,
+{
+    let mut frame = Vec::new();
+    loop {
+        let available = reader
+            .fill_buf()
+            .await
+            .map_err(|e| format!("External control read error: {e}"))?;
+        if available.is_empty() {
+            return Err(if frame.is_empty() {
+                "control connection closed"
+            } else {
+                "External control frame missing newline"
+            }
+            .into());
+        }
+        let newline = available.iter().position(|b| *b == b'\n');
+        let count = newline.unwrap_or(available.len());
+        if count > limit.saturating_sub(frame.len()) {
+            return Err("External control frame exceeds byte limit".into());
+        }
+        frame.extend_from_slice(&available[..count]);
+        reader.consume(count + usize::from(newline.is_some()));
+        if newline.is_some() {
+            return serde_json::from_slice(&frame)
+                .map_err(|_| "External control JSON parse error".into());
+        }
     }
-    serde_json::from_str(line.trim_end())
-        .map_err(|error| format!("External control JSON parse error: {error}"))
 }
 
 async fn write_json_line<T, W>(writer: &mut W, value: &T) -> Result<(), String>
@@ -241,6 +338,9 @@ where
 {
     let data = serde_json::to_vec(value)
         .map_err(|error| format!("External control JSON serialize error: {error}"))?;
+    if data.len() > MAX_FRAME_BYTES {
+        return Err("External control frame exceeds byte limit".into());
+    }
     writer
         .write_all(&data)
         .await
@@ -721,5 +821,77 @@ mod log_control_tests {
             Some("original.log")
         );
         assert!(state.pending.lock().unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod frame_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn exact_limit_and_fragmented_frames_round_trip_without_consuming_the_next_frame() {
+        let mut reader = BufReader::with_capacity(3, &b"\"123456\"\n0\n"[..]);
+        assert_eq!(
+            read_json_frame::<String, _>(&mut reader, 8).await.unwrap(),
+            "123456"
+        );
+        assert_eq!(read_json_frame::<u32, _>(&mut reader, 1).await.unwrap(), 0);
+        let mut over = BufReader::new(&b"\"1234567\"\n"[..]);
+        assert!(read_json_frame::<String, _>(&mut over, 8)
+            .await
+            .unwrap_err()
+            .contains("limit"));
+        let mut missing = BufReader::new(&b"{}"[..]);
+        assert!(read_json_frame::<serde_json::Value, _>(&mut missing, 8)
+            .await
+            .unwrap_err()
+            .contains("newline"));
+    }
+
+    #[tokio::test]
+    async fn unterminated_stream_is_rejected_before_eof_at_the_limit() {
+        let (mut writer, stream) = tokio::io::duplex(32);
+        writer.write_all(b"123456789").await.unwrap();
+        let mut reader = BufReader::new(stream);
+        assert!(read_json_frame::<String, _>(&mut reader, 8)
+            .await
+            .unwrap_err()
+            .contains("limit"));
+    }
+
+    #[tokio::test]
+    async fn largest_terminal_payload_with_worst_json_escaping_fits_frame_budget() {
+        let text = "\u{0000}".repeat(crate::external_control::service::MAX_READ_CHARS);
+        let mut data = Vec::new();
+        write_json_line(&mut data, &text).await.unwrap();
+        assert_eq!(data.len(), 120003);
+        let mut reader = BufReader::new(data.as_slice());
+        assert_eq!(
+            read_json_line::<String, _>(&mut reader).await.unwrap(),
+            text
+        );
+        let mut oversized = Vec::new();
+        assert!(
+            write_json_line(&mut oversized, &"a".repeat(MAX_FRAME_BYTES))
+                .await
+                .is_err()
+        );
+        assert!(oversized.is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn silent_and_nonreading_server_cannot_hold_client_handshake() {
+        let (client, _silent_server) = tokio::io::duplex(1);
+        assert!(control_probe_over_stream(client)
+            .await
+            .unwrap_err()
+            .contains("timed out"));
+        let (client, _silent_server) = tokio::io::duplex(4096);
+        assert!(external_control_call_over_stream(
+            client,
+            ExternalControlRequest::ListTerminalSessions
+        )
+        .await
+        .is_err());
     }
 }

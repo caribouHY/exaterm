@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Minus, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ShortcutConfig, ViewMode } from "../../types";
 import AIAssistantLogo from "../AI/AIAssistantLogo";
 import { PopoverMenu } from "../Common";
-import { createTitleBarMenus, type TitleBarMenuKey } from "./titleBarMenuModel";
+import {
+  adjacentTitleBarMenu,
+  createTitleBarMenus,
+  TITLE_BAR_MENU_KEYS,
+  type TitleBarMenuKey,
+} from "./titleBarMenuModel";
+import { HelpDialog, type HelpDialogKind } from "./HelpDialog";
 import appIcon from "../../../src-tauri/icons/icon.png";
 import "./TitleBar.css";
 
@@ -51,11 +58,21 @@ export default function TitleBar({
   const { t } = useTranslation();
   const appWindow = getCurrentWindow();
   const [openMenu, setOpenMenu] = useState<TitleBarMenuKey | null>(null);
+  const [helpDialog, setHelpDialog] = useState<HelpDialogKind | null>(null);
   const menuBarRef = useRef<HTMLDivElement>(null);
   const fileTriggerRef = useRef<HTMLButtonElement>(null);
   const editTriggerRef = useRef<HTMLButtonElement>(null);
-  const getTriggerRef = (menu: TitleBarMenuKey) =>
-    menu === "file" ? fileTriggerRef : editTriggerRef;
+  const helpTriggerRef = useRef<HTMLButtonElement>(null);
+  const getTriggerRef = (menu: TitleBarMenuKey) => {
+    switch (menu) {
+      case "file":
+        return fileTriggerRef;
+      case "edit":
+        return editTriggerRef;
+      case "help":
+        return helpTriggerRef;
+    }
+  };
 
   useEffect(() => {
     if (!openMenu) return;
@@ -98,6 +115,8 @@ export default function TitleBar({
       sessionLogs: t("titlebar.menu.session_logs"),
       settings: t("titlebar.menu.settings"),
       checkUpdates: t("titlebar.menu.check_updates"),
+      documentation: t("titlebar.menu.documentation"),
+      about: t("titlebar.menu.about"),
       exit: t("titlebar.menu.exit"),
       selectAll: t("titlebar.menu.terminal_select_all"),
       copy: t("titlebar.menu.terminal_copy"),
@@ -115,6 +134,15 @@ export default function TitleBar({
         onViewChange("settings");
       },
       checkUpdates: onCheckForUpdates,
+      openDocumentation: () => {
+        helpTriggerRef.current?.focus();
+        void openUrl("https://github.com/caribouHY/exaterm").catch(() => {
+          setHelpDialog("documentation_error");
+        });
+      },
+      openAbout: () => {
+        setHelpDialog("about");
+      },
       exit: onExit,
       selectAll: onSelectAllTerminal,
       copy: onCopyTerminal,
@@ -123,6 +151,17 @@ export default function TitleBar({
       clearBuffer: onClearTerminalBuffer,
     },
   });
+
+  const getMenuItems = (menu: TitleBarMenuKey) => {
+    switch (menu) {
+      case "file":
+        return menus.file;
+      case "edit":
+        return menus.edit;
+      case "help":
+        return menus.help;
+    }
+  };
 
   const switchMenu = (menu: TitleBarMenuKey) => {
     setOpenMenu(menu);
@@ -135,9 +174,8 @@ export default function TitleBar({
     setOpenMenu(null);
   };
 
-  const navigateMenu = () => {
-    const target = openMenu === "file" ? "edit" : "file";
-    switchMenu(target);
+  const navigateMenu = (direction: "previous" | "next") => {
+    if (openMenu) switchMenu(adjacentTitleBarMenu(openMenu, direction));
   };
 
   const handleTriggerKeyDown = (
@@ -151,7 +189,7 @@ export default function TitleBar({
     }
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       event.preventDefault();
-      const target = menu === "file" ? "edit" : "file";
+      const target = adjacentTitleBarMenu(menu, event.key === "ArrowLeft" ? "previous" : "next");
       getTriggerRef(target).current?.focus();
       if (openMenu) {
         switchMenu(target);
@@ -165,7 +203,7 @@ export default function TitleBar({
         <img className="titlebar__logo" src={appIcon} alt="" aria-hidden="true" draggable={false} />
 
         <div className="titlebar__menubar" ref={menuBarRef} role="menubar">
-          {(["file", "edit"] as const).map((menu) => {
+          {TITLE_BAR_MENU_KEYS.map((menu) => {
             const isOpen = openMenu === menu;
             const triggerId = `titlebar-${menu}-menu-trigger`;
             return (
@@ -199,7 +237,7 @@ export default function TitleBar({
 
                 {isOpen && (
                   <PopoverMenu
-                    items={menu === "file" ? menus.file : menus.edit}
+                    items={getMenuItems(menu)}
                     onAction={runMenuAction}
                     className={`titlebar__menu-popover titlebar__menu-popover--${menu}`}
                     autoFocus
@@ -253,6 +291,15 @@ export default function TitleBar({
           <X size={14} />
         </button>
       </div>
+      {helpDialog && (
+        <HelpDialog
+          kind={helpDialog}
+          returnFocusRef={helpTriggerRef}
+          onClose={() => {
+            setHelpDialog(null);
+          }}
+        />
+      )}
     </div>
   );
 }

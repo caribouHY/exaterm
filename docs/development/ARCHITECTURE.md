@@ -91,7 +91,7 @@ The Rust workspace subsystem uses `src-tauri/src/workspace.rs` as its facade:
 - `workspace/state.rs` exposes the async shared-state API.
 - `workspace/commands.rs` owns Tauri commands, window creation, localization-independent command results, and workspace events.
 
-Each terminal tab has exactly one owner window. Closing a window rehomes its tabs when another window remains. Moving or detaching a tab changes visible ownership without disconnecting the underlying protocol session or replacing its session ID.
+Each terminal tab has exactly one owner window. Removal validates the invoking window against the actual owner and tab order under the placement lock. GUI close reserves that ownership before log stop or disconnect; moves and duplicate removal are rejected until the backend-owned teardown completes, even if the calling webview stops waiting. Log stop uses the existing per-session operation lock and metadata synchronization; log start rejects closing sessions. Detach validates ownership and performs synchronous native creation, registration, and transfer while holding placement, so a concurrent move cannot leave an orphan window. Moves, removal, and window rehoming invalidate affected drag references. Closing a window rehomes its tabs when another window remains. Moving or detaching a tab changes visible ownership without disconnecting the underlying protocol session or replacing its session ID.
 
 Settings and Logs are window-local utility views. Rust owns terminal placement; React combines the backend terminal projection with local utility-tab state.
 
@@ -102,7 +102,9 @@ Settings and Logs are window-local utility views. Rust owns terminal placement; 
 3. The frontend workspace lifecycle registers the returned session as a terminal tab.
 4. `TerminalView` subscribes to protocol output and writes it to xterm.js.
 5. User input is sent to the matching backend write command.
-6. Disconnect state is projected through the workspace without discarding the visible terminal buffer.
+6. Disconnect state is projected through the workspace. By default the visible terminal buffer remains; enabling `terminal.auto_close_on_disconnect` removes the tab on future disconnections without ending the window. Retained backend output remains available to external control.
+
+Retained terminal state freezes the auto-close policy on the first disconnect. Workspace placement applies removal under its existing lock, defers removal to a reserved explicit close, and suppresses late tab registration for auto-closed sessions. Late registration also finishes logs started during GUI or external-control finalization after protocol cleanup.
 
 Workspace tab registration reads retained session status while holding placement ownership. Protocol teardown marks retained status before updating workspace state, so a tab registered after an early EOF remains disconnected.
 
@@ -110,7 +112,7 @@ GUI SSH connections verify and, when necessary, confirm the host key within the 
 
 SSH session setup requests PTY allocation and shell startup sequentially, requiring each server success reply within a 10-second send-and-reply deadline. The setup owner retains the channel outside cancellable futures and registers a session only after both replies and the attempt completion check. Failed or cancelled setup closes the channel and disconnects the target and jump transports within a shared five-second cleanup deadline. Startup output stays queued in the handler until the registered session starts its output processor.
 
-SSH keepalive settings are captured when a connection starts and applied to both target and jump transports through russh's protocol timer. Settings updates leave existing sessions unchanged. A keepalive timeout uses the existing disconnect owner to update session status and finish logs while preserving terminal tabs and retained output.
+SSH keepalive settings are captured when a connection starts and applied to both target and jump transports through russh's protocol timer. Settings updates leave existing sessions unchanged. A keepalive timeout uses the existing disconnect owner to update session status and finish logs, applying the configured tab-close policy while preserving retained backend output.
 
 The target handler also schedules that same idempotent cleanup when it is dropped, because a failed tunnel shutdown can prevent russh from invoking its disconnect callback after the jump transport has exited.
 
@@ -150,13 +152,15 @@ Configuration and port discovery, protocol connection and writes, GUI credential
 - The normal ExaTerm GUI process remains the single owner of sessions, logs, credentials, and UI prompts.
 - `exaterm-cli` exposes typed subcommands and JSON output for local automation.
 - `exaterm-mcp` is a bundled stdio MCP proxy. It discovers or launches the GUI and forwards tool calls over the current-user local control plane.
-- Windows uses a current-user named pipe and protocol handshake. The non-Windows fallback uses a local TCP transport.
+- Windows retains the default named-pipe ACL, remote-client rejection, and client identification level. Both sides additionally verify the pipe peer process token has the current process user SID. The nonce correlates requests to a connection after OS-user authentication; it is not a user credential.
 - External clients serialize GUI startup with a current-user launch lock and recheck the control plane after acquiring it. The Windows named-pipe listener retries transient instance-creation failures instead of permanently stopping the control plane.
 - HTTP MCP has been removed and is not a compatibility target.
 
 External control requires `external_control.enabled`. The CLI and MCP compatibility adapter additionally require their respective `cli_enabled` or `mcp_enabled` flags. Creating new connections also requires `connect_enabled`, and saved profiles must individually allow external-control access. Direct SSH/Telnet targets additionally require `direct_connect_enabled`; a saved SSH profile used as a direct connection's jump host must also allow external control.
 
-The local control protocol is version 6. It carries typed session focus, disconnect, and log status, pause, resume, start, and stop operations. CLI start requests may include an absolute destination with overwrite or append mode, while the MCP start schema remains session-ID-only. The local control plane rejects invalid protocol versions and requests without the negotiated nonce. MCP stdout is reserved for JSON-RPC; diagnostics belong on stderr or in privacy-safe logs.
+The local control protocol is version 6. It carries typed session focus, disconnect, and log status, pause, resume, start, and stop operations. CLI start requests may include an absolute destination with overwrite or append mode, while the MCP start schema remains session-ID-only. The local control plane rejects invalid protocol versions and requests without the negotiated nonce. Handshake frames are limited to 4 KiB and other JSON-line frames to 16 MiB, excluding the newline. These limits include serialized JSON escaping and envelopes; the existing 20,000-character input/output maximum fits. Oversized requests and responses fail instead of being truncated, so previously unbounded profile/session listings must fit the new frame limit. At most eight connections may be establishing; handshake exchange and the first request frame share a two-second server deadline. Client connection and handshake phases are bounded, and discovery probes share the discovery deadline. Established operation execution, response waits, later frames, and GUI credential waits do not inherit that deadline.
+
+MCP stdout is reserved for JSON-RPC; diagnostics belong on stderr or in privacy-safe logs.
 
 CLI and MCP session focus requests select the existing terminal tab in its current owner window and await a request-scoped GUI acknowledgement after React commits the selection. The native window is then shown, restored, and focused while workspace placement is locked. A tab ownership change can trigger one retry within the five-second acknowledgement deadline. Pending requests are removed on completion or cancellation, and acknowledgements are checked against the caller window and expected tab. Open dialogs retain input focus while the terminal tab is selected behind them. Native focus-call success does not override operating-system foreground restrictions.
 

@@ -56,7 +56,9 @@ Read only the relevant sections:
 7. Use `sessions focus` when asked to show a session. It preserves existing dialogs and
    session state; success does not guarantee terminal input focus through an open dialog.
    Disconnect only the exact selected session when requested or when explicitly authorized
-   cleanup requires it. Success preserves its tab and scrollback and stops its active log;
+   cleanup requires it. Success stops its active log. The tab and scrollback remain by default;
+   the optional auto-close setting removes the tab on future disconnects, so do not assume
+   GUI focus remains available. Retained backend output remains readable;
    Serial success also guarantees local port release. Serial disconnect discards unsent
    input; send success establishes queue acceptance, not device delivery. Concurrent
    disconnects wait for the same cleanup. Repeated disconnect is idempotent.
@@ -66,6 +68,11 @@ Read only the relevant sections:
    See the reference for timing and forced-cancellation limits.
 
 ## Operating Rules
+
+- Run the CLI as the GUI's OS user and keep GUI/CLI/MCP binaries updated together.
+  Windows named pipes verify peer process user SIDs on both sides. The nonce correlates
+  requests with a connection; it does not authenticate the OS user. See the reference for
+  frame limits and setup deadlines.
 
 - Preserve existing sessions, tabs, scrollback, and logs. Never clear, recreate, replace,
   or disconnect a session as routine recovery.

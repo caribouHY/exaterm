@@ -184,6 +184,7 @@ pub fn run() {
 
             match config::config_load() {
                 Ok(cfg) => {
+                    terminal_control_state.set_auto_close_on_disconnect(cfg.terminal.auto_close_on_disconnect);
                     terminal_control_state
                         .set_output_limit_from_scrollback(cfg.terminal.scrollback);
                     if cfg.external_control.enabled {
@@ -294,6 +295,7 @@ pub fn run() {
             workspace::commands::workspace_tab_move,
             workspace::commands::workspace_tab_register,
             workspace::commands::workspace_tab_remove,
+            workspace::commands::workspace_tab_close,
             workspace::commands::workspace_tab_reorder,
             workspace::commands::workspace_tab_update_metadata,
             workspace::commands::workspace_window_create,
