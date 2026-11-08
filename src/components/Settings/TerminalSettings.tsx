@@ -56,7 +56,9 @@ export function TerminalSettings({ config, onChange }: TerminalSettingsProps) {
         label={t("settings.auto_close_on_disconnect")}
         description={t("settings.auto_close_on_disconnect_desc")}
         checked={config.auto_close_on_disconnect}
-        onChange={(auto_close_on_disconnect) => onChange({ auto_close_on_disconnect })}
+        onChange={(auto_close_on_disconnect) => {
+          onChange({ auto_close_on_disconnect });
+        }}
       />
       <div className="settings-row">
         <div>
