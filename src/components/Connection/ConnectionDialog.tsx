@@ -118,7 +118,9 @@ export default function ConnectionDialog({
   }, []);
 
   useEffect(() => {
-    loadConfig().catch(() => setConfigLoadFailed(true));
+    loadConfig().catch(() => {
+      setConfigLoadFailed(true);
+    });
   }, [loadConfig]);
 
   useEffect(() => {
@@ -201,7 +203,7 @@ export default function ConnectionDialog({
   useEffect(() => {
     if (!initialValues || initialValuesApplied || startupRequest || !config) return;
     const { connectionInfo: info, profileId } = initialValues;
-    const profile = config.saved_connections?.find(
+    const profile = config.saved_connections.find(
       (entry) => entry.connection_type === info.kind && entry.id === profileId
     );
 
