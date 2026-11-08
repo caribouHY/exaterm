@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.10.2
+
 ### Added
 
 - Added a Help menu with documentation and application version information, and moved Check for Updates from File to Help.
