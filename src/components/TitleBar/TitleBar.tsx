@@ -63,8 +63,16 @@ export default function TitleBar({
   const fileTriggerRef = useRef<HTMLButtonElement>(null);
   const editTriggerRef = useRef<HTMLButtonElement>(null);
   const helpTriggerRef = useRef<HTMLButtonElement>(null);
-  const getTriggerRef = (menu: TitleBarMenuKey) =>
-    ({ file: fileTriggerRef, edit: editTriggerRef, help: helpTriggerRef })[menu];
+  const getTriggerRef = (menu: TitleBarMenuKey) => {
+    switch (menu) {
+      case "file":
+        return fileTriggerRef;
+      case "edit":
+        return editTriggerRef;
+      case "help":
+        return helpTriggerRef;
+    }
+  };
 
   useEffect(() => {
     if (!openMenu) return;
@@ -132,7 +140,9 @@ export default function TitleBar({
           setHelpDialog("documentation_error");
         });
       },
-      openAbout: () => setHelpDialog("about"),
+      openAbout: () => {
+        setHelpDialog("about");
+      },
       exit: onExit,
       selectAll: onSelectAllTerminal,
       copy: onCopyTerminal,
@@ -141,6 +151,17 @@ export default function TitleBar({
       clearBuffer: onClearTerminalBuffer,
     },
   });
+
+  const getMenuItems = (menu: TitleBarMenuKey) => {
+    switch (menu) {
+      case "file":
+        return menus.file;
+      case "edit":
+        return menus.edit;
+      case "help":
+        return menus.help;
+    }
+  };
 
   const switchMenu = (menu: TitleBarMenuKey) => {
     setOpenMenu(menu);
@@ -216,7 +237,7 @@ export default function TitleBar({
 
                 {isOpen && (
                   <PopoverMenu
-                    items={menus[menu]}
+                    items={getMenuItems(menu)}
                     onAction={runMenuAction}
                     className={`titlebar__menu-popover titlebar__menu-popover--${menu}`}
                     autoFocus
@@ -274,7 +295,9 @@ export default function TitleBar({
         <HelpDialog
           kind={helpDialog}
           returnFocusRef={helpTriggerRef}
-          onClose={() => setHelpDialog(null)}
+          onClose={() => {
+            setHelpDialog(null);
+          }}
         />
       )}
     </div>

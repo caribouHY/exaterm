@@ -72,7 +72,9 @@ export function HelpDialog({ kind, onClose, returnFocusRef }: HelpDialogProps) {
   return createPortal(
     <div
       className="ui-overlay titlebar-help-overlay"
-      onKeyDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+      }}
     >
       <ModalFrame
         className="titlebar-help-dialog"
