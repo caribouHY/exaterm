@@ -475,6 +475,8 @@ pub struct TerminalConfig {
     pub scrollback: u32,
     #[serde(default)]
     pub auto_session_log: bool,
+    #[serde(default)]
+    pub auto_close_on_disconnect: bool,
     #[serde(default = "default_terminal_log_format")]
     pub log_format: String,
     #[serde(default = "default_terminal_include_log_header")]
@@ -489,6 +491,7 @@ impl Default for TerminalConfig {
             cursor_style: default_terminal_cursor_style(),
             scrollback: default_terminal_scrollback(),
             auto_session_log: false,
+            auto_close_on_disconnect: false,
             log_format: default_terminal_log_format(),
             include_log_header: default_terminal_include_log_header(),
         }
@@ -866,6 +869,7 @@ pub fn config_save(
             config_write_to_path(&config_path(), &config)
                 .map_err(crate::command_error::BackendCommandError::from)?;
         }
+        terminals.set_auto_close_on_disconnect(config.terminal.auto_close_on_disconnect);
         (config, changed)
     };
 

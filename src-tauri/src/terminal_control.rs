@@ -1,7 +1,7 @@
 use encoding_rs::{Decoder, Encoding, EUC_JP, SHIFT_JIS, UTF_8};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::{futures::Notified, Mutex, Notify};
 
@@ -57,6 +57,7 @@ pub struct TerminalOutputEvent {
 
 struct TerminalSession {
     info: TerminalSessionInfo,
+    auto_close_on_disconnect: bool,
     output: String,
     dropped_chars: usize,
     cursor: usize,
@@ -68,6 +69,7 @@ pub struct TerminalControlState {
     sessions: Arc<Mutex<HashMap<String, TerminalSession>>>,
     output_notify: Arc<Notify>,
     output_limit: Arc<AtomicUsize>,
+    auto_close_on_disconnect: Arc<AtomicBool>,
     logger: Arc<std::sync::OnceLock<crate::logger::LoggerState>>,
 }
 
@@ -77,6 +79,7 @@ impl TerminalControlState {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             output_notify: Arc::new(Notify::new()),
             output_limit: Arc::new(AtomicUsize::new(DEFAULT_OUTPUT_LIMIT)),
+            auto_close_on_disconnect: Arc::new(AtomicBool::new(false)),
             logger: Arc::new(std::sync::OnceLock::new()),
         }
     }
@@ -87,12 +90,18 @@ impl TerminalControlState {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             output_notify: Arc::new(Notify::new()),
             output_limit: Arc::new(AtomicUsize::new(output_limit)),
+            auto_close_on_disconnect: Arc::new(AtomicBool::new(false)),
             logger: Arc::new(std::sync::OnceLock::new()),
         }
     }
 
     pub fn set_logger(&self, logger: crate::logger::LoggerState) {
         let _ = self.logger.set(logger);
+    }
+
+    pub fn set_auto_close_on_disconnect(&self, enabled: bool) {
+        self.auto_close_on_disconnect
+            .store(enabled, Ordering::Relaxed);
     }
 
     pub fn set_output_limit_from_scrollback(&self, scrollback: u32) {
@@ -147,6 +156,7 @@ impl TerminalControlState {
         };
         let session = TerminalSession {
             info,
+            auto_close_on_disconnect: false,
             output: String::new(),
             dropped_chars: 0,
             cursor: 0,
@@ -227,13 +237,39 @@ impl TerminalControlState {
             .into_owned())
     }
 
-    pub async fn mark_disconnected(&self, session_id: &str) {
+    pub async fn mark_disconnected(&self, session_id: &str) -> bool {
         let mut sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.get_mut(session_id) {
+        let auto_close = if let Some(session) = sessions.get_mut(session_id) {
+            // Freeze the policy on the first disconnect, including when tab registration is late.
+            if session.info.status == TerminalStatus::Connected {
+                session.auto_close_on_disconnect =
+                    self.auto_close_on_disconnect.load(Ordering::Relaxed);
+            }
             session.info.status = TerminalStatus::Disconnected;
-        }
+            session.auto_close_on_disconnect
+        } else {
+            false
+        };
         drop(sessions);
         self.output_notify.notify_waiters();
+        auto_close
+    }
+
+    pub(crate) async fn workspace_session_state(
+        &self,
+        session_id: &str,
+    ) -> Option<(TerminalSessionInfo, bool)> {
+        self.sessions
+            .lock()
+            .await
+            .get(session_id)
+            .map(|session| (session.info.clone(), session.auto_close_on_disconnect))
+    }
+
+    pub(crate) async fn finish_auto_closed_session_logs(&self, session_id: &str) {
+        if let Some(logger) = self.logger.get() {
+            crate::logger::clear_session_logs(logger, session_id).await;
+        }
     }
 
     pub async fn list_sessions(&self) -> Vec<TerminalSessionInfo> {

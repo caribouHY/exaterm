@@ -110,6 +110,8 @@
   "settings.scrollback": "スクロールバック行数",
   "settings.font_family": "フォントファミリー",
   "settings.log_settings": "ログ設定",
+  "settings.auto_close_on_disconnect": "切断時にターミナルを自動で閉じる",
+  "settings.auto_close_on_disconnect_desc": "通信エラーを含むすべての切断時にターミナルタブを閉じます。保存後の切断から適用され、すでに切断済みのタブは残ります。",
   "settings.auto_session_log": "接続時にログを自動開始",
   "settings.auto_session_log_desc": "新しいSSH、シリアル、Telnet接続ごとに平文ログを自動的に開始します",
   "settings.log_format": "ログ整形方式",

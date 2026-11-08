@@ -264,7 +264,10 @@ operation for the same known session is safe and returns `disconnected=false` wi
 `already_disconnected=true`. An unknown session returns a not-found error; re-list sessions
 instead of guessing another ID.
 
-Disconnect preserves the GUI tab and retained scrollback. ExaTerm flushes and stops an active
+Disconnect preserves the GUI tab and scrollback by default. If `terminal.auto_close_on_disconnect`
+is enabled, future disconnections (including CLI/MCP requests and errors) remove the GUI tab.
+Existing disconnected tabs stay open. Retained backend output and disconnect result fields remain
+available; GUI focus requires a tab that still exists. ExaTerm flushes and stops an active
 session log before ending SSH, Telnet, or Serial I/O. For Serial, success means the local port
 has been released, so the same port can be opened again. Concurrent disconnect requests also
 wait for release.

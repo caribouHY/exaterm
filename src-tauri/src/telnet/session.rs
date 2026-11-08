@@ -87,8 +87,11 @@ where
                 .await;
             owner.events.error(&owner.session_id, &error);
         }
-        owner.terminals.mark_disconnected(&owner.session_id).await;
-        let snapshot = owner.workspace.mark_disconnected(&owner.session_id).await;
+        let auto_close = owner.terminals.mark_disconnected(&owner.session_id).await;
+        let snapshot = owner
+            .workspace
+            .mark_disconnected(&owner.session_id, auto_close)
+            .await;
         if let Some(logger) = &owner.logger {
             crate::logger::clear_session_logs(logger, &owner.session_id).await;
         }

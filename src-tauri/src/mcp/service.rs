@@ -69,7 +69,7 @@ impl ExaTermMcpServer {
 
     #[tool(
         name = "disconnect_terminal_session",
-        description = "Disconnect an existing ExaTerm terminal session while preserving its tab and scrollback. Repeated calls for an already disconnected session are safe."
+        description = "Disconnect an existing ExaTerm terminal session. By default its tab and scrollback remain; enabling auto-close on disconnect removes the tab. Retained backend output remains readable. Repeated calls for an already disconnected session are safe."
     )]
     async fn disconnect_terminal_session(
         &self,

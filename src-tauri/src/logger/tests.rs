@@ -1292,3 +1292,53 @@ async fn backend_notice_retries_pending_output_in_receive_order() {
         .ends_with("queued\nnotice"));
     let _ = fs::remove_dir_all(dir);
 }
+
+#[tokio::test]
+async fn auto_closed_late_registration_finishes_logs_and_preserves_saved_output() {
+    use crate::terminal_control::{TerminalControlState, TerminalProtocol};
+    use crate::workspace::{WorkspaceState, WorkspaceTabRegisterInput};
+    let dir = test_dir("auto_close_late_registration");
+    let logger = LoggerState::with_paths(dir.clone(), dir.join("index.json"));
+    let terminals = TerminalControlState::new();
+    terminals.set_logger(logger.clone());
+    terminals.set_auto_close_on_disconnect(true);
+    let workspace = WorkspaceState::new();
+    terminals
+        .register_session("s1".into(), TerminalProtocol::Telnet, "synthetic".into())
+        .await;
+    assert!(terminals.mark_disconnected("s1").await);
+    clear_session_logs(&logger, "s1").await;
+    let path = start_log_on_connection(&logger, "s1".into(), "telnet".into(), "synthetic".into())
+        .await
+        .unwrap();
+    terminals
+        .append_output("s1", b"synthetic final output")
+        .await;
+    let snapshot = workspace
+        .register_session_tab(
+            WorkspaceTabRegisterInput {
+                window_id: Some("main".into()),
+                tab_id: None,
+                session_id: "s1".into(),
+                connection_type: TerminalProtocol::Telnet,
+                title: "synthetic".into(),
+                encoding: "utf-8".into(),
+                terminal_mode: "general".into(),
+                connection_info: None,
+                is_manual_logging: true,
+                manual_log_file_path: Some(path.clone()),
+            },
+            &terminals,
+        )
+        .await;
+    assert!(snapshot.tabs.is_empty());
+    assert!(active_log_session(&logger, "s1").await.is_none());
+    assert!(fs::read_to_string(path)
+        .unwrap()
+        .ends_with("synthetic final output"));
+    assert_eq!(
+        terminals.read_output("s1", 100).await.unwrap().output,
+        "synthetic final output"
+    );
+    let _ = fs::remove_dir_all(dir);
+}

@@ -56,7 +56,9 @@ Read only the relevant sections:
 7. Use `sessions focus` when asked to show a session. It preserves existing dialogs and
    session state; success does not guarantee terminal input focus through an open dialog.
    Disconnect only the exact selected session when requested or when explicitly authorized
-   cleanup requires it. Success preserves its tab and scrollback and stops its active log;
+   cleanup requires it. Success stops its active log. The tab and scrollback remain by default;
+   the optional auto-close setting removes the tab on future disconnects, so do not assume
+   GUI focus remains available. Retained backend output remains readable;
    Serial success also guarantees local port release. Serial disconnect discards unsent
    input; send success establishes queue acceptance, not device delivery. Concurrent
    disconnects wait for the same cleanup. Repeated disconnect is idempotent.

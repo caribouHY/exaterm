@@ -6,6 +6,7 @@ use tokio::sync::Mutex;
 pub struct WorkspaceState {
     model: Arc<Mutex<WorkspaceModel>>,
     closing: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    pending_auto_close: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
 }
 
 impl WorkspaceState {
@@ -222,7 +223,15 @@ impl WorkspaceState {
                 .unwrap_or(input.window_id.as_deref().unwrap_or("main"));
             return snapshot_for_locked(&model, owner);
         }
-        let session = terminals.session_info(&input.session_id).await;
+        let session = terminals.workspace_session_state(&input.session_id).await;
+        if session.as_ref().is_some_and(|(_, auto_close)| *auto_close) {
+            // GUI finalization starts logging before registration and can arrive after EOF cleanup.
+            terminals
+                .finish_auto_closed_session_logs(&input.session_id)
+                .await;
+            return snapshot_for_locked(&model, input.window_id.as_deref().unwrap_or("main"));
+        }
+        let session = session.map(|(info, _)| info);
         let is_connected = session.as_ref().is_none_or(|session| {
             session.status == crate::terminal_control::TerminalStatus::Connected
         });
@@ -381,12 +390,20 @@ impl WorkspaceState {
                 model.tabs[tab_id].clone(),
                 ClosingTabGuard {
                     closing: self.closing.clone(),
+                    pending_auto_close: self.pending_auto_close.clone(),
                     tab_id: tab_id.to_string(),
                 },
             )
         };
-        close(tab).await?;
+        let close_result = close(tab).await;
         let mut model = self.model.lock().await;
+        if let Err(error) = close_result {
+            if !self.pending_auto_close.lock().unwrap().contains(tab_id) {
+                return Err(error);
+            }
+            // A confirmed disconnect still requires removal if the overlapping GUI close failed.
+            log::warn!("Explicit tab cleanup failed after an automatic disconnect close");
+        }
         // Window shutdown can rehome an accepted close; the reservation follows the tab.
         let owner = model
             .tabs
@@ -467,9 +484,29 @@ impl WorkspaceState {
         Some(snapshot_for_locked(&model, &owner))
     }
 
-    pub async fn mark_disconnected(&self, session_id: &str) -> Option<WorkspaceSnapshot> {
+    pub async fn mark_disconnected(
+        &self,
+        session_id: &str,
+        auto_close: bool,
+    ) -> Option<WorkspaceSnapshot> {
         let mut model = self.model.lock().await;
         let previous = model.clone();
+        let tab = model
+            .tabs
+            .values()
+            .find(|tab| tab.session_id == session_id)?;
+        if auto_close {
+            if self.closing.lock().unwrap().contains(&tab.tab_id) {
+                self.pending_auto_close
+                    .lock()
+                    .unwrap()
+                    .insert(tab.tab_id.clone());
+            } else {
+                let owner = tab.owner_window_id.clone();
+                let tab_id = tab.tab_id.clone();
+                return remove_tab_locked(&mut model, &owner, &tab_id).ok();
+            }
+        }
         let owner_window_id = model
             .tabs
             .values_mut()
@@ -482,7 +519,7 @@ impl WorkspaceState {
                 tab.owner_window_id.clone()
             })?;
         advance_revision_if_changed(&mut model, &previous);
-        Some(snapshot_for_locked(&model, &owner_window_id))
+        (*model != previous).then(|| snapshot_for_locked(&model, &owner_window_id))
     }
 
     pub async fn drag_start(
@@ -646,11 +683,13 @@ fn register_tab_locked(
 
 struct ClosingTabGuard {
     closing: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    pending_auto_close: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
     tab_id: String,
 }
 impl Drop for ClosingTabGuard {
     fn drop(&mut self) {
         self.closing.lock().unwrap().remove(&self.tab_id);
+        self.pending_auto_close.lock().unwrap().remove(&self.tab_id);
     }
 }
 

@@ -28,14 +28,14 @@ async fn session_tab_registration_preserves_disconnect_in_both_orders() {
             .await;
         if disconnect_first {
             terminals.mark_disconnected("s1").await;
-            assert!(workspace.mark_disconnected("s1").await.is_none());
+            assert!(workspace.mark_disconnected("s1", false).await.is_none());
         }
         workspace
             .register_session_tab(input("s1", Some("main")), &terminals)
             .await;
         if !disconnect_first {
             terminals.mark_disconnected("s1").await;
-            workspace.mark_disconnected("s1").await.unwrap();
+            workspace.mark_disconnected("s1", false).await.unwrap();
         }
         let tab = workspace.tab_for_session("s1").await.unwrap();
         assert!(!tab.is_connected);
@@ -194,7 +194,7 @@ async fn connected_session_count_spans_windows_and_ignores_disconnected_tabs() {
     state.register_tab(input("s2", Some("other"))).await;
 
     assert_eq!(state.connected_session_count().await, 2);
-    state.mark_disconnected("s1").await;
+    state.mark_disconnected("s1", false).await;
     assert_eq!(state.connected_session_count().await, 1);
 }
 
@@ -348,7 +348,7 @@ async fn session_profile_identity_distinguishes_tabs_and_survives_disconnect_and
     }
 
     terminals.mark_disconnected("s1").await;
-    workspace.mark_disconnected("s1").await.unwrap();
+    workspace.mark_disconnected("s1", false).await.unwrap();
     let snapshots = workspace
         .move_tab("s1".into(), "main".into(), "other".into(), 0)
         .await
@@ -853,7 +853,7 @@ async fn mark_disconnected_updates_projection() {
         .await;
     state.register_tab(input("s1", Some("main"))).await;
 
-    let snapshot = state.mark_disconnected("s1").await.unwrap();
+    let snapshot = state.mark_disconnected("s1", false).await.unwrap();
 
     assert!(!snapshot.tabs[0].is_connected);
 }
@@ -1167,4 +1167,171 @@ async fn detach_keeps_creation_registration_and_transfer_atomic_against_a_compet
         .window
         .tab_order
         .is_empty());
+}
+
+#[tokio::test]
+async fn auto_close_handles_registration_order_and_preserves_retained_output() {
+    use crate::terminal_control::TerminalControlState;
+    for protocol in [
+        TerminalProtocol::Ssh,
+        TerminalProtocol::Telnet,
+        TerminalProtocol::Serial,
+    ] {
+        for disconnect_first in [true, false] {
+            let workspace = WorkspaceState::new();
+            let terminals = TerminalControlState::new();
+            terminals.set_auto_close_on_disconnect(true);
+            terminals
+                .register_session("s1".into(), protocol, "synthetic".into())
+                .await;
+            terminals.append_output("s1", b"synthetic output").await;
+            if !disconnect_first {
+                workspace
+                    .register_session_tab(input("s1", Some("main")), &terminals)
+                    .await;
+            }
+            let auto_close = terminals.mark_disconnected("s1").await;
+            let removed = workspace.mark_disconnected("s1", auto_close).await;
+            assert_eq!(removed.is_some(), !disconnect_first);
+            let snapshot = workspace
+                .register_session_tab(input("s1", Some("main")), &terminals)
+                .await;
+            assert!(snapshot.tabs.is_empty());
+            assert!(snapshot.window.tab_order.is_empty());
+            assert!(snapshot.window.active_tab_id.is_none());
+            assert!(workspace
+                .mark_disconnected("s1", auto_close)
+                .await
+                .is_none());
+            assert!(terminals.session_info("s1").await.is_some());
+            assert_eq!(
+                terminals.read_output("s1", 100).await.unwrap().output,
+                "synthetic output"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn auto_close_policy_is_frozen_at_first_disconnect() {
+    use crate::terminal_control::TerminalControlState;
+    let workspace = WorkspaceState::new();
+    let terminals = TerminalControlState::new();
+    for sid in ["old", "next", "enabled"] {
+        terminals
+            .register_session(sid.into(), TerminalProtocol::Ssh, "synthetic".into())
+            .await;
+    }
+    assert!(!terminals.mark_disconnected("old").await);
+    terminals.set_auto_close_on_disconnect(true);
+    assert!(!terminals.mark_disconnected("old").await);
+    workspace
+        .register_session_tab(input("old", Some("main")), &terminals)
+        .await;
+    workspace
+        .register_session_tab(input("next", Some("main")), &terminals)
+        .await;
+    assert!(workspace.tab_for_session("old").await.is_some());
+    let auto_close = terminals.mark_disconnected("next").await;
+    workspace
+        .mark_disconnected("next", auto_close)
+        .await
+        .unwrap();
+    assert!(workspace.tab_for_session("next").await.is_none());
+    assert!(terminals.mark_disconnected("enabled").await);
+    terminals.set_auto_close_on_disconnect(false);
+    assert!(terminals.mark_disconnected("enabled").await);
+    let snapshot = workspace
+        .register_session_tab(input("enabled", Some("main")), &terminals)
+        .await;
+    assert_eq!(snapshot.tabs.len(), 1);
+    assert_eq!(snapshot.tabs[0].session_id, "old");
+}
+
+#[tokio::test]
+async fn auto_close_follows_move_and_preserves_other_sessions_and_windows() {
+    let state = WorkspaceState::new();
+    state
+        .register_window("other".into(), "other".into(), false)
+        .await;
+    state.register_tab(input("s1", Some("main"))).await;
+    state.register_tab(input("s2", Some("other"))).await;
+    state
+        .move_tab("s1".into(), "main".into(), "other".into(), 1)
+        .await
+        .unwrap();
+    state
+        .activate_tab("other".into(), "s1".into())
+        .await
+        .unwrap();
+    state
+        .drag_start(
+            "other".into(),
+            "s1".into(),
+            WorkspacePointerPosition { x: 0.0, y: 0.0 },
+        )
+        .await
+        .unwrap();
+    let snapshot = state.mark_disconnected("s1", true).await.unwrap();
+    assert_eq!(snapshot.window.window_id, "other");
+    assert_eq!(snapshot.window.active_tab_id.as_deref(), Some("s2"));
+    assert_eq!(snapshot.tabs.len(), 1);
+    assert!(snapshot.tabs[0].is_connected);
+    assert!(!state.drag_cancel().await.active);
+    assert!(state.mark_disconnected("s1", true).await.is_none());
+    assert!(state
+        .snapshot_for_window("main".into())
+        .await
+        .tabs
+        .is_empty());
+}
+
+#[tokio::test]
+async fn auto_close_does_not_remove_a_reserved_manual_close() {
+    use std::{
+        future::Future,
+        task::{Context, Poll, Waker},
+    };
+    let state = WorkspaceState::new();
+    state.register_tab(input("s1", Some("main"))).await;
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+    let mut close = Box::pin(state.close_tab_with("main", "s1", |_| async {
+        done_rx.await.unwrap();
+        Ok(())
+    }));
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(matches!(close.as_mut().poll(&mut context), Poll::Pending));
+    let snapshot = state.mark_disconnected("s1", true).await.unwrap();
+    assert_eq!(snapshot.tabs.len(), 1);
+    assert!(!snapshot.tabs[0].is_connected);
+    assert!(state.mark_disconnected("s1", true).await.is_none());
+    done_tx.send(()).unwrap();
+    let snapshot = close.await.unwrap();
+    assert!(snapshot.tabs.is_empty());
+    assert!(state.tab_for_session("s1").await.is_none());
+}
+
+#[tokio::test]
+async fn auto_close_finishes_after_a_reserved_manual_close_fails() {
+    use std::{
+        future::Future,
+        task::{Context, Poll, Waker},
+    };
+    let state = WorkspaceState::new();
+    state.register_tab(input("s1", Some("main"))).await;
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+    let mut close = Box::pin(state.close_tab_with("main", "s1", |_| async {
+        done_rx.await.unwrap();
+        Err("synthetic cleanup failure".into())
+    }));
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(matches!(close.as_mut().poll(&mut context), Poll::Pending));
+    let snapshot = state.mark_disconnected("s1", true).await.unwrap();
+    assert_eq!(snapshot.tabs.len(), 1);
+    assert!(!snapshot.tabs[0].is_connected);
+    assert!(state.mark_disconnected("s1", true).await.is_none());
+    done_tx.send(()).unwrap();
+    let snapshot = close.await.unwrap();
+    assert!(snapshot.tabs.is_empty());
+    assert!(state.tab_for_session("s1").await.is_none());
 }
