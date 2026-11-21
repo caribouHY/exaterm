@@ -8,6 +8,10 @@ import type {
   WorkspaceTabUpdate,
 } from "../../types";
 
+export function isClosableDisconnectedTab(tab: AppTabInfo, closingTabIds: string[]) {
+  return tab.kind === "terminal" && !tab.isConnected && !closingTabIds.includes(tab.id);
+}
+
 export function orderAppTabs(appTabs: AppTabInfo[], tabOrder: string[]) {
   const tabsById = new Map(appTabs.map((tab) => [tab.id, tab]));
   const orderedTabs = tabOrder

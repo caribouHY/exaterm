@@ -336,6 +336,7 @@
   "terminal.tab_menu.copy_session_id_failed": "Failed to copy the session ID to the clipboard. Please try again.",
   "terminal.tab_menu.open_same_destination": "Connect to Same Destination...",
   "terminal.tab_menu.close": "Close",
+  "terminal.tab_menu.close_disconnected": "Close All Disconnected Tabs",
   "titlebar.subtitle": "AI-Native Terminal",
   "titlebar.menu.file": "File",
   "titlebar.menu.edit": "Edit",

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { message } from "@tauri-apps/plugin-dialog";
+import { isClosableDisconnectedTab } from "../../features/workspace-tabs/tabStripModel";
 import type {
   AppTabInfo,
   ConnectionType,
@@ -20,8 +21,10 @@ interface TerminalTabsProps {
   tabs: AppTabInfo[];
   activeTabId: string | null;
   closingTabIds: string[];
+  isClosingDisconnectedTabs: boolean;
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => Promise<void>;
+  onCloseDisconnectedTabs: () => Promise<void>;
   onMoveTabToNewWindow: (id: string) => Promise<void>;
   onOpenSameDestination: (tab: TabInfo) => void;
   onAddTab: () => void;
@@ -48,8 +51,10 @@ export default function TerminalTabs({
   tabs,
   activeTabId,
   closingTabIds,
+  isClosingDisconnectedTabs,
   onSelectTab,
   onCloseTab,
+  onCloseDisconnectedTabs,
   onMoveTabToNewWindow,
   onOpenSameDestination,
   onAddTab,
@@ -234,6 +239,20 @@ export default function TerminalTabs({
             void onCloseTab(contextMenuTab.id);
           },
         },
+        ...(contextMenuTab.kind === "terminal"
+          ? [
+              {
+                key: "close_disconnected",
+                label: t("terminal.tab_menu.close_disconnected"),
+                disabled:
+                  isClosingDisconnectedTabs ||
+                  !tabs.some((tab) => isClosableDisconnectedTab(tab, closingTabIds)),
+                action: () => {
+                  void onCloseDisconnectedTabs();
+                },
+              },
+            ]
+          : []),
       ]
     : [];
 
@@ -358,8 +377,8 @@ export default function TerminalTabs({
           <PopoverMenu
             items={contextMenuItems}
             onAction={(action) => {
-              action();
               closeContextMenu();
+              action();
             }}
           />
         </div>

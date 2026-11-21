@@ -159,3 +159,7 @@
   position: fixed;
   z-index: var(--stack-context-menu);
 }
+
+.terminal-tabs__context-menu .ui-popover-menu {
+  width: 220px;
+}
