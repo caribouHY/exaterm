@@ -48,7 +48,12 @@ export function CredentialPromptModal({
   useEffect(() => {
     if (!shortcutsEnabled) return;
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      if (
+        !event.isComposing &&
+        !event.repeat &&
+        event.key === "Enter" &&
+        (event.ctrlKey || event.metaKey)
+      ) {
         event.preventDefault();
         submit();
       }
@@ -79,12 +84,18 @@ export function CredentialPromptModal({
     >
       <ModalFrame
         className="connection-credential-modal"
+        role="dialog"
+        ariaModal
+        ariaLabelledBy="connection-credential-title"
+        focusTarget="input[type='password']"
         onClick={(e) => {
           e.stopPropagation();
         }}
       >
         <ModalHeader className="connection-credential-modal__header">
-          <ModalTitle className="connection-dialog__title">{credentialTitle}</ModalTitle>
+          <ModalTitle className="connection-dialog__title" id="connection-credential-title">
+            {credentialTitle}
+          </ModalTitle>
           <button
             className="btn-icon"
             onClick={onClose}
@@ -107,7 +118,6 @@ export function CredentialPromptModal({
             <input
               className="input"
               type="password"
-              autoFocus
               autoComplete="off"
               disabled={connecting}
               value={value}

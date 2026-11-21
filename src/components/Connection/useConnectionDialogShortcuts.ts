@@ -51,7 +51,7 @@ export const useConnectionDialogShortcuts = ({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
       if (event.key === "Escape") {
         handleEscape(event);
         return;

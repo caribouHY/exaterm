@@ -17,6 +17,7 @@ import appIcon from "../../../src-tauri/icons/icon.png";
 import "./TitleBar.css";
 
 interface TitleBarProps {
+  inert?: boolean;
   activeView: ViewMode;
   showAiPanel: boolean;
   shortcuts: ShortcutConfig;
@@ -37,6 +38,7 @@ interface TitleBarProps {
 }
 
 export default function TitleBar({
+  inert,
   activeView,
   showAiPanel,
   shortcuts,
@@ -198,7 +200,7 @@ export default function TitleBar({
   };
 
   return (
-    <div className="titlebar" data-tauri-drag-region>
+    <div className="titlebar" inert={inert} data-tauri-drag-region>
       <div className="titlebar__left">
         <img className="titlebar__logo" src={appIcon} alt="" aria-hidden="true" draggable={false} />
 

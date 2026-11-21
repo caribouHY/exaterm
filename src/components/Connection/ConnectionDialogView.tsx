@@ -115,6 +115,7 @@ export function ConnectionDialogView({
         role="dialog"
         ariaModal
         ariaLabelledBy="connection-dialog-title"
+        focusTarget={tab === "serial" ? "#connection-serial-port" : "#connection-source"}
         onClick={(event) => {
           event.stopPropagation();
         }}

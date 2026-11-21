@@ -1,4 +1,13 @@
-import { lazy, Suspense, useState, useRef, useCallback, useEffect, useMemo } from "react";
+import {
+  lazy,
+  Suspense,
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+} from "react";
 import TitleBar from "./components/TitleBar/TitleBar";
 import TerminalTabs from "./components/Terminal/TerminalTabs";
 import type { TerminalViewHandle } from "./components/Terminal/TerminalView";
@@ -135,21 +144,43 @@ export default function App() {
   const [connectionInitialValues, setConnectionInitialValues] =
     useState<ConnectionDialogInitialValues | null>(null);
   const [startupCliRequest, setStartupCliRequest] = useState<StartupCliRequest | null>(null);
+  const connectionReturnFocusRef = useRef<HTMLElement | null>(null);
+  const connectedSessionToFocusRef = useRef<string | null>(null);
+  const showConnectionDialog = useCallback(
+    (initialValues: ConnectionDialogInitialValues | null) => {
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && focused !== document.body) {
+        const menuTriggerId = focused.closest('[role="menu"]')?.getAttribute("aria-labelledby");
+        connectionReturnFocusRef.current =
+          (menuTriggerId && document.getElementById(menuTriggerId)) || focused;
+      }
+      void loadConnectionDialog();
+      setConnectionInitialValues(initialValues);
+      setShowConnection(true);
+    },
+    []
+  );
+
+  useLayoutEffect(() => {
+    if (showConnection) return;
+    const returnFocus = connectionReturnFocusRef.current;
+    connectionReturnFocusRef.current = null;
+    if (returnFocus?.isConnected) returnFocus.focus();
+  }, [showConnection]);
+
   const startupCliRequestCoordinator = useMemo(
     () =>
       createStartupCliRequestCoordinator({
         takeNext: () => startupCliClient.takeNext(windowTabs.windowId),
         onRequest: (request) => {
           setStartupCliRequest(request);
-          void loadConnectionDialog();
-          setConnectionInitialValues(null);
-          setShowConnection(true);
+          showConnectionDialog(null);
         },
         onError: (error) => {
           console.error("Failed to load startup CLI request:", error);
         },
       }),
-    [windowTabs.windowId]
+    [showConnectionDialog, windowTabs.windowId]
   );
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [aiPanelWidth, setAiPanelWidth] = useState(AI_PANEL_DEFAULT_WIDTH);
@@ -175,6 +206,14 @@ export default function App() {
   const activeTerminalBuffer = useRef("");
   const terminalBuffers = useRef<Map<string, string>>(new Map());
   const terminalViewRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
+  useEffect(() => {
+    if (showConnection || !activeTabId || !connectedSessionToFocusRef.current) return;
+    const sessionId = connectedSessionToFocusRef.current;
+    connectedSessionToFocusRef.current = null;
+    if (activeView === "terminal" && activeTab?.sessionId === sessionId) {
+      focusTerminalUnlessModal(() => terminalViewRefs.current.get(activeTabId)?.focus());
+    }
+  }, [activeTab?.sessionId, activeTabId, activeView, showConnection]);
   useExternalSessionFocus(windowTabs, (tabId) => {
     focusTerminalUnlessModal(() => terminalViewRefs.current.get(tabId)?.focus());
   });
@@ -189,7 +228,8 @@ export default function App() {
       }),
     [getCurrentWindowTabsState, windowTabs.applyWorkspaceSnapshot]
   );
-  const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
+  const activeMcpCredentialPrompt = mcpCredentialPrompts.length ? mcpCredentialPrompts[0] : null;
+  const connectionCovered = Boolean(sshPrompts.activePrompt || activeMcpCredentialPrompt);
   const shortcuts = config?.shortcuts ?? DEFAULT_SHORTCUT_CONFIG;
   const appUpdate = useAppUpdate({
     windowId: windowTabs.windowId,
@@ -352,6 +392,9 @@ export default function App() {
         terminalMode,
         connectionInfo,
       });
+      connectionReturnFocusRef.current = null;
+      // The workspace update may have activated the tab while the dialog was still open.
+      connectedSessionToFocusRef.current = sessionId;
       setConnectionInitialValues(null);
       setShowConnection(false);
       if (logState.startFailed) {
@@ -650,25 +693,21 @@ export default function App() {
 
   const openConnection = useCallback(() => {
     startupCliRequestCoordinator.setBlocked(true);
-    void loadConnectionDialog();
-    setConnectionInitialValues(null);
-    setShowConnection(true);
-  }, [startupCliRequestCoordinator]);
+    showConnectionDialog(null);
+  }, [showConnectionDialog, startupCliRequestCoordinator]);
 
   const openSameDestination = useCallback(
     (tab: TabInfo) => {
       if (!tab.connectionInfo || tab.connectionType === "serial") return;
       startupCliRequestCoordinator.setBlocked(true);
-      void loadConnectionDialog();
-      setConnectionInitialValues({
+      showConnectionDialog({
         connectionInfo: tab.connectionInfo,
         profileId: tab.profileId,
         encoding: tab.encoding,
         terminalMode: tab.terminalMode,
       });
-      setShowConnection(true);
     },
-    [startupCliRequestCoordinator]
+    [showConnectionDialog, startupCliRequestCoordinator]
   );
 
   const openWindow = windowTabs.createWorkspaceWindow;
@@ -693,6 +732,7 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       if (e.target instanceof Element && e.target.closest("[data-shortcut-recorder='true']")) {
         return;
       }
@@ -701,6 +741,7 @@ export default function App() {
       if (!action) return;
 
       e.preventDefault();
+      if (showConnection || connectionCovered) return;
       switch (action) {
         case "new_window":
           openWindow();
@@ -722,7 +763,15 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [appExit.requestExit, openConnection, openUtilityTab, openWindow, shortcuts]);
+  }, [
+    appExit.requestExit,
+    connectionCovered,
+    openConnection,
+    openUtilityTab,
+    openWindow,
+    shortcuts,
+    showConnection,
+  ]);
 
   useEffect(() => {
     startupCliRequestCoordinator.setBlocked(showConnection);
@@ -785,6 +834,7 @@ export default function App() {
   return (
     <div className="app">
       <TitleBar
+        inert={showConnection}
         activeView={activeView}
         showAiPanel={showAiPanel}
         shortcuts={shortcuts}
@@ -805,7 +855,7 @@ export default function App() {
       />
       <AppUpdateDialog controller={appUpdate} />
       <AppExitDialog controller={appExit} />
-      <div className="app__body">
+      <div className="app__body" inert={showConnection}>
         <div className="app__main">
           <div className="app__content">
             <div className="app__workspace">
@@ -967,24 +1017,27 @@ export default function App() {
         </div>
       </div>
       {showConnection && (
-        <Suspense fallback={<div aria-hidden="true" />}>
-          <ConnectionDialog
-            shortcutsEnabled={!sshPrompts.activePrompt}
-            initialValues={connectionInitialValues}
-            startupRequest={startupCliRequest}
-            onStartupRequestHandled={() => {
-              setStartupCliRequest(null);
-            }}
-            onClose={() => {
-              setConnectionInitialValues(null);
-              setShowConnection(false);
-            }}
-            onConnect={handleConnect}
-          />
-        </Suspense>
+        <div inert={connectionCovered}>
+          <Suspense fallback={<div className="ui-overlay" aria-hidden="true" />}>
+            <ConnectionDialog
+              shortcutsEnabled={!connectionCovered}
+              initialValues={connectionInitialValues}
+              startupRequest={startupCliRequest}
+              onStartupRequestHandled={() => {
+                setStartupCliRequest(null);
+              }}
+              onClose={() => {
+                setConnectionInitialValues(null);
+                setShowConnection(false);
+              }}
+              onConnect={handleConnect}
+            />
+          </Suspense>
+        </div>
       )}
-      {sshPrompts.activePrompt?.kind === "authentication" && (
+      {!activeMcpCredentialPrompt && sshPrompts.activePrompt?.kind === "authentication" && (
         <SshAuthenticationPromptDialog
+          key={sshPrompts.activePrompt.value.requestId}
           prompt={sshPrompts.activePrompt.value}
           onResponseChange={sshPrompts.updateResponse}
           onRememberPasswordChange={sshPrompts.updateRememberPassword}
@@ -996,8 +1049,9 @@ export default function App() {
           }}
         />
       )}
-      {sshPrompts.activePrompt?.kind === "host_key" && (
+      {!activeMcpCredentialPrompt && sshPrompts.activePrompt?.kind === "host_key" && (
         <SshHostKeyPromptDialog
+          key={sshPrompts.activePrompt.value.requestId}
           prompt={sshPrompts.activePrompt.value}
           onAccept={() => {
             void sshPrompts.submit();
@@ -1010,11 +1064,18 @@ export default function App() {
       {activeMcpCredentialPrompt && (
         <div className="ui-overlay app-credential-overlay">
           <ModalFrame
+            key={activeMcpCredentialPrompt.request_id}
             className="app-credential-modal"
             role="dialog"
             ariaModal
             ariaLabelledBy="mcp-credential-title"
             ariaDescribedBy="mcp-credential-description"
+            focusTarget="#mcp-credential-input"
+            onKeyDown={(event) => {
+              if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+              event.preventDefault();
+              if (!event.repeat) void resolveMcpCredentialPrompt(null);
+            }}
           >
             <ModalHeader className="app-credential-modal__header">
               <div>
@@ -1052,7 +1113,6 @@ export default function App() {
                 id="mcp-credential-input"
                 className="input"
                 type="password"
-                autoFocus
                 value={activeMcpCredentialPrompt.value}
                 disabled={activeMcpCredentialPrompt.submitting}
                 onChange={(event) => {
@@ -1061,8 +1121,6 @@ export default function App() {
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     void resolveMcpCredentialPrompt(activeMcpCredentialPrompt.value);
-                  } else if (event.key === "Escape") {
-                    void resolveMcpCredentialPrompt(null);
                   }
                 }}
               />
