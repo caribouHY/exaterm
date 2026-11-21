@@ -6,6 +6,10 @@
 
 - Added a terminal tab context-menu action to close all disconnected terminal tabs in the current window.
 
+### Fixed
+
+- Keep keyboard focus in the New Connection dialog and its prompts, and restore focus when the dialog is cancelled.
+
 ## v0.10.2
 
 ### Added

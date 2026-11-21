@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { HostKeyConfirmation } from "../../components/Connection/HostKeyConfirmation";
 import {
@@ -31,23 +30,6 @@ export function SshHostKeyPromptDialog({
       ? t("connection.auth_prompt_phase_jump")
       : t("connection.auth_prompt_phase_target");
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (prompt.submitting) return;
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCancel();
-      } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-        event.preventDefault();
-        onAccept();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [onAccept, onCancel, prompt.submitting]);
-
   return (
     <div className="ui-overlay app-credential-overlay">
       <ModalFrame
@@ -55,6 +37,17 @@ export function SshHostKeyPromptDialog({
         role="dialog"
         ariaModal
         ariaLabelledBy="ssh-host-key-prompt-title"
+        focusTarget=".app-credential-modal__footer button"
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing || event.defaultPrevented) return;
+          const cancel = event.key === "Escape";
+          const accept = event.key === "Enter" && (event.ctrlKey || event.metaKey);
+          if (!cancel && !accept) return;
+          event.preventDefault();
+          if (event.repeat || prompt.submitting) return;
+          if (cancel) onCancel();
+          else onAccept();
+        }}
       >
         <ModalHeader className="app-credential-modal__header">
           <div>
