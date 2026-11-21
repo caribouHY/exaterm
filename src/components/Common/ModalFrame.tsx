@@ -53,7 +53,8 @@ export function ModalFrame({
       return;
     }
     const stops = getTabStops(frame);
-    const target = stops.find((element) => element.matches(focusTarget)) ?? stops[0] ?? frame;
+    const first = stops.length ? stops[0] : frame;
+    const target = stops.find((element) => element.matches(focusTarget)) ?? first;
     target.focus();
   });
 
@@ -63,12 +64,12 @@ export function ModalFrame({
     const frame = event.currentTarget;
     const stops = getTabStops(frame);
     const active = document.activeElement;
-    const first = stops[0];
-    const last = stops[stops.length - 1];
+    const first = stops.length ? stops[0] : frame;
+    const last = stops.length ? stops[stops.length - 1] : frame;
     const edge = event.shiftKey ? first : last;
     if (active === edge || active === frame || stops.length === 0) {
       event.preventDefault();
-      ((event.shiftKey ? last : first) ?? frame).focus();
+      (event.shiftKey ? last : first).focus();
     }
   };
 

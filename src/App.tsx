@@ -228,7 +228,7 @@ export default function App() {
       }),
     [getCurrentWindowTabsState, windowTabs.applyWorkspaceSnapshot]
   );
-  const activeMcpCredentialPrompt = mcpCredentialPrompts[0] ?? null;
+  const activeMcpCredentialPrompt = mcpCredentialPrompts.length ? mcpCredentialPrompts[0] : null;
   const connectionCovered = Boolean(sshPrompts.activePrompt || activeMcpCredentialPrompt);
   const shortcuts = config?.shortcuts ?? DEFAULT_SHORTCUT_CONFIG;
   const appUpdate = useAppUpdate({
