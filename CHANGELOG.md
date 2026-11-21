@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added a terminal tab context-menu action to close all disconnected terminal tabs in the current window.
+
 ## v0.10.2
 
 ### Added

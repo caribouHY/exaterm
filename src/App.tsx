@@ -815,6 +815,8 @@ export default function App() {
                 closingTabIds={closingTabIds}
                 onSelectTab={windowTabs.selectTab}
                 onCloseTab={terminalTabLifecycle.closeTab}
+                onCloseDisconnectedTabs={terminalTabLifecycle.closeDisconnectedTabs}
+                isClosingDisconnectedTabs={terminalTabLifecycle.isClosingDisconnectedTabs}
                 onMoveTabToNewWindow={workspaceTabMovement.moveTabToNewWindow}
                 onOpenSameDestination={openSameDestination}
                 onAddTab={openConnection}

@@ -10,6 +10,7 @@ import type {
 import {
   applyForeignTabPlacement,
   getRemovalFocusNeighbors,
+  isClosableDisconnectedTab,
   orderAppTabs,
   planTabReorder,
   reconcileTabOrder,
@@ -36,6 +37,24 @@ function terminalTab(id: string): TabInfo {
 function utilityTab(kind: "settings" | "logs"): AppTabInfo {
   return { kind, id: kind };
 }
+
+describe("isClosableDisconnectedTab", () => {
+  it("selects only disconnected terminal tabs that are not already closing", () => {
+    const tabs: AppTabInfo[] = [
+      { ...terminalTab("ssh"), isConnected: false },
+      { ...terminalTab("telnet"), connectionType: "telnet", isConnected: false },
+      { ...terminalTab("serial"), connectionType: "serial", isConnected: false },
+      terminalTab("connected"),
+      { ...terminalTab("closing"), isConnected: false },
+      utilityTab("settings"),
+      utilityTab("logs"),
+    ];
+
+    expect(
+      tabs.filter((tab) => isClosableDisconnectedTab(tab, ["closing"])).map((tab) => tab.id)
+    ).toEqual(["ssh", "telnet", "serial"]);
+  });
+});
 
 function workspaceTab(id: string): WorkspaceTabInfo {
   return {
