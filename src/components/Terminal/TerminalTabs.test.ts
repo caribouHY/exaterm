@@ -28,12 +28,9 @@ const disconnected: TabInfo = {
   isConnected: false,
 };
 
-const tabs: AppTabInfo[] = [
-  connected,
-  disconnected,
-  { kind: "settings", id: "settings" },
-  { kind: "logs", id: "logs" },
-];
+const settingsTab = { kind: "settings", id: "settings" } satisfies AppTabInfo;
+const logsTab = { kind: "logs", id: "logs" } satisfies AppTabInfo;
+const tabs = [connected, disconnected, settingsTab, logsTab];
 
 function render(overrides: Partial<ComponentProps<typeof TerminalTabs>> = {}) {
   return renderToStaticMarkup(
@@ -61,11 +58,6 @@ function render(overrides: Partial<ComponentProps<typeof TerminalTabs>> = {}) {
   );
 }
 
-function tabMarkup(markup: string, id: string) {
-  const start = markup.indexOf(`data-terminal-tab-id="${id}"`);
-  return markup.slice(start, markup.indexOf("</div>", start));
-}
-
 describe("terminal tab accessibility", () => {
   it("associates both terminal states with their selection controls", () => {
     const markup = render();
@@ -75,7 +67,7 @@ describe("terminal tab accessibility", () => {
       [connected, "connected"],
       [disconnected, "disconnected"],
     ] as const) {
-      const card = tabMarkup(markup, tab.id);
+      const card = render({ tabs: [tab] });
       const descriptionId = card.match(/aria-describedby="([^"]+)"/)?.[1];
       expect(descriptionId).toBeDefined();
       expect(card).toContain(`id="${descriptionId}" hidden="">statusbar.${status}</span>`);
@@ -86,8 +78,7 @@ describe("terminal tab accessibility", () => {
   });
 
   it("places the named close control after the selection button and disables both while closing", () => {
-    const markup = render({ closingTabIds: [connected.id] });
-    const card = tabMarkup(markup, connected.id);
+    const card = render({ tabs: [connected], closingTabIds: [connected.id] });
     const [select, close] = card.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? [];
     expect(select).toContain('class="terminal-tab__select"');
     expect(select).toContain(connected.title);
@@ -96,13 +87,14 @@ describe("terminal tab accessibility", () => {
     expect(select).not.toContain("terminal-tab__close");
     expect(close).toContain('class="terminal-tab__close"');
     expect(close).toContain(`aria-label="terminal.close_named_tab ${connected.title}" disabled=""`);
-    expect(tabMarkup(markup, disconnected.id)).not.toContain('disabled=""');
+    expect(render({ tabs: [disconnected], closingTabIds: [connected.id] })).not.toContain(
+      'disabled=""'
+    );
   });
 
   it("uses the same current and close controls for utility tabs without a connection state", () => {
-    const markup = render({ activeTabId: "settings" });
-    const settings = tabMarkup(markup, "settings");
-    const logs = tabMarkup(markup, "logs");
+    const settings = render({ tabs: [settingsTab], activeTabId: "settings" });
+    const logs = render({ tabs: [logsTab], activeTabId: "settings" });
     expect(settings).toContain('aria-current="true"');
     expect(logs).not.toContain("aria-current");
     expect(settings).toContain('aria-label="terminal.close_named_tab settings.title"');

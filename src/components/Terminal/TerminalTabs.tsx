@@ -89,7 +89,7 @@ export default function TerminalTabs({
     onCrossWindowDragHover,
   });
 
-  const ensureControlVisible = useCallback((control: HTMLElement) => {
+  const ensureControlVisible = useCallback((control: Element) => {
     const container = tabsRef.current;
     if (!container) return;
 
@@ -111,10 +111,7 @@ export default function TerminalTabs({
   useLayoutEffect(() => {
     const ensureTabVisible = () => {
       const focused = document.activeElement;
-      if (
-        focused instanceof HTMLElement &&
-        focused.closest(".terminal-tab")?.parentElement === tabsRef.current
-      ) {
+      if (focused && focused.closest(".terminal-tab")?.parentElement === tabsRef.current) {
         ensureControlVisible(focused);
         return;
       }
@@ -347,7 +344,9 @@ export default function TerminalTabs({
               aria-expanded={contextMenu?.tabId === tab.id}
               aria-keyshortcuts="Shift+F10 ContextMenu"
               disabled={isClosing}
-              onFocus={(e) => ensureControlVisible(e.currentTarget)}
+              onFocus={(e) => {
+                ensureControlVisible(e.currentTarget);
+              }}
               onPointerDown={(e) => {
                 if (!isClosing && e.button === 0) {
                   pointerDrag.beginPointerDrag(e, tab.id, isTerminalTab);
@@ -402,8 +401,12 @@ export default function TerminalTabs({
               className="terminal-tab__close"
               aria-label={t("terminal.close_named_tab", { name: label })}
               disabled={isClosing}
-              onFocus={(e) => ensureControlVisible(e.currentTarget)}
-              onClick={(e) => closeTab(tab.id, e.detail === 0)}
+              onFocus={(e) => {
+                ensureControlVisible(e.currentTarget);
+              }}
+              onClick={(e) => {
+                closeTab(tab.id, e.detail === 0);
+              }}
             >
               <X size={12} aria-hidden="true" />
             </button>
