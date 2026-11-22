@@ -58,6 +58,11 @@
   overflow-y: auto;
 }
 
+.connection-dialog--profile-deletion {
+  max-width: calc(100% - 2 * var(--spacing-lg));
+  overflow-wrap: anywhere;
+}
+
 .connection-dialog__error-banner {
   margin: 12px 18px 0;
   outline: none;

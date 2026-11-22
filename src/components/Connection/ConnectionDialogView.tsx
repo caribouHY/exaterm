@@ -28,6 +28,7 @@ import type { useConnectionActions } from "./useConnectionActions";
 import type { useSshDiagnostics } from "./useSshDiagnostics";
 
 interface ConnectionDialogViewProps {
+  inert: boolean;
   tab: ConnectionType;
   setTab: (value: ConnectionType) => void;
   connecting: boolean;
@@ -62,6 +63,7 @@ interface ConnectionDialogViewProps {
 }
 
 export function ConnectionDialogView({
+  inert,
   tab,
   setTab,
   connecting,
@@ -101,6 +103,7 @@ export function ConnectionDialogView({
   return (
     <div
       className="ui-overlay connection-overlay"
+      inert={inert}
       onMouseDown={onOverlayMouseDown}
       onClick={onOverlayClick}
     >
