@@ -1,5 +1,5 @@
 import { FileText, Monitor, Network, Settings, Usb, Plus, X } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { message } from "@tauri-apps/plugin-dialog";
@@ -68,6 +68,7 @@ export default function TerminalTabs({
   onCrossWindowDragHover,
 }: TerminalTabsProps) {
   const { t } = useTranslation();
+  const tabIdPrefix = useId();
   const tabsRef = useRef<HTMLDivElement | null>(null);
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
   const addTabRef = useRef<HTMLButtonElement | null>(null);
@@ -88,50 +89,89 @@ export default function TerminalTabs({
     onCrossWindowDragHover,
   });
 
-  const ensureActiveTabVisible = useCallback(() => {
-    if (!activeTabId) return;
-
+  const ensureControlVisible = useCallback((control: Element) => {
     const container = tabsRef.current;
-    const activeTab = tabRefs.current.get(activeTabId);
-    if (!container || !activeTab) return;
+    if (!container) return;
 
     const containerRect = container.getBoundingClientRect();
-    const activeTabRect = activeTab.getBoundingClientRect();
+    const controlRect = control.getBoundingClientRect();
     const addTabRect = addTabRef.current?.getBoundingClientRect();
     const visibleLeft = containerRect.left;
     const visibleRight = addTabRect
       ? Math.min(containerRect.right, addTabRect.left)
       : containerRect.right;
 
-    if (activeTabRect.left < visibleLeft) {
-      container.scrollLeft += activeTabRect.left - visibleLeft;
-    } else if (activeTabRect.right > visibleRight) {
-      container.scrollLeft += activeTabRect.right - visibleRight;
+    if (controlRect.left < visibleLeft) {
+      container.scrollLeft += controlRect.left - visibleLeft;
+    } else if (controlRect.right > visibleRight) {
+      container.scrollLeft += controlRect.right - visibleRight;
     }
-  }, [activeTabId]);
+  }, []);
 
   useLayoutEffect(() => {
-    ensureActiveTabVisible();
+    const ensureTabVisible = () => {
+      const focused = document.activeElement;
+      if (focused && focused.closest(".terminal-tab")?.parentElement === tabsRef.current) {
+        ensureControlVisible(focused);
+        return;
+      }
 
-    if (!activeTabId || typeof ResizeObserver === "undefined") return;
+      const activeTab = activeTabId ? tabRefs.current.get(activeTabId)?.parentElement : null;
+      if (activeTab) ensureControlVisible(activeTab);
+    };
+    ensureTabVisible();
 
+    if (typeof ResizeObserver === "undefined") return;
     const container = tabsRef.current;
-    const activeTab = tabRefs.current.get(activeTabId);
     const addTab = addTabRef.current;
-    if (!container || !activeTab || !addTab) return;
+    if (!container || !addTab) return;
 
-    const resizeObserver = new ResizeObserver(ensureActiveTabVisible);
+    const resizeObserver = new ResizeObserver(ensureTabVisible);
     resizeObserver.observe(container);
-    resizeObserver.observe(activeTab);
     resizeObserver.observe(addTab);
+    for (const tab of tabRefs.current.values()) {
+      if (tab.parentElement) resizeObserver.observe(tab.parentElement);
+    }
 
     return () => {
       resizeObserver.disconnect();
     };
-  }, [activeTabId, ensureActiveTabVisible, visibleTabOrder]);
+  }, [activeTabId, ensureControlVisible, visibleTabOrder]);
 
-  const closeContextMenu = () => {
+  const focusAfterTabRemoval = (tabId: string, skipTab: (tab: AppTabInfo) => boolean) => {
+    const index = tabs.findIndex((tab) => tab.id === tabId);
+    const canFocus = (tab: AppTabInfo) => !closingTabIds.includes(tab.id) && !skipTab(tab);
+    const target =
+      index < 0
+        ? undefined
+        : (tabs.slice(index + 1).find(canFocus) ?? tabs.slice(0, index).reverse().find(canFocus));
+    (target ? tabRefs.current.get(target.id) : addTabRef.current)?.focus();
+  };
+
+  const closeTab = (tabId: string, restoreFocus: boolean) => {
+    if (restoreFocus) focusAfterTabRemoval(tabId, () => false);
+    void onCloseTab(tabId);
+  };
+
+  const dismissContextMenu = () => {
+    if (contextMenu) {
+      const trigger = tabRefs.current.get(contextMenu.tabId);
+      if (trigger && !trigger.disabled) {
+        trigger.focus();
+      } else {
+        focusAfterTabRemoval(contextMenu.tabId, () => false);
+      }
+    }
     setContextMenu(null);
+  };
+
+  const openContextMenu = (tabId: string, x: number, y: number) => {
+    pointerDrag.resetPointerDrag();
+    const position = clampContextMenuPosition(
+      { x, y },
+      { width: window.innerWidth, height: window.innerHeight }
+    );
+    setContextMenu({ tabId, ...position });
   };
 
   useEffect(() => {
@@ -139,18 +179,18 @@ export default function TerminalTabs({
 
     const handleMouseDown = (event: MouseEvent) => {
       if (!contextMenuRef.current?.contains(event.target as Node)) {
-        closeContextMenu();
+        setContextMenu(null);
       }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        closeContextMenu();
+        setContextMenu(null);
       }
     };
 
     const handleWindowChange = () => {
-      closeContextMenu();
+      setContextMenu(null);
     };
 
     document.addEventListener("mousedown", handleMouseDown);
@@ -225,6 +265,7 @@ export default function TerminalTabs({
                 label: t("terminal.tab_menu.move_to_new_window"),
                 disabled: closingTabIds.includes(contextMenuTab.id),
                 action: () => {
+                  focusAfterTabRemoval(contextMenuTab.id, () => false);
                   void onMoveTabToNewWindow(contextMenuTab.id);
                 },
               },
@@ -236,7 +277,7 @@ export default function TerminalTabs({
           label: t("terminal.tab_menu.close"),
           disabled: closingTabIds.includes(contextMenuTab.id),
           action: () => {
-            void onCloseTab(contextMenuTab.id);
+            closeTab(contextMenuTab.id, true);
           },
         },
         ...(contextMenuTab.kind === "terminal"
@@ -248,6 +289,11 @@ export default function TerminalTabs({
                   isClosingDisconnectedTabs ||
                   !tabs.some((tab) => isClosableDisconnectedTab(tab, closingTabIds)),
                 action: () => {
+                  if (isClosableDisconnectedTab(contextMenuTab, closingTabIds)) {
+                    focusAfterTabRemoval(contextMenuTab.id, (tab) =>
+                      isClosableDisconnectedTab(tab, closingTabIds)
+                    );
+                  }
                   void onCloseDisconnectedTabs();
                 },
               },
@@ -262,89 +308,109 @@ export default function TerminalTabs({
         const isClosing = closingTabIds.includes(tab.id);
         const isTerminalTab = tab.kind === "terminal";
         const isDragging = pointerDrag.draggedTabId === tab.id;
+        const triggerId = `${tabIdPrefix}-${tab.id}`;
+        const statusId = `${triggerId}-status`;
+        const label = labelFor(tab);
 
         return (
-          <button
+          <div
             key={tab.id}
-            ref={(element) => {
-              if (element) {
-                tabRefs.current.set(tab.id, element);
-              } else {
-                tabRefs.current.delete(tab.id);
-              }
-            }}
-            type="button"
             className={`terminal-tab ${tab.id === activeTabId ? "terminal-tab--active" : ""} ${
               isDragging ? "terminal-tab--dragging" : ""
             }`}
             data-terminal-tab-id={tab.id}
             data-workspace-terminal-tab-id={isTerminalTab ? tab.id : undefined}
-            onPointerDown={(e) => {
-              if (isClosing || e.button !== 0) return;
-              if ((e.target as HTMLElement).closest(".terminal-tab__close")) return;
-
-              pointerDrag.beginPointerDrag(e, tab.id, isTerminalTab);
-            }}
             onContextMenu={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              pointerDrag.resetPointerDrag();
-              const position = clampContextMenuPosition(
-                { x: e.clientX, y: e.clientY },
-                { width: window.innerWidth, height: window.innerHeight }
-              );
-              setContextMenu({
-                tabId: tab.id,
-                x: position.x,
-                y: position.y,
-              });
+              openContextMenu(tab.id, e.clientX, e.clientY);
             }}
-            onPointerMove={pointerDrag.handlePointerMove}
-            onPointerUp={pointerDrag.handlePointerUp}
-            onPointerCancel={pointerDrag.handlePointerCancel}
-            onClick={(e) => {
-              if (pointerDrag.consumeSuppressedClick()) {
-                e.preventDefault();
-                e.stopPropagation();
-                return;
-              }
-              if (!isClosing) {
-                onSelectTab(tab.id);
-              }
-            }}
-            disabled={isClosing}
-            aria-busy={isClosing}
           >
-            <span className="terminal-tab__icon">
-              {isTerminalTab && iconFor(tab.connectionType)}
-              {tab.kind === "settings" && <Settings size={13} />}
-              {tab.kind === "logs" && <FileText size={13} />}
-            </span>
-            {isTerminalTab && (
-              <span
-                className={`terminal-tab__status ${
-                  tab.isConnected
-                    ? "terminal-tab__status--connected"
-                    : "terminal-tab__status--disconnected"
-                }`}
-              />
-            )}
-            <span className="terminal-tab__label">{labelFor(tab)}</span>
-            <span
-              className="terminal-tab__close"
-              onPointerDown={(e) => {
-                e.stopPropagation();
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!isClosing) {
-                  void onCloseTab(tab.id);
+            <button
+              id={triggerId}
+              ref={(element) => {
+                if (element) {
+                  tabRefs.current.set(tab.id, element);
+                } else {
+                  tabRefs.current.delete(tab.id);
                 }
               }}
+              type="button"
+              className="terminal-tab__select"
+              aria-current={tab.id === activeTabId ? "true" : undefined}
+              aria-busy={isClosing}
+              aria-describedby={isTerminalTab ? statusId : undefined}
+              aria-haspopup="menu"
+              aria-expanded={contextMenu?.tabId === tab.id}
+              aria-keyshortcuts="Shift+F10 ContextMenu"
+              disabled={isClosing}
+              onFocus={(e) => {
+                ensureControlVisible(e.currentTarget);
+              }}
+              onPointerDown={(e) => {
+                if (!isClosing && e.button === 0) {
+                  pointerDrag.beginPointerDrag(e, tab.id, isTerminalTab);
+                }
+              }}
+              onPointerMove={pointerDrag.handlePointerMove}
+              onPointerUp={pointerDrag.handlePointerUp}
+              onPointerCancel={pointerDrag.handlePointerCancel}
+              onKeyDown={(e) => {
+                if (e.altKey || e.ctrlKey || e.metaKey) return;
+                if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.repeat) return;
+
+                const { left, bottom } = e.currentTarget.getBoundingClientRect();
+                openContextMenu(tab.id, left, bottom);
+              }}
+              onClick={(e) => {
+                if (e.detail !== 0 && pointerDrag.consumeSuppressedClick()) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
+                if (!isClosing) onSelectTab(tab.id);
+              }}
             >
-              <X size={12} />
-            </span>
-          </button>
+              <span className="terminal-tab__icon" aria-hidden="true">
+                {isTerminalTab && iconFor(tab.connectionType)}
+                {tab.kind === "settings" && <Settings size={13} />}
+                {tab.kind === "logs" && <FileText size={13} />}
+              </span>
+              {isTerminalTab && (
+                <span
+                  className={`terminal-tab__status ${
+                    tab.isConnected
+                      ? "terminal-tab__status--connected"
+                      : "terminal-tab__status--disconnected"
+                  }`}
+                  aria-hidden="true"
+                />
+              )}
+              <span className="terminal-tab__label">{label}</span>
+            </button>
+            {isTerminalTab && (
+              <span id={statusId} hidden>
+                {t(tab.isConnected ? "statusbar.connected" : "statusbar.disconnected")}
+              </span>
+            )}
+            <button
+              type="button"
+              className="terminal-tab__close"
+              aria-label={t("terminal.close_named_tab", { name: label })}
+              disabled={isClosing}
+              onFocus={(e) => {
+                ensureControlVisible(e.currentTarget);
+              }}
+              onClick={(e) => {
+                closeTab(tab.id, e.detail === 0);
+              }}
+            >
+              <X size={12} aria-hidden="true" />
+            </button>
+          </div>
         );
       })}
       <button
@@ -368,16 +434,20 @@ export default function TerminalTabs({
           style={{ left: `${pointerDrag.foreignDropTarget.indicatorLeft}px` }}
         />
       )}
-      {contextMenu && contextMenuItems.length > 0 && (
+      {contextMenu && contextMenuTab && (
         <div
+          key={contextMenu.tabId}
           ref={contextMenuRef}
           className="terminal-tabs__context-menu"
           style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
         >
           <PopoverMenu
             items={contextMenuItems}
+            autoFocus
+            ariaLabelledBy={`${tabIdPrefix}-${contextMenu.tabId}`}
+            onClose={dismissContextMenu}
             onAction={(action) => {
-              closeContextMenu();
+              dismissContextMenu();
               action();
             }}
           />
