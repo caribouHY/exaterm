@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- Start manual SSH and Telnet connections with empty destination fields and require the host and, for SSH, the username before connecting.
 - Ask for confirmation with the saved profile name and protocol before deleting an SSH or Telnet profile from the New Connection dialog.
 - Keep keyboard focus in the New Connection dialog and its prompts, and restore focus when the dialog is cancelled.
 - Disable serial connection until a port from the latest detected list is selected, and distinguish detection failures from an empty list.
