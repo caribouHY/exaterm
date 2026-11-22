@@ -21,6 +21,7 @@ import { DEFAULT_TERMINAL_MODE, normalizeTerminalMode } from "../../utils/termin
 import { ConnectionDialogView } from "./ConnectionDialogView";
 import { ConnectionProgressDialog } from "./ConnectionProgressDialog";
 import { CredentialPromptModal } from "./CredentialPromptModal";
+import { ProfileDeletionDialog } from "./ProfileDeletionDialog";
 import type {
   ConnectionDialogProps,
   SshFormActions,
@@ -71,6 +72,13 @@ export default function ConnectionDialog({
   const [error, setError] = useState("");
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [selectedProfileIds, setSelectedProfileIds] = useState({ ssh: "", telnet: "" });
+  const [profileToDelete, setProfileToDelete] = useState<{
+    connectionType: "ssh" | "telnet";
+    id: string;
+  } | null>(null);
+  const [deletingProfile, setDeletingProfile] = useState(false);
+  const profileDeletionInFlight = useRef(false);
+  const profileDeletionTrigger = useRef<HTMLElement | null>(null);
   const [selectedHistoryIds, setSelectedHistoryIds] = useState({ ssh: "", telnet: "" });
   const [sshProfileName, setSshProfileName] = useState("");
   const [sshGroup, setSshGroup] = useState("");
@@ -404,16 +412,37 @@ export default function ConnectionDialog({
     );
   };
 
-  const handleDeleteProfile = async (connectionType: "ssh" | "telnet") => {
-    const selectedProfileId =
-      connectionType === "ssh" ? selectedProfileIds.ssh : selectedProfileIds.telnet;
-    if (!selectedProfileId) return;
+  const requestProfileDeletion = (connectionType: "ssh" | "telnet") => {
+    const id = selectedProfileIds[connectionType];
+    const profiles = connectionType === "ssh" ? sshProfiles : telnetProfiles;
+    if (!id || !profiles.some((profile) => profile.id === id)) return;
 
+    const trigger = document.activeElement;
+    profileDeletionTrigger.current = trigger instanceof HTMLElement ? trigger : null;
+    profileDeletionInFlight.current = false;
+    setProfileToDelete({ connectionType, id });
+  };
+
+  const cancelProfileDeletion = () => {
+    if (!profileDeletionInFlight.current) setProfileToDelete(null);
+  };
+
+  useLayoutEffect(() => {
+    if (profileToDelete) return;
+    profileDeletionTrigger.current?.focus();
+    profileDeletionTrigger.current = null;
+  }, [profileToDelete]);
+
+  const confirmProfileDeletion = async () => {
+    if (!profileToDelete || profileDeletionInFlight.current) return;
+    const { connectionType, id } = profileToDelete;
+    profileDeletionInFlight.current = true;
+    setDeletingProfile(true);
     setError("");
     try {
       const savedConfig = await invoke<AppConfig>("config_saved_connection_delete", {
         connectionType,
-        id: selectedProfileId,
+        id,
       });
       setConfig(savedConfig);
       setSelectedProfileIds((current) =>
@@ -426,6 +455,9 @@ export default function ConnectionDialog({
       }
     } catch (caught: unknown) {
       setError(getConnectionErrorMessage(caught, t, t("connection.error")));
+    } finally {
+      setDeletingProfile(false);
+      setProfileToDelete(null);
     }
   };
 
@@ -559,9 +591,9 @@ export default function ConnectionDialog({
   useConnectionDialogShortcuts({
     attemptStatus: attempt.status,
     enabled: shortcutsEnabled,
-    canConnect,
+    canConnect: canConnect && !profileToDelete,
     credentialPrompt,
-    onClose,
+    onClose: profileToDelete ? cancelProfileDeletion : onClose,
     onCloseCredentialPrompt: connectionActions.handleCredentialCancel,
     onCancelConnection: () => {
       void connectionActions.handleCancelConnection();
@@ -692,7 +724,7 @@ export default function ConnectionDialog({
     },
     onSelectSource: handleSelectSshSource,
     onDeleteProfile: () => {
-      void handleDeleteProfile("ssh");
+      requestProfileDeletion("ssh");
     },
     onDeleteHistory: () => {
       void handleDeleteHistory("ssh");
@@ -777,7 +809,7 @@ export default function ConnectionDialog({
     },
     onSelectSource: handleSelectTelnetSource,
     onDeleteProfile: () => {
-      void handleDeleteProfile("telnet");
+      requestProfileDeletion("telnet");
     },
     onDeleteHistory: () => {
       void handleDeleteHistory("telnet");
@@ -821,8 +853,9 @@ export default function ConnectionDialog({
   };
   const shortcutText = t("connection.shortcut_ctrl_enter");
 
-  return (
+  const connectionForm = (
     <ConnectionDialogView
+      inert={profileToDelete !== null}
       tab={tab}
       setTab={(value) => {
         setError("");
@@ -903,5 +936,20 @@ export default function ConnectionDialog({
       onOverlayMouseDown={handleOverlayMouseDown}
       onOverlayClick={handleOverlayClick}
     />
+  );
+
+  return (
+    <>
+      {connectionForm}
+      {profileToDelete && (
+        <ProfileDeletionDialog
+          name={profileToDelete.id}
+          protocol={t(`connection.${profileToDelete.connectionType}`)}
+          deleting={deletingProfile}
+          onCancel={cancelProfileDeletion}
+          onConfirm={() => void confirmProfileDeletion()}
+        />
+      )}
+    </>
   );
 }
