@@ -342,6 +342,7 @@
   "terminal.tab_menu.copy_session_id_failed": "セッションIDをクリップボードにコピーできませんでした。もう一度お試しください。",
   "terminal.tab_menu.open_same_destination": "同じ接続先に接続…",
   "terminal.tab_menu.close": "閉じる",
+  "terminal.close_named_tab": "「{{name}}」を閉じる",
   "terminal.tab_menu.close_disconnected": "切断済みタブをすべて閉じる",
   "titlebar.subtitle": "AIネイティブ ターミナル",
   "titlebar.menu.file": "ファイル",
