@@ -64,7 +64,7 @@ export function TelnetConnectionForm({
           </ConnectionFieldLabelHtml>
           <input
             id="connection-telnet-host"
-            className="input"
+            className="input connection-dialog__destination-input"
             value={formState.host}
             onChange={(event) => {
               formActions.onHostChange(event.target.value);

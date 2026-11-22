@@ -94,6 +94,10 @@
   color: var(--color-status-error);
 }
 
+.connection-dialog .connection-dialog__destination-input::placeholder {
+  color: var(--primitive-color-neutral-300);
+}
+
 .connection-dialog__field-error {
   margin: 4px 0 0;
   color: var(--color-status-error);

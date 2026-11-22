@@ -70,7 +70,7 @@ export function SshConnectionForm({
           </ConnectionFieldLabelHtml>
           <input
             id="connection-ssh-host"
-            className="input"
+            className="input connection-dialog__destination-input"
             value={formState.host}
             onChange={(event) => {
               formActions.onHostChange(event.target.value);
@@ -110,11 +110,12 @@ export function SshConnectionForm({
         </ConnectionFieldLabelHtml>
         <input
           id="connection-ssh-username"
-          className="input"
+          className="input connection-dialog__destination-input"
           value={formState.username}
           onChange={(event) => {
             formActions.onUsernameChange(event.target.value);
           }}
+          placeholder="admin"
           required
           aria-invalid={Boolean(errors.username)}
           aria-describedby={errors.username ? "connection-ssh-username-error" : undefined}

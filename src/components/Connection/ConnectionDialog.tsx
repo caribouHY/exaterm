@@ -86,9 +86,9 @@ export default function ConnectionDialog({
   const [telnetGroup, setTelnetGroup] = useState("");
   const [pendingStartupConnect, setPendingStartupConnect] = useState(false);
 
-  const [host, setHost] = useState("192.168.1.1");
+  const [host, setHost] = useState("");
   const [port, setPort] = useState("22");
-  const [username, setUsername] = useState("admin");
+  const [username, setUsername] = useState("");
   const [authMethod, setAuthMethod] = useState<SshAuthMethod>("auto");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [jumpProfileId, setJumpProfileId] = useState("");
@@ -98,7 +98,7 @@ export default function ConnectionDialog({
   const [sshMemo, setSshMemo] = useState("");
   const [sshExternalControlEnabled, setSshExternalControlEnabled] = useState(true);
 
-  const [telnetHost, setTelnetHost] = useState("192.168.1.1");
+  const [telnetHost, setTelnetHost] = useState("");
   const [telnetPort, setTelnetPort] = useState("23");
   const [telnetEncoding, setTelnetEncoding] = useState<"utf-8" | "shift-jis" | "euc-jp">("utf-8");
   const [telnetTerminalMode, setTelnetTerminalMode] = useState(DEFAULT_TERMINAL_MODE);
