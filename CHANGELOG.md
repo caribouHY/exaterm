@@ -5,10 +5,12 @@
 ### Added
 
 - Added a terminal tab context-menu action to close all disconnected terminal tabs in the current window.
+- Added a Detect again button for serial ports in the New Connection dialog.
 
 ### Fixed
 
 - Keep keyboard focus in the New Connection dialog and its prompts, and restore focus when the dialog is cancelled.
+- Disable serial connection until a port from the latest detected list is selected, and distinguish detection failures from an empty list.
 
 ## v0.10.2
 

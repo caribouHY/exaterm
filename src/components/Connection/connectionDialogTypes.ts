@@ -10,6 +10,7 @@ import type {
   WorkspaceConnectionInfo,
 } from "../../types";
 import type { SshConnectionProgressEvent } from "./connectionProtocolEvents";
+import type { SerialPortDetectionStatus } from "./serialPortDetection";
 import type { ConnectionLogState } from "../../features/terminal-logging/connectionLogModel";
 import type {
   SerialConnectionValidationErrors,
@@ -163,6 +164,7 @@ export interface TelnetProfileOptions {
 
 export interface SerialFormState {
   ports: PortInfo[];
+  portDetectionStatus: SerialPortDetectionStatus;
   selectedPort: string;
   baudRate: string;
   dataBits: string;
@@ -173,6 +175,7 @@ export interface SerialFormState {
 }
 
 export interface SerialFormActions {
+  onRefreshPorts: () => void;
   onSelectedPortChange: (value: string) => void;
   onBaudRateChange: (value: string) => void;
   onDataBitsChange: (value: string) => void;

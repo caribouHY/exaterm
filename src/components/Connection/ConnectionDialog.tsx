@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
@@ -36,6 +43,7 @@ import { useConnectionProfileSelection } from "./useConnectionProfileSelection";
 import { useSavedConnectionProfiles } from "./useSavedConnectionProfiles";
 import { useSshDiagnostics } from "./useSshDiagnostics";
 import { useStartupConnectionRequest } from "./useStartupConnectionRequest";
+import { createSerialPortDetection } from "./serialPortDetection";
 
 import {
   isActiveConnectionFormValid,
@@ -89,8 +97,18 @@ export default function ConnectionDialog({
   const [telnetMemo, setTelnetMemo] = useState("");
   const [telnetExternalControlEnabled, setTelnetExternalControlEnabled] = useState(true);
 
-  const [ports, setPorts] = useState<PortInfo[]>([]);
-  const [selectedPort, setSelectedPort] = useState("");
+  const [serialPortDetection] = useState(() =>
+    createSerialPortDetection(() => invoke<PortInfo[]>("serial_list_ports"))
+  );
+  const {
+    ports,
+    selectedPort,
+    status: portDetectionStatus,
+  } = useSyncExternalStore(
+    serialPortDetection.subscribe,
+    serialPortDetection.getSnapshot,
+    serialPortDetection.getSnapshot
+  );
   const [baudRate, setBaudRate] = useState("9600");
   const [dataBits, setDataBits] = useState("8");
   const [parity, setParity] = useState("none");
@@ -123,17 +141,12 @@ export default function ConnectionDialog({
     });
   }, [loadConfig]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (tab !== "serial") return;
-    invoke<PortInfo[]>("serial_list_ports")
-      .then((availablePorts) => {
-        setPorts(availablePorts);
-        if (availablePorts.length > 0 && !selectedPort) {
-          setSelectedPort(availablePorts[0].name);
-        }
-      })
-      .catch(() => {});
-  }, [selectedPort, tab]);
+    // Invalidate the previous list before the reactivated Serial form can accept input.
+    void serialPortDetection.refresh();
+    return serialPortDetection.invalidatePendingRefresh;
+  }, [serialPortDetection, tab]);
 
   const sshProfiles = (config?.saved_connections ?? []).filter(
     (connection) => connection.connection_type === "ssh"
@@ -430,7 +443,7 @@ export default function ConnectionDialog({
   const formValidation = {
     ssh: validateSshConnectionForm({ host, port, username, authMethod, privateKeyPath }),
     telnet: validateTelnetConnectionForm({ host: telnetHost, port: telnetPort }),
-    serial: validateSerialConnectionForm({ selectedPort }),
+    serial: validateSerialConnectionForm({ selectedPort, ports }),
   };
   const initializingFromTab = Boolean(initialValues && !initialValuesApplied);
   const canConnect = !initializingFromTab && isActiveConnectionFormValid(tab, formValidation);
@@ -845,6 +858,7 @@ export default function ConnectionDialog({
       telnetFormActions={telnetFormActions}
       serialFormState={{
         ports,
+        portDetectionStatus,
         selectedPort,
         baudRate,
         dataBits,
@@ -854,9 +868,13 @@ export default function ConnectionDialog({
         validationErrors: formValidation.serial.errors,
       }}
       serialActions={{
+        onRefreshPorts: () => {
+          setError("");
+          void serialPortDetection.refresh();
+        },
         onSelectedPortChange: (value) => {
           setError("");
-          setSelectedPort(value);
+          serialPortDetection.select(value);
         },
         onBaudRateChange: (value) => {
           setError("");
