@@ -1,25 +1,21 @@
-import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   TelnetFormActions,
   TelnetFormState,
-  TelnetProfileOptions,
+  NetworkProfileOptions,
 } from "./connectionDialogTypes";
 import {
   ConnectionFieldError,
   ConnectionFieldLabelHtml,
   EncodingSelect,
-  ProfileMetadataFields,
-  ProfileNameField,
-  ProfileGroupField,
-  ProfileSelector,
   TerminalModeSelect,
 } from "./ConnectionFormFields";
+import { NetworkConnectionForm } from "./NetworkConnectionForm";
 
 interface TelnetConnectionFormProps {
   formState: TelnetFormState;
   formActions: TelnetFormActions;
-  profileOptions: TelnetProfileOptions;
+  profileOptions: NetworkProfileOptions;
 }
 
 export function TelnetConnectionForm({
@@ -29,34 +25,21 @@ export function TelnetConnectionForm({
 }: TelnetConnectionFormProps) {
   const { t } = useTranslation();
   const errors = formState.validationErrors;
-  const profileNameRef = useRef<HTMLInputElement>(null);
-
   return (
-    <>
-      <ProfileSelector
-        selectedProfileId={formState.selectedProfileId}
-        selectedHistoryId={formState.selectedHistoryId}
-        profiles={profileOptions.profiles}
-        historyEntries={profileOptions.historyEntries}
-        getDisplayName={profileOptions.getDisplayName}
-        getHistoryDisplayName={profileOptions.getHistoryDisplayName}
-        onSelectSource={formActions.onSelectSource}
-        onDeleteProfile={formActions.onDeleteProfile}
-        onDeleteHistory={formActions.onDeleteHistory}
-        onCopyProfile={() => {
-          if (formActions.onCopyProfile()) profileNameRef.current?.focus();
-        }}
-      />
-      <ProfileNameField
-        value={formState.profileName}
-        onChange={formActions.onProfileNameChange}
-        inputRef={profileNameRef}
-      />
-      <ProfileGroupField
-        value={formState.group}
-        groupNames={profileOptions.groupNames}
-        onChange={formActions.onGroupChange}
-      />
+    <NetworkConnectionForm
+      formState={formState}
+      formActions={formActions}
+      profileOptions={profileOptions}
+      advancedFields={
+        <>
+          <EncodingSelect value={formState.encoding} onChange={formActions.onEncodingChange} />
+          <TerminalModeSelect
+            value={formState.terminalMode}
+            onChange={formActions.onTerminalModeChange}
+          />
+        </>
+      }
+    >
       <div className="connection-dialog__row">
         <div>
           <ConnectionFieldLabelHtml htmlFor="connection-telnet-host" required>
@@ -103,19 +86,6 @@ export function TelnetConnectionForm({
           <ConnectionFieldError id="connection-telnet-port-error" error={errors.port} />
         </div>
       </div>
-      <EncodingSelect value={formState.encoding} onChange={formActions.onEncodingChange} />
-      <TerminalModeSelect
-        value={formState.terminalMode}
-        onChange={formActions.onTerminalModeChange}
-      />
-      <ProfileMetadataFields
-        memo={formState.memo}
-        externalControlEnabled={formState.externalControlEnabled}
-        selectedProfileId={formState.selectedProfileId}
-        onMemoChange={formActions.onMemoChange}
-        onExternalControlEnabledChange={formActions.onExternalControlEnabledChange}
-        onSaveProfile={formActions.onSaveProfile}
-      />
-    </>
+    </NetworkConnectionForm>
   );
 }

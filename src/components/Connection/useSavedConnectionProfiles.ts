@@ -21,9 +21,10 @@ export const useSavedConnectionProfiles = ({
   const saveProfile = async (
     selectedProfileId: string,
     createProfile: () => SavedConnection,
-    onSaved: (profile: SavedConnection) => void
+    onSaved: (profile: SavedConnection) => void,
+    reportError = setError
   ) => {
-    setError("");
+    reportError("");
     try {
       const nextProfile = createProfile();
       if (Number.isNaN(nextProfile.port)) {
@@ -47,7 +48,7 @@ export const useSavedConnectionProfiles = ({
       if ((draftVersions.current.get(nextProfile.connection_type) ?? 0) === version)
         onSaved(nextProfile);
     } catch (caught: unknown) {
-      setError(getConnectionErrorMessage(caught, t, t("connection.error")));
+      reportError(getConnectionErrorMessage(caught, t, t("connection.error")));
     }
   };
 

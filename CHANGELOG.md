@@ -7,6 +7,10 @@
 - Added a terminal tab context-menu action to close all disconnected terminal tabs in the current window.
 - Added a Detect again button for serial ports in the New Connection dialog.
 
+### Changed
+
+- Show SSH and Telnet connection fields first and group advanced settings and profile saving in separate collapsible sections.
+
 ### Fixed
 
 - Expose the current tab and terminal connection state to screen readers, distinguish connection states by shape, and make tab close buttons and context menus keyboard-accessible.
