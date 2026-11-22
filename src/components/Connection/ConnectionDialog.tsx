@@ -413,7 +413,7 @@ export default function ConnectionDialog({
   };
 
   const requestProfileDeletion = (connectionType: "ssh" | "telnet") => {
-    const id = selectedProfileIds[connectionType];
+    const id = connectionType === "ssh" ? selectedProfileIds.ssh : selectedProfileIds.telnet;
     const profiles = connectionType === "ssh" ? sshProfiles : telnetProfiles;
     if (!id || !profiles.some((profile) => profile.id === id)) return;
 
