@@ -9,6 +9,7 @@ import {
 } from "./ConnectionFormFields";
 import { ConnectionSearchSelect, ConnectionSelect } from "./ConnectionSearchSelect";
 import { SerialConnectionForm } from "./SerialConnectionForm";
+import type { SerialFormState } from "./connectionDialogTypes";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
@@ -45,20 +46,23 @@ describe("consistent connection dropdowns", () => {
     }
   });
 
-  it("preserves Serial port validation and no-port feedback with custom pickers", () => {
-    const markup = renderToStaticMarkup(
+  const renderSerialForm = (overrides: Partial<SerialFormState> = {}) =>
+    renderToStaticMarkup(
       createElement(SerialConnectionForm, {
         formState: {
           ports: [],
+          portDetectionStatus: "ready",
           selectedPort: "",
           baudRate: "9600",
           dataBits: "8",
           parity: "none",
           stopBits: "1",
           terminalMode: "general",
-          validationErrors: { selectedPort: "serial_port_required" },
+          validationErrors: {},
+          ...overrides,
         },
         formActions: {
+          onRefreshPorts: vi.fn(),
           onSelectedPortChange: vi.fn(),
           onBaudRateChange: vi.fn(),
           onDataBitsChange: vi.fn(),
@@ -68,14 +72,29 @@ describe("consistent connection dropdowns", () => {
         },
       })
     );
+
+  it("preserves Serial port validation with custom pickers", () => {
+    const markup = renderSerialForm({
+      ports: [{ name: "COM3", port_type: "USB" }],
+      validationErrors: { selectedPort: "serial_port_required" },
+    });
     expect(markup).not.toMatch(/<select(?:\s|>)/);
     expect(markup.match(/role="combobox"/g)).toHaveLength(6);
     expect(markup).toContain('id="connection-serial-port"');
     expect(markup).toContain('aria-required="true"');
     expect(markup).toContain('aria-invalid="true"');
     expect(markup).toContain('aria-describedby="connection-serial-port-error"');
-    expect(markup).toContain("connection.no_ports");
     expect(markup).toContain("connection.validation_serial_port_required");
+  });
+
+  it.each([
+    ["ready", "connection.no_ports"],
+    ["loading", "connection.serial_ports_loading"],
+    ["failed", "connection.serial_ports_load_failed"],
+  ] as const)("shows the Serial port detection state %s and offers a refresh", (status, label) => {
+    const markup = renderSerialForm({ portDetectionStatus: status });
+    expect(markup).toContain(label);
+    expect(markup).toContain("connection.serial_ports_refresh");
   });
 });
 

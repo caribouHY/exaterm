@@ -77,6 +77,13 @@
   flex: 1;
 }
 
+.connection-dialog__serial-port-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-sm);
+  align-items: end;
+}
+
 .connection-dialog__required-mark {
   margin-left: 3px;
   color: var(--color-status-error);

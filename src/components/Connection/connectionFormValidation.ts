@@ -1,4 +1,4 @@
-import type { ConnectionType, SshAuthMethod } from "../../types";
+import type { ConnectionType, PortInfo, SshAuthMethod } from "../../types";
 
 export type ConnectionValidationError = "required" | "port_range" | "serial_port_required";
 
@@ -48,6 +48,7 @@ interface TelnetConnectionValidationInput {
 
 interface SerialConnectionValidationInput {
   selectedPort: string;
+  ports: PortInfo[];
 }
 
 const isBlank = (value: string): boolean => value.trim() === "";
@@ -88,10 +89,13 @@ export const validateTelnetConnectionForm = ({
 
 export const validateSerialConnectionForm = ({
   selectedPort,
+  ports,
 }: SerialConnectionValidationInput): ConnectionFormValidationState["serial"] => {
-  const errors: SerialConnectionValidationErrors = {};
-  if (isBlank(selectedPort)) errors.selectedPort = "serial_port_required";
-  return { isValid: Object.keys(errors).length === 0, errors };
+  const isValid = !isBlank(selectedPort) && ports.some((port) => port.name === selectedPort);
+  return {
+    isValid,
+    errors: !isValid && ports.length > 0 ? { selectedPort: "serial_port_required" } : {},
+  };
 };
 
 export const isActiveConnectionFormValid = (

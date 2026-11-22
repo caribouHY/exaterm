@@ -17,6 +17,7 @@ import { SshConnectionForm } from "./SshConnectionForm";
 import { SshDiagnosticsPanel } from "./SshDiagnosticsPanel";
 import { TelnetConnectionForm } from "./TelnetConnectionForm";
 import type {
+  SerialFormActions,
   SerialFormState,
   SshFormActions,
   SshFormState,
@@ -46,14 +47,7 @@ interface ConnectionDialogViewProps {
   telnetFormState: TelnetFormState;
   telnetFormActions: TelnetFormActions;
   serialFormState: SerialFormState;
-  serialActions: {
-    onSelectedPortChange: (value: string) => void;
-    onBaudRateChange: (value: string) => void;
-    onDataBitsChange: (value: string) => void;
-    onParityChange: (value: string) => void;
-    onStopBitsChange: (value: string) => void;
-    onTerminalModeChange: (value: string) => void;
-  };
+  serialActions: SerialFormActions;
   diagnosticsPanelProps: {
     logs: ReturnType<typeof useSshDiagnostics>["logs"];
     expanded: boolean;

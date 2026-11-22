@@ -69,12 +69,16 @@ describe("connection form validation", () => {
     );
   });
 
-  it("requires a selected Serial port", () => {
-    expect(validateSerialConnectionForm({ selectedPort: "" })).toEqual({
-      isValid: false,
-      errors: { selectedPort: "serial_port_required" },
-    });
-    expect(validateSerialConnectionForm({ selectedPort: "COM3" }).isValid).toBe(true);
+  it("requires the selected Serial port to be in the latest list", () => {
+    const ports = [{ name: "COM3", port_type: "USB" }];
+    for (const selectedPort of ["", "COM4"]) {
+      expect(validateSerialConnectionForm({ selectedPort, ports })).toEqual({
+        isValid: false,
+        errors: { selectedPort: "serial_port_required" },
+      });
+    }
+    expect(validateSerialConnectionForm({ selectedPort: "COM3", ports: [] }).isValid).toBe(false);
+    expect(validateSerialConnectionForm({ selectedPort: "COM3", ports }).isValid).toBe(true);
   });
 
   it("uses only the active protocol when deciding whether connection is allowed", () => {
