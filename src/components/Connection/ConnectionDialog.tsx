@@ -364,7 +364,7 @@ export default function ConnectionDialog({
 
   const savedProfiles = useSavedConnectionProfiles({ setConfig, setError, t });
 
-  const handleSaveSshProfile = () => {
+  const handleSaveSshProfile = (reportError: (error: string) => void) => {
     void savedProfiles.saveProfile(
       selectedProfileIds.ssh,
       () =>
@@ -386,11 +386,12 @@ export default function ConnectionDialog({
         setSelectedProfileIds((current) => ({ ...current, ssh: profile.id }));
         setSelectedHistoryIds((current) => ({ ...current, ssh: "" }));
         setSshProfileName(profile.id);
-      }
+      },
+      reportError
     );
   };
 
-  const handleSaveTelnetProfile = () => {
+  const handleSaveTelnetProfile = (reportError: (error: string) => void) => {
     void savedProfiles.saveProfile(
       selectedProfileIds.telnet,
       () =>
@@ -408,7 +409,8 @@ export default function ConnectionDialog({
         setSelectedProfileIds((current) => ({ ...current, telnet: profile.id }));
         setSelectedHistoryIds((current) => ({ ...current, telnet: "" }));
         setTelnetProfileName(profile.id);
-      }
+      },
+      reportError
     );
   };
 

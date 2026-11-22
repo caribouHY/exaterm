@@ -91,6 +91,7 @@ export function ConnectionDialogView({
   onOverlayClick,
 }: ConnectionDialogViewProps) {
   const { t } = useTranslation();
+  const isNetworkConnection = tab !== "serial";
   const errorRef = useRef<HTMLDivElement>(null);
   const groupNames = groupSavedProfiles([...sshProfiles, ...telnetProfiles]).flatMap(({ name }) =>
     name === null ? [] : [name]
@@ -108,7 +109,7 @@ export function ConnectionDialogView({
       onClick={onOverlayClick}
     >
       <ModalFrame
-        className="connection-dialog"
+        className={`connection-dialog${isNetworkConnection ? " connection-dialog--network" : ""}`}
         role="dialog"
         ariaModal
         ariaLabelledBy="connection-dialog-title"
@@ -164,7 +165,9 @@ export function ConnectionDialogView({
           </div>
         )}
 
-        <ModalBody className="connection-dialog__body">
+        <ModalBody
+          className={`connection-dialog__body${isNetworkConnection ? " connection-dialog__body--network" : ""}`}
+        >
           {tab === "ssh" ? (
             <SshConnectionForm
               formState={sshFormState}
