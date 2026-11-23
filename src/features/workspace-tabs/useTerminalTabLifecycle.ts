@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import type {
   ConnectionType,
   Encoding,
@@ -6,6 +6,7 @@ import type {
   UtilityTabKind,
   WorkspaceConnectionInfo,
 } from "../../types";
+import { isClosableDisconnectedTab } from "./tabStripModel";
 import { workspaceClient } from "./workspaceClient";
 import type { WindowTabsController } from "./useWindowTabs";
 
@@ -21,7 +22,17 @@ interface ConnectedTerminalInput {
 }
 
 interface UseTerminalTabLifecycleOptions {
-  tabs: WindowTabsController;
+  tabs: Pick<
+    WindowTabsController,
+    | "windowId"
+    | "getCurrentState"
+    | "applyWorkspaceSnapshot"
+    | "beginClosingTab"
+    | "endClosingTab"
+    | "captureRemovalFocus"
+    | "restoreFocusAfterRemoval"
+    | "closeUtilityTab"
+  >;
   onTerminalRemoved: (tabId: string) => void;
 }
 
@@ -30,6 +41,8 @@ export function useTerminalTabLifecycle({
   onTerminalRemoved,
 }: UseTerminalTabLifecycleOptions) {
   const closeOperationsRef = useRef(new Map<string, Promise<boolean>>());
+  const batchCloseInProgress = useRef(false);
+  const [isClosingDisconnectedTabs, setIsClosingDisconnectedTabs] = useState(false);
 
   const registerTerminalTab = useCallback(
     async (input: ConnectedTerminalInput) => {
@@ -103,5 +116,32 @@ export function useTerminalTabLifecycle({
     [disconnectTab, tabs]
   );
 
-  return { registerTerminalTab, closeTab };
+  const closeDisconnectedTabs = useCallback(async () => {
+    if (batchCloseInProgress.current) return;
+
+    const { appTabs, activeTabId, closingTabIds } = tabs.getCurrentState();
+    const targets = appTabs.filter((tab) => isClosableDisconnectedTab(tab, closingTabIds));
+    const targetIds = targets.filter((tab) => tab.id !== activeTabId).map((tab) => tab.id);
+    if (activeTabId && targets.some((tab) => tab.id === activeTabId)) {
+      targetIds.push(activeTabId);
+    }
+
+    if (targetIds.length === 0) return;
+    batchCloseInProgress.current = true;
+    setIsClosingDisconnectedTabs(true);
+    try {
+      for (const tabId of targetIds) {
+        const current = tabs.getCurrentState();
+        const tab = current.tabs.find((item) => item.id === tabId);
+        if (tab && isClosableDisconnectedTab(tab, current.closingTabIds)) {
+          await closeTab(tabId);
+        }
+      }
+    } finally {
+      batchCloseInProgress.current = false;
+      setIsClosingDisconnectedTabs(false);
+    }
+  }, [closeTab, tabs]);
+
+  return { registerTerminalTab, closeTab, closeDisconnectedTabs, isClosingDisconnectedTabs };
 }

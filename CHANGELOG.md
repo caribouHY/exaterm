@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## v0.10.3
+
+### Added
+
+- Added a terminal tab context-menu action to close all disconnected terminal tabs in the current window.
+- Added a Detect again button for serial ports in the New Connection dialog.
+
+### Changed
+
+- Show SSH and Telnet connection fields first and group advanced settings and profile saving in separate collapsible sections.
+
+### Fixed
+
+- Expose the current tab and terminal connection state to screen readers, distinguish connection states by shape, and make tab close buttons and context menus keyboard-accessible.
+- Start manual SSH and Telnet connections with empty destination fields and require the host and, for SSH, the username before connecting.
+- Ask for confirmation with the saved profile name and protocol before deleting an SSH or Telnet profile from the New Connection dialog.
+- Keep keyboard focus in the New Connection dialog and its prompts, and restore focus when the dialog is cancelled.
+- Disable serial connection until a port from the latest detected list is selected, and distinguish detection failures from an empty list.
+
 ## v0.10.2
 
 ### Added

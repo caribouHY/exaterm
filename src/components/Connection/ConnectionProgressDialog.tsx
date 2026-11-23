@@ -54,6 +54,7 @@ export function ConnectionProgressDialog({
         role="dialog"
         ariaModal
         ariaLabelledBy={titleId}
+        focusTarget=".connection-dialog__footer button"
       >
         <ModalHeader className="connection-dialog__header">
           <ModalTitle className="connection-dialog__title" id={titleId}>

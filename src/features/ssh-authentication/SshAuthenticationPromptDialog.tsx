@@ -42,14 +42,15 @@ export function SshAuthenticationPromptDialog({
         ariaModal
         ariaLabelledBy="ssh-auth-prompt-title"
         ariaDescribedBy={prompt.instructions ? "ssh-auth-prompt-instructions" : undefined}
+        focusTarget="#ssh-auth-prompt-response-0"
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (!event.repeat && !prompt.submitting) onCancel();
+        }}
       >
         <form
-          onKeyDown={(event) => {
-            if (event.key !== "Escape" || event.defaultPrevented) return;
-            event.preventDefault();
-            event.stopPropagation();
-            if (!event.repeat && !prompt.submitting) onCancel();
-          }}
           onSubmit={(event) => {
             event.preventDefault();
             onSubmit();
@@ -99,7 +100,6 @@ export function SshAuthenticationPromptDialog({
                       id={inputId}
                       className="input"
                       type={field.echo ? "text" : "password"}
-                      autoFocus={index === 0}
                       autoComplete="off"
                       value={response ?? ""}
                       disabled={prompt.submitting}

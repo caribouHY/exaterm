@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import { ConnectionSearchSelect, ConnectionSelect } from "./ConnectionSearchSelect";
 import { profileSearchSections } from "./connectionSearchModel";
 import { parseConnectionSource } from "./connectionHistoryModel";
@@ -8,19 +7,15 @@ import {
   normalizeSshAuthMethod,
   SSH_KEY_PATH_PLACEHOLDER,
   SSH_AUTH_METHODS,
-  usesPrivateKeyAuthentication,
 } from "./connectionProfileUtils";
 import type { SshFormActions, SshFormState, SshProfileOptions } from "./connectionDialogTypes";
 import {
   ConnectionFieldError,
   ConnectionFieldLabelHtml,
   EncodingSelect,
-  ProfileMetadataFields,
-  ProfileNameField,
-  ProfileGroupField,
-  ProfileSelector,
   TerminalModeSelect,
 } from "./ConnectionFormFields";
+import { NetworkConnectionForm } from "./NetworkConnectionForm";
 
 interface SshConnectionFormProps {
   formState: SshFormState;
@@ -35,34 +30,59 @@ export function SshConnectionForm({
 }: SshConnectionFormProps) {
   const { t } = useTranslation();
   const errors = formState.validationErrors;
-  const profileNameRef = useRef<HTMLInputElement>(null);
+  const jumpProfile = profileOptions.jumpProfiles.find(({ id }) => id === formState.jumpProfileId);
+  const advancedSummary = formState.jumpProfileId
+    ? t("connection.ssh_jump_summary", {
+        profile: jumpProfile ? profileOptions.getDisplayName(jumpProfile) : formState.jumpProfileId,
+      })
+    : undefined;
 
   return (
-    <>
-      <ProfileSelector
-        selectedProfileId={formState.selectedProfileId}
-        selectedHistoryId={formState.selectedHistoryId}
-        profiles={profileOptions.profiles}
-        historyEntries={profileOptions.historyEntries}
-        getDisplayName={profileOptions.getDisplayName}
-        getHistoryDisplayName={profileOptions.getHistoryDisplayName}
-        onSelectSource={formActions.onSelectSource}
-        onDeleteProfile={formActions.onDeleteProfile}
-        onDeleteHistory={formActions.onDeleteHistory}
-        onCopyProfile={() => {
-          if (formActions.onCopyProfile()) profileNameRef.current?.focus();
-        }}
-      />
-      <ProfileNameField
-        value={formState.profileName}
-        onChange={formActions.onProfileNameChange}
-        inputRef={profileNameRef}
-      />
-      <ProfileGroupField
-        value={formState.group}
-        groupNames={profileOptions.groupNames}
-        onChange={formActions.onGroupChange}
-      />
+    <NetworkConnectionForm
+      formState={formState}
+      formActions={formActions}
+      profileOptions={profileOptions}
+      advancedSummary={advancedSummary}
+      advancedFields={
+        <>
+          <ConnectionSearchSelect
+            label={t("connection.jump_profile")}
+            value={formState.jumpProfileId ? `profile:${formState.jumpProfileId}` : ""}
+            sections={[
+              {
+                key: "direct",
+                options: [
+                  {
+                    value: "",
+                    label: t("connection.jump_profile_none"),
+                    searchText: "",
+                    alwaysVisible: true,
+                  },
+                ],
+              },
+              ...profileSearchSections(
+                profileOptions.jumpProfiles,
+                profileOptions.getDisplayName,
+                t("connection.profile_saved"),
+                t("connection.profile_ungrouped")
+              ),
+            ]}
+            onChange={(value) => {
+              const source = parseConnectionSource(value);
+              formActions.onJumpProfileChange(source.kind === "profile" ? source.id : "");
+            }}
+          />
+          <EncodingSelect value={formState.encoding} onChange={formActions.onEncodingChange} />
+          <TerminalModeSelect
+            value={formState.terminalMode}
+            onChange={formActions.onTerminalModeChange}
+          />
+          {formState.authMethod === "auto" && (
+            <SshPrivateKeyField formState={formState} formActions={formActions} />
+          )}
+        </>
+      }
+    >
       <div className="connection-dialog__row">
         <div>
           <ConnectionFieldLabelHtml htmlFor="connection-ssh-host" required>
@@ -70,7 +90,7 @@ export function SshConnectionForm({
           </ConnectionFieldLabelHtml>
           <input
             id="connection-ssh-host"
-            className="input"
+            className="input connection-dialog__destination-input"
             value={formState.host}
             onChange={(event) => {
               formActions.onHostChange(event.target.value);
@@ -110,11 +130,12 @@ export function SshConnectionForm({
         </ConnectionFieldLabelHtml>
         <input
           id="connection-ssh-username"
-          className="input"
+          className="input connection-dialog__destination-input"
           value={formState.username}
           onChange={(event) => {
             formActions.onUsernameChange(event.target.value);
           }}
+          placeholder="admin"
           required
           aria-invalid={Boolean(errors.username)}
           aria-describedby={errors.username ? "connection-ssh-username-error" : undefined}
@@ -132,88 +153,54 @@ export function SshConnectionForm({
           formActions.onAuthMethodChange(normalizeSshAuthMethod(value));
         }}
       />
-      {usesPrivateKeyAuthentication(formState.authMethod) && (
-        <div>
-          <ConnectionFieldLabelHtml
-            htmlFor="connection-ssh-private-key"
-            required={formState.authMethod === "public_key"}
-          >
-            {t("connection.private_key_path")}
-          </ConnectionFieldLabelHtml>
-          <div className="connection-dialog__file-row">
-            <input
-              id="connection-ssh-private-key"
-              className="input"
-              value={formState.privateKeyPath}
-              onChange={(event) => {
-                formActions.onPrivateKeyPathChange(event.target.value);
-              }}
-              placeholder={SSH_KEY_PATH_PLACEHOLDER}
-              required={formState.authMethod === "public_key"}
-              aria-invalid={Boolean(errors.privateKeyPath)}
-              aria-describedby={
-                errors.privateKeyPath ? "connection-ssh-private-key-error" : undefined
-              }
-            />
-            <button
-              className="btn btn-ghost btn-sm"
-              type="button"
-              onClick={formActions.onSelectPrivateKeyFile}
-              title={t("connection.select_file")}
-            >
-              <FolderOpen size={14} />
-              {t("connection.select_file")}
-            </button>
-          </div>
-          <ConnectionFieldError
-            id="connection-ssh-private-key-error"
-            error={errors.privateKeyPath}
-          />
-          {formState.authMethod === "auto" && (
-            <p className="connection-dialog__field-help">{t("connection.auto_private_key_desc")}</p>
-          )}
-        </div>
+      {formState.authMethod === "public_key" && (
+        <SshPrivateKeyField formState={formState} formActions={formActions} />
       )}
-      <ConnectionSearchSelect
-        label={t("connection.jump_profile")}
-        value={formState.jumpProfileId ? `profile:${formState.jumpProfileId}` : ""}
-        sections={[
-          {
-            key: "direct",
-            options: [
-              {
-                value: "",
-                label: t("connection.jump_profile_none"),
-                searchText: "",
-                alwaysVisible: true,
-              },
-            ],
-          },
-          ...profileSearchSections(
-            profileOptions.jumpProfiles,
-            profileOptions.getDisplayName,
-            t("connection.profile_saved"),
-            t("connection.profile_ungrouped")
-          ),
-        ]}
-        onChange={(value) => {
-          const source = parseConnectionSource(value);
-          formActions.onJumpProfileChange(source.kind === "profile" ? source.id : "");
-        }}
-      />
-      <EncodingSelect value={formState.encoding} onChange={formActions.onEncodingChange} />
-      <TerminalModeSelect
-        value={formState.terminalMode}
-        onChange={formActions.onTerminalModeChange}
-      />
-      <ProfileMetadataFields
-        memo={formState.memo}
-        externalControlEnabled={formState.externalControlEnabled}
-        selectedProfileId={formState.selectedProfileId}
-        onMemoChange={formActions.onMemoChange}
-        onExternalControlEnabledChange={formActions.onExternalControlEnabledChange}
-        onSaveProfile={formActions.onSaveProfile}
-      />
-    </>
+    </NetworkConnectionForm>
+  );
+}
+
+function SshPrivateKeyField({
+  formState,
+  formActions,
+}: Pick<SshConnectionFormProps, "formState" | "formActions">) {
+  const { t } = useTranslation();
+  const error = formState.validationErrors.privateKeyPath;
+  return (
+    <div>
+      <ConnectionFieldLabelHtml
+        htmlFor="connection-ssh-private-key"
+        required={formState.authMethod === "public_key"}
+      >
+        {t("connection.private_key_path")}
+      </ConnectionFieldLabelHtml>
+      <div className="connection-dialog__file-row">
+        <input
+          id="connection-ssh-private-key"
+          className="input"
+          value={formState.privateKeyPath}
+          onChange={(event) => {
+            formActions.onPrivateKeyPathChange(event.target.value);
+          }}
+          placeholder={SSH_KEY_PATH_PLACEHOLDER}
+          required={formState.authMethod === "public_key"}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? "connection-ssh-private-key-error" : undefined}
+        />
+        <button
+          className="btn btn-ghost btn-sm"
+          type="button"
+          onClick={formActions.onSelectPrivateKeyFile}
+          title={t("connection.select_file")}
+        >
+          <FolderOpen size={14} />
+          {t("connection.select_file")}
+        </button>
+      </div>
+      <ConnectionFieldError id="connection-ssh-private-key-error" error={error} />
+      {formState.authMethod === "auto" && (
+        <p className="connection-dialog__field-help">{t("connection.auto_private_key_desc")}</p>
+      )}
+    </div>
   );
 }

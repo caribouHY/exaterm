@@ -10,6 +10,7 @@ import type {
   WorkspaceConnectionInfo,
 } from "../../types";
 import type { SshConnectionProgressEvent } from "./connectionProtocolEvents";
+import type { SerialPortDetectionStatus } from "./serialPortDetection";
 import type { ConnectionLogState } from "../../features/terminal-logging/connectionLogModel";
 import type {
   SerialConnectionValidationErrors,
@@ -74,25 +75,28 @@ export interface ProfileSelectionState {
   telnet: string;
 }
 
-export interface SshFormState {
+export interface NetworkFormState {
   selectedProfileId: string;
   selectedHistoryId: string;
   profileName: string;
   group: string;
   host: string;
   port: string;
-  username: string;
-  authMethod: SshAuthMethod;
-  privateKeyPath: string;
-  jumpProfileId: string;
   encoding: Encoding;
   terminalMode: TerminalMode;
   memo: string;
   externalControlEnabled: boolean;
+}
+
+export interface SshFormState extends NetworkFormState {
+  username: string;
+  authMethod: SshAuthMethod;
+  privateKeyPath: string;
+  jumpProfileId: string;
   validationErrors: SshConnectionValidationErrors;
 }
 
-export interface SshFormActions {
+export interface NetworkFormActions {
   onCopyProfile: () => boolean;
   onSelectSource: (value: string) => void;
   onDeleteProfile: () => void;
@@ -101,68 +105,44 @@ export interface SshFormActions {
   onGroupChange: (value: string) => void;
   onHostChange: (value: string) => void;
   onPortChange: (value: string) => void;
+  onEncodingChange: (value: string) => void;
+  onTerminalModeChange: (value: string) => void;
+  onMemoChange: (value: string) => void;
+  onExternalControlEnabledChange: (value: boolean) => void;
+  onSaveProfile: (reportError: (error: string) => void) => void;
+}
+
+export interface SshFormActions extends NetworkFormActions {
   onUsernameChange: (value: string) => void;
   onAuthMethodChange: (value: string) => void;
   onPrivateKeyPathChange: (value: string) => void;
   onSelectPrivateKeyFile: () => void;
   onJumpProfileChange: (value: string) => void;
-  onEncodingChange: (value: string) => void;
-  onTerminalModeChange: (value: string) => void;
-  onMemoChange: (value: string) => void;
-  onExternalControlEnabledChange: (value: boolean) => void;
-  onSaveProfile: () => void;
 }
 
-export interface SshProfileOptions {
+export interface NetworkProfileOptions {
   profiles: SavedConnection[];
   groupNames: string[];
   historyEntries: ConnectionHistoryEntry[];
-  jumpProfiles: SavedConnection[];
   getDisplayName: (profile: SavedConnection) => string;
   getHistoryDisplayName: (entry: ConnectionHistoryEntry) => string;
 }
 
-export interface TelnetFormState {
-  selectedProfileId: string;
-  selectedHistoryId: string;
-  profileName: string;
-  group: string;
-  host: string;
-  port: string;
-  encoding: Encoding;
-  terminalMode: TerminalMode;
-  memo: string;
-  externalControlEnabled: boolean;
+export interface SshProfileOptions extends NetworkProfileOptions {
+  jumpProfiles: SavedConnection[];
+}
+
+export interface TelnetFormState extends NetworkFormState {
   validationErrors: TelnetConnectionValidationErrors;
 }
 
-export interface TelnetFormActions {
-  onCopyProfile: () => boolean;
-  onSelectSource: (value: string) => void;
-  onDeleteProfile: () => void;
-  onDeleteHistory: () => void;
-  onProfileNameChange: (value: string) => void;
-  onGroupChange: (value: string) => void;
-  onHostChange: (value: string) => void;
-  onPortChange: (value: string) => void;
+export interface TelnetFormActions extends NetworkFormActions {
   onPortEnter: () => void;
-  onEncodingChange: (value: string) => void;
-  onTerminalModeChange: (value: string) => void;
-  onMemoChange: (value: string) => void;
-  onExternalControlEnabledChange: (value: boolean) => void;
-  onSaveProfile: () => void;
-}
-
-export interface TelnetProfileOptions {
-  profiles: SavedConnection[];
-  groupNames: string[];
-  historyEntries: ConnectionHistoryEntry[];
-  getDisplayName: (profile: SavedConnection) => string;
-  getHistoryDisplayName: (entry: ConnectionHistoryEntry) => string;
 }
 
 export interface SerialFormState {
   ports: PortInfo[];
+  portDetectionStatus: SerialPortDetectionStatus;
   selectedPort: string;
   baudRate: string;
   dataBits: string;
@@ -173,6 +153,7 @@ export interface SerialFormState {
 }
 
 export interface SerialFormActions {
+  onRefreshPorts: () => void;
   onSelectedPortChange: (value: string) => void;
   onBaudRateChange: (value: string) => void;
   onDataBitsChange: (value: string) => void;

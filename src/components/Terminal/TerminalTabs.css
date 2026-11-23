@@ -16,16 +16,14 @@
 .terminal-tab {
   display: flex;
   align-items: center;
-  gap: 6px;
   height: 100%;
-  padding: 0 12px;
+  padding-right: 12px;
   background: transparent;
   border: none;
   border-right: 1px solid var(--color-border-secondary);
   color: var(--color-text-secondary);
   font-family: var(--font-family-interface);
   font-size: 12px;
-  cursor: pointer;
   transition:
     background var(--motion-transition-fast),
     color var(--motion-transition-fast),
@@ -35,7 +33,36 @@
   max-width: 200px;
   position: relative;
   user-select: none;
+}
+
+.terminal-tab__select,
+.terminal-tab__close {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.terminal-tab__select {
+  flex: 1 1 auto;
+  gap: 6px;
+  height: 100%;
+  min-width: 0;
+  padding: 0 6px 0 12px;
   touch-action: none;
+}
+
+.terminal-tab__select:disabled,
+.terminal-tab__close:disabled {
+  cursor: default;
+}
+
+.terminal-tab__select:focus-visible {
+  position: relative;
+  z-index: var(--stack-focus);
 }
 
 .terminal-tab:hover {
@@ -52,6 +79,10 @@
   background: var(--color-interactive-active);
   cursor: grabbing;
   opacity: 0.55;
+}
+
+.terminal-tab--dragging .terminal-tab__select {
+  cursor: grabbing;
 }
 
 .terminal-tabs__drop-indicator {
@@ -75,6 +106,7 @@
   right: 0;
   height: 1px;
   background: var(--color-background);
+  pointer-events: none;
 }
 
 .terminal-tab__icon {
@@ -87,45 +119,52 @@
 .terminal-tab__status {
   width: 6px;
   height: 6px;
+  border: 1px solid currentColor;
   border-radius: var(--radius-pill);
   flex-shrink: 0;
 }
 
 .terminal-tab__status--connected {
-  background: var(--color-status-connected);
+  color: var(--color-status-connected);
+  background: currentColor;
   box-shadow: var(--component-status-connected-shadow);
 }
 
 .terminal-tab__status--disconnected {
-  background: var(--color-status-disconnected);
+  color: var(--color-status-disconnected);
+}
+
+@media (forced-colors: active) {
+  .terminal-tab__status {
+    forced-color-adjust: none;
+    color: ButtonText;
+    box-shadow: none;
+  }
 }
 
 .terminal-tab__close {
-  display: flex;
-  align-items: center;
   justify-content: center;
   width: 18px;
   height: 18px;
+  padding: 0;
   border-radius: var(--radius-control);
   opacity: 0;
   transition:
     background var(--motion-transition-fast),
     opacity var(--motion-transition-fast);
-  margin-left: auto;
   flex-shrink: 0;
 }
 
-.terminal-tab:hover .terminal-tab__close {
+.terminal-tab:hover .terminal-tab__close,
+.terminal-tab__close:focus-visible {
   opacity: 1;
 }
 
-.terminal-tab__close:hover {
+.terminal-tab__close:hover:not(:disabled) {
   background: var(--color-interactive-active);
 }
 
 .terminal-tab__label {
-  display: flex;
-  align-items: center;
   line-height: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -158,4 +197,8 @@
 .terminal-tabs__context-menu {
   position: fixed;
   z-index: var(--stack-context-menu);
+}
+
+.terminal-tabs__context-menu .ui-popover-menu {
+  width: 220px;
 }

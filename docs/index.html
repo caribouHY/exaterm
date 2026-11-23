@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ExaTerm | AIエージェント対応ターミナルソフト</title>
+    <meta
+      name="description"
+      content="ExaTerm は Windows 向けのターミナルです。SSH・Telnet・シリアル接続に対応し、CLI や MCP を通じて Claude や Codex と連携できます。"
+    />
+    <link rel="icon" href="images/exaterm.png" />
+    <link rel="stylesheet" href="site.css" />
+  </head>
+  <body id="top">
+    <header>
+      <div class="wrap">
+        <a class="brand" href="#top"><img src="images/exaterm.png" alt="" />ExaTerm</a>
+        <nav aria-label="メインナビゲーション">
+          <a href="#features">機能</a><a href="#guide">ガイド</a
+          ><a href="https://github.com/caribouHY/exaterm"
+            >GitHub<span class="ext" aria-hidden="true">↗</span></a
+          ><a href="en.html" lang="en" hreflang="en">English</a>
+        </nav>
+      </div>
+    </header>
+    <main>
+      <section class="wrap hero" aria-labelledby="product">
+        <div>
+          <h1 id="product">ExaTerm</h1>
+          <p class="lead"><span>AIエージェント対応</span><span>ターミナルソフト</span></p>
+          <p class="intro">SSH、Telnet、シリアル接続に対応した Windows 向けターミナルです。</p>
+          <a class="action" href="#install">インストール方法<span aria-hidden="true">↓</span></a>
+        </div>
+        <figure>
+          <div class="stage">
+            <img
+              src="images/window.png"
+              width="929"
+              height="569"
+              alt="ExaTerm のターミナルに表示された Cisco IOS のルーティングテーブル"
+            />
+          </div>
+        </figure>
+      </section>
+      <section class="features" id="features">
+        <div class="wrap">
+          <h2>主な機能</h2>
+          <div class="grid">
+            <article>
+              <h3><span class="glyph" aria-hidden="true">{ }</span>AI エージェント連携</h3>
+              <p>
+                ExaTerm が提供する CLI ツールや MCP サーバーを通じて、Claude や Codex などの AI
+                エージェントが端末を自動操作できます。
+              </p>
+            </article>
+            <article>
+              <h3><span class="glyph" aria-hidden="true">&gt;_</span>接続プロファイル</h3>
+              <p>よく使う SSH や Telnet の接続先を保存し、プロファイル名を選んで接続できます。</p>
+            </article>
+            <article>
+              <h3><span class="glyph" aria-hidden="true">≡</span>表示とログ</h3>
+              <p>
+                機器に合わせて端末出力を色分けします。セッションログは手動または自動で保存できます。
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+      <div class="wrap lower">
+        <section class="install" id="install">
+          <h2>インストール</h2>
+          <p>Windows の PowerShell で実行します。</p>
+          <pre><code>winget install caribouhy.ExaTerm</code></pre>
+          <p>
+            インストーラーは
+            <a href="https://github.com/caribouHY/exaterm/releases/latest">GitHub Releases</a>
+            から入手できます。
+          </p>
+        </section>
+        <section class="resources" id="guide">
+          <h2>日本語ガイド</h2>
+          <a href="https://github.com/caribouHY/exaterm/blob/main/docs/CONFIG_JSON_GUIDE.ja.md"
+            ><strong>設定ガイド</strong><small>端末の表示、ログ、AI の設定</small
+            ><span class="ext" aria-hidden="true">↗</span></a
+          >
+          <a href="https://github.com/caribouHY/exaterm/blob/main/docs/CLI_GUIDE.ja.md"
+            ><strong>ターミナル CLI ガイド</strong><small>コマンドと外部制御の使い方</small
+            ><span class="ext" aria-hidden="true">↗</span></a
+          >
+        </section>
+      </div>
+    </main>
+    <footer>
+      <div class="wrap">
+        <span
+          >© 2026 caribouHY ·
+          <a href="https://github.com/caribouHY/exaterm/blob/main/LICENSE">MIT ライセンス</a></span
+        ><a href="#top">ページ先頭へ ↑</a>
+      </div>
+    </footer>
+  </body>
+</html>

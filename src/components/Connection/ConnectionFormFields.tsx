@@ -78,6 +78,7 @@ export function ProfileSelector({
     <div className="connection-dialog__profile">
       <div className="connection-dialog__profile-row">
         <ConnectionSearchSelect
+          triggerId="connection-source"
           label={t("connection.source")}
           value={encodeConnectionSource(selectedProfileId, selectedHistoryId)}
           sections={[

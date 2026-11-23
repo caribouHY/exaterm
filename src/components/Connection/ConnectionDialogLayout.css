@@ -11,6 +11,10 @@
   animation: slideInUp 0.2s ease;
 }
 
+.connection-dialog--network {
+  max-height: 84vh;
+}
+
 .connection-dialog__header {
   padding: 14px 18px;
 }
@@ -58,6 +62,78 @@
   overflow-y: auto;
 }
 
+.connection-dialog__body.connection-dialog__body--network {
+  gap: var(--spacing-sm);
+  padding-block: var(--spacing-md);
+}
+
+.connection-dialog__network-options {
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.connection-dialog__disclosure + .connection-dialog__disclosure {
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.connection-dialog__disclosure-summary {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  gap: var(--spacing-xs);
+  border-radius: var(--radius-control);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: 12px;
+  list-style: none;
+}
+
+.connection-dialog__disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+
+.connection-dialog__disclosure-summary:hover {
+  background: var(--color-interactive-hover);
+}
+
+.connection-dialog__disclosure-summary:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: -1px;
+}
+
+.connection-dialog__disclosure-summary svg {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+
+.connection-dialog__disclosure[open] > .connection-dialog__disclosure-summary svg {
+  transform: rotate(90deg);
+}
+
+.connection-dialog__disclosure-value {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connection-dialog__disclosure[open] > .connection-dialog__disclosure-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) 0 var(--spacing-md);
+}
+
+.connection-dialog__disclosure:not([open]) > .connection-dialog__disclosure-fields {
+  display: none;
+}
+
+.connection-dialog--profile-deletion {
+  max-width: calc(100% - 2 * var(--spacing-lg));
+  overflow-wrap: anywhere;
+}
+
 .connection-dialog__error-banner {
   margin: 12px 18px 0;
   outline: none;
@@ -77,9 +153,20 @@
   flex: 1;
 }
 
+.connection-dialog__serial-port-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-sm);
+  align-items: end;
+}
+
 .connection-dialog__required-mark {
   margin-left: 3px;
   color: var(--color-status-error);
+}
+
+.connection-dialog .connection-dialog__destination-input::placeholder {
+  color: var(--primitive-color-neutral-300);
 }
 
 .connection-dialog__field-error {

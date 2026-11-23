@@ -1,0 +1,42 @@
+name: Deploy project website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/index.html
+      - docs/en.html
+      - docs/site.css
+      - docs/images/window.png
+      - docs/images/exaterm.png
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/configure-pages@v5
+      - name: Collect website files
+        run: |
+          mkdir -p _site/images
+          cp docs/index.html docs/en.html docs/site.css _site/
+          cp docs/images/window.png docs/images/exaterm.png _site/images/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

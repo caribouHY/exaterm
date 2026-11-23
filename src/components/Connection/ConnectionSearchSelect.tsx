@@ -242,7 +242,11 @@ export function ConnectionSearchSelect({
             handleSelectionKeyDown(event);
             return;
           }
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          if (event.key === "Escape" && open) {
+            event.preventDefault();
+            event.stopPropagation();
+            close(true);
+          } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
             show();
           }
@@ -264,7 +268,10 @@ export function ConnectionSearchSelect({
             style={position ?? { visibility: "hidden" }}
             onKeyDown={(event) => {
               if (event.key === "Tab") {
-                if (event.shiftKey) event.preventDefault();
+                close(true);
+              } else if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                event.stopPropagation();
                 close(true);
               }
             }}
@@ -294,11 +301,7 @@ export function ConnectionSearchSelect({
                       event.stopPropagation();
                       return;
                     }
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      close(true);
-                    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                       event.preventDefault();
                       setHighlighted(
                         moveConnectionSearchSelection(

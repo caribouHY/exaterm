@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
@@ -14,6 +21,7 @@ import { DEFAULT_TERMINAL_MODE, normalizeTerminalMode } from "../../utils/termin
 import { ConnectionDialogView } from "./ConnectionDialogView";
 import { ConnectionProgressDialog } from "./ConnectionProgressDialog";
 import { CredentialPromptModal } from "./CredentialPromptModal";
+import { ProfileDeletionDialog } from "./ProfileDeletionDialog";
 import type {
   ConnectionDialogProps,
   SshFormActions,
@@ -36,6 +44,7 @@ import { useConnectionProfileSelection } from "./useConnectionProfileSelection";
 import { useSavedConnectionProfiles } from "./useSavedConnectionProfiles";
 import { useSshDiagnostics } from "./useSshDiagnostics";
 import { useStartupConnectionRequest } from "./useStartupConnectionRequest";
+import { createSerialPortDetection } from "./serialPortDetection";
 
 import {
   isActiveConnectionFormValid,
@@ -63,6 +72,13 @@ export default function ConnectionDialog({
   const [error, setError] = useState("");
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [selectedProfileIds, setSelectedProfileIds] = useState({ ssh: "", telnet: "" });
+  const [profileToDelete, setProfileToDelete] = useState<{
+    connectionType: "ssh" | "telnet";
+    id: string;
+  } | null>(null);
+  const [deletingProfile, setDeletingProfile] = useState(false);
+  const profileDeletionInFlight = useRef(false);
+  const profileDeletionTrigger = useRef<HTMLElement | null>(null);
   const [selectedHistoryIds, setSelectedHistoryIds] = useState({ ssh: "", telnet: "" });
   const [sshProfileName, setSshProfileName] = useState("");
   const [sshGroup, setSshGroup] = useState("");
@@ -70,9 +86,9 @@ export default function ConnectionDialog({
   const [telnetGroup, setTelnetGroup] = useState("");
   const [pendingStartupConnect, setPendingStartupConnect] = useState(false);
 
-  const [host, setHost] = useState("192.168.1.1");
+  const [host, setHost] = useState("");
   const [port, setPort] = useState("22");
-  const [username, setUsername] = useState("admin");
+  const [username, setUsername] = useState("");
   const [authMethod, setAuthMethod] = useState<SshAuthMethod>("auto");
   const [privateKeyPath, setPrivateKeyPath] = useState("");
   const [jumpProfileId, setJumpProfileId] = useState("");
@@ -82,15 +98,25 @@ export default function ConnectionDialog({
   const [sshMemo, setSshMemo] = useState("");
   const [sshExternalControlEnabled, setSshExternalControlEnabled] = useState(true);
 
-  const [telnetHost, setTelnetHost] = useState("192.168.1.1");
+  const [telnetHost, setTelnetHost] = useState("");
   const [telnetPort, setTelnetPort] = useState("23");
   const [telnetEncoding, setTelnetEncoding] = useState<"utf-8" | "shift-jis" | "euc-jp">("utf-8");
   const [telnetTerminalMode, setTelnetTerminalMode] = useState(DEFAULT_TERMINAL_MODE);
   const [telnetMemo, setTelnetMemo] = useState("");
   const [telnetExternalControlEnabled, setTelnetExternalControlEnabled] = useState(true);
 
-  const [ports, setPorts] = useState<PortInfo[]>([]);
-  const [selectedPort, setSelectedPort] = useState("");
+  const [serialPortDetection] = useState(() =>
+    createSerialPortDetection(() => invoke<PortInfo[]>("serial_list_ports"))
+  );
+  const {
+    ports,
+    selectedPort,
+    status: portDetectionStatus,
+  } = useSyncExternalStore(
+    serialPortDetection.subscribe,
+    serialPortDetection.getSnapshot,
+    serialPortDetection.getSnapshot
+  );
   const [baudRate, setBaudRate] = useState("9600");
   const [dataBits, setDataBits] = useState("8");
   const [parity, setParity] = useState("none");
@@ -123,17 +149,12 @@ export default function ConnectionDialog({
     });
   }, [loadConfig]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (tab !== "serial") return;
-    invoke<PortInfo[]>("serial_list_ports")
-      .then((availablePorts) => {
-        setPorts(availablePorts);
-        if (availablePorts.length > 0 && !selectedPort) {
-          setSelectedPort(availablePorts[0].name);
-        }
-      })
-      .catch(() => {});
-  }, [selectedPort, tab]);
+    // Invalidate the previous list before the reactivated Serial form can accept input.
+    void serialPortDetection.refresh();
+    return serialPortDetection.invalidatePendingRefresh;
+  }, [serialPortDetection, tab]);
 
   const sshProfiles = (config?.saved_connections ?? []).filter(
     (connection) => connection.connection_type === "ssh"
@@ -343,7 +364,7 @@ export default function ConnectionDialog({
 
   const savedProfiles = useSavedConnectionProfiles({ setConfig, setError, t });
 
-  const handleSaveSshProfile = () => {
+  const handleSaveSshProfile = (reportError: (error: string) => void) => {
     void savedProfiles.saveProfile(
       selectedProfileIds.ssh,
       () =>
@@ -365,11 +386,12 @@ export default function ConnectionDialog({
         setSelectedProfileIds((current) => ({ ...current, ssh: profile.id }));
         setSelectedHistoryIds((current) => ({ ...current, ssh: "" }));
         setSshProfileName(profile.id);
-      }
+      },
+      reportError
     );
   };
 
-  const handleSaveTelnetProfile = () => {
+  const handleSaveTelnetProfile = (reportError: (error: string) => void) => {
     void savedProfiles.saveProfile(
       selectedProfileIds.telnet,
       () =>
@@ -387,20 +409,42 @@ export default function ConnectionDialog({
         setSelectedProfileIds((current) => ({ ...current, telnet: profile.id }));
         setSelectedHistoryIds((current) => ({ ...current, telnet: "" }));
         setTelnetProfileName(profile.id);
-      }
+      },
+      reportError
     );
   };
 
-  const handleDeleteProfile = async (connectionType: "ssh" | "telnet") => {
-    const selectedProfileId =
-      connectionType === "ssh" ? selectedProfileIds.ssh : selectedProfileIds.telnet;
-    if (!selectedProfileId) return;
+  const requestProfileDeletion = (connectionType: "ssh" | "telnet") => {
+    const id = connectionType === "ssh" ? selectedProfileIds.ssh : selectedProfileIds.telnet;
+    const profiles = connectionType === "ssh" ? sshProfiles : telnetProfiles;
+    if (!id || !profiles.some((profile) => profile.id === id)) return;
 
+    const trigger = document.activeElement;
+    profileDeletionTrigger.current = trigger instanceof HTMLElement ? trigger : null;
+    profileDeletionInFlight.current = false;
+    setProfileToDelete({ connectionType, id });
+  };
+
+  const cancelProfileDeletion = () => {
+    if (!profileDeletionInFlight.current) setProfileToDelete(null);
+  };
+
+  useLayoutEffect(() => {
+    if (profileToDelete) return;
+    profileDeletionTrigger.current?.focus();
+    profileDeletionTrigger.current = null;
+  }, [profileToDelete]);
+
+  const confirmProfileDeletion = async () => {
+    if (!profileToDelete || profileDeletionInFlight.current) return;
+    const { connectionType, id } = profileToDelete;
+    profileDeletionInFlight.current = true;
+    setDeletingProfile(true);
     setError("");
     try {
       const savedConfig = await invoke<AppConfig>("config_saved_connection_delete", {
         connectionType,
-        id: selectedProfileId,
+        id,
       });
       setConfig(savedConfig);
       setSelectedProfileIds((current) =>
@@ -413,6 +457,9 @@ export default function ConnectionDialog({
       }
     } catch (caught: unknown) {
       setError(getConnectionErrorMessage(caught, t, t("connection.error")));
+    } finally {
+      setDeletingProfile(false);
+      setProfileToDelete(null);
     }
   };
 
@@ -430,7 +477,7 @@ export default function ConnectionDialog({
   const formValidation = {
     ssh: validateSshConnectionForm({ host, port, username, authMethod, privateKeyPath }),
     telnet: validateTelnetConnectionForm({ host: telnetHost, port: telnetPort }),
-    serial: validateSerialConnectionForm({ selectedPort }),
+    serial: validateSerialConnectionForm({ selectedPort, ports }),
   };
   const initializingFromTab = Boolean(initialValues && !initialValuesApplied);
   const canConnect = !initializingFromTab && isActiveConnectionFormValid(tab, formValidation);
@@ -546,9 +593,9 @@ export default function ConnectionDialog({
   useConnectionDialogShortcuts({
     attemptStatus: attempt.status,
     enabled: shortcutsEnabled,
-    canConnect,
+    canConnect: canConnect && !profileToDelete,
     credentialPrompt,
-    onClose,
+    onClose: profileToDelete ? cancelProfileDeletion : onClose,
     onCloseCredentialPrompt: connectionActions.handleCredentialCancel,
     onCancelConnection: () => {
       void connectionActions.handleCancelConnection();
@@ -679,7 +726,7 @@ export default function ConnectionDialog({
     },
     onSelectSource: handleSelectSshSource,
     onDeleteProfile: () => {
-      void handleDeleteProfile("ssh");
+      requestProfileDeletion("ssh");
     },
     onDeleteHistory: () => {
       void handleDeleteHistory("ssh");
@@ -764,7 +811,7 @@ export default function ConnectionDialog({
     },
     onSelectSource: handleSelectTelnetSource,
     onDeleteProfile: () => {
-      void handleDeleteProfile("telnet");
+      requestProfileDeletion("telnet");
     },
     onDeleteHistory: () => {
       void handleDeleteHistory("telnet");
@@ -808,8 +855,9 @@ export default function ConnectionDialog({
   };
   const shortcutText = t("connection.shortcut_ctrl_enter");
 
-  return (
+  const connectionForm = (
     <ConnectionDialogView
+      inert={profileToDelete !== null}
       tab={tab}
       setTab={(value) => {
         setError("");
@@ -845,6 +893,7 @@ export default function ConnectionDialog({
       telnetFormActions={telnetFormActions}
       serialFormState={{
         ports,
+        portDetectionStatus,
         selectedPort,
         baudRate,
         dataBits,
@@ -854,9 +903,13 @@ export default function ConnectionDialog({
         validationErrors: formValidation.serial.errors,
       }}
       serialActions={{
+        onRefreshPorts: () => {
+          setError("");
+          void serialPortDetection.refresh();
+        },
         onSelectedPortChange: (value) => {
           setError("");
-          setSelectedPort(value);
+          serialPortDetection.select(value);
         },
         onBaudRateChange: (value) => {
           setError("");
@@ -885,5 +938,20 @@ export default function ConnectionDialog({
       onOverlayMouseDown={handleOverlayMouseDown}
       onOverlayClick={handleOverlayClick}
     />
+  );
+
+  return (
+    <>
+      {connectionForm}
+      {profileToDelete && (
+        <ProfileDeletionDialog
+          name={profileToDelete.id}
+          protocol={t(`connection.${profileToDelete.connectionType}`)}
+          deleting={deletingProfile}
+          onCancel={cancelProfileDeletion}
+          onConfirm={() => void confirmProfileDeletion()}
+        />
+      )}
+    </>
   );
 }
