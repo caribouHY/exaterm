@@ -215,7 +215,7 @@ export function ConnectionDialogView({
                 {t("connection.cancel")}
               </button>
               <button
-                className="btn btn-primary"
+                className="btn btn-primary connection-dialog__connect"
                 disabled={!canConnect}
                 onClick={() => {
                   void connectionActions.handleConnect();

@@ -465,13 +465,15 @@
 .connection-dialog__profile-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
-.connection-dialog__profile-actions span {
-  color: var(--color-text-secondary);
-  font-size: 11px;
-  line-height: 1.4;
+.connection-dialog__profile-actions span,
+.connection-dialog__field-help {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .connection-dialog__memo {
@@ -481,9 +483,6 @@
 
 .connection-dialog__field-help {
   margin-top: 6px;
-  color: var(--color-text-secondary);
-  font-size: 11px;
-  line-height: 1.4;
 }
 
 .connection-dialog__checkbox {
@@ -503,8 +502,23 @@
   padding: 12px 18px;
 }
 
+.connection-dialog__connect.btn-primary {
+  background: var(--color-accent-primary-deep);
+  border-color: var(--color-accent-primary-deep);
+}
+
+.connection-dialog__connect.btn-primary:hover {
+  background: var(--color-accent-primary);
+}
+
+.connection-dialog__connect.btn-primary:disabled {
+  background: var(--color-control-background);
+  border-color: var(--color-border-primary);
+  color: var(--color-text-primary);
+  opacity: 1;
+}
+
 .connection-dialog__shortcut {
-  color: var(--color-text-shortcut);
   font-family: var(--font-family-code);
-  font-size: 11px;
+  font-size: 12px;
 }

@@ -47,7 +47,7 @@ export default function StatusBar({
     <div className="statusbar">
       <div className="statusbar__left">
         {showConnectionStatus && (
-          <div className="statusbar__item">
+          <div className="statusbar__item statusbar__connection-status">
             <span
               className={`statusbar__dot ${activeTab?.isConnected ? "statusbar__dot--connected" : "statusbar__dot--disconnected"}`}
             />

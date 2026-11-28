@@ -28,6 +28,7 @@
   --color-text-shortcut: var(--primitive-color-white-a75);
 
   --color-accent-primary: var(--primitive-color-blue-700);
+  --color-accent-primary-deep: var(--primitive-color-blue-800);
   --color-accent-primary-hover: var(--primitive-color-blue-600);
   --color-accent-success: var(--primitive-color-green-500);
   --color-accent-success-dim: var(--primitive-color-green-700);
