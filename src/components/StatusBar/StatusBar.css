@@ -27,6 +27,12 @@
   height: 100%;
 }
 
+.statusbar__connection-status {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  opacity: 1;
+}
+
 .statusbar__item--clickable {
   cursor: pointer;
   background: transparent;

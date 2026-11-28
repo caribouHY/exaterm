@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Improve the readability of connection status text, the Connect shortcut, and connection form guidance.
+
 ## v0.10.3
 
 ### Added
